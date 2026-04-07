@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "778312829212",
+    "project_id": "prototype-8d371",
+    "storage_bucket": "prototype-8d371.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:778312829212:android:19e0857f840a4f190152d9",
+        "android_client_info": {
+          "package_name": "com.example.govpulse"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDQfk5acL8myb1OyWQU4n29O8wXL_KgHWc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:778312829212:android:4a0e43ad00e4bed90152d9",
+        "android_client_info": {
+          "package_name": "com.example.myapplication"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDQfk5acL8myb1OyWQU4n29O8wXL_KgHWc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
