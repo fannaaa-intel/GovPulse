@@ -5,7 +5,7 @@ import '../../utils/overlay_exit.dart';
 class DoubleBackExit extends StatefulWidget {
   final Widget child;
 
-  const DoubleBackExit({required this.child});
+  const DoubleBackExit({super.key, required this.child});
 
   @override
   State<DoubleBackExit> createState() => _DoubleBackExitState();
@@ -14,7 +14,7 @@ class DoubleBackExit extends StatefulWidget {
 class _DoubleBackExitState extends State<DoubleBackExit> {
   DateTime? lastBackPressed;
 
-  void onPopInvoked(bool didPop) {
+  void onPopInvoked(bool didPop, Object? result) {
     final now = DateTime.now();
 
     if (lastBackPressed == null ||
@@ -31,8 +31,8 @@ class _DoubleBackExitState extends State<DoubleBackExit> {
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: false, // prevents automatic pop
-      onPopInvoked: onPopInvoked,
+      canPop: false,
+      onPopInvokedWithResult: onPopInvoked,
       child: widget.child,
     );
   }

@@ -150,8 +150,13 @@ class _ResetPasswordEmailVerifyScreenState
     timer?.cancel();
     _shakeController.dispose();
 
-    for (var c in controllers) c.dispose();
-    for (var f in focusNodes) f.dispose();
+    for (var c in controllers) {
+      c.dispose();
+    }
+
+    for (var f in focusNodes) {
+      f.dispose();
+    }
 
     super.dispose();
   }
@@ -291,7 +296,7 @@ class _ResetPasswordEmailVerifyScreenState
 
                             final data = jsonDecode(response.body);
 
-                            if (!mounted) return;
+                            if (!context.mounted) return;
 
                             if (response.statusCode == 200 &&
                                 data["success"] == true) {

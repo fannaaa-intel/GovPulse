@@ -91,9 +91,7 @@ class GuestScreen extends StatelessWidget {
                       borderRadius: BorderRadius.circular(16),
                     ),
                   ),
-                  onPressed: () {
-                    print("Guest Mode Started");
-                  },
+                  onPressed: () {},
                   child: const Text(
                     "Continue as Guest",
                     style: TextStyle(

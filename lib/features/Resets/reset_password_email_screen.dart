@@ -183,7 +183,7 @@ class _ResetPasswordEmailScreenState extends State<ResetPasswordEmailScreen> {
                             ),
                           );
 
-                          if (!mounted) return;
+                          if (!context.mounted) return;
 
                           if (result != null && result["success"] == true) {
                             Navigator.push(
@@ -198,6 +198,7 @@ class _ResetPasswordEmailScreenState extends State<ResetPasswordEmailScreen> {
                               ),
                             );
                           } else {
+                            if (!mounted) return;
                             setState(() {
                               showError = true;
                               errorText =

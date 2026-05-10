@@ -2,6 +2,23 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+<key>NSCameraUsageDescription</key>
+<string>This app needs camera access to scan your ID</string>
+<key>LSApplicationQueriesSchemes</key>
+<array>
+    <string>tel</string>
+    <string>telprompt</string>
+</array>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>We need your location to report the issue accurately.</string>
+	<key>io.flutter.embedded_views_preview</key>
+	<true/>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>We need access to your photo library to upload images.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>We need access to your camera to take photos.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>We need access to your microphone to record videos.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
