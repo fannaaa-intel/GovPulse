@@ -172,8 +172,9 @@ class _SignupScreenState extends State<SignupScreen> {
                         emailErrorText = null;
                       });
 
-                      if (_emailDebounce?.isActive ?? false)
+                      if (_emailDebounce?.isActive ?? false) {
                         _emailDebounce!.cancel();
+                      }
 
                       _emailDebounce = Timer(
                         const Duration(milliseconds: 600),
@@ -235,8 +236,9 @@ class _SignupScreenState extends State<SignupScreen> {
                         usernameErrorText = null;
                       });
 
-                      if (_usernameDebounce?.isActive ?? false)
+                      if (_usernameDebounce?.isActive ?? false) {
                         _usernameDebounce!.cancel();
+                      }
 
                       _usernameDebounce = Timer(
                         const Duration(milliseconds: 600),
@@ -444,7 +446,7 @@ class _SignupScreenState extends State<SignupScreen> {
                                     ),
                                   ),
                                 );
-
+                                if (!context.mounted) return;
                                 if (success != null &&
                                     success["success"] == true) {
                                   Navigator.push(

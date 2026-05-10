@@ -120,8 +120,14 @@ class VerificationScreenState extends State<VerificationScreen>
     timer?.cancel();
     _shakeController.dispose();
 
-    for (final c in controllers) c.dispose();
-    for (final f in focusNodes) f.dispose();
+    for (final c in controllers) {
+      c.dispose();
+    }
+
+    for (final f in focusNodes) {
+      f.dispose();
+    }
+
     super.dispose();
   }
 
