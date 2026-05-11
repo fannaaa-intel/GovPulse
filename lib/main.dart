@@ -3,7 +3,6 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'firebase_options.dart';
-import 'core/network/network_wrapper.dart';
 import 'core/router/app_router.dart';
 import 'features/onboarding/splash_screen.dart';
 
@@ -32,7 +31,7 @@ class GovPulseApp extends StatelessWidget {
       navigatorKey: navigatorKey,
       debugShowCheckedModeBanner: false,
       navigatorObservers: [homeRouteObserver],
-      home: const NetworkWrapper(child: GovPulseSplashScreen()),
+      home: const GovPulseSplashScreen(),
       routes: appRoutes,
       onGenerateRoute: onGenerateRoute,
     );

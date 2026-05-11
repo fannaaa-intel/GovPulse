@@ -7,6 +7,7 @@ import '../../../core/theme/app_colors.dart';
 
 class EditProfileScreen extends StatefulWidget {
   final String username;
+
   const EditProfileScreen({super.key, required this.username});
 
   @override
@@ -33,12 +34,17 @@ class _EditProfileScreenState extends State<EditProfileScreen>
   bool _isVerified = false;
   String? _errorMessage;
 
-  // Photo
+  // ── Stats ─────────────────────────────────────────────────────────────────
+  int _reportCount = 0;
+  String? _memberSince;
+  String? _barangay;
+
+  // ── Photo ─────────────────────────────────────────────────────────────────
   String? _currentPhotoUrl;
   File? _pickedFile;
   Uint8List? _pickedBytes;
 
-  // 30-day lock
+  // ── 30-day lock ───────────────────────────────────────────────────────────
   DateTime? _lastProfileUpdatedAt;
   bool get _isLocked {
     if (_lastProfileUpdatedAt == null) return false;
@@ -111,7 +117,6 @@ class _EditProfileScreenState extends State<EditProfileScreen>
         return;
       }
 
-      // 1. Verification status
       final verifRow = await supabase
           .from('verification_submissions')
           .select('status, face_photo_path')
@@ -123,13 +128,12 @@ class _EditProfileScreenState extends State<EditProfileScreen>
       final status = verifRow?['status'] as String? ?? 'none';
       final verified = status == 'approved';
 
-      // 2. Citizen details
       if (verified) {
         final cd = await supabase
             .from('citizen_details')
             .select(
               'first_name, middle_name, last_name, '
-              'barangay, street, contact_number, '
+              'address, street, contact_number, created_at, '
               'profile_photo_path, last_profile_updated_at',
             )
             .eq('user_id', user.id)
@@ -139,15 +143,30 @@ class _EditProfileScreenState extends State<EditProfileScreen>
           _firstNameCtrl.text = cd['first_name'] as String? ?? '';
           _middleNameCtrl.text = cd['middle_name'] as String? ?? '';
           _lastNameCtrl.text = cd['last_name'] as String? ?? '';
-          _barangayCtrl.text = cd['barangay'] as String? ?? '';
+          _barangayCtrl.text = cd['address'] as String? ?? '';
           _streetCtrl.text = cd['street'] as String? ?? '';
           _contactCtrl.text = cd['contact_number'] as String? ?? '';
 
+          // ── Member since ──
+          final createdRaw = cd['created_at'];
+          if (createdRaw != null) {
+            final dt = DateTime.tryParse(createdRaw.toString());
+            if (dt != null) _memberSince = dt.year.toString();
+          }
+
+          // ── Barangay for stats ──
+          final addressVal = cd['address'] as String? ?? '';
+          if (addressVal.isNotEmpty) {
+            _barangay = addressVal.split(',').first.trim();
+          }
+
+          // ── Lock ──
           final updatedRaw = cd['last_profile_updated_at'];
           if (updatedRaw != null) {
             _lastProfileUpdatedAt = DateTime.tryParse(updatedRaw.toString());
           }
 
+          // ── Photo ──
           final photoPath =
               (cd['profile_photo_path'] as String?)?.isNotEmpty == true
               ? cd['profile_photo_path'] as String
@@ -166,6 +185,17 @@ class _EditProfileScreenState extends State<EditProfileScreen>
               } catch (_) {}
             }
           }
+        }
+
+        // ── Report count ──
+        try {
+          final countRes = await supabase
+              .from('reports')
+              .select('id')
+              .eq('user_id', user.id);
+          _reportCount = (countRes as List).length;
+        } catch (_) {
+          _reportCount = 0;
         }
       }
 
@@ -216,7 +246,6 @@ class _EditProfileScreenState extends State<EditProfileScreen>
 
       String? newPhotoPath;
 
-      // 1. Upload new photo if picked
       if (_pickedFile != null && _pickedBytes != null) {
         final ext = _pickedFile!.path.split('.').last;
         final filePath =
@@ -250,12 +279,11 @@ class _EditProfileScreenState extends State<EditProfileScreen>
 
       final now = DateTime.now().toUtc().toIso8601String();
 
-      // 2. Update citizen_details only — verification_submissions stays frozen
       final updateData = <String, dynamic>{
         'first_name': _firstNameCtrl.text.trim(),
         'middle_name': _middleNameCtrl.text.trim(),
         'last_name': _lastNameCtrl.text.trim(),
-        'barangay': _barangayCtrl.text.trim(),
+        'address': _barangayCtrl.text.trim(),
         'street': _streetCtrl.text.trim(),
         'contact_number': _contactCtrl.text.trim(),
         'last_profile_updated_at': now,
@@ -452,17 +480,14 @@ class _EditProfileScreenState extends State<EditProfileScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Avatar card ──
           _animated(1, _buildAvatarCard(width)),
           SizedBox(height: width * 0.04),
 
-          // ── Lock banner — only shown when locked ──
           if (_isLocked) ...[
             _animated(2, _buildLockBanner(width)),
             SizedBox(height: width * 0.04),
           ],
 
-          // ── Account (locked fields: email + username) ──
           _animated(3, _buildSectionLabel('ACCOUNT', width)),
           SizedBox(height: width * 0.02),
           _animated(
@@ -474,23 +499,21 @@ class _EditProfileScreenState extends State<EditProfileScreen>
                   label: 'Email',
                   value:
                       Supabase.instance.client.auth.currentUser?.email ?? '—',
-                  icon: Icons.email_outlined,
+                  icon: 'assets/images/email.png',
                   width: width,
                 ),
                 _divider(width),
                 _buildLockedDisplayField(
                   label: 'Username',
                   value: widget.username,
-                  icon: Icons.alternate_email_rounded,
+                  icon: '@',
                   width: width,
-                  showDivider: false,
                 ),
               ],
             ),
           ),
           SizedBox(height: width * 0.04),
 
-          // ── Personal Information ──
           _animated(5, _buildSectionLabel('PERSONAL INFORMATION', width)),
           SizedBox(height: width * 0.02),
           _animated(
@@ -502,7 +525,7 @@ class _EditProfileScreenState extends State<EditProfileScreen>
                   ctrl: _firstNameCtrl,
                   label: 'First Name',
                   hint: 'Enter first name',
-                  icon: 'assets/images/settings/user.png',
+                  icon: 'assets/images/username.png',
                   width: width,
                   enabled: !_isLocked,
                   validator: (v) =>
@@ -513,7 +536,7 @@ class _EditProfileScreenState extends State<EditProfileScreen>
                   ctrl: _middleNameCtrl,
                   label: 'Middle Name',
                   hint: 'Enter middle name (optional)',
-                  icon: 'assets/images/settings/user.png',
+                  icon: 'assets/images/username.png',
                   width: width,
                   enabled: !_isLocked,
                 ),
@@ -522,7 +545,7 @@ class _EditProfileScreenState extends State<EditProfileScreen>
                   ctrl: _lastNameCtrl,
                   label: 'Last Name',
                   hint: 'Enter last name',
-                  icon: 'assets/images/settings/user.png',
+                  icon: 'assets/images/username.png',
                   width: width,
                   enabled: !_isLocked,
                   showDivider: false,
@@ -534,7 +557,6 @@ class _EditProfileScreenState extends State<EditProfileScreen>
           ),
           SizedBox(height: width * 0.04),
 
-          // ── Contact ──
           _animated(7, _buildSectionLabel('CONTACT', width)),
           SizedBox(height: width * 0.02),
           _animated(
@@ -546,7 +568,7 @@ class _EditProfileScreenState extends State<EditProfileScreen>
                   ctrl: _contactCtrl,
                   label: 'Mobile Number',
                   hint: 'e.g. 09XXXXXXXXX',
-                  icon: 'assets/images/settings/contact.png',
+                  icon: 'assets/images/phone.png',
                   width: width,
                   enabled: !_isLocked,
                   showDivider: false,
@@ -564,7 +586,6 @@ class _EditProfileScreenState extends State<EditProfileScreen>
           ),
           SizedBox(height: width * 0.04),
 
-          // ── Address ──
           _animated(9, _buildSectionLabel('ADDRESS', width)),
           SizedBox(height: width * 0.02),
           _animated(
@@ -576,7 +597,7 @@ class _EditProfileScreenState extends State<EditProfileScreen>
                   ctrl: _barangayCtrl,
                   label: 'Barangay',
                   hint: 'Enter your barangay',
-                  icon: 'assets/images/settings/location.png',
+                  icon: 'assets/images/report/location.png',
                   width: width,
                   enabled: !_isLocked,
                   validator: (v) =>
@@ -587,7 +608,7 @@ class _EditProfileScreenState extends State<EditProfileScreen>
                   ctrl: _streetCtrl,
                   label: 'Street / Zone',
                   hint: 'Enter street or zone',
-                  icon: 'assets/images/settings/location.png',
+                  icon: 'assets/images/report/location.png',
                   width: width,
                   enabled: !_isLocked,
                   showDivider: false,
@@ -599,7 +620,6 @@ class _EditProfileScreenState extends State<EditProfileScreen>
           ),
           SizedBox(height: width * 0.04),
 
-          // ── Error ──
           if (_errorMessage != null)
             _animated(
               11,
@@ -635,7 +655,6 @@ class _EditProfileScreenState extends State<EditProfileScreen>
               ),
             ),
 
-          // ── Save button ──
           _animated(
             12,
             SizedBox(
@@ -676,7 +695,6 @@ class _EditProfileScreenState extends State<EditProfileScreen>
           ),
           SizedBox(height: width * 0.03),
 
-          // ── Cancel ──
           _animated(
             13,
             SizedBox(
@@ -714,7 +732,12 @@ class _EditProfileScreenState extends State<EditProfileScreen>
 
     return Container(
       width: double.infinity,
-      padding: EdgeInsets.symmetric(vertical: width * 0.06),
+      padding: EdgeInsets.fromLTRB(
+        width * 0.04,
+        width * 0.06,
+        width * 0.04,
+        width * 0.05,
+      ),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(width * 0.04),
@@ -729,7 +752,7 @@ class _EditProfileScreenState extends State<EditProfileScreen>
       ),
       child: Column(
         children: [
-          // ── Photo ──
+          // ── Avatar with camera badge ──
           GestureDetector(
             onTap: _isLocked ? null : _pickPhoto,
             child: Stack(
@@ -757,27 +780,32 @@ class _EditProfileScreenState extends State<EditProfileScreen>
                     width: width * 0.082,
                     height: width * 0.082,
                     decoration: BoxDecoration(
-                      color: _isLocked
-                          ? const Color(0xFF9CA3AF)
-                          : AppColors.primaryBlue,
+                      color: const Color(0xFFDBEAFE),
                       shape: BoxShape.circle,
                       border: Border.all(color: Colors.white, width: 2),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.10),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
                     ),
                     child: _isLocked
                         ? Icon(
                             Icons.lock_rounded,
-                            color: Colors.white,
+                            color: const Color(0xFF93C5FD),
                             size: width * 0.036,
                           )
                         : Padding(
                             padding: EdgeInsets.all(width * 0.016),
                             child: ColorFiltered(
                               colorFilter: const ColorFilter.mode(
-                                Colors.white,
+                                Color(0xFF3B82F6),
                                 BlendMode.srcIn,
                               ),
                               child: Image.asset(
-                                'assets/images/report.png',
+                                'assets/images/report/cameraicon.png',
                                 fit: BoxFit.contain,
                               ),
                             ),
@@ -787,9 +815,10 @@ class _EditProfileScreenState extends State<EditProfileScreen>
               ],
             ),
           ),
-          SizedBox(height: width * 0.035),
 
-          // ── Full name ──
+          SizedBox(height: width * 0.032),
+
+          // ── Display name ──
           Text(
             displayName,
             style: TextStyle(
@@ -798,14 +827,15 @@ class _EditProfileScreenState extends State<EditProfileScreen>
               color: const Color(0xFF1F2937),
             ),
           ),
-          SizedBox(height: width * 0.018),
 
-          // ── Verified badge — only if actually verified ──
+          SizedBox(height: width * 0.014),
+
+          // ── Verified badge ──
           if (_isVerified)
             Container(
               padding: EdgeInsets.symmetric(
                 horizontal: width * 0.04,
-                vertical: width * 0.014,
+                vertical: width * 0.012,
               ),
               decoration: BoxDecoration(
                 color: const Color(0xFFECFDF5),
@@ -820,9 +850,9 @@ class _EditProfileScreenState extends State<EditProfileScreen>
                   Icon(
                     Icons.verified_rounded,
                     color: AppColors.green,
-                    size: width * 0.04,
+                    size: width * 0.038,
                   ),
-                  SizedBox(width: width * 0.015),
+                  SizedBox(width: width * 0.014),
                   Text(
                     'Verified Citizen',
                     style: TextStyle(
@@ -835,7 +865,62 @@ class _EditProfileScreenState extends State<EditProfileScreen>
               ),
             ),
 
-          SizedBox(height: width * 0.02),
+          SizedBox(height: width * 0.028),
+
+          // ── Stats row ──
+          if (_isVerified)
+            Container(
+              padding: EdgeInsets.symmetric(
+                horizontal: width * 0.02,
+                vertical: width * 0.028,
+              ),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF9FAFB),
+                borderRadius: BorderRadius.circular(width * 0.03),
+                border: Border.all(color: const Color(0xFFE5E7EB)),
+              ),
+              child: IntrinsicHeight(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _buildStatItem(
+                      width: width,
+                      iconPath: 'assets/images/report/report.png',
+                      iconColor: const Color(0xFF3B82F6),
+                      value: '$_reportCount',
+                      label: 'Reports',
+                    ),
+                    VerticalDivider(
+                      color: const Color(0xFFE5E7EB),
+                      thickness: 1,
+                      width: width * 0.01,
+                    ),
+                    _buildStatItem(
+                      width: width,
+                      iconPath: 'assets/images/calendar.png',
+                      iconColor: const Color(0xFF22C55E),
+                      value: _memberSince ?? '—',
+                      label: 'Member Since',
+                    ),
+                    VerticalDivider(
+                      color: const Color(0xFFE5E7EB),
+                      thickness: 1,
+                      width: width * 0.01,
+                    ),
+                    _buildStatItem(
+                      width: width,
+                      iconPath: 'assets/images/report/location.png',
+                      iconColor: const Color(0xFFF59E0B),
+                      value: _barangay ?? '—',
+                      label: 'Barangay',
+                      isEllipsis: true,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          SizedBox(height: width * 0.022),
 
           // ── Photo hint ──
           Text(
@@ -874,6 +959,57 @@ class _EditProfileScreenState extends State<EditProfileScreen>
     );
   }
 
+  // ── Stat item — icon → label → value ─────────────────────────────────────
+  Widget _buildStatItem({
+    required double width,
+    required String iconPath,
+    required Color iconColor,
+    required String value,
+    required String label,
+    bool isEllipsis = false,
+  }) {
+    return Expanded(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Image.asset(
+            iconPath,
+            width: width * 0.052,
+            height: width * 0.052,
+            color: iconColor,
+            errorBuilder: (_, _, _) =>
+                Icon(Icons.info_outline, size: width * 0.052, color: iconColor),
+          ),
+          SizedBox(height: width * 0.010),
+          // ── label first ──
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: width * 0.024,
+              color: const Color(0xFF6B7280),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          SizedBox(height: width * 0.004),
+          // ── value second ──
+          Text(
+            value,
+            maxLines: 1,
+            overflow: isEllipsis ? TextOverflow.ellipsis : TextOverflow.clip,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: width * 0.034,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF1F2937),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Avatar image ──────────────────────────────────────────────────────────
   Widget _buildAvatarImage(double width) {
     final size = width * 0.28;
     if (_pickedBytes != null) {
@@ -923,10 +1059,12 @@ class _EditProfileScreenState extends State<EditProfileScreen>
               color: AppColors.orange.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(width * 0.02),
             ),
-            child: Icon(
-              Icons.lock_clock_rounded,
+            child: Image.asset(
+              'assets/images/settings/time.png',
+              width: width * 0.06,
+              height: width * 0.06,
               color: AppColors.orange,
-              size: width * 0.06,
+              colorBlendMode: BlendMode.srcIn,
             ),
           ),
           SizedBox(width: width * 0.03),
@@ -989,11 +1127,11 @@ class _EditProfileScreenState extends State<EditProfileScreen>
     );
   }
 
-  // ── Locked display field (email + username) ───────────────────────────────
+  // ── Locked display field ──────────────────────────────────────────────────
   Widget _buildLockedDisplayField({
     required String label,
     required String value,
-    required IconData icon,
+    required String icon,
     required double width,
     bool showDivider = true,
   }) {
@@ -1014,11 +1152,26 @@ class _EditProfileScreenState extends State<EditProfileScreen>
                   borderRadius: BorderRadius.circular(width * 0.022),
                   border: Border.all(color: AppColors.stroke, width: 1.2),
                 ),
-                child: Icon(
-                  icon,
-                  size: width * 0.042,
-                  color: const Color(0xFF9CA3AF),
-                ),
+                padding: EdgeInsets.all(width * 0.018),
+                child: icon == '@'
+                    ? FittedBox(
+                        fit: BoxFit.contain,
+                        child: Text(
+                          '@',
+                          style: TextStyle(
+                            fontSize: width * 0.048,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF9CA3AF),
+                          ),
+                        ),
+                      )
+                    : ColorFiltered(
+                        colorFilter: const ColorFilter.mode(
+                          Color(0xFF9CA3AF),
+                          BlendMode.srcIn,
+                        ),
+                        child: Image.asset(icon, fit: BoxFit.contain),
+                      ),
               ),
               SizedBox(width: width * 0.035),
               Expanded(
@@ -1045,10 +1198,12 @@ class _EditProfileScreenState extends State<EditProfileScreen>
                   ],
                 ),
               ),
-              Icon(
-                Icons.lock_outline_rounded,
-                size: width * 0.038,
+              Image.asset(
+                'assets/images/settings/password.png',
+                width: width * 0.038,
+                height: width * 0.038,
                 color: const Color(0xFFD1D5DB),
+                colorBlendMode: BlendMode.srcIn,
               ),
             ],
           ),
@@ -1093,7 +1248,7 @@ class _EditProfileScreenState extends State<EditProfileScreen>
     );
   }
 
-  // ── Text field ────────────────────────────────────────────────────────────
+  // ── Editable text field ───────────────────────────────────────────────────
   Widget _buildField({
     required TextEditingController ctrl,
     required String label,
@@ -1135,17 +1290,13 @@ class _EditProfileScreenState extends State<EditProfileScreen>
                       width: 1.2,
                     ),
                   ),
-                  child: Padding(
-                    padding: EdgeInsets.all(width * 0.018),
-                    child: ColorFiltered(
-                      colorFilter: ColorFilter.mode(
-                        enabled
-                            ? AppColors.primaryBlue
-                            : const Color(0xFF9CA3AF),
-                        BlendMode.srcIn,
-                      ),
-                      child: Image.asset(icon, fit: BoxFit.contain),
+                  padding: EdgeInsets.all(width * 0.018),
+                  child: ColorFiltered(
+                    colorFilter: ColorFilter.mode(
+                      enabled ? AppColors.primaryBlue : const Color(0xFF9CA3AF),
+                      BlendMode.srcIn,
                     ),
+                    child: Image.asset(icon, fit: BoxFit.contain),
                   ),
                 ),
               ),
@@ -1168,10 +1319,15 @@ class _EditProfileScreenState extends State<EditProfileScreen>
                     labelText: label,
                     hintText: hint,
                     suffixIcon: !enabled
-                        ? Icon(
-                            Icons.lock_outline_rounded,
-                            size: width * 0.038,
-                            color: const Color(0xFFD1D5DB),
+                        ? Padding(
+                            padding: EdgeInsets.all(width * 0.03),
+                            child: Image.asset(
+                              'assets/images/settings/password.png',
+                              width: width * 0.038,
+                              height: width * 0.038,
+                              color: const Color(0xFFD1D5DB),
+                              colorBlendMode: BlendMode.srcIn,
+                            ),
                           )
                         : null,
                     labelStyle: TextStyle(

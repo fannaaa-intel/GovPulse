@@ -1,32 +1,24 @@
 import 'package:flutter/material.dart';
+import '../../features/home/emergency/emergency_screen.dart';
 
 class NoInternetScreen extends StatelessWidget {
   final bool hasInternet;
-  final VoidCallback onContinue;
+  final VoidCallback? onContinue; // ← make nullable
 
   const NoInternetScreen({
     super.key,
     required this.hasInternet,
-    required this.onContinue,
+    this.onContinue, // ← optional
   });
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 500),
-          child: hasInternet
-              ? const SizedBox.shrink()
-              : const _NoInternetOverlay(key: ValueKey("no-internet")),
-        ),
-      ],
-    );
+    return const _NoInternetOverlay();
   }
 }
 
 class _NoInternetOverlay extends StatefulWidget {
-  const _NoInternetOverlay({super.key});
+  const _NoInternetOverlay();
 
   @override
   State<_NoInternetOverlay> createState() => _NoInternetOverlayState();
@@ -187,6 +179,80 @@ class _NoInternetOverlayState extends State<_NoInternetOverlay>
                   ),
 
                   const Spacer(),
+
+                  // ── Emergency button ──────────────────────────────────────────
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 40),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            PageRouteBuilder(
+                              transitionDuration: const Duration(
+                                milliseconds: 400,
+                              ),
+                              pageBuilder: (_, _, _) =>
+                                  const EmergencyScreen(username: ''),
+                              transitionsBuilder: (_, anim, _, child) =>
+                                  SlideTransition(
+                                    position:
+                                        Tween(
+                                          begin: const Offset(0, 1),
+                                          end: Offset.zero,
+                                        ).animate(
+                                          CurvedAnimation(
+                                            parent: anim,
+                                            curve: Curves.easeOutCubic,
+                                          ),
+                                        ),
+                                    child: child,
+                                  ),
+                            ),
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFDC2626),
+                          elevation: 4,
+                          shadowColor: const Color(
+                            0xFFDC2626,
+                          ).withValues(alpha: 0.4),
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            ColorFiltered(
+                              colorFilter: const ColorFilter.mode(
+                                Colors.white,
+                                BlendMode.srcIn,
+                              ),
+                              child: Image.asset(
+                                'assets/images/settings/emergency.png',
+                                width: 22,
+                                height: 22,
+                                fit: BoxFit.contain,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            const Text(
+                              'SOS — Emergency Services',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                                letterSpacing: 0.3,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),

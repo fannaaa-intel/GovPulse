@@ -6,6 +6,8 @@ import '../screen/home_screen.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:android_intent_plus/android_intent.dart';
 import 'package:android_intent_plus/flag.dart';
+import '../../../../core/network/network_wrapper.dart';
+import '../../../../core/widgets/modal/verification_required_dialog.dart';
 import 'dart:io';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -49,7 +51,13 @@ class _Category {
 // ─────────────────────────────────────────────────────────────────────────────
 class EmergencyScreen extends StatefulWidget {
   final String username;
-  const EmergencyScreen({super.key, required this.username});
+  final bool isVerified;
+
+  const EmergencyScreen({
+    super.key,
+    required this.username,
+    this.isVerified = false,
+  });
 
   @override
   State<EmergencyScreen> createState() => _EmergencyScreenState();
@@ -360,7 +368,7 @@ class _EmergencyScreenState extends State<EmergencyScreen>
   @override
   Widget build(BuildContext context) {
     final w = MediaQuery.of(context).size.width;
-    return Scaffold(
+    final scaffold = Scaffold(
       backgroundColor: _C.pageBg,
       body: SafeArea(
         child: Column(
@@ -392,8 +400,11 @@ class _EmergencyScreenState extends State<EmergencyScreen>
           ],
         ),
       ),
-      bottomNavigationBar: _bottomNav(w),
+      bottomNavigationBar: widget.username.isEmpty ? null : _bottomNav(w),
     );
+
+    if (widget.username.isEmpty) return scaffold;
+    return NetworkWrapper(child: scaffold);
   }
 
   // ── Top bar — ORIGINAL sizes ──────────────────────────────────────────────
@@ -415,6 +426,18 @@ class _EmergencyScreenState extends State<EmergencyScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
+          Image.asset(
+            'assets/images/newslogo.png',
+            height: w * .075,
+            fit: BoxFit.contain,
+            alignment: Alignment.centerLeft,
+            errorBuilder: (_, _, _) => Icon(
+              Icons.account_balance_rounded,
+              size: w * .065,
+              color: AppColors.primaryBlue,
+            ),
+          ),
+          SizedBox(height: w * .018),
           Text(
             'Emergency',
             style: TextStyle(
@@ -869,7 +892,8 @@ class _EmergencyScreenState extends State<EmergencyScreen>
               context,
               PageRouteBuilder(
                 transitionDuration: const Duration(milliseconds: 400),
-                pageBuilder: (_, _, _) => HomePage(username: widget.username),
+                pageBuilder: (_, _, _) =>
+                    NetworkWrapper(child: HomePage(username: widget.username)),
                 transitionsBuilder: (_, anim, _, child) => SlideTransition(
                   position: Tween(begin: const Offset(-1, 0), end: Offset.zero)
                       .animate(
@@ -880,11 +904,27 @@ class _EmergencyScreenState extends State<EmergencyScreen>
               ),
               (r) => false,
             );
+          } else if (i == 1) {
+            if (!widget.isVerified) {
+              showVerificationRequiredDialog(
+                context,
+                message: 'Only verified citizens can access My Reports.',
+              );
+              return;
+            }
+            Navigator.pushNamed(
+              context,
+              '/my_reports',
+              arguments: widget.username,
+            );
           } else if (i == 2) {
             Navigator.pushNamed(
               context,
               '/newsfeed',
-              arguments: widget.username,
+              arguments: {
+                'username': widget.username,
+                'isVerified': widget.isVerified,
+              },
             );
           } else if (i == 4) {
             Navigator.pushNamed(

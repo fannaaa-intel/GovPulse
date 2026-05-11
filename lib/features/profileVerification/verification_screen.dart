@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../features/profileVerification/verification_id_selection_screen.dart';
 
 class VerificationScreen extends StatefulWidget {
   final String username;
@@ -280,22 +279,10 @@ class _VerificationScreenState extends State<VerificationScreen>
                   onTapUp: (_) => setState(() => _scale = 1.0),
                   onTapCancel: () => setState(() => _scale = 1.0),
                   onTap: () {
-                    Navigator.push(
+                    Navigator.pushNamed(
                       context,
-                      PageRouteBuilder(
-                        pageBuilder: (_, _, _) => VerificationIdSelectionScreen(
-                          username: widget.username,
-                        ),
-                        transitionsBuilder: (_, animation, _, child) {
-                          final slide = Tween(
-                            begin: const Offset(1, 0),
-                            end: Offset.zero,
-                          ).animate(animation);
-
-                          return SlideTransition(position: slide, child: child);
-                        },
-                        transitionDuration: const Duration(milliseconds: 400),
-                      ),
+                      '/verification_id_selection',
+                      arguments: widget.username,
                     );
                   },
                   child: AnimatedScale(

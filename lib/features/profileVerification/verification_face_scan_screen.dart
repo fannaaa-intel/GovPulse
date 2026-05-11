@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:io';
-
+import '../../core/network/network_wrapper.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -372,7 +372,8 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
           Navigator.of(context).pushAndRemoveUntil(
             PageRouteBuilder(
               transitionDuration: const Duration(milliseconds: 400),
-              pageBuilder: (_, _, _) => HomePage(username: widget.username),
+              pageBuilder: (_, _, _) =>
+                  NetworkWrapper(child: HomePage(username: widget.username)),
               transitionsBuilder: (_, anim, _, child) => FadeTransition(
                 opacity: CurvedAnimation(parent: anim, curve: Curves.easeOut),
                 child: child,
