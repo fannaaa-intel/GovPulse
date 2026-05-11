@@ -32,6 +32,7 @@ import '../../features/profileVerification/verification_scan_screen.dart';
 import '../../features/profileVerification/verification_review_screen.dart';
 import '../../features/profileVerification/verification_identity_screen.dart';
 import '../../features/profileVerification/verification_face_scan_screen.dart';
+import '../../features/home/my_report/my_reports_screen.dart';
 
 /// Required by [MaterialApp.navigatorObservers] for home route tracking.
 final RouteObserver<ModalRoute<void>> homeRouteObserver =
@@ -81,7 +82,7 @@ PageRouteBuilder _slideUp(Widget child) => PageRouteBuilder(
 // ─── Named routes map ─────────────────────────────────────────────────────────
 
 Map<String, WidgetBuilder> get appRoutes => {
-  '/splash': (_) => const NetworkWrapper(child: GovPulseSplashScreen()),
+  '/splash': (_) => const GovPulseSplashScreen(),
 
   '/guest': (_) => const NetworkWrapper(child: GuestScreen()),
 
@@ -212,8 +213,16 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
       return _slide(IntroScreen(onSignUpClick: () {}, onLoginClick: () {}));
 
     case '/newsfeed':
-      final username = settings.arguments as String? ?? '';
-      return _slide(NewsFeedScreen(username: username));
+      final args = settings.arguments;
+      String username = '';
+      bool isVerified = false;
+      if (args is Map<String, dynamic>) {
+        username = args['username'] as String? ?? '';
+        isVerified = args['isVerified'] as bool? ?? false;
+      } else if (args is String) {
+        username = args;
+      }
+      return _slide(NewsFeedScreen(username: username, isVerified: isVerified));
 
     case '/settings':
       final username = settings.arguments as String? ?? '';
@@ -222,10 +231,6 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
     case '/edit_profile':
       final username = settings.arguments as String? ?? '';
       return _slide(EditProfileScreen(username: username));
-
-    case '/emergency':
-      final username = settings.arguments as String? ?? '';
-      return _slide(EmergencyScreen(username: username));
 
     case '/report':
       final username = settings.arguments as String? ?? '';
@@ -237,6 +242,37 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
         VerificationPhotoInstructionScreen(
           username: args['username'] as String,
           selectedId: args['selectedId'] as String,
+        ),
+      );
+    case '/emergency':
+      final args = settings.arguments;
+      String username = '';
+      bool isVerified = false;
+
+      // ← parse args the same way newsfeed does
+      if (args is Map<String, dynamic>) {
+        username = args['username'] as String? ?? '';
+        isVerified = args['isVerified'] as bool? ?? false;
+      } else if (args is String) {
+        username = args;
+      }
+
+      return PageRouteBuilder(
+        transitionDuration: const Duration(milliseconds: 400),
+        pageBuilder: (_, _, _) => username.isEmpty
+            ? EmergencyScreen(username: username, isVerified: isVerified)
+            : NetworkWrapper(
+                child: EmergencyScreen(
+                  username: username,
+                  isVerified: isVerified,
+                ),
+              ),
+        transitionsBuilder: (_, anim, _, child) => SlideTransition(
+          position: Tween(
+            begin: const Offset(1, 0),
+            end: Offset.zero,
+          ).animate(CurvedAnimation(parent: anim, curve: Curves.easeInOut)),
+          child: child,
         ),
       );
 
@@ -314,6 +350,10 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
           backImage: args['backImage'] as Uint8List?,
         ),
       );
+
+    case '/my_reports':
+      final username = settings.arguments as String? ?? '';
+      return _slide(MyReportsScreen(username: username));
 
     default:
       if (settings.name != null &&

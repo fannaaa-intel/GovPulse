@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../screen/home_screen.dart';
+import '../../../core/widgets/modal/verification_required_dialog.dart';
 
 // ── Post filter options ────────────────────────────────────────────────
 enum PostFilter {
@@ -17,8 +18,12 @@ enum PostFilter {
 
 class NewsFeedScreen extends StatefulWidget {
   final String username;
-  const NewsFeedScreen({super.key, this.username = ''});
-
+  final bool isVerified;
+  const NewsFeedScreen({
+    super.key,
+    this.username = '',
+    this.isVerified = false,
+  });
   @override
   State<NewsFeedScreen> createState() => _NewsFeedScreenState();
 }
@@ -27,6 +32,7 @@ class NewsFeedScreen extends StatefulWidget {
 class _NewsFeedScreenState extends State<NewsFeedScreen>
     with TickerProviderStateMixin {
   static const int _navIndex = 2;
+  bool get _isVerified => widget.isVerified;
 
   // ── Entry animation controller ────────────────────────────────────────────
   late final AnimationController _entryCtrl;
@@ -374,6 +380,14 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
   }
 
   void _toggleLike(String id) {
+    if (!_isVerified) {
+      showVerificationRequiredDialog(
+        context,
+        message:
+            'Only verified citizens can like comments. Please complete identity verification first.',
+      );
+      return;
+    }
     setState(() {
       if (_likedComments.contains(id)) {
         _likedComments.remove(id);
@@ -384,6 +398,14 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
   }
 
   void _togglePostLike(String postId) {
+    if (!_isVerified) {
+      showVerificationRequiredDialog(
+        context,
+        message:
+            'Only verified citizens can like posts. Please complete identity verification first.',
+      );
+      return;
+    }
     setState(() {
       if (_likedPosts.contains(postId)) {
         _likedPosts.remove(postId);
@@ -524,6 +546,14 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
   }
 
   void _openCommentsSheet(Map<String, dynamic> post, {String? initialReplyTo}) {
+    if (!_isVerified) {
+      showVerificationRequiredDialog(
+        context,
+        message:
+            'Only verified citizens can view and post comments. Please complete identity verification first.',
+      );
+      return;
+    }
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -665,7 +695,7 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
         children: [
           Image.asset(
             'assets/images/newslogo.png',
-            height: width * 0.10,
+            height: width * 0.075,
             fit: BoxFit.contain,
             alignment: Alignment.centerLeft,
             errorBuilder: (context, error, stackTrace) => Icon(
@@ -1094,11 +1124,27 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
           if (index == _navIndex) return;
           if (index == 0) {
             _goToHome();
+          } else if (index == 1) {
+            if (!_isVerified) {
+              showVerificationRequiredDialog(
+                context,
+                message: 'Only verified citizens can access My Reports.',
+              );
+              return;
+            }
+            Navigator.pushNamed(
+              context,
+              '/my_reports',
+              arguments: widget.username,
+            );
           } else if (index == 3) {
             Navigator.pushNamed(
               context,
               '/emergency',
-              arguments: widget.username,
+              arguments: {
+                'username': widget.username,
+                'isVerified': _isVerified,
+              },
             );
           } else if (index == 4) {
             Navigator.pushNamed(

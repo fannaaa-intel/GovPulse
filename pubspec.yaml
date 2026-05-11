@@ -10,7 +10,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-
+  flutter_native_splash: ^2.4.0
   firebase_core: 2.25.4
   firebase_auth: 4.16.0
   google_sign_in: 6.2.1
@@ -41,15 +41,14 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^6.0.0
   flutter_launcher_icons: ^0.13.1
+   
 
-# Force a stable google_maps_flutter_android that does NOT have
-# the broken HeatmapController.java / android-maps-utils 4.x issue
+
 dependency_overrides:
   google_maps_flutter_android: 2.14.10
 
 flutter:
   uses-material-design: true
-
   assets:
     - assets/images/report/
     - assets/images/emergency/

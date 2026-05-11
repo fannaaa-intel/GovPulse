@@ -7,6 +7,7 @@ import '../../../features/home/screen/notification_popup.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/overlay_exit.dart';
 import '../report/report_issue_screen.dart';
+import '../../../core/widgets/modal/verification_required_dialog.dart';
 
 // ── Verification status ───────────────────────────────────────────────────────
 final RouteObserver<ModalRoute<void>> homeRouteObserver =
@@ -36,9 +37,6 @@ class _HomePageState extends State<HomePage>
   String? _facePhotoUrl;
   String? _fullName;
   bool _profileLoading = true;
-  int _reportCount = 0;
-  String? _memberSince;
-  String? _barangay;
 
   // Community Updates scroll tracking
   final ScrollController _communityScrollController = ScrollController();
@@ -161,7 +159,14 @@ class _HomePageState extends State<HomePage>
 
   // ── Navigation helpers ────────────────────────────────────────────────────
   void _goToNewsFeed() {
-    Navigator.pushNamed(context, '/newsfeed', arguments: widget.username);
+    Navigator.pushNamed(
+      context,
+      '/newsfeed',
+      arguments: {
+        'username': widget.username,
+        'isVerified': _verifStatus == _VerifStatus.verified,
+      },
+    );
   }
 
   void _goToReport() {
@@ -196,8 +201,8 @@ class _HomePageState extends State<HomePage>
         return;
       }
 
-      // ── Verification + face photo ──
-      final response = await supabase
+      // ── Step 1: Get verification status ──
+      final verifRow = await supabase
           .from('verification_submissions')
           .select('status, face_photo_path')
           .eq('user_id', uid)
@@ -205,108 +210,111 @@ class _HomePageState extends State<HomePage>
           .limit(1)
           .maybeSingle();
 
-      if (response == null) {
-        if (mounted) setState(() => _profileLoading = false);
-        return;
-      }
-
-      final status = response['status'] as String?;
-      // Name and photo will be loaded from citizen_details below for verified users
-      // For non-verified, fall back to face_photo_path from verification_submissions
-      final fallbackFacePath = response['face_photo_path'] as String?;
-      String? fullName;
-      String? facePath = fallbackFacePath;
-
       _VerifStatus verifStatus = _VerifStatus.none;
-      if (status == 'approved') {
-        verifStatus = _VerifStatus.verified;
-      } else if (status == 'pending') {
-        verifStatus = _VerifStatus.pending;
-      } else {
-        verifStatus = _VerifStatus.none;
+      String? facePath;
+
+      if (verifRow != null) {
+        final status = verifRow['status'] as String?;
+        facePath = verifRow['face_photo_path'] as String?;
+
+        if (status == 'approved') {
+          verifStatus = _VerifStatus.verified;
+        } else if (status == 'pending') {
+          verifStatus = _VerifStatus.pending;
+        } else {
+          verifStatus = _VerifStatus.none;
+        }
       }
 
-      // ── Member since (citizen_details.created_at) ──
-      String? memberSince;
+      // ── Step 2: Branch by status ──
       if (verifStatus == _VerifStatus.verified) {
-        // ── Member since + Barangay + Name + Photo from citizen_details ──
+        // Verified → fetch from citizen_details
+        String? fullName;
+        String? faceUrl;
+
         try {
           final citizenRes = await supabase
               .from('citizen_details')
-              .select(
-                'created_at, address, first_name, last_name, profile_photo_path, barangay',
-              )
+              .select('first_name, last_name, profile_photo_path')
               .eq('user_id', uid)
               .maybeSingle();
 
           if (citizenRes != null) {
-            // Member since
-            if (citizenRes['created_at'] != null) {
-              final dt = DateTime.tryParse(citizenRes['created_at'] as String);
-              if (dt != null) memberSince = dt.year.toString();
-            }
-
-            // Barangay — prefer dedicated barangay column, fallback to address
-            final barangayCol = citizenRes['barangay'] as String? ?? '';
-            final addr = citizenRes['address'] as String? ?? '';
-            if (barangayCol.isNotEmpty) {
-              _barangay = barangayCol;
-            } else if (addr.isNotEmpty) {
-              _barangay = addr.split(',').first.trim();
-            }
-
-            // Name — from citizen_details (reflects edits)
             final firstName = citizenRes['first_name'] as String? ?? '';
             final lastName = citizenRes['last_name'] as String? ?? '';
             fullName = '${firstName.trim()} ${lastName.trim()}'.trim();
             if (fullName.trim().isEmpty) fullName = null;
 
-            // Photo — prefer updated profile_photo_path, fallback to face scan
             final profilePhoto =
                 citizenRes['profile_photo_path'] as String? ?? '';
-            if (profilePhoto.isNotEmpty) {
-              facePath = profilePhoto;
-            }
+            if (profilePhoto.isNotEmpty) facePath = profilePhoto;
           }
         } catch (_) {}
 
-        // ── Report count ──
-        try {
-          final countRes = await supabase
-              .from('reports')
-              .select('id')
-              .eq('user_id', uid);
-          if (mounted) {
-            _reportCount = (countRes as List).length;
-          }
-        } catch (_) {
-          _reportCount = 0;
-        }
-      }
-
-      String? faceUrl;
-      if (facePath != null && facePath.isNotEmpty) {
-        try {
-          faceUrl = await supabase.storage
-              .from('verification-assets')
-              .createSignedUrl(facePath, 3600);
-        } catch (_) {
+        if (facePath != null && facePath.isNotEmpty) {
           try {
-            faceUrl = supabase.storage
+            faceUrl = await supabase.storage
                 .from('verification-assets')
-                .getPublicUrl(facePath);
-          } catch (_) {}
+                .createSignedUrl(facePath, 3600);
+          } catch (_) {
+            try {
+              faceUrl = supabase.storage
+                  .from('verification-assets')
+                  .getPublicUrl(facePath);
+            } catch (_) {}
+          }
         }
-      }
 
-      if (mounted) {
-        setState(() {
-          _verifStatus = verifStatus;
-          _facePhotoUrl = faceUrl;
-          _fullName = (fullName?.isNotEmpty == true) ? fullName : null;
-          _memberSince = memberSince;
-          _profileLoading = false;
-        });
+        if (mounted) {
+          setState(() {
+            _verifStatus = verifStatus;
+            _facePhotoUrl = faceUrl;
+            _fullName = fullName;
+            _profileLoading = false;
+          });
+        }
+      } else {
+        // Pending or None → fetch username/email from profiles table
+        String? fullName;
+        String? faceUrl;
+
+        try {
+          final profileRes = await supabase
+              .from('profiles')
+              .select('username, email')
+              .eq('id', uid)
+              .maybeSingle();
+
+          if (profileRes != null) {
+            // Use username as display name for non-verified users
+            fullName = profileRes['username'] as String?;
+          }
+        } catch (_) {}
+
+        // Still try to show face photo if they submitted one (pending case)
+        if (facePath != null && facePath.isNotEmpty) {
+          try {
+            faceUrl = await supabase.storage
+                .from('verification-assets')
+                .createSignedUrl(facePath, 3600);
+          } catch (_) {
+            try {
+              faceUrl = supabase.storage
+                  .from('verification-assets')
+                  .getPublicUrl(facePath);
+            } catch (_) {}
+          }
+        }
+
+        if (mounted) {
+          setState(() {
+            _verifStatus = verifStatus;
+            _facePhotoUrl = faceUrl;
+            _fullName =
+                fullName; // username from profiles, shown as display name
+            _profileLoading = false;
+          });
+        }
       }
     } catch (_) {
       if (mounted) setState(() => _profileLoading = false);
@@ -480,9 +488,6 @@ class _HomePageState extends State<HomePage>
         ? descNone
         : '';
 
-    // Greeting uses first name only
-    final firstName = _fullName?.split(' ').first ?? widget.username;
-
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: width * 0.04),
       child: AnimatedContainer(
@@ -569,15 +574,6 @@ class _HomePageState extends State<HomePage>
                           ),
                         ],
 
-                        // ── Typing greeting (verified only) ──
-                        if (isVerified && !_profileLoading) ...[
-                          SizedBox(height: width * 0.006),
-                          _GreetingText(
-                            text: 'Welcome back, $firstName!',
-                            width: width,
-                          ),
-                        ],
-
                         // ── Status badge (non-verified only) ──
                         if (!isVerified) ...[
                           SizedBox(height: width * 0.008),
@@ -638,97 +634,6 @@ class _HomePageState extends State<HomePage>
                 _buildNotificationBadge(context, width),
               ],
             ),
-
-            // ── Stats row (verified only) ──
-            if (isVerified && !_profileLoading) ...[
-              SizedBox(height: width * 0.038),
-              Row(
-                children: [
-                  // ── Reports ──
-                  Image.asset(
-                    'assets/images/report/report.png',
-                    width: width * 0.052,
-                    height: width * 0.052,
-                    color: const Color(0xFF3B82F6), // blue — was grey
-                  ),
-                  SizedBox(width: width * 0.014),
-                  Text(
-                    '$_reportCount ${_reportCount == 1 ? 'Report' : 'Reports'}',
-                    style: TextStyle(
-                      fontSize: width * 0.032, // slightly larger
-                      fontWeight: FontWeight.w700, // bolder
-                      color: const Color(0xFF374151),
-                    ),
-                  ),
-
-                  // ── Separator ──
-                  Padding(
-                    padding: EdgeInsets.symmetric(horizontal: width * 0.022),
-                    child: Text(
-                      '·',
-                      style: TextStyle(
-                        fontSize: width * 0.028,
-                        color: const Color(0xFFD1D5DB),
-                      ),
-                    ),
-                  ),
-
-                  // ── Citizen since ──
-                  Image.asset(
-                    'assets/images/calendar.png',
-                    width: width * 0.046,
-                    height: width * 0.046,
-                    color: const Color(0xFF22C55E), // green
-                  ),
-                  SizedBox(width: width * 0.014),
-                  Text(
-                    'Since ${_memberSince ?? '—'}',
-                    style: TextStyle(
-                      fontSize: width * 0.032,
-                      fontWeight: FontWeight.w700,
-                      color: const Color(0xFF374151),
-                    ),
-                  ),
-
-                  // ── Separator ──
-                  Padding(
-                    padding: EdgeInsets.symmetric(horizontal: width * 0.022),
-                    child: Text(
-                      '·',
-                      style: TextStyle(
-                        fontSize: width * 0.028,
-                        color: const Color(0xFFD1D5DB),
-                      ),
-                    ),
-                  ),
-
-                  // ── Barangay ──
-                  Image.asset(
-                    'assets/images/report/location.png',
-                    width: width * 0.048,
-                    height: width * 0.048,
-                    color: const Color(0xFFF59E0B), // amber
-                    errorBuilder: (_, _, _) => Icon(
-                      Icons.location_on_rounded,
-                      size: width * 0.048,
-                      color: const Color(0xFFF59E0B),
-                    ),
-                  ),
-                  SizedBox(width: width * 0.014),
-                  Flexible(
-                    child: Text(
-                      _barangay ?? '—',
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: width * 0.032,
-                        fontWeight: FontWeight.w700,
-                        color: const Color(0xFF374151),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
 
             // ── Description (non-verified) ──
             if (desc.isNotEmpty) ...[
@@ -1282,7 +1187,7 @@ class _HomePageState extends State<HomePage>
         'key': 'chat',
         'iconPath': 'assets/images/customer.png',
         'title': 'Chat with Agent',
-        'accentColor': const Color(0xFF60A5FA),
+        'accentColor': const Color(0xFF3B82F6),
       },
       {
         'key': 'report', // ← THIS is what was missing
@@ -1298,9 +1203,9 @@ class _HomePageState extends State<HomePage>
       },
       {
         'key': 'suggestion',
-        'iconPath': 'assets/images/suggest.png',
+        'iconPath': 'assets/images/suggestions.png',
         'title': 'Suggestion',
-        'accentColor': const Color(0xFFF59E0B),
+        'accentColor': const Color(0xFF60A5FA),
       },
       {
         'key': 'feedback',
@@ -1530,14 +1435,31 @@ class _HomePageState extends State<HomePage>
         selectedFontSize: width * 0.028,
         unselectedFontSize: width * 0.028,
         onTap: (index) {
-          if (index == _navIndex) return;
-          if (index == 2) {
+          if (index == _navIndex) {
+            return;
+          } else if (index == 1) {
+            if (_verifStatus != _VerifStatus.verified) {
+              showVerificationRequiredDialog(
+                context,
+                message: 'Only verified citizens can access My Reports.',
+              );
+              return;
+            }
+            Navigator.pushNamed(
+              context,
+              '/my_reports',
+              arguments: widget.username,
+            );
+          } else if (index == 2) {
             _goToNewsFeed();
           } else if (index == 3) {
             Navigator.pushNamed(
               context,
               '/emergency',
-              arguments: widget.username,
+              arguments: {
+                'username': widget.username,
+                'isVerified': _verifStatus == _VerifStatus.verified,
+              },
             );
           } else if (index == 4) {
             Navigator.pushNamed(

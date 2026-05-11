@@ -43,9 +43,15 @@ class _NetworkWrapperState extends State<NetworkWrapper> {
       final hasConnection = !results.every((r) => r == ConnectivityResult.none);
 
       if (!hasConnection) {
+        // Cancel online debounce, start offline check
         _onlineDebounce?.cancel();
-        _offlineDebounce?.cancel();
-        _offlineDebounce = Timer(const Duration(seconds: 5), () async {
+        _onlineDebounce = null;
+
+        // Don't restart if already counting down
+        if (_offlineDebounce != null) return;
+
+        _offlineDebounce = Timer(const Duration(seconds: 3), () async {
+          _offlineDebounce = null;
           final reallyOffline = !(await hasRealInternet());
           if (mounted && reallyOffline) {
             cachedInternetStatus = false;
@@ -53,9 +59,15 @@ class _NetworkWrapperState extends State<NetworkWrapper> {
           }
         });
       } else {
+        // Cancel offline debounce, start online check
         _offlineDebounce?.cancel();
-        _onlineDebounce?.cancel();
+        _offlineDebounce = null;
+
+        // Don't restart if already counting down
+        if (_onlineDebounce != null) return;
+
         _onlineDebounce = Timer(const Duration(seconds: 2), () async {
+          _onlineDebounce = null;
           final reallyOnline = await hasRealInternet();
           if (mounted && reallyOnline) {
             cachedInternetStatus = true;
@@ -82,19 +94,41 @@ class _NetworkWrapperState extends State<NetworkWrapper> {
 
   @override
   Widget build(BuildContext context) {
-    // Always render the child immediately — no blank screen while checking.
-    // NoInternetScreen overlay is only shown once status is confirmed.
     return Stack(
       children: [
         widget.child,
-        if (_hasInternet != null)
-          NoInternetScreen(
-            hasInternet: _hasInternet!,
-            onContinue: () {
-              cachedInternetStatus = true;
-              setState(() => _hasInternet = true);
-            },
-          ),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 450),
+          reverseDuration: const Duration(milliseconds: 350),
+          transitionBuilder: (child, animation) {
+            return FadeTransition(
+              opacity: animation,
+              child: SlideTransition(
+                position:
+                    Tween<Offset>(
+                      begin: const Offset(0, 0.06),
+                      end: Offset.zero,
+                    ).animate(
+                      CurvedAnimation(
+                        parent: animation,
+                        curve: Curves.easeOutCubic,
+                      ),
+                    ),
+                child: child,
+              ),
+            );
+          },
+          child: _hasInternet == false
+              ? NoInternetScreen(
+                  key: const ValueKey('no-internet'),
+                  hasInternet: false,
+                  onContinue: () {
+                    cachedInternetStatus = true;
+                    setState(() => _hasInternet = true);
+                  },
+                )
+              : const SizedBox.shrink(key: ValueKey('online')),
+        ),
       ],
     );
   }

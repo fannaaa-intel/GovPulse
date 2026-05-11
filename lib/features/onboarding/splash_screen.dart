@@ -2,6 +2,9 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../onboarding/intro_screen.dart';
+import '../../core/network/connectivity_service.dart';
+import '../../core/network/network_wrapper.dart';
+import '../../core/network/no_internet_screen.dart';
 
 /// ===============================
 /// SPLASH SCREEN
@@ -23,6 +26,7 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
   late final Animation<double> _floodProgress;
 
   bool _showLoader = false;
+  bool _goOffline = false;
 
   late final TextPainter _textPainter;
 
@@ -66,7 +70,6 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
     _start();
   }
 
-  /// ✅ Properly placed inside class (NOT inside initState)
   PageRoute _buildIntroRoute() {
     return PageRouteBuilder(
       transitionDuration: const Duration(milliseconds: 900),
@@ -86,7 +89,6 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
           parent: animation,
           curve: Curves.easeInOutCubic,
         );
-
         return FadeTransition(
           opacity: curved,
           child: ScaleTransition(
@@ -100,20 +102,46 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
 
   Future<void> _start() async {
     try {
-      await _controller.forward();
+      bool online = false;
+
+      // Animation + internet check race together
+      await Future.wait<void>([
+        _controller.forward(),
+        hasRealInternet().then((result) => online = result),
+      ]);
 
       if (!mounted) return;
 
-      await Future.delayed(const Duration(milliseconds: 400));
-      if (!mounted) return;
+      // Animation is 100% done — NOW decide
+      cachedInternetStatus = online;
 
+      if (!online) {
+        setState(
+          () => _goOffline = true,
+        ); // shows NoInternetScreen (full replace)
+        _waitForInternet();
+        return;
+      }
+
+      // Online path — show loader then navigate
       setState(() => _showLoader = true);
-
-      await Future.delayed(const Duration(seconds: 2));
+      await Future.delayed(const Duration(milliseconds: 800));
       if (!mounted) return;
 
       Navigator.of(context).pushReplacement(_buildIntroRoute());
     } catch (_) {}
+  }
+
+  Future<void> _waitForInternet() async {
+    while (mounted) {
+      await Future.delayed(const Duration(seconds: 3));
+      final online = await hasRealInternet();
+      if (online && mounted) {
+        cachedInternetStatus = true;
+        Navigator.of(context).pushReplacementNamed('/login');
+        return;
+      }
+    }
   }
 
   @override
@@ -124,10 +152,14 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
 
   @override
   Widget build(BuildContext context) {
+    // ── Offline: shown AFTER animation completes ──
+    if (_goOffline) {
+      return const NoInternetScreen(hasInternet: false, onContinue: null);
+    }
+
     final media = MediaQuery.of(context);
     final size = media.size;
     final safeBottom = media.padding.bottom;
-
     final textRowHeight = _textPainter.height;
 
     return Scaffold(
@@ -175,6 +207,7 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
 
             return Stack(
               children: [
+                // ── Gradient background ──
                 Opacity(
                   opacity: gradientOpacity,
                   child: Container(
@@ -192,6 +225,7 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
                   ),
                 ),
 
+                // ── Radial wave burst ──
                 if (flood > 0 && flood < 1)
                   SizedBox.expand(
                     child: CustomPaint(
@@ -203,11 +237,13 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
                     ),
                   ),
 
+                // ── White fade overlay ──
                 Opacity(
                   opacity: whiteFade,
                   child: Container(color: Colors.white),
                 ),
 
+                // ── Bloom glow ──
                 if (bloomGlow > 0)
                   Positioned.fill(
                     child: IgnorePointer(
@@ -233,6 +269,7 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
                     ),
                   ),
 
+                // ── Logo + text ──
                 Center(
                   child: Transform.translate(
                     offset: Offset(0, translateY),
@@ -308,6 +345,7 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
                   ),
                 ),
 
+                // ── Loader ──
                 if (_showLoader)
                   Align(
                     alignment: Alignment.bottomCenter,

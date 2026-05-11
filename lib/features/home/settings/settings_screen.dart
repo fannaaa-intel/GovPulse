@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../home/screen/home_screen.dart';
+import '../../../core/network/network_wrapper.dart';
+import '../../../core/widgets/modal/verification_required_dialog.dart';
 
 class SettingScreen extends StatefulWidget {
   final String username;
@@ -133,6 +135,19 @@ class _SettingScreenState extends State<SettingScreen>
               : verifRow?['face_photo_path'] as String?;
         }
       } else {
+        // Pending or None → get username from profiles
+        try {
+          final profileRes = await supabase
+              .from('profiles')
+              .select('username, email')
+              .eq('user_id', user.id)
+              .maybeSingle();
+
+          if (profileRes != null) {
+            fullName = profileRes['username'] as String?;
+          }
+        } catch (_) {}
+
         resolvedPhotoPath = verifRow?['face_photo_path'] as String?;
       }
 
@@ -450,16 +465,42 @@ class _SettingScreenState extends State<SettingScreen>
         width * 0.04,
         width * 0.04,
       ),
-      decoration: const BoxDecoration(color: Color(0xFFF3F4F6)),
-      alignment: Alignment.centerLeft,
-      child: Text(
-        'Settings',
-        style: TextStyle(
-          fontSize: width * 0.058,
-          fontWeight: FontWeight.w700,
-          color: AppColors.primaryBlue,
-          letterSpacing: -0.3,
-        ),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Image.asset(
+            'assets/images/newslogo.png',
+            height: width * 0.075,
+            fit: BoxFit.contain,
+            alignment: Alignment.centerLeft,
+            errorBuilder: (_, _, _) => Icon(
+              Icons.account_balance_rounded,
+              size: width * 0.065,
+              color: AppColors.primaryBlue,
+            ),
+          ),
+          SizedBox(height: width * 0.018),
+          Text(
+            'Settings',
+            style: TextStyle(
+              fontSize: width * 0.058,
+              fontWeight: FontWeight.w700,
+              color: AppColors.primaryBlue,
+              letterSpacing: -0.3,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -785,106 +826,10 @@ class _SettingScreenState extends State<SettingScreen>
           width: width,
           onTap: () async {
             if (_verifStatus != 'approved') {
-              final width = MediaQuery.of(context).size.width;
-
-              await showGeneralDialog(
-                context: context,
-                barrierDismissible: true,
-                barrierLabel: '',
-                barrierColor: Colors.black54,
-                transitionDuration: const Duration(milliseconds: 320),
-                transitionBuilder: (ctx, anim, _, child) {
-                  final curve = CurvedAnimation(
-                    parent: anim,
-                    curve: Curves.easeOutCubic,
-                  );
-                  return FadeTransition(
-                    opacity: curve,
-                    child: SlideTransition(
-                      position: Tween<Offset>(
-                        begin: const Offset(0, 0.08),
-                        end: Offset.zero,
-                      ).animate(curve),
-                      child: child,
-                    ),
-                  );
-                },
-                pageBuilder: (ctx, _, _) => Dialog(
-                  backgroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(width * 0.06),
-                  ),
-                  child: Padding(
-                    padding: EdgeInsets.all(width * 0.06),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Icon circle — match the icon's blue color
-                        SizedBox(
-                          width: width * 0.22,
-                          height: width * 0.22,
-                          child: Center(
-                            child: Image.asset(
-                              'assets/images/verification/verified.png',
-                              width: width * 0.18,
-                              height: width * 0.18,
-                              fit: BoxFit.contain,
-                            ),
-                          ),
-                        ),
-                        SizedBox(height: width * 0.045),
-                        Text(
-                          'Verification Required',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: width * 0.052,
-                            fontWeight: FontWeight.w700,
-                            color: const Color(0xFF1F2937),
-                          ),
-                        ),
-                        SizedBox(height: width * 0.022),
-                        Text(
-                          'Only verified citizens can edit their profile '
-                          'information. Please complete the identity '
-                          'verification process first.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: width * 0.034,
-                            color: AppColors.hint,
-                            height: 1.55,
-                          ),
-                        ),
-                        SizedBox(height: width * 0.055),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton(
-                            onPressed: () => Navigator.pop(ctx),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.primaryBlue,
-                              elevation: 0,
-                              padding: EdgeInsets.symmetric(
-                                vertical: width * 0.042,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(
-                                  width * 0.03,
-                                ),
-                              ),
-                            ),
-                            child: Text(
-                              'Got it',
-                              style: TextStyle(
-                                fontSize: width * 0.04,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+              await showVerificationRequiredDialog(
+                context,
+                message:
+                    'Only verified citizens can edit their profile information. Please complete the identity verification process first.',
               );
               return;
             }
@@ -1342,7 +1287,8 @@ class _SettingScreenState extends State<SettingScreen>
               context,
               PageRouteBuilder(
                 transitionDuration: const Duration(milliseconds: 400),
-                pageBuilder: (_, _, _) => HomePage(username: widget.username),
+                pageBuilder: (_, _, _) =>
+                    NetworkWrapper(child: HomePage(username: widget.username)),
                 transitionsBuilder: (_, animation, _, child) {
                   final slide =
                       Tween(
@@ -1359,17 +1305,36 @@ class _SettingScreenState extends State<SettingScreen>
               ),
               (route) => false,
             );
+          } else if (index == 1) {
+            if (_verifStatus != 'approved') {
+              showVerificationRequiredDialog(
+                context,
+                message: 'Only verified citizens can access My Reports.',
+              );
+              return;
+            }
+            Navigator.pushNamed(
+              context,
+              '/my_reports',
+              arguments: widget.username,
+            );
           } else if (index == 2) {
             Navigator.pushNamed(
               context,
               '/newsfeed',
-              arguments: widget.username,
+              arguments: {
+                'username': widget.username,
+                'isVerified': _verifStatus == 'approved',
+              },
             );
           } else if (index == 3) {
             Navigator.pushNamed(
               context,
               '/emergency',
-              arguments: widget.username,
+              arguments: {
+                'username': widget.username,
+                'isVerified': _verifStatus == 'approved',
+              },
             );
           }
         },
