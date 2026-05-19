@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/theme/app_colors.dart';
-import '../screen/home_screen.dart';
+
 import 'package:permission_handler/permission_handler.dart';
 import 'package:android_intent_plus/android_intent.dart';
 import 'package:android_intent_plus/flag.dart';
 import '../../../../core/network/network_wrapper.dart';
-import '../../../../core/widgets/modal/verification_required_dialog.dart';
+
+import '../../../../core/widgets/Home/app_bottom_nav.dart';
 import 'dart:io';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -74,8 +75,6 @@ class _EmergencyScreenState extends State<EmergencyScreen>
   late final Animation<double> _breatheGlow;
 
   late final AnimationController _entryCtrl;
-
-  static const int _navIndex = 3;
 
   static const List<_Category> _categories = [
     _Category(
@@ -400,7 +399,14 @@ class _EmergencyScreenState extends State<EmergencyScreen>
           ],
         ),
       ),
-      bottomNavigationBar: widget.username.isEmpty ? null : _bottomNav(w),
+      bottomNavigationBar: widget.username.isEmpty
+          ? null
+          : AppBottomNav(
+              width: w,
+              currentIndex: 3,
+              username: widget.username,
+              isVerified: widget.isVerified,
+            ),
     );
 
     if (widget.username.isEmpty) return scaffold;
@@ -845,115 +851,6 @@ class _EmergencyScreenState extends State<EmergencyScreen>
                 height: 1.55,
               ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _bottomNav(double w) {
-    final sz = w * .065;
-    Widget ico(String path, bool active) => SizedBox(
-      width: sz,
-      height: sz,
-      child: ColorFiltered(
-        colorFilter: ColorFilter.mode(
-          active ? AppColors.primaryBlue : const Color(0xFF9CA3AF),
-          BlendMode.srcIn,
-        ),
-        child: Image.asset(path),
-      ),
-    );
-
-    return Container(
-      decoration: BoxDecoration(
-        color: _C.surface,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: .07),
-            blurRadius: 12,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: BottomNavigationBar(
-        type: BottomNavigationBarType.fixed,
-        backgroundColor: Colors.white,
-        elevation: 0,
-        currentIndex: _navIndex,
-        selectedItemColor: AppColors.primaryBlue,
-        unselectedItemColor: const Color(0xFF9CA3AF),
-        selectedFontSize: w * .028,
-        unselectedFontSize: w * .028,
-        onTap: (i) {
-          if (i == _navIndex) return;
-          if (i == 0) {
-            Navigator.pushAndRemoveUntil(
-              context,
-              PageRouteBuilder(
-                transitionDuration: const Duration(milliseconds: 400),
-                pageBuilder: (_, _, _) =>
-                    NetworkWrapper(child: HomePage(username: widget.username)),
-                transitionsBuilder: (_, anim, _, child) => SlideTransition(
-                  position: Tween(begin: const Offset(-1, 0), end: Offset.zero)
-                      .animate(
-                        CurvedAnimation(parent: anim, curve: Curves.easeInOut),
-                      ),
-                  child: child,
-                ),
-              ),
-              (r) => false,
-            );
-          } else if (i == 1) {
-            if (!widget.isVerified) {
-              showVerificationRequiredDialog(
-                context,
-                message: 'Only verified citizens can access My Reports.',
-              );
-              return;
-            }
-            Navigator.pushNamed(
-              context,
-              '/my_reports',
-              arguments: widget.username,
-            );
-          } else if (i == 2) {
-            Navigator.pushNamed(
-              context,
-              '/newsfeed',
-              arguments: {
-                'username': widget.username,
-                'isVerified': widget.isVerified,
-              },
-            );
-          } else if (i == 4) {
-            Navigator.pushNamed(
-              context,
-              '/settings',
-              arguments: widget.username,
-            );
-          }
-        },
-        items: [
-          BottomNavigationBarItem(
-            icon: ico('assets/images/home.png', _navIndex == 0),
-            label: 'Home',
-          ),
-          BottomNavigationBarItem(
-            icon: ico('assets/images/my_reports.png', _navIndex == 1),
-            label: 'My Reports',
-          ),
-          BottomNavigationBarItem(
-            icon: ico('assets/images/news_feed.png', _navIndex == 2),
-            label: 'NewsFeed',
-          ),
-          BottomNavigationBarItem(
-            icon: ico('assets/images/emergency.png', _navIndex == 3),
-            label: 'Emergency',
-          ),
-          BottomNavigationBarItem(
-            icon: ico('assets/images/settings.png', _navIndex == 4),
-            label: 'Settings',
           ),
         ],
       ),

@@ -1,12 +1,42 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../theme/app_colors.dart';
 
-Future<void> showVerificationRequiredDialog(
+Future<bool> showVerificationRequiredDialog(
   BuildContext context, {
   String message =
       'Only verified citizens can access this feature. Please complete the identity verification process first.',
+  bool? isVerified,
 }) async {
   final width = MediaQuery.of(context).size.width;
+
+  // ── If caller knows the status, use it directly ───────────────────────────
+  if (isVerified != null) {
+    if (isVerified) return true;
+  } else {
+    // ── No status passed — check Supabase silently (no spinner) ──────────
+    try {
+      final supabase = Supabase.instance.client;
+      final user = supabase.auth.currentUser;
+      if (user != null) {
+        final verifRow = await supabase
+            .from('verification_submissions')
+            .select('status')
+            .eq('user_id', user.id)
+            .order('created_at', ascending: false)
+            .limit(1)
+            .maybeSingle();
+        final verified = (verifRow?['status'] as String?) == 'approved';
+        if (verified) return true;
+      }
+    } catch (_) {
+      return false;
+    }
+  }
+
+  if (!context.mounted) return false;
+
+  // ── Show dialog ───────────────────────────────────────────────────────────
   await showGeneralDialog(
     context: context,
     barrierDismissible: true,
@@ -96,4 +126,6 @@ Future<void> showVerificationRequiredDialog(
       ),
     ),
   );
+
+  return false;
 }

@@ -247,7 +247,6 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
     _startDetectionLoop();
   }
 
-  // ── Supabase upload + insert ───────────────────────────────────────────────
   Future<void> _submitAndGoHome() async {
     setState(() {
       _isUploading = true;
@@ -258,6 +257,22 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
       final supabase = Supabase.instance.client;
       final uid = supabase.auth.currentUser?.id;
       if (uid == null) throw 'Not logged in';
+
+      // ── STEP 3 PRE-CHECK — fail fast before wasting bandwidth ─────────
+      final pendingCheck = await supabase
+          .from('verification_submissions')
+          .select('id, status')
+          .eq('user_id', uid)
+          .or('status.eq.pending,status.eq.approved')
+          .maybeSingle();
+
+      if (pendingCheck != null) {
+        final status = pendingCheck['status'] as String;
+        throw status == 'approved'
+            ? 'You are already verified.'
+            : 'You already have a pending verification. Please wait for our team to review it.';
+      }
+      // ── END PRE-CHECK ─────────────────────────────────────────────────
 
       const bucket = 'verification-assets';
 
@@ -331,7 +346,6 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
         'status': 'pending',
       });
 
-      // After successful submission
       await NotificationService.add(
         AppNotification(
           icon: Icons.hourglass_top_rounded,
@@ -346,18 +360,38 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
 
       if (!mounted) return;
 
-      // ── 5. Show success popup then redirect ───────────────────────────
       setState(() => _isUploading = false);
       _showSuccessDialog();
     } catch (e) {
       if (mounted) {
         setState(() {
           _isUploading = false;
-          // Show the real error so we can diagnose it
-          _uploadError = e.toString();
+          _uploadError = _friendlyError(e); // ← STEP 2 CHANGE
         });
       }
     }
+  }
+
+  // ── STEP 2 HELPER — add this anywhere inside _VerificationFaceScanScreenState ──
+  String _friendlyError(Object e) {
+    final msg = e.toString();
+    if (msg.contains('already verified')) {
+      return 'You are already verified. No need to resubmit.';
+    }
+    if (msg.contains('pending verification') ||
+        msg.contains('already have a pending')) {
+      return 'You already have a pending verification. Please wait for our team to review it.';
+    }
+    if (msg.contains('daily limit') || msg.contains('rate_limit')) {
+      return 'You\'ve reached the daily limit for verification attempts. Please try again tomorrow.';
+    }
+    if (msg.contains('row-level security')) {
+      return 'You don\'t have permission to submit. Please contact support.';
+    }
+    if (msg.contains('storage')) {
+      return 'Could not upload your photos. Check your internet connection and try again.';
+    }
+    return 'Something went wrong. Please try again or contact support.';
   }
 
   // ── Success dialog with countdown ─────────────────────────────────────────

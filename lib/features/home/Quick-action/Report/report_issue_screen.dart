@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../../core/theme/app_colors.dart';
+import '../../../../core/theme/app_colors.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'package:video_thumbnail/video_thumbnail.dart';
@@ -7,14 +7,14 @@ import 'dart:typed_data';
 import 'package:video_player/video_player.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:geocoding/geocoding.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'location_picker_screen.dart';
 
-// ── Aparri bounding box (same values as location_picker_screen.dart) ────────
-const double _riMinLat = 18.2800;
+// ── Aparri bounding box — must match location_picker_screen.dart ──────────
+const double _riMinLat = 18.2750;
 const double _riMaxLat = 18.4200;
-const double _riMinLng = 121.5800;
-const double _riMaxLng = 121.7200;
+const double _riMinLng = 121.5300; // extended west for Binalan/Navagan
+const double _riMaxLng = 121.7450; // extended east for Paddaya/Dodan
 
 bool _withinAparri(double lat, double lng) =>
     lat >= _riMinLat &&
@@ -167,16 +167,21 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
   String? _selectedCategory;
   final TextEditingController _othersCtrl = TextEditingController();
   final TextEditingController _remarksCtrl = TextEditingController();
+  final TextEditingController _streetDetailCtrl = TextEditingController();
   bool _submitAnonymously = false;
+  bool _isSubmitting = false;
   final List<XFile> _attachedFiles = [];
   static const int _maxFiles = 6;
   final ImagePicker _picker = ImagePicker();
   bool _consentInEnglish = true;
 
-  // ── Location state ─────────────────────────────────────────────────────────
+  // ── Location state (barangay-based) ───────────────────────────────────────
   LatLng? _pickedLatLng;
-  String? _pickedAddress; // null = not yet resolved
-  bool _isFetchingLocation = true; // true on first load
+
+  /// null = using GPS current location; non-null = specific barangay name
+  String? _pickedBarangay;
+  bool _useCurrentLocation = false;
+  bool _isFetchingLocation = true;
   bool _locationOutsideAparri = false;
   bool _locationPermissionDenied = false;
 
@@ -242,10 +247,11 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
     _entryCtrl.dispose();
     _othersCtrl.dispose();
     _remarksCtrl.dispose();
+    _streetDetailCtrl.dispose();
     super.dispose();
   }
 
-  // ── GPS auto-fetch ──────────────────────────────────────────────────────────
+  // ── GPS auto-fetch — sets current location (no barangay name needed) ────────
   Future<void> _autoFetchLocation() async {
     if (!mounted) return;
     setState(() {
@@ -255,7 +261,6 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
     });
 
     try {
-      // 1. Check / request permission
       LocationPermission perm = await Geolocator.checkPermission();
       if (perm == LocationPermission.denied) {
         perm = await Geolocator.requestPermission();
@@ -271,7 +276,6 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
         return;
       }
 
-      // 2. Get GPS fix
       final pos = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
@@ -280,68 +284,156 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
       );
 
       if (!mounted) return;
+
       final lat = pos.latitude;
       final lng = pos.longitude;
 
-      // 3. Bounds check
       if (!_withinAparri(lat, lng)) {
         setState(() {
           _isFetchingLocation = false;
           _locationOutsideAparri = true;
           _pickedLatLng = null;
-          _pickedAddress = null;
+          _pickedBarangay = null;
+          _useCurrentLocation = false;
         });
+        _showOutsideAparriDialog();
         return;
       }
 
-      // 4. Reverse-geocode
-      String address = '${lat.toStringAsFixed(5)}, ${lng.toStringAsFixed(5)}';
-      try {
-        final marks = await placemarkFromCoordinates(lat, lng);
-        if (marks.isNotEmpty) {
-          final p = marks.first;
-          final parts = <String>[
-            if ((p.subLocality ?? '').isNotEmpty) p.subLocality!,
-            if ((p.locality ?? '').isNotEmpty) p.locality!,
-            if ((p.administrativeArea ?? '').isNotEmpty) p.administrativeArea!,
-          ];
-          if (parts.isNotEmpty) address = parts.join(', ');
-        }
-      } catch (_) {
-        // Keep coordinate fallback
-      }
-
-      if (mounted) {
-        setState(() {
-          _pickedLatLng = LatLng(lat, lng);
-          _pickedAddress = address;
-          _isFetchingLocation = false;
-          _locationOutsideAparri = false;
-        });
-      }
+      // GPS success — resolve nearest barangay from coordinates
+      final nearestBarangay = findNearestBarangay(LatLng(lat, lng));
+      setState(() {
+        _pickedLatLng = LatLng(lat, lng);
+        _pickedBarangay = nearestBarangay;
+        _useCurrentLocation = true;
+        _isFetchingLocation = false;
+        _locationOutsideAparri = false;
+      });
     } catch (e) {
       debugPrint('GPS error: $e');
       if (mounted) {
         setState(() {
           _isFetchingLocation = false;
-          // Leave address null → user must pick manually
+          _pickedLatLng = null;
+          _pickedBarangay = null;
+          _useCurrentLocation = false;
         });
       }
     }
   }
 
-  // ── Open location picker ────────────────────────────────────────────────────
+  // ── Outside Aparri warning dialog ──────────────────────────────────────────
+  void _showOutsideAparriDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        final width = MediaQuery.of(ctx).size.width;
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    color: Colors.red.withValues(alpha: 0.10),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.wrong_location_rounded,
+                    color: Colors.red,
+                    size: 32,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Outside Aparri',
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF1F2937),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Your current location is outside Aparri, Cagayan. Please pick a barangay manually to set your location.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Color(0xFF6B7280),
+                    height: 1.55,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _openLocationPicker();
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primaryBlue,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    child: const Text(
+                      'Pick a Barangay',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: Text(
+                      'Dismiss',
+                      style: TextStyle(
+                        color: AppColors.primaryBlue,
+                        fontWeight: FontWeight.w600,
+                        fontSize: width * 0.035,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // ── Open location picker (barangay-aware) ──────────────────────────────────
   Future<void> _openLocationPicker() async {
     final result = await Navigator.push<Map<String, dynamic>>(
       context,
       MaterialPageRoute(
-        builder: (_) => LocationPickerScreen(initialPosition: _pickedLatLng),
+        builder: (_) => LocationPickerScreen(
+          initialPosition: _pickedLatLng,
+          initialBarangay: _pickedBarangay, // null when using current location
+        ),
       ),
     );
+
     if (result != null && mounted) {
       setState(() {
-        _pickedLatLng = result['latLng'] as LatLng;
-        _pickedAddress = result['address'] as String;
+        _pickedLatLng = result['latLng'] as LatLng?;
+        _pickedBarangay = result['barangay'] as String?;
+        _useCurrentLocation = result['useCurrentLocation'] as bool;
         _locationOutsideAparri = false;
         _locationPermissionDenied = false;
       });
@@ -404,7 +496,9 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
                     _animated(3, _buildAttachSection(width)),
                     SizedBox(height: width * 0.04),
                     _animated(4, _buildAnonymousSection(width)),
-                    SizedBox(height: width * 0.05),
+                    SizedBox(height: width * 0.035),
+                    _animated(5, _buildDisclaimer(width)),
+                    SizedBox(height: width * 0.045),
                     _animated(5, _buildSubmitButton(width)),
                   ],
                 ),
@@ -438,7 +532,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
               child: Icon(
                 Icons.arrow_back_ios_new_rounded,
                 size: width * 0.045,
-                color: const Color(0xFF374151),
+                color: AppColors.primaryBlue,
               ),
             ),
           ),
@@ -704,10 +798,78 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
 
   // ── 2. Location ─────────────────────────────────────────────────────────────
   Widget _buildLocationSection(double width) {
+    final hasLocation = _pickedLatLng != null && _pickedBarangay != null;
     return _sectionCard(
       width: width,
       title: '2. Location',
-      child: _buildLocationBody(width),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildLocationBody(width),
+
+          // ── Street detail — only visible once a location is resolved ────────
+          if (hasLocation) ...[
+            SizedBox(height: width * 0.04),
+            Row(
+              children: [
+                Text(
+                  'Street Name & Detailed Location',
+                  style: TextStyle(
+                    fontSize: width * 0.032,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF374151),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF3F4F6),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    'Optional',
+                    style: TextStyle(
+                      fontSize: width * 0.026,
+                      color: const Color(0xFF9CA3AF),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: width * 0.02),
+            TextField(
+              controller: _streetDetailCtrl,
+              style: TextStyle(fontSize: width * 0.034),
+              maxLines: 2,
+              decoration: InputDecoration(
+                hintText: 'e.g. Near the church, beside the market…',
+                hintStyle: TextStyle(
+                  fontSize: width * 0.031,
+                  color: const Color(0xFFD1D5DB),
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(width * 0.025),
+                  borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(width * 0.025),
+                  borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(width * 0.025),
+                  borderSide: BorderSide(color: AppColors.primaryBlue),
+                ),
+                contentPadding: EdgeInsets.all(width * 0.035),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 
@@ -744,7 +906,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
           color: Colors.orange,
         ),
         text: 'Location permission denied.',
-        subText: 'Please pick a location manually.',
+        subText: 'Tap to pick a barangay manually.',
         textColor: const Color(0xFF374151),
         onTap: _openLocationPicker,
         actionLabel: 'Pick',
@@ -763,15 +925,36 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
           color: Colors.red,
         ),
         text: 'You are outside Aparri.',
-        subText: 'Please pick a location manually.',
+        subText: 'Tap to pick a barangay manually.',
         textColor: const Color(0xFF374151),
         onTap: _openLocationPicker,
         actionLabel: 'Pick',
       );
     }
 
-    // ── Location resolved (GPS or manually picked) ──
-    if (_pickedLatLng != null && _pickedAddress != null) {
+    // ── Location resolved — GPS current location ──
+    if (_pickedLatLng != null &&
+        _useCurrentLocation &&
+        _pickedBarangay != null) {
+      return _locationTile(
+        width: width,
+        bgColor: const Color(0xFFF0F9FF),
+        borderColor: const Color(0xFFBAE6FD),
+        leading: Icon(
+          Icons.my_location_rounded,
+          size: width * 0.07,
+          color: AppColors.primaryBlue,
+        ),
+        text: _pickedBarangay!,
+        subText: 'Via GPS · Aparri, Cagayan',
+        textColor: const Color(0xFF1F2937),
+        onTap: _openLocationPicker,
+        actionLabel: 'Change',
+      );
+    }
+
+    // ── Location resolved — specific barangay picked manually ──
+    if (_pickedLatLng != null && _pickedBarangay != null) {
       return _locationTile(
         width: width,
         bgColor: const Color(0xFFF9FAFB),
@@ -781,10 +964,8 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
           size: width * 0.07,
           color: AppColors.primaryBlue,
         ),
-        text: _pickedAddress!,
-        subText:
-            '${_pickedLatLng!.latitude.toStringAsFixed(5)}, '
-            '${_pickedLatLng!.longitude.toStringAsFixed(5)}',
+        text: _pickedBarangay!,
+        subText: 'Aparri, Cagayan',
         textColor: const Color(0xFF1F2937),
         onTap: _openLocationPicker,
         actionLabel: 'Change',
@@ -802,7 +983,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
         color: const Color(0xFF9CA3AF),
       ),
       text: 'Could not detect location.',
-      subText: 'Please pick a location manually.',
+      subText: 'Tap to pick a barangay manually.',
       textColor: const Color(0xFF374151),
       onTap: _openLocationPicker,
       actionLabel: 'Pick',
@@ -842,8 +1023,8 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
                 Text(
                   text,
                   style: TextStyle(
-                    fontSize: width * 0.033,
-                    fontWeight: FontWeight.w600,
+                    fontSize: width * 0.035,
+                    fontWeight: FontWeight.w700,
                     color: textColor,
                     height: 1.4,
                   ),
@@ -853,7 +1034,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
                   Text(
                     subText,
                     style: TextStyle(
-                      fontSize: width * 0.027,
+                      fontSize: width * 0.028,
                       color: const Color(0xFF9CA3AF),
                       height: 1.3,
                     ),
@@ -1679,18 +1860,374 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
     );
   }
 
-  // ── Submit ───────────────────────────────────────────────────────────────────
+  // ── Submission ───────────────────────────────────────────────────────────────
+
+  /// Validates all required fields. Returns an error message or null if valid.
+  String? _validate() {
+    if (_selectedCategory == null) {
+      return 'Please select an issue category.';
+    }
+    if (_selectedCategory == 'others' && _othersCtrl.text.trim().isEmpty) {
+      return 'Please specify the category under "Others".';
+    }
+    if (_pickedLatLng == null || _pickedBarangay == null) {
+      return 'Please set a location before submitting.';
+    }
+    if (_attachedFiles.isEmpty) {
+      return 'Please attach at least one photo or video.';
+    }
+    return null;
+  }
+
+  Future<void> _submitReport() async {
+    // ── 1. Validate ──────────────────────────────────────────────────────────
+    final error = _validate();
+    if (error != null) {
+      _showValidationDialog(error);
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+
+    try {
+      final supabase = Supabase.instance.client;
+      final userId = supabase.auth.currentUser!.id;
+
+      // ── 2. Upload media files to storage ─────────────────────────────────
+      final List<String> mediaPaths = [];
+      for (final file in _attachedFiles) {
+        final bytes = await file.readAsBytes();
+        final ext = file.name.split('.').last.toLowerCase();
+        final fileName =
+            '${DateTime.now().millisecondsSinceEpoch}_${file.name}';
+        final storagePath = 'reports/$userId/$fileName';
+
+        final contentType = _isVideo(file) ? 'video/$ext' : 'image/$ext';
+
+        await supabase.storage
+            .from('report-media')
+            .uploadBinary(
+              storagePath,
+              bytes,
+              fileOptions: FileOptions(contentType: contentType),
+            );
+
+        mediaPaths.add(storagePath);
+      }
+
+      // ── 3. Insert report into database ────────────────────────────────────
+      //
+      //  ANONYMOUS LOGIC:
+      //  user_id is ALWAYS stored — admins need it for moderation.
+      //  is_anonymous = true just tells the DB (and the reports_public view)
+      //  to hide the identity when staff/public reads it.
+      //
+      await supabase.from('reports').insert({
+        'user_id': userId, // always stored
+        'category': _selectedCategory,
+        'category_other': _selectedCategory == 'others'
+            ? _othersCtrl.text.trim()
+            : null,
+        'barangay': _pickedBarangay, // e.g. 'Maura'
+        'address':
+            _streetDetailCtrl.text
+                .trim()
+                .isEmpty // optional street
+            ? null
+            : _streetDetailCtrl.text.trim(),
+        'latitude': _pickedLatLng!.latitude,
+        'longitude': _pickedLatLng!.longitude,
+        'remarks': _remarksCtrl.text.trim(),
+        'is_anonymous': _submitAnonymously, // hides identity in UI
+        'media_paths': mediaPaths,
+        'status': 'pending',
+      });
+
+      // ── 4. Success ────────────────────────────────────────────────────────
+      if (mounted) _showSuccessDialog();
+    } on StorageException catch (e) {
+      if (mounted) {
+        _showErrorDialog('File upload failed: ${e.message}');
+      }
+    } on PostgrestException catch (e) {
+      if (mounted) {
+        _showErrorDialog('Could not save report: ${e.message}');
+      }
+    } catch (e) {
+      if (mounted) {
+        _showErrorDialog('Something went wrong. Please try again.');
+      }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  // ── Validation dialog ────────────────────────────────────────────────────────
+  void _showValidationDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.10),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.info_outline_rounded,
+                  color: Colors.orange,
+                  size: 32,
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Incomplete Form',
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF1F2937),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: Color(0xFF6B7280),
+                  height: 1.55,
+                ),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primaryBlue,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  child: const Text(
+                    'OK',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Error dialog ─────────────────────────────────────────────────────────────
+  void _showErrorDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  color: Colors.red.withValues(alpha: 0.10),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.error_outline_rounded,
+                  color: Colors.red,
+                  size: 32,
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Submission Failed',
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF1F2937),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: Color(0xFF6B7280),
+                  height: 1.55,
+                ),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primaryBlue,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  child: const Text(
+                    'Try Again',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Success dialog ───────────────────────────────────────────────────────────
+  void _showSuccessDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  color: Colors.green.withValues(alpha: 0.10),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.check_circle_outline_rounded,
+                  color: Colors.green,
+                  size: 32,
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Report Submitted!',
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF1F2937),
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Your report has been received and is now pending review. Thank you for helping improve our community.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Color(0xFF6B7280),
+                  height: 1.55,
+                ),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(ctx); // close dialog
+                    Navigator.pop(context); // go back to previous screen
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.green,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  child: const Text(
+                    'Done',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDisclaimer(double width) {
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: width * 0.04),
+      child: Container(
+        padding: EdgeInsets.symmetric(
+          horizontal: width * 0.035,
+          vertical: width * 0.030,
+        ),
+        decoration: BoxDecoration(
+          color: AppColors.orange.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(width * 0.03),
+          border: Border.all(color: AppColors.orange.withValues(alpha: 0.30)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              Icons.info_outline_rounded,
+              size: width * 0.05,
+              color: AppColors.orange,
+            ),
+            SizedBox(width: width * 0.025),
+            Expanded(
+              child: Text(
+                'Please ensure that all information submitted is accurate and truthful. False or misleading submissions may result in penalties or possible consequences.',
+                style: TextStyle(
+                  fontSize: width * 0.029,
+                  color: const Color(0xFF7C5500),
+                  height: 1.5,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Submit button ────────────────────────────────────────────────────────────
   Widget _buildSubmitButton(double width) {
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: width * 0.04),
       child: SizedBox(
         width: double.infinity,
         child: ElevatedButton(
-          onPressed: () {
-            // TODO: submission logic
-          },
+          onPressed: _isSubmitting ? null : _submitReport,
           style: ElevatedButton.styleFrom(
             backgroundColor: AppColors.green,
+            disabledBackgroundColor: const Color(0xFFD1D5DB),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(width * 0.035),
             ),
@@ -1698,15 +2235,24 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
             elevation: 2,
             shadowColor: AppColors.green.withValues(alpha: 0.4),
           ),
-          child: Text(
-            'Submit Report',
-            style: TextStyle(
-              fontSize: width * 0.042,
-              fontWeight: FontWeight.w700,
-              color: Colors.white,
-              letterSpacing: 0.3,
-            ),
-          ),
+          child: _isSubmitting
+              ? SizedBox(
+                  height: width * 0.05,
+                  width: width * 0.05,
+                  child: const CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    color: Colors.white,
+                  ),
+                )
+              : Text(
+                  'Submit Report',
+                  style: TextStyle(
+                    fontSize: width * 0.042,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                    letterSpacing: 0.3,
+                  ),
+                ),
         ),
       ),
     );
