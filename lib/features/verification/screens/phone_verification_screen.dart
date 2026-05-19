@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/indicators/double_back_exit.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class PhoneVerificationScreen extends StatefulWidget {
   final String phone;
@@ -99,7 +100,26 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen>
     if (isVerifying || code.length != 6) return;
     setState(() => isVerifying = true);
 
+    // ✅ Capture EVERYTHING that uses context BEFORE any await
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    final supabase = Supabase.instance.client;
+
     try {
+      final canVerify = await supabase.rpc(
+        'can_verify_otp',
+        params: {'p_identifier': widget.phone},
+      );
+
+      if (!mounted) return;
+
+      if (canVerify['allowed'] != true) {
+        messenger.showSnackBar(
+          SnackBar(content: Text(canVerify['message'] as String)),
+        );
+        return;
+      }
+
       final response = await http.post(
         Uri.parse('$_baseUrl/verify-phone-otp'),
         headers: {'Content-Type': 'application/json', 'apikey': _apiKey},
@@ -107,15 +127,29 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen>
       );
 
       final data = jsonDecode(response.body);
+
       if (!mounted) return;
 
       if (response.statusCode == 200 && data['success'] == true) {
-        Navigator.pushReplacementNamed(
-          context,
+        await supabase.rpc(
+          'clear_otp_failures',
+          params: {'p_identifier': widget.phone},
+        );
+
+        if (!mounted) return;
+
+        // ✅ Use the captured navigator, NOT Navigator.pushReplacementNamed(context, ...)
+        navigator.pushReplacementNamed(
           '/phone_verification_success',
           arguments: widget.phone,
         );
       } else {
+        await supabase.rpc(
+          'record_otp_failure',
+          params: {'p_identifier': widget.phone},
+        );
+
+        if (!mounted) return;
         triggerErrorAnimation();
       }
     } catch (_) {
@@ -133,6 +167,19 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen>
     });
 
     try {
+      final supabase = Supabase.instance.client;
+
+      // ── Rate-limit check ─────────────────────────────────────────────
+      final canSend = await supabase.rpc(
+        'can_send_otp',
+        params: {'p_identifier': widget.phone, 'p_purpose': 'signup'},
+      );
+      if (canSend['allowed'] != true) {
+        if (!mounted) return;
+        setState(() => resendStatusText = canSend['message'] as String);
+        return;
+      }
+
       final response = await http.post(
         Uri.parse('$_baseUrl/send-phone-otp'),
         headers: {'Content-Type': 'application/json', 'apikey': _apiKey},

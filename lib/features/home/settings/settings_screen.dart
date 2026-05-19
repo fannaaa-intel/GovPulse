@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../home/screen/home_screen.dart';
-import '../../../core/network/network_wrapper.dart';
+import '../../../core/widgets/loading/loading_overlay.dart';
 import '../../../core/widgets/modal/verification_required_dialog.dart';
+import '../../../core/widgets/Home/app_bottom_nav.dart';
+import '../../auth/services/chat_service.dart';
+import '../../../core/widgets/Home/Chat-bubbles/home_chat_bubble.dart';
 
 class SettingScreen extends StatefulWidget {
   final String username;
@@ -15,7 +17,6 @@ class SettingScreen extends StatefulWidget {
 // ── Changed to TickerProviderStateMixin to support multiple AnimationControllers ──
 class _SettingScreenState extends State<SettingScreen>
     with TickerProviderStateMixin {
-  static const int _navIndex = 4;
   static const String _appVersion = '1.0.0';
 
   // ── Entry animation controller ────────────────────────────────────────────
@@ -338,6 +339,11 @@ class _SettingScreenState extends State<SettingScreen>
 
     try {
       await Supabase.instance.client.auth.signOut();
+
+      // ── Wipe local chat cache + hide floating bubble ──────────────────────
+      await ChatService.I.clearOnLogout();
+      HomeChatBubble.hideGlobal();
+
       if (!mounted) return;
       Navigator.pop(context);
       Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
@@ -405,53 +411,62 @@ class _SettingScreenState extends State<SettingScreen>
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF3F4F6),
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Header slides in first (index 0)
-            _animated(0, _buildHeader(width)),
-            Expanded(
-              child: SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                padding: EdgeInsets.fromLTRB(
-                  width * 0.04,
-                  width * 0.02,
-                  width * 0.04,
-                  width * 0.06,
-                ),
-                child: Column(
-                  children: [
-                    _animated(1, _buildProfileCard(width)),
-                    SizedBox(height: width * 0.04),
-                    _animated(2, _buildAccountSection(width)),
-                    SizedBox(height: width * 0.04),
-                    _animated(3, _buildNotificationsSection(width)),
-                    SizedBox(height: width * 0.04),
-                    _animated(4, _buildPreferencesSection(width)),
-                    SizedBox(height: width * 0.04),
-                    _animated(5, _buildPrivacySection(width)),
-                    SizedBox(height: width * 0.04),
-                    _animated(6, _buildSupportSection(width)),
-                    SizedBox(height: width * 0.04),
-                    _animated(7, _buildLegalSection(width)),
-                    SizedBox(height: width * 0.04),
-                    _animated(8, _buildAboutSection(width)),
-                    SizedBox(height: width * 0.05),
-                    _animated(9, _buildLogoutButton(width)),
-                    SizedBox(height: width * 0.025),
-                    _animated(10, _buildDeleteAccountButton(width)),
-                    SizedBox(height: width * 0.04),
-                    _animated(11, _buildFooter(width)),
-                  ],
+    return LoadingOverlay(
+      isLoading: _profileLoading,
+      skeletonLayout: SkeletonLayout.settings,
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF3F4F6),
+        body: SafeArea(
+          child: Column(
+            children: [
+              // Header slides in first (index 0)
+              _animated(0, _buildHeader(width)),
+              Expanded(
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  padding: EdgeInsets.fromLTRB(
+                    width * 0.04,
+                    width * 0.02,
+                    width * 0.04,
+                    width * 0.06,
+                  ),
+                  child: Column(
+                    children: [
+                      _animated(1, _buildProfileCard(width)),
+                      SizedBox(height: width * 0.04),
+                      _animated(2, _buildAccountSection(width)),
+                      SizedBox(height: width * 0.04),
+                      _animated(3, _buildNotificationsSection(width)),
+                      SizedBox(height: width * 0.04),
+                      _animated(4, _buildPreferencesSection(width)),
+                      SizedBox(height: width * 0.04),
+                      _animated(5, _buildPrivacySection(width)),
+                      SizedBox(height: width * 0.04),
+                      _animated(6, _buildSupportSection(width)),
+                      SizedBox(height: width * 0.04),
+                      _animated(7, _buildLegalSection(width)),
+                      SizedBox(height: width * 0.04),
+                      _animated(8, _buildAboutSection(width)),
+                      SizedBox(height: width * 0.05),
+                      _animated(9, _buildLogoutButton(width)),
+                      SizedBox(height: width * 0.025),
+                      _animated(10, _buildDeleteAccountButton(width)),
+                      SizedBox(height: width * 0.04),
+                      _animated(11, _buildFooter(width)),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
+        ),
+        bottomNavigationBar: AppBottomNav(
+          width: width,
+          currentIndex: 4,
+          username: widget.username,
+          isVerified: _verifStatus == 'approved',
         ),
       ),
-      bottomNavigationBar: _buildBottomNav(width),
     );
   }
 
@@ -824,17 +839,19 @@ class _SettingScreenState extends State<SettingScreen>
           title: 'Edit Profile',
           subtitle: 'Update your personal information',
           width: width,
+          // In _buildAccountSection, replace the Edit Profile onTap:
           onTap: () async {
-            if (_verifStatus != 'approved') {
-              await showVerificationRequiredDialog(
-                context,
-                message:
-                    'Only verified citizens can edit their profile information. Please complete the identity verification process first.',
-              );
-              return;
-            }
+            if (_profileLoading) return;
 
-            // ── Verified → go to Edit Profile ──────────────────────────
+            final approved = await showVerificationRequiredDialog(
+              context,
+              isVerified: _verifStatus == 'approved',
+              message:
+                  'Only verified citizens can edit their profile information. Please complete the identity verification process first.',
+            );
+
+            if (!approved || !mounted) return;
+
             final refreshed = await Navigator.pushNamed(
               context,
               '/edit_profile',
@@ -1241,126 +1258,4 @@ class _SettingScreenState extends State<SettingScreen>
   }
 
   // ── Bottom Navigation ─────────────────────────────────────────────────────
-  Widget _buildBottomNav(double width) {
-    final iconSize = width * 0.065;
-    const activeColor = Color(0xFF60A5FA);
-    const inactiveColor = Color(0xFF9CA3AF);
-
-    Widget buildIcon(String path, bool isActive) {
-      return SizedBox(
-        width: iconSize,
-        height: iconSize,
-        child: ColorFiltered(
-          colorFilter: ColorFilter.mode(
-            isActive ? activeColor : inactiveColor,
-            BlendMode.srcIn,
-          ),
-          child: Image.asset(path),
-        ),
-      );
-    }
-
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 10,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: BottomNavigationBar(
-        type: BottomNavigationBarType.fixed,
-        backgroundColor: Colors.white,
-        elevation: 0,
-        currentIndex: _navIndex,
-        selectedItemColor: activeColor,
-        unselectedItemColor: inactiveColor,
-        selectedFontSize: width * 0.028,
-        unselectedFontSize: width * 0.028,
-        onTap: (index) {
-          if (index == _navIndex) return;
-          if (index == 0) {
-            Navigator.pushAndRemoveUntil(
-              context,
-              PageRouteBuilder(
-                transitionDuration: const Duration(milliseconds: 400),
-                pageBuilder: (_, _, _) =>
-                    NetworkWrapper(child: HomePage(username: widget.username)),
-                transitionsBuilder: (_, animation, _, child) {
-                  final slide =
-                      Tween(
-                        begin: const Offset(-1, 0),
-                        end: Offset.zero,
-                      ).animate(
-                        CurvedAnimation(
-                          parent: animation,
-                          curve: Curves.easeInOut,
-                        ),
-                      );
-                  return SlideTransition(position: slide, child: child);
-                },
-              ),
-              (route) => false,
-            );
-          } else if (index == 1) {
-            if (_verifStatus != 'approved') {
-              showVerificationRequiredDialog(
-                context,
-                message: 'Only verified citizens can access My Reports.',
-              );
-              return;
-            }
-            Navigator.pushNamed(
-              context,
-              '/my_reports',
-              arguments: widget.username,
-            );
-          } else if (index == 2) {
-            Navigator.pushNamed(
-              context,
-              '/newsfeed',
-              arguments: {
-                'username': widget.username,
-                'isVerified': _verifStatus == 'approved',
-              },
-            );
-          } else if (index == 3) {
-            Navigator.pushNamed(
-              context,
-              '/emergency',
-              arguments: {
-                'username': widget.username,
-                'isVerified': _verifStatus == 'approved',
-              },
-            );
-          }
-        },
-        items: [
-          BottomNavigationBarItem(
-            icon: buildIcon('assets/images/home.png', _navIndex == 0),
-            label: 'Home',
-          ),
-          BottomNavigationBarItem(
-            icon: buildIcon('assets/images/my_reports.png', _navIndex == 1),
-            label: 'My Reports',
-          ),
-          BottomNavigationBarItem(
-            icon: buildIcon('assets/images/news_feed.png', _navIndex == 2),
-            label: 'NewsFeed',
-          ),
-          BottomNavigationBarItem(
-            icon: buildIcon('assets/images/emergency.png', _navIndex == 3),
-            label: 'Emergency',
-          ),
-          BottomNavigationBarItem(
-            icon: buildIcon('assets/images/settings.png', _navIndex == 4),
-            label: 'Settings',
-          ),
-        ],
-      ),
-    );
-  }
 }

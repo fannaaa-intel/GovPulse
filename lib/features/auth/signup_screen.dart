@@ -6,7 +6,8 @@ import '../../core/theme/app_colors.dart';
 import '../../core/widgets/indicators/password_strength_bar.dart';
 import '../../features/verification/screens/email_verification_screen.dart';
 import '../../features/onboarding/otp_loading_screen.dart';
-import '../auth/services/auth_service.dart';
+import 'services/auth_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'dart:async';
 import 'dart:convert';
@@ -421,15 +422,27 @@ class _SignupScreenState extends State<SignupScreen> {
                                     builder: (_) => OtpLoadingScreen(
                                       type: "email",
                                       onSendOtp: () async {
+                                        final supabase =
+                                            Supabase.instance.client;
+
+                                        final canSend = await supabase.rpc(
+                                          'can_send_otp',
+                                          params: {
+                                            'p_identifier': email,
+                                            'p_purpose': 'signup',
+                                          },
+                                        );
+                                        if (canSend['allowed'] != true) {
+                                          throw Exception(
+                                            canSend['message'] as String,
+                                          );
+                                        }
+
                                         final response = await http.post(
                                           Uri.parse(
                                             "https://vxvflhjbafqwehuxnmeq.supabase.co/functions/v1/send-email-otp",
                                           ),
-                                          headers: {
-                                            "Content-Type": "application/json",
-                                            "apikey":
-                                                "sb_publishable_ZBDaQPQdFyC5kOHGbce9Ig_zdtIi6Mo",
-                                          },
+                                          headers: {/* unchanged */},
                                           body: jsonEncode({"email": email}),
                                         );
 

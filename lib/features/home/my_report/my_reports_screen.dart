@@ -1,92 +1,62 @@
 import 'package:flutter/material.dart';
 import '../../../../core/theme/app_colors.dart';
-import '../../../../core/network/network_wrapper.dart';
-import '../screen/home_screen.dart';
-
-// ─── Typography & Icon Scale ──────────────────────────────────────────────────
-//
-//   FOCUSED SCALE (95% of UI):
-//     title     w·.038  w700  — section headers, logo brand
-//     subtitle  w·.032  w700  — card titles (category names)
-//     body      w·.030  w500  — descriptions, location, remarks
-//     caption   w·.028  w500  — filter chips, nav labels, counts
-//     label     w·.026  w600  — dates, IDs, KPI labels
-//     tiny      w·.022  w600  — status badges, anonymous tag
-//
-//   ANCHOR SIZE:
-//     heading   w·.048  w800  — the KPI numbers
-//     (page title now uses inline TextStyle matching Settings/Emergency)
-//
-//   KPI & REPORT HISTORY use a scaled-up `ww = w * 1.18` for bigger text
-//   in just those two sections — everything else uses plain `w`.
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../../core/widgets/Home/app_bottom_nav.dart';
 
 class _T {
-  // ── Anchors ──────────────────────────────────────────────────────────────
   static TextStyle heading(double w, {Color? color}) => TextStyle(
     fontSize: w * .048,
     fontWeight: FontWeight.w800,
     height: 1.0,
     color: color,
   );
-
-  // ── Focused scale ────────────────────────────────────────────────────────
   static TextStyle title(double w, {Color? color}) => TextStyle(
     fontSize: w * .038,
     fontWeight: FontWeight.w700,
     height: 1.2,
     color: color,
   );
-
   static TextStyle subtitle(double w, {Color? color}) => TextStyle(
     fontSize: w * .032,
     fontWeight: FontWeight.w700,
     height: 1.3,
     color: color,
   );
-
   static TextStyle body(double w, {Color? color}) => TextStyle(
     fontSize: w * .030,
     fontWeight: FontWeight.w500,
     height: 1.4,
     color: color,
   );
-
   static TextStyle caption(double w, {Color? color}) => TextStyle(
     fontSize: w * .028,
     fontWeight: FontWeight.w500,
     height: 1.3,
     color: color,
   );
-
   static TextStyle label(double w, {Color? color}) => TextStyle(
     fontSize: w * .026,
     fontWeight: FontWeight.w600,
     height: 1.3,
     color: color,
   );
-
   static TextStyle tiny(double w, {Color? color}) => TextStyle(
     fontSize: w * .022,
     fontWeight: FontWeight.w600,
     height: 1.2,
     color: color,
   );
-
-  // ── Icon scale ───────────────────────────────────────────────────────────
-  static double iconXL(double w) => w * .065; // nav, logo fallback
-  static double iconLG(double w) => w * .046; // card icons (KPI, category)
-  static double iconMD(double w) => w * .034; // inline icons in body rows
-  static double iconSM(double w) => w * .028; // small inline icons (dates)
-  static double iconXS(double w) => w * .022; // micro (badges)
-
-  // ── Text colors ──────────────────────────────────────────────────────────
+  static double iconLG(double w) => w * .046;
+  static double iconMD(double w) => w * .034;
+  static double iconSM(double w) => w * .028;
+  static double iconXS(double w) => w * .022;
   static const Color textPrimary = Color(0xFF1F2937);
   static const Color textSecondary = Color(0xFF6B7280);
   static const Color textTertiary = Color(0xFF9CA3AF);
   static const Color textDisabled = Color(0xFFD1D5DB);
 }
 
-// ─── Sample data model ────────────────────────────────────────────────────────
+// ─── Model ────────────────────────────────────────────────────────────────────
 
 enum ReportStatus { pending, underReview, resolved, rejected }
 
@@ -94,108 +64,87 @@ class ReportItem {
   final String id;
   final String category;
   final String categoryKey;
-  final String location;
+  final String? categoryOther;
+  final String? barangay;
+  final String? address;
   final String remarks;
   final ReportStatus status;
   final DateTime dateReported;
   final bool isAnonymous;
+  final List<String> mediaPaths;
 
   const ReportItem({
     required this.id,
     required this.category,
     required this.categoryKey,
-    required this.location,
+    this.categoryOther,
+    this.barangay,
+    this.address,
     required this.remarks,
     required this.status,
     required this.dateReported,
     this.isAnonymous = false,
+    this.mediaPaths = const [],
   });
+
+  factory ReportItem.fromMap(Map<String, dynamic> m) {
+    ReportStatus parseStatus(String? s) {
+      switch (s) {
+        case 'under_review':
+          return ReportStatus.underReview;
+        case 'resolved':
+          return ReportStatus.resolved;
+        case 'rejected':
+          return ReportStatus.rejected;
+        default:
+          return ReportStatus.pending;
+      }
+    }
+
+    final categoryKey = m['category'] as String? ?? 'others';
+    final categoryOther = m['category_other'] as String?;
+    final categoryLabel = _categoryLabel(categoryKey, categoryOther);
+
+    return ReportItem(
+      id: (m['id'] as String).substring(0, 8).toUpperCase(),
+      category: categoryLabel,
+      categoryKey: categoryKey,
+      categoryOther: categoryOther,
+      barangay: m['barangay'] as String?,
+      address: m['address'] as String?,
+      remarks: m['remarks'] as String? ?? '',
+      status: parseStatus(m['status'] as String?),
+      dateReported: DateTime.parse(m['created_at'] as String).toLocal(),
+      isAnonymous: m['is_anonymous'] as bool? ?? false,
+      mediaPaths:
+          (m['media_paths'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          [],
+    );
+  }
+
+  static String _categoryLabel(String key, String? other) {
+    switch (key) {
+      case 'road':
+        return 'Road & Infrastructure';
+      case 'waste':
+        return 'Waste & Garbage';
+      case 'drainage':
+        return 'Drainage & Flooding';
+      case 'streetlight':
+        return 'Streetlight Outage';
+      case 'environment':
+        return 'Environment & Pollution';
+      case 'others':
+        return other?.isNotEmpty == true ? other! : 'Others';
+      default:
+        return key;
+    }
+  }
 }
 
-// ─── Dummy data (replace with real API data) ──────────────────────────────────
-
-final List<ReportItem> _dummyReports = [
-  ReportItem(
-    id: 'RPT-001',
-    category: 'Road & Infrastructure',
-    categoryKey: 'road',
-    location: 'Brgy. Aparri Centro, Aparri',
-    remarks:
-        'Large pothole on the main road causing danger to motorcycles and vehicles passing through.',
-    status: ReportStatus.pending,
-    dateReported: DateTime.now().subtract(const Duration(hours: 3)),
-  ),
-  ReportItem(
-    id: 'RPT-002',
-    category: 'Waste & Garbage',
-    categoryKey: 'waste',
-    location: 'Brgy. Maura, Aparri',
-    remarks:
-        'Uncollected garbage pile near the market area. It has been there for 3 days already.',
-    status: ReportStatus.resolved,
-    dateReported: DateTime.now().subtract(const Duration(days: 2)),
-  ),
-  ReportItem(
-    id: 'RPT-003',
-    category: 'Drainage & Flooding',
-    categoryKey: 'drainage',
-    location: 'Brgy. Punta, Aparri',
-    remarks:
-        'Clogged drainage causing minor flooding every time it rains heavily.',
-    status: ReportStatus.underReview,
-    dateReported: DateTime.now().subtract(const Duration(days: 5)),
-  ),
-  ReportItem(
-    id: 'RPT-004',
-    category: 'Streetlight Outage',
-    categoryKey: 'streetlight',
-    location: 'Brgy. San Antonio, Aparri',
-    remarks: 'Three consecutive streetlights are not functioning for 2 weeks.',
-    status: ReportStatus.resolved,
-    dateReported: DateTime.now().subtract(const Duration(days: 10)),
-  ),
-  ReportItem(
-    id: 'RPT-005',
-    category: 'Environment & Pollution',
-    categoryKey: 'environment',
-    location: 'Brgy. Fugu, Aparri',
-    remarks:
-        'Illegal burning of trash near the residential area causing air pollution.',
-    status: ReportStatus.rejected,
-    dateReported: DateTime.now().subtract(const Duration(days: 20)),
-    isAnonymous: true,
-  ),
-  ReportItem(
-    id: 'RPT-006',
-    category: 'Road & Infrastructure',
-    categoryKey: 'road',
-    location: 'Brgy. Caagaman, Aparri',
-    remarks: 'Broken bridge railing on the old bridge near the barangay hall.',
-    status: ReportStatus.pending,
-    dateReported: DateTime.now().subtract(const Duration(days: 25)),
-  ),
-  ReportItem(
-    id: 'RPT-007',
-    category: 'Waste & Garbage',
-    categoryKey: 'waste',
-    location: 'Brgy. Abagatan, Aparri',
-    remarks: 'Open dumpsite near the school is a health hazard for the kids.',
-    status: ReportStatus.resolved,
-    dateReported: DateTime.now().subtract(const Duration(days: 45)),
-    isAnonymous: true,
-  ),
-  ReportItem(
-    id: 'RPT-008',
-    category: 'Others',
-    categoryKey: 'others',
-    location: 'Brgy. Minanga Norte, Aparri',
-    remarks: 'Stray dogs near the market are becoming a safety concern.',
-    status: ReportStatus.pending,
-    dateReported: DateTime.now().subtract(const Duration(days: 60)),
-  ),
-];
-
-// ─── Filter enum ──────────────────────────────────────────────────────────────
+// ─── Filter ───────────────────────────────────────────────────────────────────
 
 enum ReportFilter { all, today, thisWeek, thisMonth, last3Months }
 
@@ -211,12 +160,14 @@ class MyReportsScreen extends StatefulWidget {
 
 class _MyReportsScreenState extends State<MyReportsScreen>
     with TickerProviderStateMixin {
-  static const int _navIndex = 1;
-
   late final AnimationController _entryCtrl;
-  ReportFilter _activeFilter = ReportFilter.all;
 
-  List<ReportItem> get _allReports => _dummyReports;
+  ReportFilter _activeFilter = ReportFilter.all;
+  List<ReportItem> _allReports = [];
+  bool _isLoading = true;
+  String? _error;
+
+  // ── Derived lists ──────────────────────────────────────────────────────────
 
   List<ReportItem> get _filteredReports {
     final now = DateTime.now();
@@ -229,12 +180,11 @@ class _MyReportsScreenState extends State<MyReportsScreen>
               r.dateReported.month == now.month &&
               r.dateReported.day == now.day;
         case ReportFilter.thisWeek:
-          final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
           final start = DateTime(
-            startOfWeek.year,
-            startOfWeek.month,
-            startOfWeek.day,
-          );
+            now.year,
+            now.month,
+            now.day,
+          ).subtract(Duration(days: now.weekday - 1));
           return r.dateReported.isAfter(
             start.subtract(const Duration(seconds: 1)),
           );
@@ -242,8 +192,9 @@ class _MyReportsScreenState extends State<MyReportsScreen>
           return r.dateReported.year == now.year &&
               r.dateReported.month == now.month;
         case ReportFilter.last3Months:
-          final cutoff = DateTime(now.year, now.month - 3, now.day);
-          return r.dateReported.isAfter(cutoff);
+          return r.dateReported.isAfter(
+            DateTime(now.year, now.month - 3, now.day),
+          );
       }
     }).toList()..sort((a, b) => b.dateReported.compareTo(a.dateReported));
   }
@@ -259,6 +210,8 @@ class _MyReportsScreenState extends State<MyReportsScreen>
   int get _resolvedCount =>
       _allReports.where((r) => r.status == ReportStatus.resolved).length;
 
+  // ── Lifecycle ──────────────────────────────────────────────────────────────
+
   @override
   void initState() {
     super.initState();
@@ -267,9 +220,7 @@ class _MyReportsScreenState extends State<MyReportsScreen>
       duration: const Duration(milliseconds: 900),
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Future.delayed(const Duration(milliseconds: 80), () {
-        if (mounted) _entryCtrl.forward();
-      });
+      _fetchReports();
     });
   }
 
@@ -279,27 +230,84 @@ class _MyReportsScreenState extends State<MyReportsScreen>
     super.dispose();
   }
 
+  // ── Fetch ──────────────────────────────────────────────────────────────────
+
+  Future<void> _fetchReports() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final supabase = Supabase.instance.client;
+      final userId = supabase.auth.currentUser!.id;
+
+      final response = await supabase
+          .from('reports')
+          .select()
+          .eq('user_id', userId)
+          .order('created_at', ascending: false);
+
+      if (!mounted) return;
+
+      final items = (response as List<dynamic>)
+          .map((e) => ReportItem.fromMap(e as Map<String, dynamic>))
+          .toList();
+
+      setState(() {
+        _allReports = items;
+        _isLoading = false;
+      });
+
+      // Run entry animation after data loads
+      _entryCtrl.forward(from: 0);
+    } on PostgrestException catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e.message;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = 'Something went wrong.';
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  // ── Animation helper ───────────────────────────────────────────────────────
+
   Widget _animated(int i, Widget child) {
     final start = (i * 0.12).clamp(0.0, 1.0);
     final end = (start + 0.50).clamp(0.0, 1.0);
-    final fade = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _entryCtrl,
-        curve: Interval(start, end, curve: Curves.easeOut),
+    return FadeTransition(
+      opacity: Tween<double>(begin: 0.0, end: 1.0).animate(
+        CurvedAnimation(
+          parent: _entryCtrl,
+          curve: Interval(start, end, curve: Curves.easeOut),
+        ),
+      ),
+      child: SlideTransition(
+        position:
+            Tween<Offset>(
+              begin: const Offset(0.0, 0.30),
+              end: Offset.zero,
+            ).animate(
+              CurvedAnimation(
+                parent: _entryCtrl,
+                curve: Interval(start, end, curve: Curves.easeOutCubic),
+              ),
+            ),
+        child: child,
       ),
     );
-    final slide =
-        Tween<Offset>(begin: const Offset(0.0, 0.30), end: Offset.zero).animate(
-          CurvedAnimation(
-            parent: _entryCtrl,
-            curve: Interval(start, end, curve: Curves.easeOutCubic),
-          ),
-        );
-    return FadeTransition(
-      opacity: fade,
-      child: SlideTransition(position: slide, child: child),
-    );
   }
+
+  // ── Build ──────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -309,25 +317,108 @@ class _MyReportsScreenState extends State<MyReportsScreen>
       body: SafeArea(
         child: Column(
           children: [
-            _animated(0, _buildTopBar(w)),
-            Expanded(
-              child: SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                child: Column(
-                  children: [
-                    SizedBox(height: w * .04),
-                    _animated(1, _buildKpiRow(w)),
-                    SizedBox(height: w * .04),
-                    _animated(2, _buildReportsSection(w, w * 1.18)),
-                    SizedBox(height: w * .06),
-                  ],
-                ),
-              ),
-            ),
+            _buildTopBar(w),
+            Expanded(child: _buildBody(w)),
           ],
         ),
       ),
-      bottomNavigationBar: _buildBottomNav(w),
+      bottomNavigationBar: AppBottomNav(
+        width: w,
+        currentIndex: 1,
+        username: widget.username,
+        isVerified: true,
+      ),
+    );
+  }
+
+  Widget _buildBody(double w) {
+    // ── Loading ──
+    if (_isLoading) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(color: AppColors.primaryBlue),
+            SizedBox(height: w * .04),
+            Text(
+              'Loading your reports…',
+              style: _T.body(w, color: _T.textSecondary),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // ── Error ──
+    if (_error != null) {
+      return Center(
+        child: Padding(
+          padding: EdgeInsets.all(w * .08),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.cloud_off_rounded,
+                size: w * .18,
+                color: _T.textDisabled,
+              ),
+              SizedBox(height: w * .04),
+              Text(
+                'Failed to load reports',
+                style: _T.title(w, color: _T.textSecondary),
+              ),
+              SizedBox(height: w * .02),
+              Text(
+                _error!,
+                textAlign: TextAlign.center,
+                style: _T.body(w, color: _T.textTertiary),
+              ),
+              SizedBox(height: w * .05),
+              ElevatedButton.icon(
+                onPressed: _fetchReports,
+                icon: const Icon(Icons.refresh_rounded, color: Colors.white),
+                label: const Text(
+                  'Retry',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primaryBlue,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: w * .06,
+                    vertical: w * .035,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // ── Content ──
+    return RefreshIndicator(
+      color: AppColors.primaryBlue,
+      onRefresh: _fetchReports,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(
+          parent: BouncingScrollPhysics(),
+        ),
+        child: Column(
+          children: [
+            SizedBox(height: w * .04),
+            _animated(1, _buildKpiRow(w)),
+            SizedBox(height: w * .04),
+            _animated(2, _buildReportsSection(w, w * 1.18)),
+            SizedBox(height: w * .06),
+          ],
+        ),
+      ),
     );
   }
 
@@ -363,19 +454,33 @@ class _MyReportsScreenState extends State<MyReportsScreen>
             ),
           ),
           SizedBox(height: w * .018),
-          Text(
-            'My Reports',
-            style: TextStyle(
-              fontSize: w * .058,
-              fontWeight: FontWeight.w700,
-              color: AppColors.primaryBlue,
-              letterSpacing: -0.3,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            'Track your submitted issues',
-            style: TextStyle(fontSize: w * .030, color: _T.textSecondary),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'My Reports',
+                      style: TextStyle(
+                        fontSize: w * .058,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.primaryBlue,
+                        letterSpacing: -0.3,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Track your submitted issues',
+                      style: TextStyle(
+                        fontSize: w * .030,
+                        color: _T.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -478,7 +583,7 @@ class _MyReportsScreenState extends State<MyReportsScreen>
     );
   }
 
-  // ── Reports section (filter + list) ───────────────────────────────────────
+  // ── Reports section ────────────────────────────────────────────────────────
 
   Widget _buildReportsSection(double w, double ww) {
     final reports = _filteredReports;
@@ -516,7 +621,7 @@ class _MyReportsScreenState extends State<MyReportsScreen>
                 ],
               ),
             ),
-
+            // Filter chips
             SizedBox(
               height: w * .14,
               child: ListView(
@@ -558,11 +663,9 @@ class _MyReportsScreenState extends State<MyReportsScreen>
                 ],
               ),
             ),
-
             const Divider(height: 1, color: Color(0xFFE5E7EB)),
-
             reports.isEmpty
-                ? _buildEmptyState(w)
+                ? SizedBox(width: double.infinity, child: _buildEmptyState(w))
                 : ListView.separated(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
@@ -619,11 +722,14 @@ class _MyReportsScreenState extends State<MyReportsScreen>
     );
   }
 
-  // ── Report tile ─────────────────────────────────────────────────────────────
+  // ── Report tile ────────────────────────────────────────────────────────────
 
   Widget _buildReportTile(double w, double ww, ReportItem report) {
-    // ── icon size shared by both the SizedBox and Image so they stay in sync
-    final double iconSize = _T.iconLG(ww);
+    final iconSize = _T.iconLG(ww);
+    final location = [
+      report.barangay,
+      report.address,
+    ].where((s) => s != null && s.isNotEmpty).join(', ');
 
     return InkWell(
       onTap: () {
@@ -634,11 +740,10 @@ class _MyReportsScreenState extends State<MyReportsScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Row 1: category image + name + status badge
+            // Row 1: icon + category + status
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ── CHANGED: plain Image.asset, no background container ──
                 SizedBox(
                   width: iconSize,
                   height: iconSize,
@@ -647,6 +752,11 @@ class _MyReportsScreenState extends State<MyReportsScreen>
                     width: iconSize,
                     height: iconSize,
                     fit: BoxFit.contain,
+                    errorBuilder: (_, _, _) => Icon(
+                      Icons.report_outlined,
+                      size: iconSize,
+                      color: _T.textTertiary,
+                    ),
                   ),
                 ),
                 SizedBox(width: w * .03),
@@ -662,7 +772,7 @@ class _MyReportsScreenState extends State<MyReportsScreen>
                       Row(
                         children: [
                           Text(
-                            report.id,
+                            'RPT-${report.id}',
                             style: _T.label(ww, color: _T.textTertiary),
                           ),
                           if (report.isAnonymous) ...[
@@ -708,50 +818,52 @@ class _MyReportsScreenState extends State<MyReportsScreen>
             SizedBox(height: w * .025),
 
             // Row 2: location
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(
-                  Icons.location_on_outlined,
-                  size: _T.iconMD(ww),
-                  color: _T.textTertiary,
-                ),
-                SizedBox(width: w * .015),
-                Expanded(
-                  child: Text(
-                    report.location,
-                    style: _T.body(ww, color: _T.textSecondary),
+            if (location.isNotEmpty)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.location_on_outlined,
+                    size: _T.iconMD(ww),
+                    color: _T.textTertiary,
                   ),
-                ),
-              ],
-            ),
-
-            SizedBox(height: w * .015),
-
-            // Row 3: remarks preview
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(
-                  Icons.notes_rounded,
-                  size: _T.iconMD(ww),
-                  color: _T.textTertiary,
-                ),
-                SizedBox(width: w * .015),
-                Expanded(
-                  child: Text(
-                    report.remarks,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: _T.body(ww, color: _T.textSecondary),
+                  SizedBox(width: w * .015),
+                  Expanded(
+                    child: Text(
+                      '$location, Aparri, Cagayan',
+                      style: _T.body(ww, color: _T.textSecondary),
+                    ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
+
+            if (location.isNotEmpty) SizedBox(height: w * .015),
+
+            // Row 3: remarks
+            if (report.remarks.isNotEmpty)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.notes_rounded,
+                    size: _T.iconMD(ww),
+                    color: _T.textTertiary,
+                  ),
+                  SizedBox(width: w * .015),
+                  Expanded(
+                    child: Text(
+                      report.remarks,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: _T.body(ww, color: _T.textSecondary),
+                    ),
+                  ),
+                ],
+              ),
 
             SizedBox(height: w * .02),
 
-            // Row 4: date
+            // Row 4: date + media count
             Row(
               children: [
                 Icon(
@@ -764,6 +876,19 @@ class _MyReportsScreenState extends State<MyReportsScreen>
                   _formatDate(report.dateReported),
                   style: _T.label(ww, color: _T.textDisabled),
                 ),
+                if (report.mediaPaths.isNotEmpty) ...[
+                  SizedBox(width: w * .03),
+                  Icon(
+                    Icons.attach_file_rounded,
+                    size: _T.iconSM(ww),
+                    color: _T.textDisabled,
+                  ),
+                  SizedBox(width: w * .008),
+                  Text(
+                    '${report.mediaPaths.length} file${report.mediaPaths.length > 1 ? 's' : ''}',
+                    style: _T.label(ww, color: _T.textDisabled),
+                  ),
+                ],
               ],
             ),
           ],
@@ -807,13 +932,17 @@ class _MyReportsScreenState extends State<MyReportsScreen>
     return Padding(
       padding: EdgeInsets.symmetric(vertical: w * .14, horizontal: w * .08),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(Icons.inbox_outlined, size: w * .18, color: _T.textDisabled),
           SizedBox(height: w * .05),
           Text('No Reports Found', style: _T.title(w, color: _T.textSecondary)),
           SizedBox(height: w * .018),
           Text(
-            'No reports match the selected filter.',
+            _activeFilter == ReportFilter.all
+                ? 'You haven\'t submitted any reports yet.'
+                : 'No reports match the selected filter.',
             textAlign: TextAlign.center,
             style: _T.body(w, color: _T.textTertiary),
           ),
@@ -824,7 +953,6 @@ class _MyReportsScreenState extends State<MyReportsScreen>
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
-  // Maps categoryKey → asset path
   String _categoryImagePath(String key) {
     switch (key) {
       case 'road':
@@ -876,14 +1004,11 @@ class _MyReportsScreenState extends State<MyReportsScreen>
   }
 
   String _formatDate(DateTime date) {
-    final now = DateTime.now();
-    final diff = now.difference(date);
-
+    final diff = DateTime.now().difference(date);
     if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
     if (diff.inHours < 24) return '${diff.inHours}h ago';
     if (diff.inDays == 1) return 'Yesterday';
     if (diff.inDays < 7) return '${diff.inDays} days ago';
-
     const months = [
       'Jan',
       'Feb',
@@ -899,109 +1024,5 @@ class _MyReportsScreenState extends State<MyReportsScreen>
       'Dec',
     ];
     return '${months[date.month - 1]} ${date.day}, ${date.year}';
-  }
-
-  // ── Bottom nav ─────────────────────────────────────────────────────────────
-
-  Widget _buildBottomNav(double w) {
-    final sz = _T.iconXL(w);
-
-    Widget ico(String path, bool active) => SizedBox(
-      width: sz,
-      height: sz,
-      child: ColorFiltered(
-        colorFilter: ColorFilter.mode(
-          active ? AppColors.primaryBlue : _T.textTertiary,
-          BlendMode.srcIn,
-        ),
-        child: Image.asset(path),
-      ),
-    );
-
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: .07),
-            blurRadius: 12,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: BottomNavigationBar(
-        type: BottomNavigationBarType.fixed,
-        backgroundColor: Colors.white,
-        elevation: 0,
-        currentIndex: _navIndex,
-        selectedItemColor: AppColors.primaryBlue,
-        unselectedItemColor: _T.textTertiary,
-        selectedFontSize: w * .028,
-        unselectedFontSize: w * .028,
-        selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600),
-        unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500),
-        onTap: (i) {
-          if (i == _navIndex) return;
-          if (i == 0) {
-            Navigator.pushAndRemoveUntil(
-              context,
-              PageRouteBuilder(
-                transitionDuration: const Duration(milliseconds: 400),
-                pageBuilder: (_, _, _) =>
-                    NetworkWrapper(child: HomePage(username: widget.username)),
-                transitionsBuilder: (_, anim, _, child) => SlideTransition(
-                  position: Tween(begin: const Offset(-1, 0), end: Offset.zero)
-                      .animate(
-                        CurvedAnimation(parent: anim, curve: Curves.easeInOut),
-                      ),
-                  child: child,
-                ),
-              ),
-              (r) => false,
-            );
-          } else if (i == 2) {
-            Navigator.pushNamed(
-              context,
-              '/newsfeed',
-              arguments: {'username': widget.username, 'isVerified': true},
-            );
-          } else if (i == 3) {
-            Navigator.pushNamed(
-              context,
-              '/emergency',
-              arguments: {'username': widget.username, 'isVerified': true},
-            );
-          } else if (i == 4) {
-            Navigator.pushNamed(
-              context,
-              '/settings',
-              arguments: widget.username,
-            );
-          }
-        },
-        items: [
-          BottomNavigationBarItem(
-            icon: ico('assets/images/home.png', _navIndex == 0),
-            label: 'Home',
-          ),
-          BottomNavigationBarItem(
-            icon: ico('assets/images/my_reports.png', _navIndex == 1),
-            label: 'My Reports',
-          ),
-          BottomNavigationBarItem(
-            icon: ico('assets/images/news_feed.png', _navIndex == 2),
-            label: 'NewsFeed',
-          ),
-          BottomNavigationBarItem(
-            icon: ico('assets/images/emergency.png', _navIndex == 3),
-            label: 'Emergency',
-          ),
-          BottomNavigationBarItem(
-            icon: ico('assets/images/settings.png', _navIndex == 4),
-            label: 'Settings',
-          ),
-        ],
-      ),
-    );
   }
 }

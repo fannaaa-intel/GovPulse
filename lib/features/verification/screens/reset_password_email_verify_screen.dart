@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../../../features/Resets/reset_new_password_screen.dart';
 import '../../../core/widgets/indicators/double_back_exit.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class ResetPasswordEmailVerifyScreen extends StatefulWidget {
   final String email;
@@ -110,6 +111,19 @@ class _ResetPasswordEmailVerifyScreenState
     });
 
     try {
+      final supabase = Supabase.instance.client;
+
+      // ── Rate-limit check ─────────────────────────────────────────────
+      final canSend = await supabase.rpc(
+        'can_send_otp',
+        params: {'p_identifier': widget.email, 'p_purpose': 'reset'},
+      );
+      if (canSend['allowed'] != true) {
+        if (!mounted) return;
+        setState(() => resendStatusText = canSend['message'] as String);
+        return;
+      }
+
       final response = await http.post(
         Uri.parse(
           "https://vxvflhjbafqwehuxnmeq.supabase.co/functions/v1/reset-send-otp",
@@ -280,42 +294,81 @@ class _ResetPasswordEmailVerifyScreenState
                         ? () async {
                             setState(() => isVerifying = true);
 
-                            final response = await http.post(
-                              Uri.parse(
-                                "https://vxvflhjbafqwehuxnmeq.supabase.co/functions/v1/reset-verify-otp",
-                              ),
-                              headers: {
-                                "Content-Type": "application/json",
-                                "apikey": "eyJhbGciOiJIUzI1Ni...",
-                              },
-                              body: jsonEncode({
-                                "email": widget.email,
-                                "code": code,
-                              }),
-                            );
+                            // ✅ Capture EVERYTHING context-related BEFORE any await
+                            final messenger = ScaffoldMessenger.of(context);
+                            final navigator = Navigator.of(context);
+                            final supabase = Supabase.instance.client;
 
-                            final data = jsonDecode(response.body);
-
-                            if (!context.mounted) return;
-
-                            if (response.statusCode == 200 &&
-                                data["success"] == true) {
-                              final session = data["session"];
-
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => ResetNewPasswordScreen(
-                                    accessToken: session["access_token"],
-                                    refreshToken: session["refresh_token"],
-                                  ),
-                                ),
+                            try {
+                              final canVerify = await supabase.rpc(
+                                'can_verify_otp',
+                                params: {'p_identifier': widget.email},
                               );
-                            } else {
-                              triggerErrorAnimation();
-                            }
 
-                            if (mounted) setState(() => isVerifying = false);
+                              if (!mounted) return;
+
+                              if (canVerify['allowed'] != true) {
+                                messenger.showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      canVerify['message'] as String,
+                                    ),
+                                  ),
+                                );
+                                setState(() => isVerifying = false);
+                                return;
+                              }
+
+                              final response = await http.post(
+                                Uri.parse(
+                                  "https://vxvflhjbafqwehuxnmeq.supabase.co/functions/v1/reset-verify-otp",
+                                ),
+                                headers: {
+                                  "Content-Type": "application/json",
+                                  "apikey": "eyJhbGciOiJIUzI1Ni...",
+                                },
+                                body: jsonEncode({
+                                  "email": widget.email,
+                                  "code": code,
+                                }),
+                              );
+
+                              final data = jsonDecode(response.body);
+
+                              if (!mounted) return;
+
+                              if (response.statusCode == 200 &&
+                                  data["success"] == true) {
+                                await supabase.rpc(
+                                  'clear_otp_failures',
+                                  params: {'p_identifier': widget.email},
+                                );
+
+                                if (!mounted) return;
+
+                                final session = data["session"];
+
+                                // ✅ Use the captured navigator, NOT Navigator.push(context, ...)
+                                navigator.push(
+                                  MaterialPageRoute(
+                                    builder: (_) => ResetNewPasswordScreen(
+                                      accessToken: session["access_token"],
+                                      refreshToken: session["refresh_token"],
+                                    ),
+                                  ),
+                                );
+                              } else {
+                                await supabase.rpc(
+                                  'record_otp_failure',
+                                  params: {'p_identifier': widget.email},
+                                );
+
+                                if (!mounted) return;
+                                triggerErrorAnimation();
+                              }
+                            } finally {
+                              if (mounted) setState(() => isVerifying = false);
+                            }
                           }
                         : null,
                     style: ElevatedButton.styleFrom(

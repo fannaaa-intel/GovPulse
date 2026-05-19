@@ -23,7 +23,7 @@ import '../../features/home/newsfeed/news_feed_screen.dart';
 import '../../features/home/settings/settings_screen.dart';
 import '../../features/home/settings/edit_profile_screen.dart';
 import '../../features/home/emergency/emergency_screen.dart';
-import '../../features/home/report/report_issue_screen.dart';
+import '../../features/home/Quick-action/Report/report_issue_screen.dart';
 import '../../features/profileVerification/verification_screen.dart';
 import '../../features/profileVerification/verification_id_selection_screen.dart';
 import '../../features/profileVerification/verification_photo_instruction_screen.dart';
@@ -33,6 +33,9 @@ import '../../features/profileVerification/verification_review_screen.dart';
 import '../../features/profileVerification/verification_identity_screen.dart';
 import '../../features/profileVerification/verification_face_scan_screen.dart';
 import '../../features/home/my_report/my_reports_screen.dart';
+import '../../features/home/Quick-action/Chat-with-Agent/chat_agent_screen.dart';
+import '../../features/home/Quick-action/Events/events_screen.dart';
+import '../../features/home/Quick-action/Suggestion/suggestion_screen.dart';
 
 /// Required by [MaterialApp.navigatorObservers] for home route tracking.
 final RouteObserver<ModalRoute<void>> homeRouteObserver =
@@ -102,21 +105,27 @@ Map<String, WidgetBuilder> get appRoutes => {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => ResetPasswordEmailScreen(
-              onVerify: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => ResetPasswordEmailVerifyScreen(
-                      email: '',
-                      onVerifiedSuccess: () {},
-                      onTermsClick: () {},
-                      onConditionsClick: () {},
+            builder: (_) => NetworkWrapper(
+              // ← Gap 2 fix
+              child: ResetPasswordEmailScreen(
+                onVerify: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => NetworkWrapper(
+                        // ← Gap 3 fix
+                        child: ResetPasswordEmailVerifyScreen(
+                          email: '',
+                          onVerifiedSuccess: () {},
+                          onTermsClick: () {},
+                          onConditionsClick: () {},
+                        ),
+                      ),
                     ),
-                  ),
-                );
-              },
-              onLogin: () => Navigator.pushNamed(context, '/login'),
+                  );
+                },
+                onLogin: () => Navigator.pushNamed(context, '/login'),
+              ),
             ),
           ),
         );
@@ -125,9 +134,12 @@ Map<String, WidgetBuilder> get appRoutes => {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => ResetPasswordPhoneScreen(
-              onVerify: () {},
-              onLogin: () => Navigator.pushNamed(context, '/login'),
+            builder: (_) => NetworkWrapper(
+              // ← Gap 3 fix
+              child: ResetPasswordPhoneScreen(
+                onVerify: () {},
+                onLogin: () => Navigator.pushNamed(context, '/login'),
+              ),
             ),
           ),
         );
@@ -235,6 +247,10 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
     case '/report':
       final username = settings.arguments as String? ?? '';
       return _slideUp(ReportIssueScreen(username: username));
+
+    case '/suggestion':
+      final username = settings.arguments as String? ?? '';
+      return _slideUp(SuggestionScreen(username: username));
 
     case '/verification_photo_instruction':
       final args = settings.arguments as Map<String, dynamic>;
@@ -354,6 +370,31 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
     case '/my_reports':
       final username = settings.arguments as String? ?? '';
       return _slide(MyReportsScreen(username: username));
+
+    case '/chat':
+      final username = settings.arguments as String? ?? '';
+      return _slideUp(ChatAgentScreen(username: username));
+
+    // In onGenerateRoute or your route generator
+    case '/events':
+      final args = settings.arguments as Map<String, dynamic>? ?? {};
+      return PageRouteBuilder(
+        settings: settings,
+        transitionDuration: const Duration(milliseconds: 420),
+        pageBuilder: (_, _, _) => NetworkWrapper(
+          child: EventsScreen(
+            username: args['username'] as String? ?? '',
+            isVerified: args['isVerified'] as bool? ?? false,
+          ),
+        ),
+        transitionsBuilder: (_, anim, _, child) => SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, 1), // slide up from bottom
+            end: Offset.zero,
+          ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
+          child: child,
+        ),
+      );
 
     default:
       if (settings.name != null &&

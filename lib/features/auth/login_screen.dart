@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/widgets/inputs/rounded_input_field.dart';
 import '../../core/widgets/buttons/social_button.dart';
 import '../../core/theme/app_colors.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class LoginScreen extends StatefulWidget {
   final Future<void> Function(String, String) onLoginClick;
@@ -165,10 +166,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
                                   if (cleanUsername.isEmpty ||
                                       cleanPassword.isEmpty) {
-                                    setState(() {
-                                      errorMessage =
-                                          "Please enter username and password";
-                                    });
+                                    setState(
+                                      () => errorMessage =
+                                          "Please enter username and password",
+                                    );
                                     return;
                                   }
 
@@ -178,6 +179,24 @@ class _LoginScreenState extends State<LoginScreen> {
                                   });
 
                                   try {
+                                    // ── Rate-limit check ────────────────────────────────────────────
+                                    final canLogin = await Supabase
+                                        .instance
+                                        .client
+                                        .rpc(
+                                          'can_attempt_login',
+                                          params: {
+                                            'p_identifier': cleanUsername,
+                                          },
+                                        );
+                                    if (canLogin['allowed'] != true) {
+                                      setState(
+                                        () => errorMessage =
+                                            canLogin['message'] as String,
+                                      );
+                                      return;
+                                    }
+
                                     await widget.onLoginClick(
                                       cleanUsername,
                                       cleanPassword,
@@ -190,9 +209,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                       );
                                     });
                                   } finally {
-                                    setState(() {
-                                      isLoading = false;
-                                    });
+                                    setState(() => isLoading = false);
                                   }
                                 },
                           child: isLoading

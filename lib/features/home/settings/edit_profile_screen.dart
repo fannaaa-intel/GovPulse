@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/loading/loading_overlay.dart';
 
 class EditProfileScreen extends StatefulWidget {
   final String username;
@@ -58,8 +59,10 @@ class _EditProfileScreenState extends State<EditProfileScreen>
   }
 
   @override
+  @override
   void initState() {
     super.initState();
+    _isVerified = true; // pre-set so no flash on load
     _entryCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 700),
@@ -117,6 +120,7 @@ class _EditProfileScreenState extends State<EditProfileScreen>
         return;
       }
 
+      // ── Check verification status ─────────────────────────────────────────
       final verifRow = await supabase
           .from('verification_submissions')
           .select('status, face_photo_path')
@@ -128,45 +132,46 @@ class _EditProfileScreenState extends State<EditProfileScreen>
       final status = verifRow?['status'] as String? ?? 'none';
       final verified = status == 'approved';
 
+      // Always set verified state from fresh DB check
       if (verified) {
+        // ── Fetch ONLY from citizen_details ───────────────────────────────
         final cd = await supabase
             .from('citizen_details')
             .select(
               'first_name, middle_name, last_name, '
-              'address, street, contact_number, created_at, '
-              'profile_photo_path, last_profile_updated_at',
+              'contact_number, barangay, street, '
+              'created_at, profile_photo_path, last_profile_updated_at',
             )
             .eq('user_id', user.id)
             .maybeSingle();
 
         if (cd != null) {
+          // ── Form fields ───────────────────────────────────────────────────
           _firstNameCtrl.text = cd['first_name'] as String? ?? '';
           _middleNameCtrl.text = cd['middle_name'] as String? ?? '';
           _lastNameCtrl.text = cd['last_name'] as String? ?? '';
-          _barangayCtrl.text = cd['address'] as String? ?? '';
-          _streetCtrl.text = cd['street'] as String? ?? '';
           _contactCtrl.text = cd['contact_number'] as String? ?? '';
+          _streetCtrl.text = cd['street'] as String? ?? '';
 
-          // ── Member since ──
+          // ── Barangay — both form field and stats card ─────────────────────
+          final barangayVal = cd['barangay'] as String? ?? '';
+          _barangayCtrl.text = barangayVal;
+          _barangay = barangayVal;
+
+          // ── Member since ──────────────────────────────────────────────────
           final createdRaw = cd['created_at'];
           if (createdRaw != null) {
             final dt = DateTime.tryParse(createdRaw.toString());
             if (dt != null) _memberSince = dt.year.toString();
           }
 
-          // ── Barangay for stats ──
-          final addressVal = cd['address'] as String? ?? '';
-          if (addressVal.isNotEmpty) {
-            _barangay = addressVal.split(',').first.trim();
-          }
-
-          // ── Lock ──
+          // ── 30-day lock ───────────────────────────────────────────────────
           final updatedRaw = cd['last_profile_updated_at'];
           if (updatedRaw != null) {
             _lastProfileUpdatedAt = DateTime.tryParse(updatedRaw.toString());
           }
 
-          // ── Photo ──
+          // ── Profile photo ─────────────────────────────────────────────────
           final photoPath =
               (cd['profile_photo_path'] as String?)?.isNotEmpty == true
               ? cd['profile_photo_path'] as String
@@ -187,7 +192,7 @@ class _EditProfileScreenState extends State<EditProfileScreen>
           }
         }
 
-        // ── Report count ──
+        // ── Report count ──────────────────────────────────────────────────
         try {
           final countRes = await supabase
               .from('reports')
@@ -201,7 +206,7 @@ class _EditProfileScreenState extends State<EditProfileScreen>
 
       if (mounted) {
         setState(() {
-          _isVerified = verified;
+          _isVerified = true; // we only navigate here if approved
           _loading = false;
         });
       }
@@ -278,12 +283,11 @@ class _EditProfileScreenState extends State<EditProfileScreen>
       }
 
       final now = DateTime.now().toUtc().toIso8601String();
-
       final updateData = <String, dynamic>{
         'first_name': _firstNameCtrl.text.trim(),
         'middle_name': _middleNameCtrl.text.trim(),
         'last_name': _lastNameCtrl.text.trim(),
-        'address': _barangayCtrl.text.trim(),
+        'barangay': _barangayCtrl.text.trim(),
         'street': _streetCtrl.text.trim(),
         'contact_number': _contactCtrl.text.trim(),
         'last_profile_updated_at': now,
@@ -322,33 +326,31 @@ class _EditProfileScreenState extends State<EditProfileScreen>
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF3F4F6),
-      body: SafeArea(
-        child: Column(
-          children: [
-            _animated(0, _buildHeader(width)),
-            Expanded(
-              child: _loading
-                  ? const Center(
-                      child: CircularProgressIndicator(
-                        color: AppColors.primaryBlue,
-                      ),
-                    )
-                  : SingleChildScrollView(
-                      physics: const BouncingScrollPhysics(),
-                      padding: EdgeInsets.fromLTRB(
-                        width * 0.04,
-                        width * 0.02,
-                        width * 0.04,
-                        width * 0.08,
-                      ),
-                      child: _isVerified
-                          ? _buildForm(width)
-                          : _buildNotVerifiedState(width),
-                    ),
-            ),
-          ],
+    return LoadingOverlay(
+      isLoading: _loading || _saving,
+      skeletonLayout: _loading ? SkeletonLayout.settings : SkeletonLayout.none,
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF3F4F6),
+        body: SafeArea(
+          child: Column(
+            children: [
+              _animated(0, _buildHeader(width)),
+              Expanded(
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  padding: EdgeInsets.fromLTRB(
+                    width * 0.04,
+                    width * 0.02,
+                    width * 0.04,
+                    width * 0.08,
+                  ),
+                  child: _isVerified
+                      ? _buildForm(width)
+                      : _buildNotVerifiedState(width),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -672,24 +674,15 @@ class _EditProfileScreenState extends State<EditProfileScreen>
                     borderRadius: BorderRadius.circular(width * 0.03),
                   ),
                 ),
-                child: _saving
-                    ? SizedBox(
-                        width: width * 0.05,
-                        height: width * 0.05,
-                        child: const CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 2.5,
-                        ),
-                      )
-                    : Text(
-                        _isLocked ? 'Profile Locked' : 'Save Changes',
-                        style: TextStyle(
-                          fontSize: width * 0.042,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                          letterSpacing: 0.2,
-                        ),
-                      ),
+                child: Text(
+                  _isLocked ? 'Profile Locked' : 'Save Changes',
+                  style: TextStyle(
+                    fontSize: width * 0.042,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                    letterSpacing: 0.2,
+                  ),
+                ),
               ),
             ),
           ),
@@ -959,7 +952,7 @@ class _EditProfileScreenState extends State<EditProfileScreen>
     );
   }
 
-  // ── Stat item — icon → label → value ─────────────────────────────────────
+  // ── Stat item ─────────────────────────────────────────────────────────────
   Widget _buildStatItem({
     required double width,
     required String iconPath,
@@ -981,7 +974,6 @@ class _EditProfileScreenState extends State<EditProfileScreen>
                 Icon(Icons.info_outline, size: width * 0.052, color: iconColor),
           ),
           SizedBox(height: width * 0.010),
-          // ── label first ──
           Text(
             label,
             textAlign: TextAlign.center,
@@ -992,7 +984,6 @@ class _EditProfileScreenState extends State<EditProfileScreen>
             ),
           ),
           SizedBox(height: width * 0.004),
-          // ── value second ──
           Text(
             value,
             maxLines: 1,

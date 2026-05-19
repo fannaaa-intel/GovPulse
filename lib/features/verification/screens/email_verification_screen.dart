@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../../../core/widgets/indicators/double_back_exit.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class VerificationScreen extends StatefulWidget {
   final String email;
@@ -137,6 +138,21 @@ class VerificationScreenState extends State<VerificationScreen>
     setState(() => isVerifying = true);
 
     try {
+      final supabase = Supabase.instance.client;
+
+      // ── Rate-limit check BEFORE submitting ────────────────────────────
+      final canVerify = await supabase.rpc(
+        'can_verify_otp',
+        params: {'p_identifier': widget.email},
+      );
+      if (canVerify['allowed'] != true) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(canVerify['message'] as String)));
+        return;
+      }
+
       final response = await http.post(
         Uri.parse("$baseUrl/verify-email-otp"),
         headers: {
@@ -152,13 +168,22 @@ class VerificationScreenState extends State<VerificationScreen>
       );
 
       final data = jsonDecode(response.body);
-
       if (!mounted) return;
 
       if (response.statusCode == 200 && data["success"] == true) {
+        // ── Wipe failure history on success ─────────────────────────────
+        await supabase.rpc(
+          'clear_otp_failures',
+          params: {'p_identifier': widget.email},
+        );
         widget.onVerifiedSuccess();
       } else {
-        triggerErrorAnimation(); // 🔥 NO SNACKBAR
+        // ── Record the failure ──────────────────────────────────────────
+        await supabase.rpc(
+          'record_otp_failure',
+          params: {'p_identifier': widget.email},
+        );
+        triggerErrorAnimation();
       }
     } catch (_) {
       if (!mounted) return;
@@ -175,6 +200,19 @@ class VerificationScreenState extends State<VerificationScreen>
     });
 
     try {
+      final supabase = Supabase.instance.client;
+
+      // ── Rate-limit check ─────────────────────────────────────────────
+      final canSend = await supabase.rpc(
+        'can_send_otp',
+        params: {'p_identifier': widget.email, 'p_purpose': 'signup'},
+      );
+      if (canSend['allowed'] != true) {
+        if (!mounted) return;
+        setState(() => resendStatusText = canSend['message'] as String);
+        return;
+      }
+
       final response = await http.post(
         Uri.parse("$baseUrl/send-email-otp"),
         headers: {
@@ -185,16 +223,13 @@ class VerificationScreenState extends State<VerificationScreen>
       );
 
       final data = jsonDecode(response.body);
-
       if (!mounted) return;
 
       if (response.statusCode == 200 && data["success"] == true) {
         setState(() => resendStatusText = "Sent successfully");
-
         for (final c in controllers) {
           c.clear();
         }
-
         Future.delayed(const Duration(seconds: 2), () {
           if (!mounted) return;
           setState(() => resendStatusText = "");
