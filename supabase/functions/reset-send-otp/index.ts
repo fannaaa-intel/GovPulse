@@ -2,7 +2,18 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 import { checkRateLimit, getClientIp, rateLimitResponse } from "../_shared/rate-limit.ts"
 
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+}
+
 serve(async (req) => {
+  // Handle preflight
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders })
+  }
+
   try {
     const { email } = await req.json()
 
@@ -10,7 +21,7 @@ serve(async (req) => {
       return new Response(JSON.stringify({
         success: false,
         message: "Email is required"
-      }), { status: 400 })
+      }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } })
     }
 
     const normalizedEmail = email.trim().toLowerCase()
@@ -43,7 +54,7 @@ serve(async (req) => {
       return new Response(JSON.stringify({
         success: false,
         message: "Email not registered"
-      }), { status: 400 })
+      }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } })
     }
 
     const { error: otpError } = await supabase.auth.signInWithOtp({
@@ -55,18 +66,18 @@ serve(async (req) => {
       return new Response(JSON.stringify({
         success: false,
         message: otpError.message
-      }), { status: 400 })
+      }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } })
     }
 
     return new Response(JSON.stringify({
       success: true,
       message: "OTP sent"
-    }), { status: 200 })
+    }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } })
 
-} catch (err) {
-  return new Response(JSON.stringify({
-    success: false,
-    message: (err as Error)?.message || "Server error"
-  }), { status: 500 })
-}
+  } catch (err) {
+    return new Response(JSON.stringify({
+      success: false,
+      message: (err as Error)?.message || "Server error"
+    }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } })
+  }
 })

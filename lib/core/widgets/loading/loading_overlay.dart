@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-enum SkeletonLayout { none, home, settings }
+enum SkeletonLayout { none, home, settings, editProfile }
 
 // ── Main widget ───────────────────────────────────────────────────────────────
 class LoadingOverlay extends StatelessWidget {
@@ -165,9 +165,15 @@ class _SkeletonScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return layout == SkeletonLayout.home
-        ? const _HomeSkeletonScreen()
-        : const _SettingsSkeletonScreen();
+    switch (layout) {
+      case SkeletonLayout.home:
+        return const _HomeSkeletonScreen();
+      case SkeletonLayout.editProfile:
+        return const _EditProfileSkeletonScreen();
+      case SkeletonLayout.settings:
+      case SkeletonLayout.none:
+        return const _SettingsSkeletonScreen();
+    }
   }
 }
 
@@ -496,6 +502,270 @@ class _SettingsSkeletonScreen extends StatelessWidget {
             (_) =>
                 _Shimmer(width: w * 0.10, height: w * 0.10, radius: w * 0.02),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Edit Profile skeleton ─────────────────────────────────────────────────────
+class _EditProfileSkeletonScreen extends StatelessWidget {
+  const _EditProfileSkeletonScreen();
+
+  // Section label placeholder — matches _buildSectionLabel
+  Widget _label(double w) => Padding(
+    padding: EdgeInsets.only(left: w * 0.01),
+    child: _Shimmer(width: w * 0.40, height: w * 0.034, radius: w * 0.01),
+  );
+
+  // Card wrapper — matches _buildCard
+  Widget _card(double w, List<Widget> children) => Container(
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(w * 0.035),
+      border: Border.all(color: const Color(0xFFE5E7EB)),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.04),
+          blurRadius: 8,
+          offset: const Offset(0, 2),
+        ),
+      ],
+    ),
+    child: Column(children: children),
+  );
+
+  // One field row — matches _buildField / _buildLockedDisplayField
+  Widget _fieldRow(double w, {bool showDivider = true}) => Column(
+    children: [
+      Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: w * 0.04,
+          vertical: w * 0.034,
+        ),
+        child: Row(
+          children: [
+            _Shimmer(width: w * 0.095, height: w * 0.095, radius: w * 0.022),
+            SizedBox(width: w * 0.035),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _Shimmer(width: w * 0.28, height: w * 0.026),
+                  SizedBox(height: w * 0.012),
+                  _Shimmer(width: w * 0.52, height: w * 0.038),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      if (showDivider)
+        Padding(
+          padding: EdgeInsets.only(left: w * 0.165),
+          child: const Divider(height: 1, color: Color(0xFFE5E7EB)),
+        ),
+    ],
+  );
+
+  // Section = label + spacing + card with `rows` field rows
+  Widget _section(double w, int rows) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      _label(w),
+      SizedBox(height: w * 0.02),
+      _card(
+        w,
+        List.generate(rows, (i) => _fieldRow(w, showDivider: i < rows - 1)),
+      ),
+    ],
+  );
+
+  // One stat column inside the avatar card — matches _buildStatItem
+  Widget _stat(double w) => Expanded(
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _Shimmer(width: w * 0.052, height: w * 0.052, radius: w * 0.012),
+        SizedBox(height: w * 0.012),
+        _Shimmer(width: w * 0.14, height: w * 0.024),
+        SizedBox(height: w * 0.010),
+        _Shimmer(width: w * 0.10, height: w * 0.032),
+      ],
+    ),
+  );
+
+  VerticalDivider _vDivider(double w) => VerticalDivider(
+    color: const Color(0xFFE5E7EB),
+    thickness: 1,
+    width: w * 0.01,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final w = MediaQuery.of(context).size.width;
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF3F4F6),
+      body: SafeArea(
+        child: Column(
+          children: [
+            // ── Header — matches _buildHeader ─────────────────────────────
+            Container(
+              padding: EdgeInsets.fromLTRB(
+                w * 0.02,
+                w * 0.04,
+                w * 0.04,
+                w * 0.03,
+              ),
+              color: const Color(0xFFF3F4F6),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: w * 0.13,
+                    child: Center(
+                      child: _Shimmer(
+                        width: w * 0.05,
+                        height: w * 0.05,
+                        radius: w * 0.012,
+                      ),
+                    ),
+                  ),
+                  _Shimmer(
+                    width: w * 0.36,
+                    height: w * 0.055,
+                    radius: w * 0.012,
+                  ),
+                ],
+              ),
+            ),
+
+            Expanded(
+              child: SingleChildScrollView(
+                physics: const NeverScrollableScrollPhysics(),
+                padding: EdgeInsets.fromLTRB(
+                  w * 0.04,
+                  w * 0.02,
+                  w * 0.04,
+                  w * 0.08,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // ── Avatar card — matches _buildAvatarCard ───────────
+                    Container(
+                      width: double.infinity,
+                      padding: EdgeInsets.fromLTRB(
+                        w * 0.04,
+                        w * 0.06,
+                        w * 0.04,
+                        w * 0.05,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(w * 0.04),
+                        border: Border.all(color: const Color(0xFFE5E7EB)),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.05),
+                            blurRadius: 10,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        children: [
+                          // Avatar circle
+                          _Shimmer(
+                            width: w * 0.28,
+                            height: w * 0.28,
+                            radius: w * 0.14,
+                          ),
+                          SizedBox(height: w * 0.032),
+                          // Display name
+                          _Shimmer(
+                            width: w * 0.46,
+                            height: w * 0.052,
+                            radius: w * 0.012,
+                          ),
+                          SizedBox(height: w * 0.014),
+                          // Verified badge
+                          _Shimmer(
+                            width: w * 0.34,
+                            height: w * 0.05,
+                            radius: w * 0.06,
+                          ),
+                          SizedBox(height: w * 0.028),
+                          // Stats row
+                          Container(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: w * 0.02,
+                              vertical: w * 0.028,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF9FAFB),
+                              borderRadius: BorderRadius.circular(w * 0.03),
+                              border: Border.all(
+                                color: const Color(0xFFE5E7EB),
+                              ),
+                            ),
+                            child: IntrinsicHeight(
+                              child: Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceEvenly,
+                                children: [
+                                  _stat(w),
+                                  _vDivider(w),
+                                  _stat(w),
+                                  _vDivider(w),
+                                  _stat(w),
+                                ],
+                              ),
+                            ),
+                          ),
+                          SizedBox(height: w * 0.022),
+                          // Photo hint
+                          _Shimmer(width: w * 0.30, height: w * 0.028),
+                        ],
+                      ),
+                    ),
+                    SizedBox(height: w * 0.04),
+
+                    // ── ACCOUNT (Email + Username) ───────────────────────
+                    _section(w, 2),
+                    SizedBox(height: w * 0.04),
+
+                    // ── PERSONAL INFORMATION (First/Middle/Last) ─────────
+                    _section(w, 3),
+                    SizedBox(height: w * 0.04),
+
+                    // ── CONTACT (Mobile) ─────────────────────────────────
+                    _section(w, 1),
+                    SizedBox(height: w * 0.04),
+
+                    // ── ADDRESS (Barangay + Street) ──────────────────────
+                    _section(w, 2),
+                    SizedBox(height: w * 0.04),
+
+                    // ── Save button ──────────────────────────────────────
+                    _Shimmer(
+                      width: double.infinity,
+                      height: w * 0.13,
+                      radius: w * 0.03,
+                    ),
+                    SizedBox(height: w * 0.03),
+
+                    // ── Cancel button ────────────────────────────────────
+                    _Shimmer(
+                      width: double.infinity,
+                      height: w * 0.12,
+                      radius: w * 0.03,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

@@ -328,7 +328,9 @@ class _EditProfileScreenState extends State<EditProfileScreen>
 
     return LoadingOverlay(
       isLoading: _loading || _saving,
-      skeletonLayout: _loading ? SkeletonLayout.settings : SkeletonLayout.none,
+      skeletonLayout: _loading
+          ? SkeletonLayout.editProfile
+          : SkeletonLayout.none,
       child: Scaffold(
         backgroundColor: const Color(0xFFF3F4F6),
         body: SafeArea(

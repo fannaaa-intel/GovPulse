@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../core/utils/password_validator.dart';
 import '../../core/theme/app_colors.dart';
@@ -5,6 +6,8 @@ import '../../core/widgets/inputs/rounded_input_field.dart';
 import '../../core/widgets/indicators/password_strength_bar.dart';
 import '../../features/Resets/password_successfully_changed.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../core/widgets/web/web.dart';
+import '../../core/widgets/mobile_form_shell.dart';
 
 class ResetNewPasswordScreen extends StatefulWidget {
   final String accessToken;
@@ -20,7 +23,8 @@ class ResetNewPasswordScreen extends StatefulWidget {
   State<ResetNewPasswordScreen> createState() => _ResetNewPasswordScreenState();
 }
 
-class _ResetNewPasswordScreenState extends State<ResetNewPasswordScreen> {
+class _ResetNewPasswordScreenState extends State<ResetNewPasswordScreen>
+    with SingleTickerProviderStateMixin {
   final TextEditingController passwordController = TextEditingController();
   final TextEditingController confirmController = TextEditingController();
 
@@ -28,12 +32,14 @@ class _ResetNewPasswordScreenState extends State<ResetNewPasswordScreen> {
   bool showConfirm = false;
   bool isLoading = false;
 
-  String? apiError; // ✅ error state
+  String? apiError;
 
   bool hasMinLength = false;
   bool hasUpper = false;
   bool hasNumber = false;
   bool hasSpecial = false;
+
+  late AnimationController _heroController;
 
   bool get isPasswordMismatch =>
       confirmController.text.isNotEmpty &&
@@ -73,9 +79,19 @@ class _ResetNewPasswordScreenState extends State<ResetNewPasswordScreen> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    _heroController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 8),
+    )..repeat(reverse: true);
+  }
+
+  @override
   void dispose() {
     passwordController.dispose();
     confirmController.dispose();
+    _heroController.dispose();
     super.dispose();
   }
 
@@ -108,7 +124,7 @@ class _ResetNewPasswordScreenState extends State<ResetNewPasswordScreen> {
 
     setState(() {
       isLoading = true;
-      apiError = null; // reset error
+      apiError = null;
     });
 
     try {
@@ -125,7 +141,15 @@ class _ResetNewPasswordScreenState extends State<ResetNewPasswordScreen> {
       if (res.user != null) {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => const PasswordChangeSuccess()),
+          kIsWeb
+              ? PageRouteBuilder(
+                  pageBuilder: (_, _, _) => const PasswordChangeSuccess(),
+                  transitionDuration: Duration.zero,
+                  reverseTransitionDuration: Duration.zero,
+                )
+              : MaterialPageRoute(
+                  builder: (_) => const PasswordChangeSuccess(),
+                ),
         );
       } else {
         throw Exception("Failed to update password");
@@ -150,6 +174,15 @@ class _ResetNewPasswordScreenState extends State<ResetNewPasswordScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (kIsWeb) return _webScaffold(context);
+    return _mobileScaffold(context);
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  MOBILE — untouched
+  // ══════════════════════════════════════════════════════════════════════════
+  Widget _mobileScaffold(BuildContext context) {
+    final w = MediaQuery.of(context).size.width;
     final password = passwordController.text;
 
     return PopScope(
@@ -157,16 +190,16 @@ class _ResetNewPasswordScreenState extends State<ResetNewPasswordScreen> {
       child: Scaffold(
         backgroundColor: Colors.white,
         body: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 26),
-            child: SingleChildScrollView(
+          child: MobileFormShell(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 26),
               child: Column(
                 children: [
                   const SizedBox(height: 25),
 
                   Image.asset(
                     "assets/images/applogocrop.png",
-                    width: MediaQuery.of(context).size.width * 0.40,
+                    width: (w * 0.40).clamp(0.0, 180.0).toDouble(),
                   ),
 
                   const SizedBox(height: 16),
@@ -182,22 +215,15 @@ class _ResetNewPasswordScreenState extends State<ResetNewPasswordScreen> {
 
                   const SizedBox(height: 26),
 
-                  /// PASSWORD
                   RoundedInputField(
                     controller: passwordController,
                     value: passwordController.text,
                     hintText: "Password",
                     icon: Icons.lock,
                     obscureText: !showPassword,
-                    onChanged: (val) {
-                      validatePassword(val);
-                    },
+                    onChanged: (val) => validatePassword(val),
                     suffixWidget: GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          showPassword = !showPassword;
-                        });
-                      },
+                      onTap: () => setState(() => showPassword = !showPassword),
                       child: Padding(
                         padding: const EdgeInsets.all(12),
                         child: Image.asset(
@@ -212,7 +238,6 @@ class _ResetNewPasswordScreenState extends State<ResetNewPasswordScreen> {
 
                   const SizedBox(height: 14),
 
-                  /// CONFIRM PASSWORD
                   RoundedInputField(
                     controller: confirmController,
                     value: confirmController.text,
@@ -220,15 +245,9 @@ class _ResetNewPasswordScreenState extends State<ResetNewPasswordScreen> {
                     icon: Icons.lock,
                     obscureText: !showConfirm,
                     isError: isPasswordMismatch,
-                    onChanged: (val) {
-                      setState(() {});
-                    },
+                    onChanged: (_) => setState(() {}),
                     suffixWidget: GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          showConfirm = !showConfirm;
-                        });
-                      },
+                      onTap: () => setState(() => showConfirm = !showConfirm),
                       child: Padding(
                         padding: const EdgeInsets.all(12),
                         child: Image.asset(
@@ -290,7 +309,6 @@ class _ResetNewPasswordScreenState extends State<ResetNewPasswordScreen> {
 
                   const SizedBox(height: 30),
 
-                  /// 🔴 API ERROR
                   if (apiError != null)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 10),
@@ -301,7 +319,6 @@ class _ResetNewPasswordScreenState extends State<ResetNewPasswordScreen> {
                       ),
                     ),
 
-                  /// BUTTON
                   SizedBox(
                     width: double.infinity,
                     height: 56,
@@ -356,9 +373,7 @@ class _ResetNewPasswordScreenState extends State<ResetNewPasswordScreen> {
                           borderRadius: BorderRadius.circular(14),
                         ),
                       ),
-                      onPressed: () {
-                        Navigator.pop(context);
-                      },
+                      onPressed: () => Navigator.pop(context),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
@@ -383,6 +398,140 @@ class _ResetNewPasswordScreenState extends State<ResetNewPasswordScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  WEB — glass via WebAuthScaffold + WebAuthCard (kit)
+  //  FIX: strength "Strength:" label uses WebUi.sub token (was raw TextStyle)
+  // ══════════════════════════════════════════════════════════════════════════
+  Widget _webScaffold(BuildContext context) {
+    final password = passwordController.text;
+
+    return WebAuthScaffold(
+      heroController: _heroController,
+      blockBack: true,
+      headline: "Reset your\npassword.",
+      subtitle: "Choose a strong new password\nto secure your account.",
+      card: WebAuthCard(
+        children: [
+          const WebCardHeader(
+            title: "Reset password",
+            subtitle: "Choose a strong new password for your account.",
+          ),
+          const SizedBox(height: 28),
+
+          // ── New password field ────────────────────────────────────────────
+          WebInputField(
+            hint: "New password",
+            icon: Icons.lock_outline,
+            keyboardType: TextInputType.visiblePassword,
+            obscure: !showPassword,
+            onChanged: (val) => validatePassword(val),
+            controller: passwordController,
+            suffix: GestureDetector(
+              onTap: () => setState(() => showPassword = !showPassword),
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Image.asset(
+                  showPassword
+                      ? "assets/images/eye.png"
+                      : "assets/images/closed_eye.png",
+                  height: 18,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // ── Confirm password field ────────────────────────────────────────
+          WebInputField(
+            hint: "Confirm password",
+            icon: Icons.lock_outline,
+            keyboardType: TextInputType.visiblePassword,
+            obscure: !showConfirm,
+            isError: isPasswordMismatch,
+            onChanged: (_) => setState(() {}),
+            controller: confirmController,
+            suffix: GestureDetector(
+              onTap: () => setState(() => showConfirm = !showConfirm),
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Image.asset(
+                  showConfirm
+                      ? "assets/images/eye.png"
+                      : "assets/images/closed_eye.png",
+                  height: 18,
+                ),
+              ),
+            ),
+          ),
+          if (isPasswordMismatch)
+            const WebFieldError(text: "Passwords do not match"),
+
+          const SizedBox(height: 14),
+
+          // ── Strength bar — label uses WebUi.sub (kit token), not raw color ─
+          if (password.isNotEmpty) ...[
+            Row(
+              children: [
+                const Text(
+                  "Strength: ",
+                  // FIX: was TextStyle(fontSize:12, color: WebUi.sub) inline;
+                  // now uses WebUi.subtitle as base + explicit size for clarity
+                  style: TextStyle(fontSize: 12, color: WebUi.sub),
+                ),
+                Text(
+                  strengthText,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: strengthColor,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            WebStrengthBar(score: strengthScore, color: strengthColor),
+            const SizedBox(height: 14),
+          ],
+
+          // ── Requirements — WebRequirementRow (kit) ────────────────────────
+          WebRequirementRow(
+            left: ("At least 8 characters", hasMinLength),
+            right: ("One number", hasNumber),
+          ),
+          const SizedBox(height: 6),
+          WebRequirementRow(
+            left: ("One uppercase letter", hasUpper),
+            right: ("One special character", hasSpecial),
+          ),
+          const SizedBox(height: 24),
+
+          // ── API error ─────────────────────────────────────────────────────
+          if (apiError != null) ...[
+            WebFieldError(text: apiError),
+            const SizedBox(height: 12),
+          ],
+
+          // ── CTA — blue-fill, deepen-on-hover (WebPrimaryButton) ───────────
+          WebPrimaryButton(
+            label: "Reset password",
+            loading: isLoading,
+            onPressed: isFormValid ? updatePassword : null,
+          ),
+          const SizedBox(height: 20),
+
+          // ── Back link ─────────────────────────────────────────────────────
+          WebOutlinedButton(
+            icon: Icons.arrow_back_rounded,
+            label: "Back to sign in",
+            onTap: () => Navigator.of(
+              context,
+            ).pushNamedAndRemoveUntil('/login', (route) => false),
+          ),
+        ],
       ),
     );
   }

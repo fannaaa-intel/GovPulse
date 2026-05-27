@@ -437,4 +437,4 @@ class ChatService extends ChangeNotifier {
 
 /// Why a reset happened — used for logging and (eventually) varying welcome
 /// copy ("Welcome back" vs "Starting over").
-enum _ResetReason { logout, idleTimeout, userRequested }
+enum _ResetReason { logout, userRequested }

@@ -2,11 +2,57 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../core/theme/app_colors.dart';
 
+// ── Official 41 mainland barangays of Aparri, Cagayan ──
+const List<String> _aparriBarangays = [
+  'Backiling',
+  'Bangag',
+  'Binalan',
+  'Bisagu',
+  'Bukig',
+  'Bulala Norte',
+  'Bulala Sur',
+  'Caagaman',
+  'Centro 1 (Pob.)',
+  'Centro 2 (Pob.)',
+  'Centro 3 (Pob.)',
+  'Centro 4 (Pob.)',
+  'Centro 5 (Pob.)',
+  'Centro 6 (Pob.)',
+  'Centro 7 (Pob.)',
+  'Centro 8 (Pob.)',
+  'Centro 9 (Pob.)',
+  'Centro 10 (Pob.)',
+  'Centro 11 (Pob.)',
+  'Centro 12 (Pob.)',
+  'Centro 13 (Pob.)',
+  'Centro 14 (Pob.)',
+  'Centro 15 (Pob.)',
+  'Dodan',
+  'Gaddang',
+  'Linao',
+  'Mabanguc',
+  'Macanaya (Pescaria)',
+  'Maura',
+  'Minanga',
+  'Navagan',
+  'Paddaya',
+  'Paruddun Norte',
+  'Paruddun Sur',
+  'Plaza',
+  'Punta',
+  'San Antonio',
+  'Sanja',
+  'Tallungan',
+  'Toran',
+  'Zinarag',
+];
+
 class VerificationReviewScreen extends StatefulWidget {
   final String username;
   final String selectedId;
   final Uint8List? frontImage;
   final Uint8List? backImage;
+  final Map<String, String>? extractedData;
 
   const VerificationReviewScreen({
     super.key,
@@ -14,11 +60,25 @@ class VerificationReviewScreen extends StatefulWidget {
     required this.selectedId,
     this.frontImage,
     this.backImage,
+    this.extractedData,
   });
 
   @override
   State<VerificationReviewScreen> createState() =>
       _VerificationReviewScreenState();
+}
+
+class _UpperCaseTextFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    return newValue.copyWith(
+      text: newValue.text.toUpperCase(),
+      selection: newValue.selection,
+    );
+  }
 }
 
 class _VerificationReviewScreenState extends State<VerificationReviewScreen> {
@@ -36,10 +96,27 @@ class _VerificationReviewScreenState extends State<VerificationReviewScreen> {
   bool _isMale = true;
   bool _confirmPressed = false;
   bool _showErrors = false;
+  bool _showingBack = false; // toggle which side is previewed
 
   @override
   void initState() {
     super.initState();
+
+    // ── Pre-fill from OCR ──────────────────────────────────────
+    final d = widget.extractedData ?? {};
+
+    _idController.text = (d['idNumber'] ?? '').toUpperCase();
+    _firstNameController.text = (d['firstName'] ?? '').toUpperCase();
+    _middleNameController.text = (d['middleName'] ?? '').toUpperCase();
+    _lastNameController.text = (d['lastName'] ?? '').toUpperCase();
+    _birthdateController.text = (d['birthdate'] ?? '').toUpperCase();
+    _birthplaceController.text = (d['birthplace'] ?? '').toUpperCase();
+    _contactController.text = (d['contactNumber'] ?? '').toUpperCase();
+    _streetController.text = (d['street'] ?? '').toUpperCase();
+    if (d['gender'] == 'female') _isMale = false;
+    _status ??= d['civilStatus']; // ← ADD THIS LINE
+    // ───────────────────────────────────────────────────────────
+
     for (final c in [
       _idController,
       _firstNameController,
@@ -435,6 +512,85 @@ class _VerificationReviewScreenState extends State<VerificationReviewScreen> {
     color: active ? AppColors.primaryBlue : AppColors.stroke,
   );
 
+  // ── Landscape ID preview card (rotated to landscape) ───────────────────
+  Widget _buildIdPreview() {
+    final shown = _showingBack ? widget.backImage : widget.frontImage;
+    final hasBoth = widget.frontImage != null && widget.backImage != null;
+
+    // Card is sized for the landscape (rotated) image.
+    // The captured frame was 220x320 portrait (~0.6875 ratio) → rotate 90°
+    // for landscape display: width > height.
+    const previewW = 320.0;
+    const previewH = 200.0;
+
+    return Column(
+      children: [
+        // Side toggle
+        if (hasBoth)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _SideTab(
+                label: "Front",
+                active: !_showingBack,
+                onTap: () => setState(() => _showingBack = false),
+              ),
+              const SizedBox(width: 8),
+              _SideTab(
+                label: "Back",
+                active: _showingBack,
+                onTap: () => setState(() => _showingBack = true),
+              ),
+            ],
+          ),
+        const SizedBox(height: 8),
+
+        // The card — clips a landscape view of the rotated image
+        Container(
+          width: previewW,
+          height: previewH,
+          decoration: BoxDecoration(
+            color: Colors.black,
+            border: Border.all(color: AppColors.primaryBlue, width: 2),
+            borderRadius: BorderRadius.circular(6),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.08),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: shown != null
+                ? Image.memory(
+                    shown,
+                    fit: BoxFit.cover,
+                    width: previewW,
+                    height: previewH,
+                  )
+                : Image.asset(
+                    "assets/images/idcards/phfront.png",
+                    fit: BoxFit.cover,
+                  ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          _showingBack
+              ? "Back of ${widget.selectedId}"
+              : "Front of ${widget.selectedId}",
+          style: const TextStyle(
+            fontSize: 11,
+            color: AppColors.hint,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildForm() => SingleChildScrollView(
     controller: _scrollController,
     padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -449,24 +605,7 @@ class _VerificationReviewScreenState extends State<VerificationReviewScreen> {
           ),
         ),
         const SizedBox(height: 12),
-        Center(
-          child: Container(
-            decoration: BoxDecoration(
-              border: Border.all(color: AppColors.primaryBlue, width: 2),
-            ),
-            child: widget.frontImage != null
-                ? Image.memory(
-                    widget.frontImage!,
-                    height: 95,
-                    fit: BoxFit.fitHeight,
-                  )
-                : Image.asset(
-                    "assets/images/idcards/phfront.png",
-                    height: 95,
-                    fit: BoxFit.fitHeight,
-                  ),
-          ),
-        ),
+        Center(child: _buildIdPreview()),
         const SizedBox(height: 20),
         _sectionLabel("Personal Information"),
         const SizedBox(height: 10),
@@ -609,19 +748,18 @@ class _VerificationReviewScreenState extends State<VerificationReviewScreen> {
         const SizedBox(height: 20),
         _sectionLabel("Home Address"),
         const SizedBox(height: 10),
-        _dropdown("Barangay", _barangay, [
-          "Barangay 1",
-          "Barangay 2",
-          "Barangay 3",
-        ], (v) => setState(() => _barangay = v)),
+        _dropdown(
+          "Barangay",
+          _barangay,
+          _aparriBarangays,
+          (v) => setState(() => _barangay = v),
+        ),
         const SizedBox(height: 10),
         _field(_streetController, "Street / House No."),
         const SizedBox(height: 24),
       ],
     ),
   );
-
-  // ── Bottom confirm button ─────────────────────────────────────────────────
 
   Widget _buildBottomButton(double bottomPadding) => Container(
     padding: EdgeInsets.fromLTRB(16, 8, 16, bottomPadding + 8),
@@ -669,7 +807,7 @@ class _VerificationReviewScreenState extends State<VerificationReviewScreen> {
     ),
   );
 
-  // ── Small reusable widgets ────────────────────────────────────────────────
+  // ── Reusable bits ─────────────────────────────────────────────────────────
 
   Widget _sectionLabel(String t) => Text(
     t,
@@ -680,7 +818,6 @@ class _VerificationReviewScreenState extends State<VerificationReviewScreen> {
     ),
   );
 
-  /// Generic text field with auto-scroll when focused
   Widget _field(
     TextEditingController ctrl,
     String label, {
@@ -704,13 +841,14 @@ class _VerificationReviewScreenState extends State<VerificationReviewScreen> {
       child: TextField(
         controller: ctrl,
         keyboardType: type,
+        textCapitalization: TextCapitalization.characters,
+        inputFormatters: [_UpperCaseTextFormatter()],
         style: const TextStyle(fontSize: 13),
         decoration: _inputDec(label, error: error),
       ),
     );
   }
 
-  /// Dropdown with error highlight support
   Widget _dropdown(
     String label,
     String? value,
@@ -720,6 +858,7 @@ class _VerificationReviewScreenState extends State<VerificationReviewScreen> {
   }) {
     final error = required && _hasDropdownError(value);
     return DropdownButtonFormField<String>(
+      initialValue: value,
       style: const TextStyle(fontSize: 13, color: Colors.black87),
       decoration: _inputDec(label, error: error),
       icon: const Icon(Icons.keyboard_arrow_down, size: 18),
@@ -757,6 +896,42 @@ class _VerificationReviewScreenState extends State<VerificationReviewScreen> {
       ),
     ),
   );
+}
+
+// ── Front/Back tab pill ───────────────────────────────────────────────────────
+class _SideTab extends StatelessWidget {
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+  const _SideTab({
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        decoration: BoxDecoration(
+          color: active ? AppColors.primaryBlue : Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.primaryBlue),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: active ? Colors.white : AppColors.primaryBlue,
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 // ── Animated filled button ────────────────────────────────────────────────────

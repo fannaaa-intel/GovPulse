@@ -5,15 +5,24 @@ import { checkRateLimit, getClientIp, rateLimitResponse } from "../_shared/rate-
 const MAX_FAILURES = 5
 const LOCKOUT_WINDOW = 900
 
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+}
+
 serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders })
+  }
+
   try {
     const { email, code } = await req.json()
 
     if (!email || !code) {
       return new Response(JSON.stringify({
-        success: false,
-        message: "Email and code are required"
-      }), { status: 400 })
+        success: false, message: "Email and code are required"
+      }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } })
     }
 
     const normalizedEmail = email.trim().toLowerCase()
@@ -54,26 +63,20 @@ serve(async (req) => {
     if (error) {
       await rateLimitClient.from("otp_failures").insert({ email: normalizedEmail })
       return new Response(JSON.stringify({
-        success: false,
-        message: error.message
-      }), { status: 400 })
+        success: false, message: error.message
+      }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } })
     }
 
     await rateLimitClient.from("otp_failures").delete().eq("email", normalizedEmail)
 
     return new Response(JSON.stringify({
-      success: true,
-      session: data.session
-    }), {
-      headers: { "Content-Type": "application/json" },
-      status: 200
-    })
+      success: true, session: data.session
+    }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } })
 
   } catch (err) {
     console.error(err)
     return new Response(JSON.stringify({
-      success: false,
-      message: "Server error"
-    }), { status: 500 })
+      success: false, message: "Server error"
+    }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } })
   }
 })

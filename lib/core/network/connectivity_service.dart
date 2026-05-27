@@ -1,8 +1,12 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 /// Checks whether the device has real internet access
 /// by pinging a known lightweight endpoint.
 Future<bool> hasRealInternet() async {
+  // dart:io HttpClient is not available on web — skip the check.
+  if (kIsWeb) return true;
+
   try {
     return await _pingEndpoint(
       'https://clients3.google.com/generate_204',

@@ -1,19 +1,21 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
-import { checkRateLimit, getClientIp, rateLimitResponse } from "../_shared/rate-limit.ts"
+import { checkRateLimit, getClientIp, rateLimitResponse, corsHeaders } from "../_shared/rate-limit.ts"
 
-export const config = {
-  auth: false,
-};
+export const config = { auth: false }
 
 serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders })
+  }
+
   try {
     const body = await req.json().catch(() => null)
 
     if (!body?.email) {
       return new Response(
         JSON.stringify({ exists: false, message: "Email required" }),
-        { status: 400 }
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       )
     }
 
@@ -39,19 +41,19 @@ serve(async (req) => {
     if (error) {
       return new Response(
         JSON.stringify({ exists: false, error: error.message }),
-        { status: 500 }
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       )
     }
 
     return new Response(
       JSON.stringify({ exists: !!data }),
-      { headers: { "Content-Type": "application/json" } }
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     )
 
-} catch (_err) {
+  } catch (_err) {
     return new Response(
       JSON.stringify({ exists: false, message: "Server error" }),
-      { status: 500 }
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     )
   }
 })
