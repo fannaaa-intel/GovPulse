@@ -1,5 +1,11 @@
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+export const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+}
+
 export function getClientIp(req: Request): string {
   return (
     req.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
@@ -41,6 +47,7 @@ export function rateLimitResponse(retryAfter: number, message: string) {
     {
       status: 429,
       headers: {
+        ...corsHeaders,
         "Content-Type": "application/json",
         "Retry-After": String(retryAfter),
       },

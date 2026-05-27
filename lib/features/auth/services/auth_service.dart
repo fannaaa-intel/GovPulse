@@ -1,11 +1,8 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-/// Handles all authentication operations against Supabase.
 class AuthService {
   static final _client = Supabase.instance.client;
 
-  /// Returns true if [email] already exists in the profiles table.
-  /// Used by [SignupScreen] to validate the email field in real time.
   static Future<bool> checkEmailExists(String email) async {
     if (email.trim().isEmpty) return false;
     try {
@@ -20,8 +17,6 @@ class AuthService {
     }
   }
 
-  /// Returns true if [username] already exists in the profiles table.
-  /// Used by [SignupScreen] to validate the username field in real time.
   static Future<bool> checkUsernameExists(String username) async {
     if (username.trim().isEmpty) return false;
     try {
@@ -36,13 +31,6 @@ class AuthService {
     }
   }
 
-  /// Signs in a user by [username] and [password].
-  ///
-  /// Looks up the email address linked to the username, then signs in
-  /// with Supabase email+password auth.
-  ///
-  /// Returns the username string (as stored in the DB) on success.
-  /// Throws a human-readable [String] on any failure.
   static Future<String> login(String username, String password) async {
     final cleanUsername = username.trim();
     final cleanPassword = password.trim();
@@ -51,7 +39,7 @@ class AuthService {
       throw 'Please enter your username and password.';
     }
 
-    // Step 1: Resolve email from username
+    // Step 1 — resolve email from username
     final List result;
     try {
       result = await _client
@@ -68,7 +56,7 @@ class AuthService {
     final email = result[0]['email'] as String;
     final usernameFromDB = result[0]['username'] as String;
 
-    // Step 2: Sign in with email + password
+    // Step 2 — sign in with email + password
     try {
       final authResponse = await _client.auth.signInWithPassword(
         email: email,
@@ -79,8 +67,20 @@ class AuthService {
         throw 'Login failed. Please try again.';
       }
 
+      // Clear failures on success
+      await _client.rpc(
+        'clear_login_failures',
+        params: {'p_identifier': cleanUsername},
+      );
+
       return usernameFromDB;
     } on AuthException catch (e) {
+      // Record failure for lockout tracking
+      await _client.rpc(
+        'record_login_failure',
+        params: {'p_identifier': cleanUsername},
+      );
+
       switch (e.statusCode) {
         case '400':
           throw 'Incorrect password. Please try again.';

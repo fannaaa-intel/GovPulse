@@ -41,6 +41,10 @@ class GovPulseApp extends StatelessWidget {
     return MaterialApp(
       navigatorKey: navigatorKey,
       debugShowCheckedModeBanner: false,
+      color: Colors.white, // ← add
+      theme: ThemeData(
+        scaffoldBackgroundColor: Colors.white, // ← add
+      ),
       navigatorObservers: [homeRouteObserver],
       home: const GovPulseSplashScreen(),
       routes: appRoutes,

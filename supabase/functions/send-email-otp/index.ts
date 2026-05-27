@@ -4,14 +4,24 @@ import { checkRateLimit, getClientIp, rateLimitResponse } from "../_shared/rate-
 
 export const config = { auth: false }
 
-serve(async (req) => {
-  try {
-    const { email } = await req.json()
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+}
 
-    if (!email) {
+serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders })
+  }
+
+  try {
+    const { email, username, password } = await req.json()
+
+    if (!email || !username || !password) {
       return new Response(
-        JSON.stringify({ success: false, message: "Email is required" }),
-        { status: 400 }
+        JSON.stringify({ success: false, message: "Email, username and password are required" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       )
     }
 
@@ -38,24 +48,43 @@ serve(async (req) => {
       return rateLimitResponse(emailLong.retryAfter, "Too many code requests for this email. Try again in an hour.")
     }
 
-    const { error } = await supabase.auth.signInWithOtp({ email: normalizedEmail })
+    // Save signup info to waiting room — no user created yet
+    const { error: pendingError } = await supabase
+      .from("pending_signups")
+      .upsert({ email: normalizedEmail, username, password })
+
+    if (pendingError) {
+      return new Response(
+        JSON.stringify({ success: false, message: "Failed to save signup info" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      )
+    }
+
+    // Send OTP — this creates a ghost auth user but no profile/password yet
+   const { error } = await supabase.auth.signInWithOtp({
+  email: normalizedEmail,
+  options: {
+    shouldCreateUser: true,
+    emailRedirectTo: undefined,  // disables magic link, forces OTP
+  }
+})
 
     if (error) {
       return new Response(
         JSON.stringify({ success: false, message: error.message }),
-        { status: 400 }
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       )
     }
 
     return new Response(
       JSON.stringify({ success: true, message: "OTP sent successfully" }),
-      { headers: { "Content-Type": "application/json" } }
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     )
 
-} catch (_err) {
+  } catch (_err) {
     return new Response(
       JSON.stringify({ success: false, message: "Server error" }),
-      { status: 500 }
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     )
   }
 })

@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:firebase_auth/firebase_auth.dart';
-
 import '../network/network_wrapper.dart';
 import '../../features/onboarding/splash_screen.dart';
 import '../../features/onboarding/intro_screen.dart';
@@ -43,6 +43,26 @@ final RouteObserver<ModalRoute<void>> homeRouteObserver =
 
 // ─── Transition helpers ───────────────────────────────────────────────────────
 
+// Web-only fade: smooth crossfade on web, native platform transition on mobile.
+// This is the ONLY helper that needs the kIsWeb guard — mobile routes are
+// completely unaffected because PageRouteBuilder is only returned on web.
+Route<dynamic> _webFade(Widget child) {
+  if (!kIsWeb) {
+    return MaterialPageRoute(builder: (_) => NetworkWrapper(child: child));
+  }
+  return PageRouteBuilder(
+    transitionDuration: const Duration(milliseconds: 200),
+    reverseTransitionDuration: const Duration(milliseconds: 200),
+    pageBuilder: (_, _, _) => NetworkWrapper(child: child),
+    transitionsBuilder: (_, anim, _, child) =>
+        FadeTransition(opacity: anim, child: child),
+  );
+}
+
+// Web-only fade for inline Navigator.push calls (reset password sub-screens).
+// Returns a MaterialPageRoute on mobile so those flows are untouched.
+Route<dynamic> _webFadeRoute(Widget child) => _webFade(child);
+
 PageRouteBuilder _slide(Widget child) => PageRouteBuilder(
   transitionDuration: const Duration(milliseconds: 400),
   pageBuilder: (_, _, _) => NetworkWrapper(child: child),
@@ -83,146 +103,170 @@ PageRouteBuilder _slideUp(Widget child) => PageRouteBuilder(
 );
 
 // ─── Named routes map ─────────────────────────────────────────────────────────
+// All routes that had web transition jolts are moved to onGenerateRoute below.
+// appRoutes only keeps routes that truly have no transition issue (/splash).
 
 Map<String, WidgetBuilder> get appRoutes => {
   '/splash': (_) => const GovPulseSplashScreen(),
-
-  '/guest': (_) => const NetworkWrapper(child: GuestScreen()),
-
-  '/email_verification_success': (context) {
-    final email = ModalRoute.of(context)!.settings.arguments as String;
-    return NetworkWrapper(child: EmailVerificationSuccess(email: email));
-  },
-
-  '/phone_verification_success': (context) {
-    final phone = ModalRoute.of(context)!.settings.arguments as String;
-    return NetworkWrapper(child: PhoneVerificationSuccess(phone: phone));
-  },
-
-  '/reset_password': (context) => NetworkWrapper(
-    child: ResetPasswordMethodScreen(
-      onEmailTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => NetworkWrapper(
-              // ← Gap 2 fix
-              child: ResetPasswordEmailScreen(
-                onVerify: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => NetworkWrapper(
-                        // ← Gap 3 fix
-                        child: ResetPasswordEmailVerifyScreen(
-                          email: '',
-                          onVerifiedSuccess: () {},
-                          onTermsClick: () {},
-                          onConditionsClick: () {},
-                        ),
-                      ),
-                    ),
-                  );
-                },
-                onLogin: () => Navigator.pushNamed(context, '/login'),
-              ),
-            ),
-          ),
-        );
-      },
-      onPhoneTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => NetworkWrapper(
-              // ← Gap 3 fix
-              child: ResetPasswordPhoneScreen(
-                onVerify: () {},
-                onLogin: () => Navigator.pushNamed(context, '/login'),
-              ),
-            ),
-          ),
-        );
-      },
-    ),
-  ),
-
-  '/signup': (context) => NetworkWrapper(
-    child: SignupScreen(
-      onSignUpClick: (_, _, _) {},
-      onLoginClick: () => Navigator.pushNamed(context, '/login'),
-      onGuestClick: () async {
-        await FirebaseAuth.instance.signInAnonymously();
-        if (!context.mounted) return;
-        Navigator.pushNamed(context, '/guest');
-      },
-      onPhoneClick: () => Navigator.pushNamed(context, '/phone_signup'),
-    ),
-  ),
-
-  '/phone_signup': (context) => NetworkWrapper(
-    child: PhoneSignupScreen(
-      onContinueClick: (phone, password) async {
-        await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => OtpLoadingScreen(
-              type: 'phone',
-              onSendOtp: () async {
-                await Future.delayed(const Duration(seconds: 2));
-              },
-            ),
-          ),
-        );
-        if (!context.mounted) return;
-        Navigator.pushNamed(context, '/phone_verify/$phone');
-      },
-      onBackClick: () => Navigator.pop(context),
-      onLoginClick: () => Navigator.pushNamed(context, '/login'),
-    ),
-  ),
-
-  '/login': (context) => NetworkWrapper(
-    child: LoginScreen(
-      onLoginClick: (username, password) async {
-        final usernameFromDB = await AuthService.login(username, password);
-        if (!context.mounted) return;
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) =>
-                NetworkWrapper(child: HomePage(username: usernameFromDB)),
-          ),
-        );
-      },
-      onSignUpClick: () => Navigator.pushNamed(context, '/signup'),
-      onGuestClick: () async {
-        await FirebaseAuth.instance.signInAnonymously();
-        if (!context.mounted) return;
-        Navigator.pushNamed(context, '/guest');
-      },
-    ),
-  ),
-
-  '/verification': (context) {
-    final username = ModalRoute.of(context)!.settings.arguments as String;
-    return NetworkWrapper(child: VerificationScreen(username: username));
-  },
-
-  '/verification_id_selection': (context) {
-    final username = ModalRoute.of(context)!.settings.arguments as String;
-    return NetworkWrapper(
-      child: VerificationIdSelectionScreen(username: username),
-    );
-  },
 };
 
 // ─── onGenerateRoute ──────────────────────────────────────────────────────────
 
 Route<dynamic>? onGenerateRoute(RouteSettings settings) {
   switch (settings.name) {
+    // ── Auth flow — _webFade on web, native transition on mobile ─────────────
+
+    case '/login':
+      return _webFade(
+        Builder(
+          builder: (ctx) => LoginScreen(
+            onLoginClick: (username, password) async {
+              final usernameFromDB = await AuthService.login(
+                username,
+                password,
+              );
+              if (!ctx.mounted) return;
+              Navigator.pushReplacement(
+                ctx,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      NetworkWrapper(child: HomePage(username: usernameFromDB)),
+                ),
+              );
+            },
+            onSignUpClick: () => Navigator.pushNamed(ctx, '/signup'),
+            onGuestClick: () async {
+              await FirebaseAuth.instance.signInAnonymously();
+              if (!ctx.mounted) return;
+              Navigator.pushNamed(ctx, '/guest');
+            },
+          ),
+        ),
+      );
+
+    case '/signup':
+      return _webFade(
+        Builder(
+          builder: (ctx) => SignupScreen(
+            onSignUpClick: (_, _, _) {},
+            onLoginClick: () => Navigator.pushNamed(ctx, '/login'),
+            onGuestClick: () async {
+              await FirebaseAuth.instance.signInAnonymously();
+              if (!ctx.mounted) return;
+              Navigator.pushNamed(ctx, '/guest');
+            },
+            onPhoneClick: () => Navigator.pushNamed(ctx, '/phone_signup'),
+          ),
+        ),
+      );
+
+    case '/phone_signup':
+      return _webFade(
+        Builder(
+          builder: (ctx) => PhoneSignupScreen(
+            onContinueClick: (phone, password) async {
+              await Navigator.push(
+                ctx,
+                _webFadeRoute(
+                  OtpLoadingScreen(
+                    type: 'phone',
+                    onSendOtp: () async {
+                      await Future.delayed(const Duration(seconds: 2));
+                    },
+                  ),
+                ),
+              );
+              if (!ctx.mounted) return;
+              Navigator.pushNamed(ctx, '/phone_verify/$phone');
+            },
+            onBackClick: () => Navigator.pop(ctx),
+            onLoginClick: () => Navigator.pushNamed(ctx, '/login'),
+          ),
+        ),
+      );
+
+    case '/guest':
+      return _webFade(const GuestScreen());
+
+    case '/email_verification_success':
+      final email = settings.arguments as String;
+      return _webFade(EmailVerificationSuccess(email: email));
+
+    case '/phone_verification_success':
+      final phone = settings.arguments as String;
+      return _webFade(PhoneVerificationSuccess(phone: phone));
+
+    // ── Reset password — sub-screens also use _webFadeRoute inline ───────────
+
+    case '/reset_password':
+      return _webFade(
+        Builder(
+          builder: (ctx) => ResetPasswordMethodScreen(
+            onEmailTap: () {
+              Navigator.push(
+                ctx,
+                _webFadeRoute(
+                  Builder(
+                    builder: (ctx2) => ResetPasswordEmailScreen(
+                      onVerify: () {
+                        Navigator.push(
+                          ctx2,
+                          _webFadeRoute(
+                            ResetPasswordEmailVerifyScreen(
+                              email: '',
+                              onVerifiedSuccess: () {},
+                              onTermsClick: () {},
+                              onConditionsClick: () {},
+                            ),
+                          ),
+                        );
+                      },
+                      onLogin: () => Navigator.pushNamed(ctx2, '/login'),
+                    ),
+                  ),
+                ),
+              );
+            },
+            onPhoneTap: () {
+              Navigator.push(
+                ctx,
+                _webFadeRoute(
+                  Builder(
+                    builder: (ctx2) => ResetPasswordPhoneScreen(
+                      onVerify: () {},
+                      onLogin: () => Navigator.pushNamed(ctx2, '/login'),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+
+    // ── Verification ─────────────────────────────────────────────────────────
+
+    case '/verification':
+      final username = settings.arguments as String;
+      return _webFade(VerificationScreen(username: username));
+
+    case '/verification_id_selection':
+      final username = settings.arguments as String;
+      return _webFade(VerificationIdSelectionScreen(username: username));
+
+    // ── Intro ────────────────────────────────────────────────────────────────
+
     case '/intro':
-      return _slide(IntroScreen(onSignUpClick: () {}, onLoginClick: () {}));
+      return _webFade(
+        Builder(
+          builder: (ctx) => IntroScreen(
+            onLoginClick: () => Navigator.pushReplacementNamed(ctx, '/login'),
+            onSignUpClick: () => Navigator.pushReplacementNamed(ctx, '/signup'),
+          ),
+        ),
+      );
+
+    // ── Home sub-screens — keep their original slide/slideUp transitions ─────
 
     case '/newsfeed':
       final args = settings.arguments;
@@ -252,27 +296,24 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
       final username = settings.arguments as String? ?? '';
       return _slideUp(SuggestionScreen(username: username));
 
-    case '/verification_photo_instruction':
-      final args = settings.arguments as Map<String, dynamic>;
-      return _slide(
-        VerificationPhotoInstructionScreen(
-          username: args['username'] as String,
-          selectedId: args['selectedId'] as String,
-        ),
-      );
+    case '/my_reports':
+      final username = settings.arguments as String? ?? '';
+      return _slide(MyReportsScreen(username: username));
+
+    case '/chat':
+      final username = settings.arguments as String? ?? '';
+      return _slideUp(ChatAgentScreen(username: username));
+
     case '/emergency':
       final args = settings.arguments;
       String username = '';
       bool isVerified = false;
-
-      // ← parse args the same way newsfeed does
       if (args is Map<String, dynamic>) {
         username = args['username'] as String? ?? '';
         isVerified = args['isVerified'] as bool? ?? false;
       } else if (args is String) {
         username = args;
       }
-
       return PageRouteBuilder(
         transitionDuration: const Duration(milliseconds: 400),
         pageBuilder: (_, _, _) => username.isEmpty
@@ -289,6 +330,37 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
             end: Offset.zero,
           ).animate(CurvedAnimation(parent: anim, curve: Curves.easeInOut)),
           child: child,
+        ),
+      );
+
+    case '/events':
+      final args = settings.arguments as Map<String, dynamic>? ?? {};
+      return PageRouteBuilder(
+        settings: settings,
+        transitionDuration: const Duration(milliseconds: 420),
+        pageBuilder: (_, _, _) => NetworkWrapper(
+          child: EventsScreen(
+            username: args['username'] as String? ?? '',
+            isVerified: args['isVerified'] as bool? ?? false,
+          ),
+        ),
+        transitionsBuilder: (_, anim, _, child) => SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, 1),
+            end: Offset.zero,
+          ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
+          child: child,
+        ),
+      );
+
+    // ── Profile verification flow ─────────────────────────────────────────────
+
+    case '/verification_photo_instruction':
+      final args = settings.arguments as Map<String, dynamic>;
+      return _slide(
+        VerificationPhotoInstructionScreen(
+          username: args['username'] as String,
+          selectedId: args['selectedId'] as String,
         ),
       );
 
@@ -318,6 +390,7 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
           selectedId: args['selectedId'] as String,
           frontImage: args['frontImage'] as Uint8List?,
           backImage: args['backImage'] as Uint8List?,
+          extractedData: args['extractedData'] as Map<String, String>?,
         ),
       );
 
@@ -367,46 +440,17 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
         ),
       );
 
-    case '/my_reports':
-      final username = settings.arguments as String? ?? '';
-      return _slide(MyReportsScreen(username: username));
-
-    case '/chat':
-      final username = settings.arguments as String? ?? '';
-      return _slideUp(ChatAgentScreen(username: username));
-
-    // In onGenerateRoute or your route generator
-    case '/events':
-      final args = settings.arguments as Map<String, dynamic>? ?? {};
-      return PageRouteBuilder(
-        settings: settings,
-        transitionDuration: const Duration(milliseconds: 420),
-        pageBuilder: (_, _, _) => NetworkWrapper(
-          child: EventsScreen(
-            username: args['username'] as String? ?? '',
-            isVerified: args['isVerified'] as bool? ?? false,
-          ),
-        ),
-        transitionsBuilder: (_, anim, _, child) => SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(0, 1), // slide up from bottom
-            end: Offset.zero,
-          ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
-          child: child,
-        ),
-      );
+    // ── Dynamic phone verify route ────────────────────────────────────────────
 
     default:
       if (settings.name != null &&
           settings.name!.startsWith('/phone_verify/')) {
         final phone = settings.name!.split('/').last;
-        return MaterialPageRoute(
-          builder: (_) => NetworkWrapper(
-            child: PhoneVerificationScreen(
-              phone: phone,
-              onTermsClick: () {},
-              onConditionsClick: () {},
-            ),
+        return _webFade(
+          PhoneVerificationScreen(
+            phone: phone,
+            onTermsClick: () {},
+            onConditionsClick: () {},
           ),
         );
       }

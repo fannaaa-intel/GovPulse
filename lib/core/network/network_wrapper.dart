@@ -1,16 +1,13 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
 import 'connectivity_service.dart';
 import 'no_internet_screen.dart';
 
-/// Cached internet status shared across all [NetworkWrapper] instances.
-/// Set to null on cold start; updated on first check.
 bool? cachedInternetStatus;
 
-/// Wraps any screen with connectivity monitoring.
-/// Shows [NoInternetScreen] as an overlay when the device goes offline.
 class NetworkWrapper extends StatefulWidget {
   final Widget child;
   const NetworkWrapper({super.key, required this.child});
@@ -21,7 +18,7 @@ class NetworkWrapper extends StatefulWidget {
 
 class _NetworkWrapperState extends State<NetworkWrapper> {
   bool? _hasInternet;
-  late StreamSubscription _subscription;
+  StreamSubscription? _subscription;
   Timer? _offlineDebounce;
   Timer? _onlineDebounce;
 
@@ -29,11 +26,16 @@ class _NetworkWrapperState extends State<NetworkWrapper> {
   void initState() {
     super.initState();
 
-    // Use cached status immediately to avoid a blank-screen flash.
+    // Web: browser handles connectivity — always treat as online.
+    if (kIsWeb) {
+      _hasInternet = true;
+      cachedInternetStatus = true;
+      return;
+    }
+
     if (cachedInternetStatus != null) {
       _hasInternet = cachedInternetStatus;
     } else {
-      // First launch only — check after a short delay so the UI renders first.
       Future.delayed(const Duration(milliseconds: 300), _checkInternet);
     }
 
@@ -43,11 +45,8 @@ class _NetworkWrapperState extends State<NetworkWrapper> {
       final hasConnection = !results.every((r) => r == ConnectivityResult.none);
 
       if (!hasConnection) {
-        // Cancel online debounce, start offline check
         _onlineDebounce?.cancel();
         _onlineDebounce = null;
-
-        // Don't restart if already counting down
         if (_offlineDebounce != null) return;
 
         _offlineDebounce = Timer(const Duration(seconds: 3), () async {
@@ -59,11 +58,8 @@ class _NetworkWrapperState extends State<NetworkWrapper> {
           }
         });
       } else {
-        // Cancel offline debounce, start online check
         _offlineDebounce?.cancel();
         _offlineDebounce = null;
-
-        // Don't restart if already counting down
         if (_onlineDebounce != null) return;
 
         _onlineDebounce = Timer(const Duration(seconds: 2), () async {
@@ -88,7 +84,7 @@ class _NetworkWrapperState extends State<NetworkWrapper> {
   void dispose() {
     _offlineDebounce?.cancel();
     _onlineDebounce?.cancel();
-    _subscription.cancel();
+    _subscription?.cancel();
     super.dispose();
   }
 

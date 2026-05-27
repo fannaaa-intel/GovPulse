@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
-import '../onboarding/intro_screen.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/network/connectivity_service.dart';
 import '../../core/network/network_wrapper.dart';
 import '../../core/network/no_internet_screen.dart';
+import '../../core/router/app_router.dart';
 
 /// ===============================
 /// SPLASH SCREEN
@@ -70,33 +72,32 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
     _start();
   }
 
-  PageRoute _buildIntroRoute() {
-    return PageRouteBuilder(
-      transitionDuration: const Duration(milliseconds: 900),
-      reverseTransitionDuration: const Duration(milliseconds: 600),
-      pageBuilder: (context, animation, secondaryAnimation) {
-        return IntroScreen(
-          onSignUpClick: () {
-            Navigator.pushNamed(context, '/signup');
-          },
-          onLoginClick: () {
-            Navigator.pushNamed(context, '/login');
-          },
-        );
-      },
-      transitionsBuilder: (context, animation, secondaryAnimation, child) {
-        final curved = CurvedAnimation(
-          parent: animation,
-          curve: Curves.easeInOutCubic,
-        );
-        return FadeTransition(
-          opacity: curved,
-          child: ScaleTransition(
-            scale: Tween<double>(begin: 1.02, end: 1.0).animate(curved),
-            child: child,
+  Future<void> _navigateNext() async {
+    bool goToIntro = false;
+
+    if (!kIsWeb) {
+      final prefs = await SharedPreferences.getInstance();
+      final seen = prefs.getBool('seenOnboarding') ?? false;
+      if (!seen) {
+        await prefs.setBool('seenOnboarding', true);
+        goToIntro = true;
+      }
+    }
+
+    if (!mounted) return;
+
+    final routeName = goToIntro ? '/intro' : '/login';
+
+    final route = onGenerateRoute(RouteSettings(name: routeName));
+    if (!mounted) return;
+
+    Navigator.of(context).pushReplacement(
+      route ??
+          PageRouteBuilder(
+            transitionDuration: Duration.zero,
+            reverseTransitionDuration: Duration.zero,
+            pageBuilder: (_, _, _) => const SizedBox.shrink(),
           ),
-        );
-      },
     );
   }
 
@@ -104,7 +105,6 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
     try {
       bool online = false;
 
-      // Animation + internet check race together
       await Future.wait<void>([
         _controller.forward(),
         hasRealInternet().then((result) => online = result),
@@ -112,23 +112,24 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
 
       if (!mounted) return;
 
-      // Animation is 100% done — NOW decide
       cachedInternetStatus = online;
 
       if (!online) {
-        setState(
-          () => _goOffline = true,
-        ); // shows NoInternetScreen (full replace)
+        setState(() => _goOffline = true);
         _waitForInternet();
         return;
       }
 
-      // Online path — show loader then navigate
       setState(() => _showLoader = true);
       await Future.delayed(const Duration(milliseconds: 800));
       if (!mounted) return;
 
-      Navigator.of(context).pushReplacement(_buildIntroRoute());
+      // Fade out the loader before navigating
+      setState(() => _showLoader = false);
+      await Future.delayed(const Duration(milliseconds: 300));
+      if (!mounted) return;
+
+      await _navigateNext();
     } catch (_) {}
   }
 
@@ -138,7 +139,7 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
       final online = await hasRealInternet();
       if (online && mounted) {
         cachedInternetStatus = true;
-        Navigator.of(context).pushReplacementNamed('/login');
+        await _navigateNext();
         return;
       }
     }
@@ -152,7 +153,6 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
 
   @override
   Widget build(BuildContext context) {
-    // ── Offline: shown AFTER animation completes ──
     if (_goOffline) {
       return const NoInternetScreen(hasInternet: false, onContinue: null);
     }
@@ -163,6 +163,7 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
     final textRowHeight = _textPainter.height;
 
     return Scaffold(
+      backgroundColor: Colors.white,
       body: RepaintBoundary(
         child: AnimatedBuilder(
           animation: _controller,
@@ -237,7 +238,7 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
                     ),
                   ),
 
-                // ── White fade overlay ──
+                // ── White fade overlay — stays fully opaque at end ──
                 Opacity(
                   opacity: whiteFade,
                   child: Container(color: Colors.white),
@@ -345,9 +346,12 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
                   ),
                 ),
 
-                // ── Loader ──
-                if (_showLoader)
-                  Align(
+                // ── Loader — kept in tree so AnimatedOpacity can fade it out ──
+                AnimatedOpacity(
+                  opacity: _showLoader ? 1.0 : 0.0,
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeOut,
+                  child: Align(
                     alignment: Alignment.bottomCenter,
                     child: Padding(
                       padding: EdgeInsets.only(bottom: safeBottom + 85),
@@ -361,6 +365,7 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
                       ),
                     ),
                   ),
+                ),
               ],
             );
           },
