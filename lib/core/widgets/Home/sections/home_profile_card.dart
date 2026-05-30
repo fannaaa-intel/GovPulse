@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../../theme/app_colors.dart';
-import 'home_enums.dart';
+import '../../../theme/app_colors.dart';
+import '../home_enums.dart';
 
 // ── Main card widget ──────────────────────────────────────────────────────────
 class HomeProfileCard extends StatelessWidget {
@@ -13,6 +13,11 @@ class HomeProfileCard extends StatelessWidget {
   final VoidCallback onNotificationTap;
   final VoidCallback onVerifyTap;
 
+  /// Optional. When provided, drives all internal sizing instead of the raw
+  /// screen width — lets the parent cap it on wide web so the card keeps its
+  /// mobile proportions. Falls back to MediaQuery for existing callers.
+  final double? width;
+
   const HomeProfileCard({
     super.key,
     required this.username,
@@ -23,6 +28,7 @@ class HomeProfileCard extends StatelessWidget {
     required this.notificationCount,
     required this.onNotificationTap,
     required this.onVerifyTap,
+    this.width,
   });
 
   ({String label, Color bg, Color border, Color dot, Color text})
@@ -157,7 +163,9 @@ class HomeProfileCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final width = MediaQuery.of(context).size.width;
+    // Use the caller-supplied width when given; fall back to the raw screen
+    // width so existing callers (mobile) keep working unchanged.
+    final width = this.width ?? MediaQuery.of(context).size.width;
     final badge = _statusBadge;
     final isVerified = verifStatus == VerifStatus.verified;
 
@@ -234,6 +242,8 @@ class HomeProfileCard extends StatelessWidget {
                       children: [
                         Text(
                           fullName ?? username,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontSize: width * 0.052,
                             fontWeight: FontWeight.w700,
@@ -244,6 +254,8 @@ class HomeProfileCard extends StatelessWidget {
                           SizedBox(height: width * 0.004),
                           Text(
                             '@$username',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: width * 0.030,
                               fontWeight: FontWeight.w400,
@@ -289,11 +301,17 @@ class HomeProfileCard extends StatelessWidget {
                                           ),
                                         ),
                                   SizedBox(width: width * 0.012),
-                                  Text(
-                                    profileLoading ? 'Loading...' : badge.label,
-                                    style: TextStyle(
-                                      fontSize: width * 0.030,
-                                      color: badge.text,
+                                  Flexible(
+                                    child: Text(
+                                      profileLoading
+                                          ? 'Loading...'
+                                          : badge.label,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: width * 0.030,
+                                        color: badge.text,
+                                      ),
                                     ),
                                   ),
                                 ],

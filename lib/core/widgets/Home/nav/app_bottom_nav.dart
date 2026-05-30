@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import '../../../core/network/network_wrapper.dart';
-import '../../../core/widgets/modal/verification_required_dialog.dart';
-import '../../../features/home/screen/home_screen.dart';
+import '../../../network/network_wrapper.dart';
+import '../../modal/verification_required_dialog.dart';
+import '../../../../features/home/screen/home_screen.dart';
 
 class AppBottomNav extends StatelessWidget {
   final double width;

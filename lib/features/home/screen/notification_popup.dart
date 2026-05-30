@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dart:math' as math;
 
 // ── Model ─────────────────────────────────────────────────────────────────────
 class AppNotification {
@@ -204,6 +205,7 @@ class NotificationService {
 }
 
 // ── UI ────────────────────────────────────────────────────────────────────────
+// ── UI ────────────────────────────────────────────────────────────────────────
 class NotificationPopup extends StatefulWidget {
   final double width;
   const NotificationPopup({super.key, required this.width});
@@ -215,10 +217,13 @@ class NotificationPopup extends StatefulWidget {
 class _NotificationPopupState extends State<NotificationPopup> {
   bool _loading = true;
 
+  // Cap the width the popup sizes itself against. Above this, it stays put
+  // (centered) instead of bloating on tablets / desktop / wide web.
+  static const double _kMaxSizingWidth = 420;
+
   @override
   void initState() {
     super.initState();
-    // ✅ Always re-fetch from Supabase when popup opens
     NotificationService.load().then((_) {
       if (mounted) setState(() => _loading = false);
     });
@@ -226,7 +231,23 @@ class _NotificationPopupState extends State<NotificationPopup> {
 
   @override
   Widget build(BuildContext context) {
-    final w = widget.width;
+    final screenSize = MediaQuery.of(context).size;
+    final screenW = screenSize.width;
+    final screenH = screenSize.height;
+
+    // Effective sizing width = min(screen width, cap). All inner spacing,
+    // font sizes, paddings, and icon sizes scale from this. On mobile it
+    // equals the screen; on web it stays at the cap.
+    final w = screenW < _kMaxSizingWidth ? screenW : _kMaxSizingWidth;
+
+    // Final popup box dimensions.
+    final popupWidth = w * 0.90;
+    // Height: clamp the desired height to a floor that can never exceed the
+    // ceiling. In landscape, screenH * 0.85 can fall below a fixed 360 floor,
+    // and .clamp(min, max) throws when min > max — that was the crash.
+    final double maxPopupHeight = screenH * 0.85;
+    final double minPopupHeight = math.min(360.0, maxPopupHeight);
+    final double popupHeight = (w * 1.1).clamp(minPopupHeight, maxPopupHeight);
 
     return TweenAnimationBuilder<double>(
       duration: const Duration(milliseconds: 250),
@@ -256,8 +277,8 @@ class _NotificationPopupState extends State<NotificationPopup> {
                     child: Transform.scale(
                       scale: 0.95 + (0.05 * value),
                       child: Container(
-                        width: w * 0.90,
-                        height: w * 1.1,
+                        width: popupWidth,
+                        height: popupHeight,
                         padding: EdgeInsets.all(w * 0.045),
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(28),

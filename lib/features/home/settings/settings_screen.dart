@@ -3,7 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/loading/loading_overlay.dart';
 import '../../../core/widgets/modal/verification_required_dialog.dart';
-import '../../../core/widgets/Home/app_bottom_nav.dart';
+import '../../../core/widgets/Home/nav/app_bottom_nav.dart';
 import '../../auth/services/chat_service.dart';
 import '../../../core/widgets/Home/Chat-bubbles/home_chat_bubble.dart';
 

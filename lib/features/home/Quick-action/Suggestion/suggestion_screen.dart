@@ -201,7 +201,7 @@ class _SuggestionScreenState extends State<SuggestionScreen>
     {
       'key': 'others',
       'label': 'Others',
-      'icon': 'assets/images/suggestion/information.png',
+      'icon': 'assets/images/report/menu.png',
       'fallbackIcon': Icons.more_horiz,
     },
   ];
@@ -490,7 +490,7 @@ class _SuggestionScreenState extends State<SuggestionScreen>
                     ),
                   ),
                 ),
-                if (trailingTitle != null) trailingTitle,
+                ?trailingTitle,
               ],
             ),
             SizedBox(height: width * 0.035),

@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../../../core/theme/app_colors.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../../../../core/widgets/Home/app_bottom_nav.dart';
+import '../../../core/widgets/Home/nav/app_bottom_nav.dart';
+import '../../../../core/widgets/loading/loading_overlay.dart';
 
 class _T {
   static TextStyle heading(double w, {Color? color}) => TextStyle(
@@ -148,6 +149,8 @@ class ReportItem {
 
 enum ReportFilter { all, today, thisWeek, thisMonth, last3Months }
 
+enum StatusFilter { all, pending, resolved, rejected }
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 class MyReportsScreen extends StatefulWidget {
@@ -163,15 +166,40 @@ class _MyReportsScreenState extends State<MyReportsScreen>
   late final AnimationController _entryCtrl;
 
   ReportFilter _activeFilter = ReportFilter.all;
+  StatusFilter _activeKpi = StatusFilter.all;
   List<ReportItem> _allReports = [];
   bool _isLoading = true;
   String? _error;
 
   // ── Derived lists ──────────────────────────────────────────────────────────
 
+  bool _matchesKpi(ReportItem r) {
+    switch (_activeKpi) {
+      case StatusFilter.all:
+        return true;
+      case StatusFilter.pending:
+        return r.status == ReportStatus.pending ||
+            r.status == ReportStatus.underReview;
+      case StatusFilter.resolved:
+        return r.status == ReportStatus.resolved;
+      case StatusFilter.rejected:
+        return r.status == ReportStatus.rejected;
+    }
+  }
+
+  void _selectKpi(StatusFilter f) {
+    setState(() {
+      // tap a selected card again to clear it (back to All)
+      _activeKpi = (_activeKpi == f && f != StatusFilter.all)
+          ? StatusFilter.all
+          : f;
+    });
+  }
+
   List<ReportItem> get _filteredReports {
     final now = DateTime.now();
     return _allReports.where((r) {
+      if (!_matchesKpi(r)) return false;
       switch (_activeFilter) {
         case ReportFilter.all:
           return true;
@@ -209,6 +237,8 @@ class _MyReportsScreenState extends State<MyReportsScreen>
       .length;
   int get _resolvedCount =>
       _allReports.where((r) => r.status == ReportStatus.resolved).length;
+  int get _rejectedCount =>
+      _allReports.where((r) => r.status == ReportStatus.rejected).length;
 
   // ── Lifecycle ──────────────────────────────────────────────────────────────
 
@@ -312,43 +342,33 @@ class _MyReportsScreenState extends State<MyReportsScreen>
   @override
   Widget build(BuildContext context) {
     final w = MediaQuery.of(context).size.width;
-    return Scaffold(
-      backgroundColor: const Color(0xFFF3F4F6),
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildTopBar(w),
-            Expanded(child: _buildBody(w)),
-          ],
+    return LoadingOverlay(
+      isLoading: _isLoading,
+      skeletonLayout:
+          SkeletonLayout.myReports, // ← shows skeleton instead of spinner
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF3F4F6),
+        body: SafeArea(
+          child: Column(
+            children: [
+              _buildTopBar(w),
+              Expanded(
+                child: _buildBody(w),
+              ), // _buildBody still handles error state
+            ],
+          ),
         ),
-      ),
-      bottomNavigationBar: AppBottomNav(
-        width: w,
-        currentIndex: 1,
-        username: widget.username,
-        isVerified: true,
+        bottomNavigationBar: AppBottomNav(
+          width: w,
+          currentIndex: 1,
+          username: widget.username,
+          isVerified: true,
+        ),
       ),
     );
   }
 
   Widget _buildBody(double w) {
-    // ── Loading ──
-    if (_isLoading) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircularProgressIndicator(color: AppColors.primaryBlue),
-            SizedBox(height: w * .04),
-            Text(
-              'Loading your reports…',
-              style: _T.body(w, color: _T.textSecondary),
-            ),
-          ],
-        ),
-      );
-    }
-
     // ── Error ──
     if (_error != null) {
       return Center(
@@ -401,27 +421,19 @@ class _MyReportsScreenState extends State<MyReportsScreen>
       );
     }
 
-    // ── Content ──
-    return RefreshIndicator(
-      color: AppColors.primaryBlue,
-      onRefresh: _fetchReports,
-      child: SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(
-          parent: BouncingScrollPhysics(),
-        ),
-        child: Column(
-          children: [
-            SizedBox(height: w * .04),
-            _animated(1, _buildKpiRow(w)),
-            SizedBox(height: w * .04),
-            _animated(2, _buildReportsSection(w, w * 1.18)),
-            SizedBox(height: w * .06),
-          ],
-        ),
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      child: Column(
+        children: [
+          SizedBox(height: w * .04),
+          _animated(1, _buildKpiRow(w)),
+          SizedBox(height: w * .04),
+          _animated(2, _buildReportsSection(w, w * 1.18)),
+          SizedBox(height: w * .06),
+        ],
       ),
     );
   }
-
   // ── Top bar ────────────────────────────────────────────────────────────────
 
   Widget _buildTopBar(double w) {
@@ -491,6 +503,10 @@ class _MyReportsScreenState extends State<MyReportsScreen>
 
   Widget _buildKpiRow(double w) {
     final ww = w * 1.18;
+    // NOTE: No CrossAxisAlignment.stretch here. All labels are single words now,
+    // so the four cards are naturally identical height. Adding `stretch` to a Row
+    // inside a vertical SingleChildScrollView gives it unbounded height and throws
+    // a layout error (which renders as a blank grey screen in release builds).
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: w * .04),
       child: Row(
@@ -501,10 +517,12 @@ class _MyReportsScreenState extends State<MyReportsScreen>
               ww: ww,
               icon: Icons.assignment_outlined,
               count: _totalCount,
-              label: 'All Reports',
+              label: 'All',
               iconBg: const Color(0xFFEEF2FF),
               iconColor: AppColors.primaryBlue,
               valueColor: AppColors.primaryBlue,
+              selected: _activeKpi == StatusFilter.all,
+              onTap: () => _selectKpi(StatusFilter.all),
             ),
           ),
           SizedBox(width: w * .03),
@@ -518,6 +536,8 @@ class _MyReportsScreenState extends State<MyReportsScreen>
               iconBg: const Color(0xFFFFF7ED),
               iconColor: const Color(0xFFD97706),
               valueColor: const Color(0xFFD97706),
+              selected: _activeKpi == StatusFilter.pending,
+              onTap: () => _selectKpi(StatusFilter.pending),
             ),
           ),
           SizedBox(width: w * .03),
@@ -531,6 +551,23 @@ class _MyReportsScreenState extends State<MyReportsScreen>
               iconBg: const Color(0xFFECFDF5),
               iconColor: const Color(0xFF059669),
               valueColor: const Color(0xFF059669),
+              selected: _activeKpi == StatusFilter.resolved,
+              onTap: () => _selectKpi(StatusFilter.resolved),
+            ),
+          ),
+          SizedBox(width: w * .03),
+          Expanded(
+            child: _kpiCard(
+              w: w,
+              ww: ww,
+              icon: Icons.cancel_outlined,
+              count: _rejectedCount,
+              label: 'Rejected',
+              iconBg: const Color(0xFFFEF2F2),
+              iconColor: const Color(0xFFDC2626),
+              valueColor: const Color(0xFFDC2626),
+              selected: _activeKpi == StatusFilter.rejected,
+              onTap: () => _selectKpi(StatusFilter.rejected),
             ),
           ),
         ],
@@ -547,38 +584,57 @@ class _MyReportsScreenState extends State<MyReportsScreen>
     required Color iconBg,
     required Color iconColor,
     required Color valueColor,
+    required bool selected,
+    required VoidCallback onTap,
   }) {
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: w * .025, vertical: w * .035),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(w * .035),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: .04),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+        padding: EdgeInsets.symmetric(horizontal: w * .025, vertical: w * .035),
+        decoration: BoxDecoration(
+          color: selected ? iconBg : Colors.white,
+          borderRadius: BorderRadius.circular(w * .035),
+          border: Border.all(
+            color: selected ? iconColor : const Color(0xFFE5E7EB),
+            width: selected ? 2 : 1,
           ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Container(
-            width: w * .092,
-            height: w * .092,
-            decoration: BoxDecoration(color: iconBg, shape: BoxShape.circle),
-            child: Icon(icon, size: _T.iconLG(ww), color: iconColor),
-          ),
-          SizedBox(height: w * .018),
-          Text('$count', style: _T.heading(ww, color: valueColor)),
-          SizedBox(height: w * .008),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            style: _T.label(ww, color: _T.textSecondary),
-          ),
-        ],
+          boxShadow: [
+            BoxShadow(
+              color: selected
+                  ? iconColor.withValues(alpha: .18)
+                  : Colors.black.withValues(alpha: .04),
+              blurRadius: selected ? 10 : 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: w * .092,
+              height: w * .092,
+              decoration: BoxDecoration(
+                color: selected ? Colors.white : iconBg,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, size: _T.iconLG(ww), color: iconColor),
+            ),
+            SizedBox(height: w * .018),
+            Text('$count', style: _T.heading(ww, color: valueColor)),
+            SizedBox(height: w * .008),
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              style: _T.label(
+                ww,
+                color: selected ? valueColor : _T.textSecondary,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -664,20 +720,52 @@ class _MyReportsScreenState extends State<MyReportsScreen>
               ),
             ),
             const Divider(height: 1, color: Color(0xFFE5E7EB)),
-            reports.isEmpty
-                ? SizedBox(width: double.infinity, child: _buildEmptyState(w))
-                : ListView.separated(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: reports.length,
-                    separatorBuilder: (_, _) =>
-                        const Divider(height: 1, color: Color(0xFFE5E7EB)),
-                    itemBuilder: (context, i) =>
-                        _buildReportTile(w, ww, reports[i]),
-                  ),
+            // Smoothly animates the card's height when the filtered row count
+            // changes, so the container glides instead of snapping/shaking.
+            AnimatedSize(
+              duration: const Duration(milliseconds: 320),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              clipBehavior: Clip.hardEdge,
+              child: reports.isEmpty
+                  ? SizedBox(width: double.infinity, child: _buildEmptyState(w))
+                  : ListView.separated(
+                      // Key changes whenever the KPI or date filter changes,
+                      // which remounts the rows and replays their slide-up.
+                      key: ValueKey(
+                        'list_${_activeKpi.index}_${_activeFilter.index}',
+                      ),
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: reports.length,
+                      separatorBuilder: (_, _) =>
+                          const Divider(height: 1, color: Color(0xFFE5E7EB)),
+                      itemBuilder: (context, i) =>
+                          _buildAnimatedTile(w, ww, reports[i], i),
+                    ),
+            ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildAnimatedTile(double w, double ww, ReportItem report, int index) {
+    final delaySteps = index.clamp(0, 6); // cap the cascade for long lists
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0.0, end: 1.0),
+      duration: Duration(milliseconds: 300 + delaySteps * 45),
+      curve: Curves.easeOutCubic,
+      builder: (context, t, child) {
+        return Opacity(
+          opacity: t.clamp(0.0, 1.0),
+          child: Transform.translate(
+            offset: Offset(0, (1 - t) * (w * .06)),
+            child: child,
+          ),
+        );
+      },
+      child: _buildReportTile(w, ww, report),
     );
   }
 
@@ -929,6 +1017,8 @@ class _MyReportsScreenState extends State<MyReportsScreen>
   // ── Empty state ────────────────────────────────────────────────────────────
 
   Widget _buildEmptyState(double w) {
+    final noFiltersActive =
+        _activeFilter == ReportFilter.all && _activeKpi == StatusFilter.all;
     return Padding(
       padding: EdgeInsets.symmetric(vertical: w * .14, horizontal: w * .08),
       child: Column(
@@ -940,7 +1030,7 @@ class _MyReportsScreenState extends State<MyReportsScreen>
           Text('No Reports Found', style: _T.title(w, color: _T.textSecondary)),
           SizedBox(height: w * .018),
           Text(
-            _activeFilter == ReportFilter.all
+            noFiltersActive
                 ? 'You haven\'t submitted any reports yet.'
                 : 'No reports match the selected filter.',
             textAlign: TextAlign.center,

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import '../../theme/app_colors.dart';
-import 'home_dots.dart';
-import '../../utils/community_posts_provider.dart';
+import '../../../theme/app_colors.dart';
+import '../home_dots.dart';
+import '../../../utils/community_posts_provider.dart';
 
 class HomeCommunitySection extends StatefulWidget {
   final double width;

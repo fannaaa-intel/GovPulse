@@ -1,6 +1,6 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../../../theme/app_colors.dart';
 
