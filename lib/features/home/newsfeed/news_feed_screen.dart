@@ -8,6 +8,7 @@ import '../../../core/widgets/Home/Newsfeed/news_feed_helpers.dart';
 import '../../../core/widgets/Home/Newsfeed/image_grid.dart';
 import '../../../core/widgets/Home/Newsfeed/comment_item.dart';
 import '../../../core/widgets/Home/Newsfeed/comments_sheet.dart';
+import '../../../core/widgets/loading/loading_overlay.dart';
 
 enum PostFilter {
   latest('Latest', null),
@@ -399,51 +400,55 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
     final provider = CommunityPostsProvider.instance;
     final visiblePosts = _filteredPosts;
 
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) _goToHome();
-      },
-      child: Scaffold(
-        backgroundColor: const Color(0xFFF3F4F6),
-        body: SafeArea(
-          child: Column(
-            children: [
-              _animated(0, _buildTopBar(width)),
-              Expanded(
-                child: provider.isLoading
-                    ? const Center(child: CircularProgressIndicator())
-                    : provider.error != null
-                    ? _buildErrorState(width, provider)
-                    : visiblePosts.isEmpty
-                    ? _animated(1, _buildEmptyState(width))
-                    : RefreshIndicator(
-                        onRefresh: () async {
-                          await CommunityPostsProvider.instance.refresh();
-                          await _loadMyInteractions();
-                        },
-                        child: ListView.separated(
-                          physics: const BouncingScrollPhysics(),
-                          padding: EdgeInsets.fromLTRB(
-                            width * 0.04,
-                            width * 0.035,
-                            width * 0.04,
-                            width * 0.04,
-                          ),
-                          itemCount: visiblePosts.length,
-                          separatorBuilder: (_, _) =>
-                              SizedBox(height: width * 0.035),
-                          itemBuilder: (_, i) => _animated(
-                            i + 1,
-                            _buildPostCard(width, visiblePosts[i]),
+    return LoadingOverlay(
+      isLoading: provider.isLoading,
+      skeletonLayout: SkeletonLayout.newsFeed,
+      child: PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) _goToHome();
+        },
+        child: Scaffold(
+          backgroundColor: const Color(0xFFF3F4F6),
+          body: SafeArea(
+            child: Column(
+              children: [
+                _animated(0, _buildTopBar(width)),
+                Expanded(
+                  child:
+                      provider.error !=
+                          null // isLoading branch removed
+                      ? _buildErrorState(width, provider)
+                      : visiblePosts.isEmpty
+                      ? _animated(1, _buildEmptyState(width))
+                      : RefreshIndicator(
+                          onRefresh: () async {
+                            await CommunityPostsProvider.instance.refresh();
+                            await _loadMyInteractions();
+                          },
+                          child: ListView.separated(
+                            physics: const BouncingScrollPhysics(),
+                            padding: EdgeInsets.fromLTRB(
+                              width * 0.04,
+                              width * 0.035,
+                              width * 0.04,
+                              width * 0.04,
+                            ),
+                            itemCount: visiblePosts.length,
+                            separatorBuilder: (_, _) =>
+                                SizedBox(height: width * 0.035),
+                            itemBuilder: (_, i) => _animated(
+                              i + 1,
+                              _buildPostCard(width, visiblePosts[i]),
+                            ),
                           ),
                         ),
-                      ),
-              ),
-            ],
+                ),
+              ],
+            ),
           ),
+          bottomNavigationBar: _buildBottomNav(width),
         ),
-        bottomNavigationBar: _buildBottomNav(width),
       ),
     );
   }

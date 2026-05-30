@@ -8,7 +8,7 @@ import 'package:android_intent_plus/android_intent.dart';
 import 'package:android_intent_plus/flag.dart';
 import '../../../../core/network/network_wrapper.dart';
 
-import '../../../../core/widgets/Home/app_bottom_nav.dart';
+import '../../../core/widgets/Home/nav/app_bottom_nav.dart';
 import 'dart:io';
 
 // ─────────────────────────────────────────────────────────────────────────────
