@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../theme/app_colors.dart';
 import '../home_dots.dart';
 import '../../../utils/community_posts_provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class HomeCommunitySection extends StatefulWidget {
   final double width;
@@ -95,6 +96,7 @@ class _HomeCommunitySectionState extends State<HomeCommunitySection> {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(width * 0.04),
+          border: Border.all(color: const Color(0xFFE5E7EB)),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.05),
@@ -456,10 +458,13 @@ class _HomeCommunitySectionState extends State<HomeCommunitySection> {
   Widget _buildImage(Map<String, dynamic> post, double width) {
     final urls = post['imageUrls'] as List<String>? ?? [];
     if (urls.isNotEmpty) {
-      return Image.network(
-        urls.first,
+      return CachedNetworkImage(
+        imageUrl: urls.first,
         fit: BoxFit.cover,
-        errorBuilder: (_, _, _) => _placeholder(width),
+        fadeInDuration: const Duration(milliseconds: 300),
+        fadeOutDuration: const Duration(milliseconds: 100),
+        placeholder: (context, url) => _placeholder(width),
+        errorWidget: (context, url, error) => _placeholder(width),
       );
     }
     return _placeholder(width);

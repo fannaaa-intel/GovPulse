@@ -6,6 +6,8 @@ import 'news_feed_helpers.dart';
 import 'image_grid.dart';
 import 'comment_item.dart';
 import 'edit_comment_sheet.dart';
+import '../../Home/Newsfeed/rate_limit_dialogs.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class CommentsSheet extends StatefulWidget {
   final Map<String, dynamic> post;
@@ -39,6 +41,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
   final Set<String> _expandedReplies = {};
   bool _sending = false;
   String? _myPhotoUrl;
+  String? _myPhotoPath;
 
   List<Map<String, dynamic>>? _optimisticComments;
 
@@ -81,20 +84,13 @@ class _CommentsSheetState extends State<CommentsSheet> {
       final path = res?['profile_photo_path'] as String?;
       if (path == null || path.isEmpty) return;
 
-      String? url;
-      try {
-        url = await _supabase.storage
-            .from('verification-assets')
-            .createSignedUrl(path, 3600);
-      } catch (_) {
-        try {
-          url = _supabase.storage
-              .from('verification-assets')
-              .getPublicUrl(path);
-        } catch (_) {}
-      }
       if (!mounted) return;
-      setState(() => _myPhotoUrl = url);
+      setState(() {
+        _myPhotoPath = path;
+        _myPhotoUrl = _supabase.storage
+            .from('verification-assets')
+            .getPublicUrl(path);
+      });
     } catch (_) {}
   }
 
@@ -175,6 +171,37 @@ class _CommentsSheetState extends State<CommentsSheet> {
     });
   }
 
+  void _setReplyByCommentId(String commentId, String authorName) {
+    final currentUserId = _supabase.auth.currentUser?.id;
+    final comments = _getComments();
+
+    for (final cm in comments) {
+      if (cm['id'] == commentId) {
+        final isSelf = currentUserId != null && cm['authorId'] == currentUserId;
+        setState(() {
+          _replyingTo = isSelf ? 'yourself' : authorName;
+          _replyingToParentId = cm['id'] as String;
+          _replyingToUserId = isSelf ? null : cm['authorId'] as String?;
+        });
+        return;
+      }
+      final replies = (cm['replies'] as List<dynamic>? ?? [])
+          .cast<Map<String, dynamic>>();
+      for (final rm in replies) {
+        if (rm['id'] == commentId) {
+          final isSelf =
+              currentUserId != null && rm['authorId'] == currentUserId;
+          setState(() {
+            _replyingTo = isSelf ? 'yourself' : authorName;
+            _replyingToParentId = cm['id'] as String;
+            _replyingToUserId = isSelf ? null : rm['authorId'] as String?;
+          });
+          return;
+        }
+      }
+    }
+  }
+
   void _cancelReply() => setState(() {
     _replyingTo = null;
     _replyingToParentId = null;
@@ -195,7 +222,10 @@ class _CommentsSheetState extends State<CommentsSheet> {
 
     final userId = _supabase.auth.currentUser?.id;
     if (userId == null) {
-      _snack('Please log in again.');
+      showFriendlyErrorDialog(
+        context,
+        'Your session has expired. Please log in again.',
+      );
       return;
     }
 
@@ -217,13 +247,19 @@ class _CommentsSheetState extends State<CommentsSheet> {
       });
       await CommunityPostsProvider.instance.refresh();
     } catch (e) {
-      final msg = e.toString();
-      if (msg.contains('rate_limit') || msg.contains('Rate limit')) {
-        _snack('You\'re commenting too quickly. Please wait a moment.');
-      } else if (msg.contains('row-level security')) {
-        _snack('Only verified citizens can comment.');
-      } else {
-        _snack('Could not send comment. Try again.');
+      if (mounted) {
+        if (e is PostgrestException &&
+            (e.hint ?? '') == 'rate_limit_exceeded') {
+          showRateLimitDialog(
+            context,
+            'You\'re commenting too fast. You can post up to 10 comments per minute. Please wait a moment before trying again.',
+          );
+        } else {
+          showFriendlyErrorDialog(
+            context,
+            'Could not send your comment. Please try again.',
+          );
+        }
       }
     } finally {
       if (mounted) setState(() => _sending = false);
@@ -266,8 +302,13 @@ class _CommentsSheetState extends State<CommentsSheet> {
       await CommunityPostsProvider.instance.refresh();
       if (mounted) setState(() => _optimisticComments = null);
     } catch (_) {
-      if (mounted) setState(() => _optimisticComments = null);
-      _snack('Could not edit comment. Try again.');
+      if (mounted) {
+        if (mounted) setState(() => _optimisticComments = null);
+        showFriendlyErrorDialog(
+          context,
+          'Could not edit your comment. Please try again.',
+        );
+      }
     }
   }
 
@@ -415,16 +456,14 @@ class _CommentsSheetState extends State<CommentsSheet> {
       await CommunityPostsProvider.instance.refresh();
       if (mounted) setState(() => _optimisticComments = null);
     } catch (_) {
-      if (mounted) setState(() => _optimisticComments = null);
-      _snack('Could not delete comment. Try again.');
+      if (mounted) {
+        if (mounted) setState(() => _optimisticComments = null);
+        showFriendlyErrorDialog(
+          context,
+          'Could not delete your comment. Please try again.',
+        );
+      }
     }
-  }
-
-  void _snack(String m) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(m), duration: const Duration(seconds: 2)),
-    );
   }
 
   @override
@@ -524,12 +563,15 @@ class _CommentsSheetState extends State<CommentsSheet> {
                         widget.onToggleLike(id);
                         setState(() {});
                       },
-                      onReply: () =>
-                          _setReplyByAuthorName(c['author'] as String? ?? ''),
+                      onReply: () => _setReplyByCommentId(
+                        c['id'] as String,
+                        c['author'] as String? ?? '',
+                      ),
                       showReplies: true,
                       expandedReplies: _expandedReplies,
                       onToggleExpandReplies: _toggleExpandReplies,
-                      onReplyToReply: _setReplyByAuthorName,
+                      onReplyToReply: (authorName, commentId) =>
+                          _setReplyByCommentId(commentId, authorName),
                       currentUserId: _currentUserId,
                       onEdit: _handleEditComment,
                       onDelete: _handleDeleteComment,
@@ -561,7 +603,11 @@ class _CommentsSheetState extends State<CommentsSheet> {
       children: [
         Row(
           children: [
-            buildAuthorAvatar(width * 0.105, post['authorPhotoUrl'] as String?),
+            buildAuthorAvatar(
+              width * 0.105,
+              post['authorPhotoUrl'] as String?,
+              photoPath: post['authorPhotoPath'] as String?,
+            ),
             SizedBox(width: width * 0.025),
             Expanded(
               child: Column(
@@ -821,7 +867,35 @@ class _CommentsSheetState extends State<CommentsSheet> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  buildAvatar(width * 0.105, _myPhotoUrl),
+                  Container(
+                    width: width * 0.105,
+                    height: width * 0.105,
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Color(0xFFE5E7EB),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: (_myPhotoUrl != null && _myPhotoUrl!.isNotEmpty)
+                        ? CachedNetworkImage(
+                            imageUrl: _myPhotoUrl!,
+                            cacheKey: _myPhotoPath ?? _myPhotoUrl!,
+                            memCacheWidth: 110,
+                            fit: BoxFit.cover,
+                            fadeInDuration: const Duration(milliseconds: 150),
+                            placeholder: (context, url) => const Icon(
+                              Icons.person_rounded,
+                              color: Color(0xFF9CA3AF),
+                            ),
+                            errorWidget: (context, url, error) => const Icon(
+                              Icons.person_rounded,
+                              color: Color(0xFF9CA3AF),
+                            ),
+                          )
+                        : const Icon(
+                            Icons.person_rounded,
+                            color: Color(0xFF9CA3AF),
+                          ),
+                  ),
                   SizedBox(width: width * 0.03),
                   Expanded(
                     child: ConstrainedBox(

@@ -36,6 +36,8 @@ import '../../features/home/my_report/my_reports_screen.dart';
 import '../../features/home/Quick-action/Chat-with-Agent/chat_agent_screen.dart';
 import '../../features/home/Quick-action/Events/events_screen.dart';
 import '../../features/home/Quick-action/Suggestion/suggestion_screen.dart';
+import '../../features/home/my_report/report_detail_screen.dart';
+import '../../features/home/Quick-action/Events/event_detail_screen.dart';
 
 /// Required by [MaterialApp.navigatorObservers] for home route tracking.
 final RouteObserver<ModalRoute<void>> homeRouteObserver =
@@ -300,6 +302,15 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
       final username = settings.arguments as String? ?? '';
       return _slide(MyReportsScreen(username: username));
 
+    case '/report_detail':
+      final args = settings.arguments as Map<String, dynamic>;
+      return _slideUp(
+        ReportDetailScreen(
+          report: args['report'] as ReportItem,
+          username: args['username'] as String,
+        ),
+      );
+
     case '/chat':
       final username = settings.arguments as String? ?? '';
       return _slideUp(ChatAgentScreen(username: username));
@@ -437,6 +448,27 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
           street: args['street'] as String,
           frontImage: args['frontImage'] as Uint8List?,
           backImage: args['backImage'] as Uint8List?,
+        ),
+      );
+
+    case '/event_detail':
+      final args = settings.arguments as Map<String, dynamic>;
+      return PageRouteBuilder(
+        settings: settings,
+        transitionDuration: const Duration(milliseconds: 420),
+        reverseTransitionDuration: const Duration(milliseconds: 300),
+        pageBuilder: (_, _, _) => NetworkWrapper(
+          child: EventDetailScreen(
+            event: args['event'] as EventItem,
+            username: args['username'] as String? ?? '',
+          ),
+        ),
+        transitionsBuilder: (_, anim, _, child) => SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, 1), // slides up from bottom
+            end: Offset.zero,
+          ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
+          child: child,
         ),
       );
 

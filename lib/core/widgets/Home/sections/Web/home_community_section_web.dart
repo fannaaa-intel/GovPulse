@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import '../../../../theme/app_colors.dart';
 import '../../../../utils/community_posts_provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class HomeCommunitySectionWeb extends StatefulWidget {
   final VoidCallback onViewAll;
@@ -577,10 +578,13 @@ class _PostRowState extends State<_PostRow> {
                   width: 64,
                   height: 64,
                   child: hasImage
-                      ? Image.network(
-                          urls.first,
+                      ? CachedNetworkImage(
+                          imageUrl: urls.first,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => _placeholder(),
+                          fadeInDuration: const Duration(milliseconds: 300),
+                          fadeOutDuration: const Duration(milliseconds: 100),
+                          placeholder: (context, url) => _placeholder(),
+                          errorWidget: (context, url, error) => _placeholder(),
                         )
                       : _placeholder(),
                 ),

@@ -72,7 +72,8 @@ class ReportItem {
   final ReportStatus status;
   final DateTime dateReported;
   final bool isAnonymous;
-  final List<String> mediaPaths;
+  final int mediaCount;
+  final String fullId;
 
   const ReportItem({
     required this.id,
@@ -85,7 +86,8 @@ class ReportItem {
     required this.status,
     required this.dateReported,
     this.isAnonymous = false,
-    this.mediaPaths = const [],
+    this.mediaCount = 0,
+    required this.fullId,
   });
 
   factory ReportItem.fromMap(Map<String, dynamic> m) {
@@ -108,6 +110,7 @@ class ReportItem {
 
     return ReportItem(
       id: (m['id'] as String).substring(0, 8).toUpperCase(),
+      fullId: m['id'] as String,
       category: categoryLabel,
       categoryKey: categoryKey,
       categoryOther: categoryOther,
@@ -117,11 +120,7 @@ class ReportItem {
       status: parseStatus(m['status'] as String?),
       dateReported: DateTime.parse(m['created_at'] as String).toLocal(),
       isAnonymous: m['is_anonymous'] as bool? ?? false,
-      mediaPaths:
-          (m['media_paths'] as List<dynamic>?)
-              ?.map((e) => e.toString())
-              .toList() ??
-          [],
+      mediaCount: (m['report_media'] as List<dynamic>?)?.length ?? 0,
     );
   }
 
@@ -275,7 +274,7 @@ class _MyReportsScreenState extends State<MyReportsScreen>
 
       final response = await supabase
           .from('reports')
-          .select()
+          .select('*, report_media(id)')
           .eq('user_id', userId)
           .order('created_at', ascending: false);
 
@@ -590,7 +589,7 @@ class _MyReportsScreenState extends State<MyReportsScreen>
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
+        duration: const Duration(milliseconds: 320),
         curve: Curves.easeOut,
         padding: EdgeInsets.symmetric(horizontal: w * .025, vertical: w * .035),
         decoration: BoxDecoration(
@@ -753,6 +752,7 @@ class _MyReportsScreenState extends State<MyReportsScreen>
   Widget _buildAnimatedTile(double w, double ww, ReportItem report, int index) {
     final delaySteps = index.clamp(0, 6); // cap the cascade for long lists
     return TweenAnimationBuilder<double>(
+      key: ValueKey(report.id),
       tween: Tween<double>(begin: 0.0, end: 1.0),
       duration: Duration(milliseconds: 300 + delaySteps * 45),
       curve: Curves.easeOutCubic,
@@ -821,7 +821,11 @@ class _MyReportsScreenState extends State<MyReportsScreen>
 
     return InkWell(
       onTap: () {
-        // TODO: navigate to report detail screen
+        Navigator.pushNamed(
+          context,
+          '/report_detail',
+          arguments: {'report': report, 'username': widget.username},
+        );
       },
       child: Padding(
         padding: EdgeInsets.all(w * .04),
@@ -964,7 +968,7 @@ class _MyReportsScreenState extends State<MyReportsScreen>
                   _formatDate(report.dateReported),
                   style: _T.label(ww, color: _T.textDisabled),
                 ),
-                if (report.mediaPaths.isNotEmpty) ...[
+                if (report.mediaCount > 0) ...[
                   SizedBox(width: w * .03),
                   Icon(
                     Icons.attach_file_rounded,
@@ -973,7 +977,7 @@ class _MyReportsScreenState extends State<MyReportsScreen>
                   ),
                   SizedBox(width: w * .008),
                   Text(
-                    '${report.mediaPaths.length} file${report.mediaPaths.length > 1 ? 's' : ''}',
+                    '${report.mediaCount} file${report.mediaCount > 1 ? 's' : ''}',
                     style: _T.label(ww, color: _T.textDisabled),
                   ),
                 ],

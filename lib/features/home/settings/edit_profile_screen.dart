@@ -5,6 +5,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/loading/loading_overlay.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import '../../../core/widgets/modal/verification_required_dialog.dart';
 
 class EditProfileScreen extends StatefulWidget {
   final String username;
@@ -42,6 +44,8 @@ class _EditProfileScreenState extends State<EditProfileScreen>
 
   // ── Photo ─────────────────────────────────────────────────────────────────
   String? _currentPhotoUrl;
+  String? _currentPhotoPath;
+  String? _facePhotoPath;
   File? _pickedFile;
   Uint8List? _pickedBytes;
 
@@ -172,23 +176,17 @@ class _EditProfileScreenState extends State<EditProfileScreen>
           }
 
           // ── Profile photo ─────────────────────────────────────────────────
+          _facePhotoPath = verifRow?['face_photo_path'] as String?;
           final photoPath =
               (cd['profile_photo_path'] as String?)?.isNotEmpty == true
               ? cd['profile_photo_path'] as String
               : verifRow?['face_photo_path'] as String?;
 
           if (photoPath != null && photoPath.isNotEmpty) {
-            try {
-              _currentPhotoUrl = await supabase.storage
-                  .from('verification-assets')
-                  .createSignedUrl(photoPath, 3600);
-            } catch (_) {
-              try {
-                _currentPhotoUrl = supabase.storage
-                    .from('verification-assets')
-                    .getPublicUrl(photoPath);
-              } catch (_) {}
-            }
+            _currentPhotoPath = photoPath;
+            _currentPhotoUrl = supabase.storage
+                .from('verification-assets')
+                .getPublicUrl(photoPath);
           }
         }
 
@@ -294,24 +292,34 @@ class _EditProfileScreenState extends State<EditProfileScreen>
       };
       if (newPhotoPath != null) {
         updateData['profile_photo_path'] = newPhotoPath;
+        if (_currentPhotoPath != null) {
+          // Evict old image from local cache
+          await CachedNetworkImage.evictFromCache(_currentPhotoPath!);
+          // Delete old file from Supabase storage
+          // Delete old file from Supabase storage (never delete face scan)
+          final isFaceScan = _currentPhotoPath == _facePhotoPath;
+          if (!isFaceScan) {
+            try {
+              await supabase.storage.from('verification-assets').remove([
+                _currentPhotoPath!,
+              ]);
+            } catch (_) {}
+          }
+        }
+        _currentPhotoPath = newPhotoPath;
       }
-
       await supabase
           .from('citizen_details')
           .update(updateData)
           .eq('user_id', user.id);
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Profile updated successfully'),
-          backgroundColor: AppColors.green,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-        ),
+      await showSuccessDialog(
+        context,
+        title: 'Profile Updated',
+        message: 'Your profile information has been saved successfully.',
       );
+      if (!mounted) return;
       Navigator.pop(context, true);
     } catch (e) {
       setState(() {
@@ -1014,12 +1022,27 @@ class _EditProfileScreenState extends State<EditProfileScreen>
       );
     }
     if (_currentPhotoUrl != null && _currentPhotoUrl!.isNotEmpty) {
-      return Image.network(
-        _currentPhotoUrl!,
+      return CachedNetworkImage(
+        imageUrl: _currentPhotoUrl!,
+        cacheKey: _currentPhotoPath ?? _currentPhotoUrl!,
+        memCacheWidth: 280,
         width: size,
         height: size,
         fit: BoxFit.cover,
-        errorBuilder: (_, _, _) =>
+        placeholder: (context, url) => Container(
+          color: const Color(0xFFE5E7EB),
+          child: const Center(
+            child: SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: AppColors.primaryBlue,
+              ),
+            ),
+          ),
+        ),
+        errorWidget: (context, url, error) =>
             Image.asset('assets/images/profilenew.png', fit: BoxFit.cover),
       );
     }

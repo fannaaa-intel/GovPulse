@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../theme/app_colors.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 /// Small grey pill at the top of every bottom sheet.
 Widget dragHandle(double width) => Container(
@@ -34,7 +35,7 @@ Widget buildImagePlaceholder(double width) => Container(
 );
 
 /// Circular avatar for comments and replies.
-Widget buildAvatar(double size, String? photoUrl) {
+Widget buildAvatar(double size, String? photoUrl, {String? photoPath}) {
   return Container(
     width: size,
     height: size,
@@ -44,10 +45,21 @@ Widget buildAvatar(double size, String? photoUrl) {
     ),
     clipBehavior: Clip.antiAlias,
     child: (photoUrl != null && photoUrl.isNotEmpty)
-        ? Image.network(
-            photoUrl,
+        ? CachedNetworkImage(
+            imageUrl: photoUrl,
+            cacheKey: photoPath ?? photoUrl,
             fit: BoxFit.cover,
-            errorBuilder: (_, _, _) => Icon(
+            fadeInDuration: const Duration(milliseconds: 150),
+            fadeOutDuration: const Duration(milliseconds: 100),
+            placeholder: (context, url) => Container(
+              color: const Color(0xFFE5E7EB),
+              child: Icon(
+                Icons.person_rounded,
+                size: size * 0.6,
+                color: const Color(0xFF9CA3AF),
+              ),
+            ),
+            errorWidget: (context, url, error) => Icon(
               Icons.person_rounded,
               size: size * 0.6,
               color: const Color(0xFF9CA3AF),
@@ -62,7 +74,7 @@ Widget buildAvatar(double size, String? photoUrl) {
 }
 
 /// Post-author avatar (green border, citizen photo or institution fallback).
-Widget buildAuthorAvatar(double size, String? photoUrl) {
+Widget buildAuthorAvatar(double size, String? photoUrl, {String? photoPath}) {
   if (photoUrl != null && photoUrl.isNotEmpty) {
     return Container(
       width: size,
@@ -72,10 +84,22 @@ Widget buildAuthorAvatar(double size, String? photoUrl) {
         border: Border.all(color: AppColors.green, width: 1.5),
       ),
       clipBehavior: Clip.antiAlias,
-      child: Image.network(
-        photoUrl,
+      child: CachedNetworkImage(
+        imageUrl: photoUrl,
+        cacheKey: photoPath ?? photoUrl,
+
         fit: BoxFit.cover,
-        errorBuilder: (_, _, _) => Container(
+        fadeInDuration: const Duration(milliseconds: 150),
+        fadeOutDuration: const Duration(milliseconds: 100),
+        placeholder: (context, url) => Container(
+          color: AppColors.green.withValues(alpha: 0.12),
+          child: Icon(
+            Icons.account_balance_rounded,
+            size: size * 0.5,
+            color: AppColors.green,
+          ),
+        ),
+        errorWidget: (context, url, error) => Container(
           color: AppColors.green.withValues(alpha: 0.12),
           child: Icon(
             Icons.account_balance_rounded,

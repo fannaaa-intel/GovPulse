@@ -1,7 +1,15 @@
 import 'package:flutter/material.dart';
 
 // In SkeletonLayout enum — replace with:
-enum SkeletonLayout { none, home, settings, editProfile, myReports, newsFeed }
+enum SkeletonLayout {
+  none,
+  home,
+  settings,
+  editProfile,
+  myReports,
+  newsFeed,
+  events,
+}
 
 // ── Main widget ───────────────────────────────────────────────────────────────
 class LoadingOverlay extends StatelessWidget {
@@ -178,6 +186,8 @@ class _SkeletonScreen extends StatelessWidget {
         return const _MyReportsSkeletonScreen();
       case SkeletonLayout.newsFeed:
         return const _NewsFeedSkeletonScreen();
+      case SkeletonLayout.events:
+        return const EventsSkeletonScreen();
     }
   }
 }
@@ -309,16 +319,21 @@ class _HomeSkeletonScreen extends StatelessWidget {
           ),
         ),
       ),
-      bottomNavigationBar: Container(
-        height: w * 0.18,
-        color: Colors.white,
-        padding: EdgeInsets.symmetric(horizontal: w * 0.04, vertical: w * 0.03),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: List.generate(
-            5,
-            (_) =>
-                _Shimmer(width: w * 0.10, height: w * 0.10, radius: w * 0.02),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Container(
+          color: Colors.white,
+          padding: EdgeInsets.symmetric(
+            horizontal: w * 0.04,
+            vertical: w * 0.03,
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: List.generate(
+              5,
+              (_) =>
+                  _Shimmer(width: w * 0.10, height: w * 0.10, radius: w * 0.02),
+            ),
           ),
         ),
       ),
@@ -496,16 +511,21 @@ class _SettingsSkeletonScreen extends StatelessWidget {
           ],
         ),
       ),
-      bottomNavigationBar: Container(
-        height: w * 0.18,
-        color: Colors.white,
-        padding: EdgeInsets.symmetric(horizontal: w * 0.04, vertical: w * 0.03),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: List.generate(
-            5,
-            (_) =>
-                _Shimmer(width: w * 0.10, height: w * 0.10, radius: w * 0.02),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Container(
+          color: Colors.white,
+          padding: EdgeInsets.symmetric(
+            horizontal: w * 0.04,
+            vertical: w * 0.03,
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: List.generate(
+              5,
+              (_) =>
+                  _Shimmer(width: w * 0.10, height: w * 0.10, radius: w * 0.02),
+            ),
           ),
         ),
       ),
@@ -1097,16 +1117,21 @@ class _MyReportsSkeletonScreen extends StatelessWidget {
           ],
         ),
       ),
-      bottomNavigationBar: Container(
-        height: w * 0.18,
-        color: Colors.white,
-        padding: EdgeInsets.symmetric(horizontal: w * 0.04, vertical: w * 0.03),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: List.generate(
-            5,
-            (_) =>
-                _Shimmer(width: w * 0.10, height: w * 0.10, radius: w * 0.02),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Container(
+          color: Colors.white,
+          padding: EdgeInsets.symmetric(
+            horizontal: w * 0.04,
+            vertical: w * 0.03,
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: List.generate(
+              5,
+              (_) =>
+                  _Shimmer(width: w * 0.10, height: w * 0.10, radius: w * 0.02),
+            ),
           ),
         ),
       ),
@@ -1194,16 +1219,21 @@ class _NewsFeedSkeletonScreen extends StatelessWidget {
           ],
         ),
       ),
-      bottomNavigationBar: Container(
-        height: w * 0.18,
-        color: Colors.white,
-        padding: EdgeInsets.symmetric(horizontal: w * 0.04, vertical: w * 0.03),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: List.generate(
-            5,
-            (_) =>
-                _Shimmer(width: w * 0.10, height: w * 0.10, radius: w * 0.02),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Container(
+          color: Colors.white,
+          padding: EdgeInsets.symmetric(
+            horizontal: w * 0.04,
+            vertical: w * 0.03,
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: List.generate(
+              5,
+              (_) =>
+                  _Shimmer(width: w * 0.10, height: w * 0.10, radius: w * 0.02),
+            ),
           ),
         ),
       ),
@@ -1362,6 +1392,372 @@ class _NewsFeedSkeletonScreen extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ── Events skeleton ───────────────────────────────────────────────────────────
+class EventsSkeletonScreen extends StatelessWidget {
+  const EventsSkeletonScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final w = MediaQuery.of(context).size.width;
+    final cardW = w * 0.42;
+    final cardH = cardW * 1.42;
+    final imageH = cardW * 0.62;
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF3F4F6),
+      body: SafeArea(
+        child: Column(
+          children: [
+            // Header — matches _buildHeader
+            Container(
+              color: Colors.white,
+              padding: EdgeInsets.symmetric(
+                horizontal: w * 0.04,
+                vertical: w * 0.03,
+              ),
+              child: Row(
+                children: [
+                  _Shimmer(
+                    width: w * 0.09,
+                    height: w * 0.09,
+                    radius: w * 0.025,
+                  ),
+                  SizedBox(width: w * 0.03),
+                  _Shimmer(
+                    width: w * 0.36,
+                    height: w * 0.075,
+                    radius: w * 0.015,
+                  ),
+                ],
+              ),
+            ),
+            // Content area only
+            Expanded(
+              child: SingleChildScrollView(
+                physics: const NeverScrollableScrollPhysics(),
+                padding: EdgeInsets.only(bottom: w * 0.06),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(height: w * 0.04),
+                    // Hero banner
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: w * 0.04),
+                      child: _Shimmer(
+                        width: double.infinity,
+                        height: w * 0.30,
+                        radius: w * 0.04,
+                      ),
+                    ),
+                    SizedBox(height: w * 0.035),
+                    // Search bar
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: w * 0.04),
+                      child: _Shimmer(
+                        width: double.infinity,
+                        height: w * 0.115,
+                        radius: w * 0.03,
+                      ),
+                    ),
+                    SizedBox(height: w * 0.025),
+
+                    SizedBox(
+                      height: w * 0.088,
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        physics: const NeverScrollableScrollPhysics(),
+                        padding: EdgeInsets.symmetric(horizontal: w * 0.04),
+                        itemCount: 6,
+                        itemBuilder: (_, i) => Padding(
+                          padding: EdgeInsets.only(right: w * 0.02),
+                          child: _Shimmer(
+                            width: w * 0.17,
+                            height: w * 0.088,
+                            radius: w * 0.05,
+                          ),
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: w * 0.045),
+                    // Section label — Featured
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: w * 0.04),
+                      child: _Shimmer(
+                        width: w * 0.38,
+                        height: w * 0.042,
+                        radius: 6,
+                      ),
+                    ),
+                    SizedBox(height: w * 0.02),
+                    // Featured card
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: w * 0.04),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(w * 0.035),
+                          border: Border.all(color: const Color(0xFFE5E7EB)),
+                        ),
+                        padding: EdgeInsets.all(w * 0.035),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _Shimmer(
+                              width: w * 0.32,
+                              height: w * 0.38,
+                              radius: w * 0.025,
+                            ),
+                            SizedBox(width: w * 0.035),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _Shimmer(
+                                    width: double.infinity,
+                                    height: w * 0.038,
+                                    radius: 4,
+                                  ),
+                                  SizedBox(height: w * 0.010),
+                                  _Shimmer(
+                                    width: w * 0.30,
+                                    height: w * 0.038,
+                                    radius: 4,
+                                  ),
+                                  SizedBox(height: w * 0.018),
+                                  _Shimmer(
+                                    width: w * 0.42,
+                                    height: w * 0.026,
+                                    radius: 4,
+                                  ),
+                                  SizedBox(height: w * 0.010),
+                                  _Shimmer(
+                                    width: w * 0.36,
+                                    height: w * 0.026,
+                                    radius: 4,
+                                  ),
+                                  SizedBox(height: w * 0.010),
+                                  _Shimmer(
+                                    width: w * 0.30,
+                                    height: w * 0.026,
+                                    radius: 4,
+                                  ),
+                                  SizedBox(height: w * 0.018),
+                                  _Shimmer(
+                                    width: double.infinity,
+                                    height: w * 0.022,
+                                    radius: 4,
+                                  ),
+                                  SizedBox(height: w * 0.006),
+                                  _Shimmer(
+                                    width: w * 0.38,
+                                    height: w * 0.022,
+                                    radius: 4,
+                                  ),
+                                  SizedBox(height: w * 0.022),
+                                  _Shimmer(
+                                    width: double.infinity,
+                                    height: w * 0.075,
+                                    radius: w * 0.022,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    // REPLACE
+                    SizedBox(height: w * 0.045),
+                    // Section label — Today
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: w * 0.04),
+                      child: _Shimmer(
+                        width: w * 0.30,
+                        height: w * 0.042,
+                        radius: 6,
+                      ),
+                    ),
+                    SizedBox(height: w * 0.02),
+                    // REPLACE
+                    // Today cards row — identical card builder below
+                    SizedBox(
+                      height: cardH,
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        physics: const NeverScrollableScrollPhysics(),
+                        padding: EdgeInsets.symmetric(horizontal: w * 0.04),
+                        itemCount: 3,
+                        itemBuilder: (_, i) => Padding(
+                          padding: EdgeInsets.only(right: w * 0.03),
+                          child: SizedBox(
+                            width: cardW,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(w * 0.03),
+                                border: Border.all(
+                                  color: const Color(0xFFE5E7EB),
+                                ),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _Shimmer(
+                                    width: cardW,
+                                    height: imageH,
+                                    radius: w * 0.03,
+                                  ),
+                                  Padding(
+                                    padding: EdgeInsets.fromLTRB(
+                                      w * 0.025,
+                                      w * 0.020,
+                                      w * 0.025,
+                                      w * 0.020,
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        _Shimmer(
+                                          width: cardW * 0.75,
+                                          height: w * 0.030,
+                                          radius: 4,
+                                        ),
+                                        SizedBox(height: w * 0.010),
+                                        _Shimmer(
+                                          width: cardW * 0.55,
+                                          height: w * 0.025,
+                                          radius: 4,
+                                        ),
+                                        SizedBox(height: w * 0.008),
+                                        _Shimmer(
+                                          width: cardW * 0.45,
+                                          height: w * 0.025,
+                                          radius: 4,
+                                        ),
+                                        SizedBox(height: w * 0.008),
+                                        _Shimmer(
+                                          width: cardW * 0.38,
+                                          height: w * 0.025,
+                                          radius: 4,
+                                        ),
+                                        SizedBox(height: w * 0.012),
+                                        _Shimmer(
+                                          width: double.infinity,
+                                          height: w * 0.068,
+                                          radius: w * 0.02,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: w * 0.045),
+                    // Section label — Upcoming
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: w * 0.04),
+                      child: _Shimmer(
+                        width: w * 0.34,
+                        height: w * 0.042,
+                        radius: 6,
+                      ),
+                    ),
+                    SizedBox(height: w * 0.02),
+                    // Upcoming cards row
+                    SizedBox(
+                      height: cardH,
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        physics: const NeverScrollableScrollPhysics(),
+                        padding: EdgeInsets.symmetric(horizontal: w * 0.04),
+                        itemCount: 3,
+                        itemBuilder: (_, i) => Padding(
+                          padding: EdgeInsets.only(right: w * 0.03),
+                          child: SizedBox(
+                            width: cardW,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(w * 0.03),
+                                border: Border.all(
+                                  color: const Color(0xFFE5E7EB),
+                                ),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _Shimmer(
+                                    width: cardW,
+                                    height: imageH,
+                                    radius: w * 0.03,
+                                  ),
+                                  Padding(
+                                    padding: EdgeInsets.fromLTRB(
+                                      w * 0.025,
+                                      w * 0.020,
+                                      w * 0.025,
+                                      w * 0.020,
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        _Shimmer(
+                                          width: cardW * 0.75,
+                                          height: w * 0.030,
+                                          radius: 4,
+                                        ),
+                                        SizedBox(height: w * 0.010),
+                                        _Shimmer(
+                                          width: cardW * 0.55,
+                                          height: w * 0.025,
+                                          radius: 4,
+                                        ),
+                                        SizedBox(height: w * 0.008),
+                                        _Shimmer(
+                                          width: cardW * 0.45,
+                                          height: w * 0.025,
+                                          radius: 4,
+                                        ),
+                                        SizedBox(height: w * 0.008),
+                                        _Shimmer(
+                                          width: cardW * 0.38,
+                                          height: w * 0.025,
+                                          radius: 4,
+                                        ),
+                                        SizedBox(height: w * 0.012),
+                                        _Shimmer(
+                                          width: double.infinity,
+                                          height: w * 0.068,
+                                          radius: w * 0.02,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: w * 0.04),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

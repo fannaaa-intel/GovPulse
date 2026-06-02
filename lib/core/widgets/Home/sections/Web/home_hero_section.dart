@@ -2,7 +2,7 @@
 
 import 'package:flutter/material.dart';
 import '../../home_enums.dart';
-
+import 'package:cached_network_image/cached_network_image.dart';
 // ---------------------------------------------------------------------------
 // Layout notes (web only)
 // ---------------------------------------------------------------------------
@@ -38,6 +38,7 @@ class HomeHeroSection extends StatelessWidget {
   final String username;
   final String? fullName;
   final String? facePhotoUrl;
+  final String? facePhotoPath;
   final VerifStatus verifStatus;
   final bool profileLoading;
   final VoidCallback onVerifyTap;
@@ -61,6 +62,7 @@ class HomeHeroSection extends StatelessWidget {
     required this.username,
     required this.fullName,
     required this.facePhotoUrl,
+    this.facePhotoPath,
     required this.verifStatus,
     required this.profileLoading,
     required this.onVerifyTap,
@@ -198,6 +200,7 @@ class HomeHeroSection extends StatelessWidget {
                       username: username,
                       fullName: fullName,
                       facePhotoUrl: facePhotoUrl,
+                      facePhotoPath: facePhotoPath,
                       verifStatus: verifStatus,
                       loading: profileLoading,
                       onVerifyTap: onVerifyTap,
@@ -280,6 +283,7 @@ class _ProfileCard extends StatelessWidget {
   final String username;
   final String? fullName;
   final String? facePhotoUrl;
+  final String? facePhotoPath;
   final VerifStatus verifStatus;
   final bool loading;
   final VoidCallback onVerifyTap;
@@ -288,6 +292,7 @@ class _ProfileCard extends StatelessWidget {
     required this.username,
     required this.fullName,
     required this.facePhotoUrl,
+    this.facePhotoPath,
     required this.verifStatus,
     required this.loading,
     required this.onVerifyTap,
@@ -374,6 +379,7 @@ class _ProfileCard extends StatelessWidget {
       children: [
         _AvatarRing(
           url: facePhotoUrl,
+          cacheKey: facePhotoPath,
           loading: loading,
           verifStatus: verifStatus,
           size: avatarSize,
@@ -582,12 +588,14 @@ class _UsernameLocation extends StatelessWidget {
 // ── Avatar ring ────────────────────────────────────────────────────────────
 class _AvatarRing extends StatelessWidget {
   final String? url;
+  final String? cacheKey;
   final bool loading;
   final VerifStatus verifStatus;
   final double size;
 
   const _AvatarRing({
     required this.url,
+    this.cacheKey,
     required this.loading,
     required this.verifStatus,
     this.size = 56,
@@ -629,10 +637,15 @@ class _AvatarRing extends StatelessWidget {
                   ),
                 )
               : (url != null && url!.isNotEmpty)
-              ? Image.network(
-                  url!,
+              ? CachedNetworkImage(
+                  imageUrl: url!,
+                  cacheKey: cacheKey ?? url!,
+                  memCacheWidth: 120,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => _defaultAvatar(),
+                  fadeInDuration: const Duration(milliseconds: 300),
+                  fadeOutDuration: const Duration(milliseconds: 100),
+                  placeholder: (context, url) => _defaultAvatar(),
+                  errorWidget: (context, url, error) => _defaultAvatar(),
                 )
               : _defaultAvatar(),
         ),

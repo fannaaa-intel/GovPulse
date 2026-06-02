@@ -14,6 +14,9 @@ class EventModel {
   final String categoryColor;
   final bool isFeatured;
   final String? imageUrl;
+  final String? description;
+  final String? whatToExpect;
+  final String? requirements;
   final EventStatus status;
   final String createdBy;
   final String? reviewedBy;
@@ -29,6 +32,9 @@ class EventModel {
     required this.categoryColor,
     required this.isFeatured,
     this.imageUrl,
+    this.description,
+    this.whatToExpect,
+    this.requirements,
     required this.status,
     required this.createdBy,
     this.reviewedBy,
@@ -46,6 +52,9 @@ class EventModel {
       categoryColor: json['category_color'] as String,
       isFeatured: json['is_featured'] as bool,
       imageUrl: json['image_url'] as String?,
+      description: json['description'] as String?,
+      whatToExpect: json['what_to_expect'] as String?,
+      requirements: json['requirements'] as String?,
       status: EventStatus.values.firstWhere(
         (s) => s.name == (json['status'] as String),
         orElse: () => EventStatus.pending,
