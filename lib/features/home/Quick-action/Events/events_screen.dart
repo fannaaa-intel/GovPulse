@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../auth/services/events_service.dart';
+import '../../../../core/widgets/loading/loading_overlay.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 // ─── UI model (keeps all existing widgets working as-is) ─────────────────────
 
 class EventItem {
@@ -13,8 +15,11 @@ class EventItem {
   final String category;
   final Color categoryColor;
   final bool isFeatured;
-  final String? imageUrl; // ← network URL now (was imageAsset)
-  final DateTime eventDate; // ← raw date for Today/Upcoming logic
+  final String? imageUrl;
+  final String? description;
+  final String? whatToExpect;
+  final String? requirements;
+  final DateTime eventDate;
 
   const EventItem({
     required this.id,
@@ -27,6 +32,9 @@ class EventItem {
     required this.eventDate,
     this.isFeatured = false,
     this.imageUrl,
+    this.description,
+    this.whatToExpect,
+    this.requirements,
   });
 
   /// Map EventModel (Supabase) → EventItem (UI)
@@ -41,6 +49,9 @@ class EventItem {
       categoryColor: _hexToColor(m.categoryColor),
       isFeatured: m.isFeatured,
       imageUrl: m.imageUrl,
+      description: m.description,
+      whatToExpect: m.whatToExpect,
+      requirements: m.requirements,
       eventDate: m.eventDate,
     );
   }
@@ -89,7 +100,9 @@ class _EventsScreenState extends State<EventsScreen>
   // ── State ──────────────────────────────────────────────────────────────────
   List<EventItem> _events = [];
   bool _isLoading = true;
+  bool _isRefreshing = false;
   String? _error;
+  bool _cardsAnimating = false;
 
   String _selectedFilter = 'All';
   bool _showMoreFilters = false;
@@ -97,6 +110,8 @@ class _EventsScreenState extends State<EventsScreen>
   String _searchQuery = '';
 
   late final AnimationController _entryCtrl;
+  late final AnimationController _cardsCtrl;
+  bool _entryDone = false;
 
   // ── Lifecycle ──────────────────────────────────────────────────────────────
   @override
@@ -106,28 +121,34 @@ class _EventsScreenState extends State<EventsScreen>
       vsync: this,
       duration: const Duration(milliseconds: 800),
     );
+
+    _cardsCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
     _searchCtrl.addListener(
       () =>
           setState(() => _searchQuery = _searchCtrl.text.trim().toLowerCase()),
     );
-    _loadEvents();
+    _loadEvents(isInitialLoad: true);
   }
 
   @override
   void dispose() {
     _entryCtrl.dispose();
+    _cardsCtrl.dispose();
     _searchCtrl.dispose();
     super.dispose();
   }
 
   // ── Data fetching ──────────────────────────────────────────────────────────
-  Future<void> _loadEvents() async {
+  Future<void> _loadEvents({bool isInitialLoad = false}) async {
     setState(() {
-      _isLoading = true;
+      if (isInitialLoad) _isLoading = true;
+      _isRefreshing = !isInitialLoad;
       _error = null;
     });
     try {
-      // Pass category filter to the service when it's a real category
       final categoryFilter = _isCategoryFilter(_selectedFilter)
           ? _selectedFilter
           : null;
@@ -138,22 +159,38 @@ class _EventsScreenState extends State<EventsScreen>
       );
 
       if (!mounted) return;
+      _cardsCtrl.reset();
       setState(() {
         _events = models.map(EventItem.fromModel).toList();
         _isLoading = false;
+        _isRefreshing = false;
+        _cardsAnimating = true;
       });
-
-      // Run entry animation after data loads
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        Future.delayed(const Duration(milliseconds: 60), () {
-          if (mounted) _entryCtrl.forward(from: 0);
-        });
+        if (!mounted) return;
+
+        if (isInitialLoad) {
+          Future.delayed(const Duration(milliseconds: 60), () {
+            if (!mounted) return;
+            _entryCtrl.forward(from: 0);
+            setState(() => _entryDone = true);
+            _cardsCtrl.forward(from: 0).then((_) {
+              if (mounted) setState(() => _cardsAnimating = false);
+            });
+          });
+        } else {
+          _cardsCtrl.forward().then((_) {
+            if (mounted) setState(() => _cardsAnimating = false);
+          });
+        }
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _error = e.toString();
         _isLoading = false;
+        _isRefreshing = false;
+        _cardsAnimating = false;
       });
     }
   }
@@ -224,9 +261,14 @@ class _EventsScreenState extends State<EventsScreen>
   }
 
   // ── Build ──────────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
     final w = MediaQuery.of(context).size.width;
+
+    if (_isLoading) {
+      return const EventsSkeletonScreen();
+    }
 
     return Scaffold(
       backgroundColor: const Color(0xFFF3F4F6),
@@ -242,12 +284,6 @@ class _EventsScreenState extends State<EventsScreen>
   }
 
   Widget _buildBody(double w) {
-    // Loading state
-    if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    // Error state
     if (_error != null) {
       return Center(
         child: Padding(
@@ -271,7 +307,7 @@ class _EventsScreenState extends State<EventsScreen>
               ),
               SizedBox(height: w * 0.02),
               ElevatedButton.icon(
-                onPressed: _loadEvents,
+                onPressed: () => _loadEvents(isInitialLoad: true),
                 icon: const Icon(Icons.refresh_rounded),
                 label: const Text('Retry'),
               ),
@@ -281,7 +317,6 @@ class _EventsScreenState extends State<EventsScreen>
       );
     }
 
-    // Normal content — identical structure to original
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
       padding: EdgeInsets.only(bottom: w * 0.06),
@@ -293,26 +328,59 @@ class _EventsScreenState extends State<EventsScreen>
           _animated(1, _buildSearchBar(w)),
           _animated(2, _buildFilterChips(w)),
           if (_showMoreFilters) _animated(3, _buildMoreFilterChips(w)),
-          if (_featuredEvents.isNotEmpty) ...[
-            _animated(4, _buildSectionLabel('Featured Event', w)),
-            _animated(5, _buildFeaturedCard(_featuredEvents.first, w)),
-          ],
-          if (_todayEvents.isNotEmpty) ...[
-            _animated(6, _buildSectionLabel("Today's Event", w)),
-            _animated(7, _buildEventGrid(_todayEvents, w)),
-          ],
-          if (_upcomingEvents.isNotEmpty) ...[
-            _animated(8, _buildSectionLabel('Upcoming Events', w)),
-            _animated(9, _buildEventGrid(_upcomingEvents, w)),
-          ],
-          if (_filteredEvents.isEmpty)
-            _animated(4, Center(child: _buildEmpty(w))),
+
+          if (_isLoading || _isRefreshing)
+            _EventsCardsSkeleton(w: w)
+          else if (_cardsAnimating)
+            FadeTransition(
+              opacity: Tween<double>(begin: 0, end: 1).animate(
+                CurvedAnimation(parent: _cardsCtrl, curve: Curves.easeOut),
+              ),
+              child: SlideTransition(
+                position:
+                    Tween<Offset>(
+                      begin: const Offset(0, 0.12),
+                      end: Offset.zero,
+                    ).animate(
+                      CurvedAnimation(
+                        parent: _cardsCtrl,
+                        curve: Curves.easeOutQuart,
+                      ),
+                    ),
+                child: _buildEventSections(w),
+              ),
+            )
+          else
+            _buildEventSections(w),
         ],
       ),
     );
   }
 
+  Widget _buildEventSections(double w) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (_featuredEvents.isNotEmpty) ...[
+          _buildSectionLabel('Featured Event', w),
+          _buildFeaturedCard(_featuredEvents.first, w),
+        ],
+        if (_todayEvents.isNotEmpty) ...[
+          _buildSectionLabel("Today's Event", w),
+          _buildEventGrid(_todayEvents, w),
+        ],
+        if (_upcomingEvents.isNotEmpty) ...[
+          _buildSectionLabel('Upcoming Events', w),
+          _buildEventGrid(_upcomingEvents, w),
+        ],
+        if (_filteredEvents.isEmpty) Center(child: _buildEmpty(w)),
+      ],
+    );
+  }
+
   Widget _animated(int i, Widget child) {
+    if (_entryDone) return child;
+
     final start = (i * 0.10).clamp(0.0, 1.0);
     final end = (start + 0.50).clamp(0.0, 1.0);
     return FadeTransition(
@@ -334,11 +402,6 @@ class _EventsScreenState extends State<EventsScreen>
       ),
     );
   }
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // All widget builders below are IDENTICAL to original — only imageAsset
-  // references replaced with _eventImage(..., imageUrl: event.imageUrl)
-  // ─────────────────────────────────────────────────────────────────────────
 
   Widget _buildHeader(double w) {
     return Container(
@@ -571,7 +634,7 @@ class _EventsScreenState extends State<EventsScreen>
       child: GestureDetector(
         onTap: () {
           setState(() => _selectedFilter = label);
-          _loadEvents(); // re-fetch when filter changes
+          _loadEvents();
         },
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
@@ -670,15 +733,35 @@ class _EventsScreenState extends State<EventsScreen>
                           width: imageW,
                           height: double.infinity,
                           child: event.imageUrl != null
-                              ? Image.network(
-                                  event.imageUrl!,
+                              ? CachedNetworkImage(
+                                  imageUrl: event.imageUrl!,
                                   fit: BoxFit.cover,
-                                  errorBuilder: (_, _, _) => Container(
+                                  fadeInDuration: const Duration(
+                                    milliseconds: 300,
+                                  ),
+                                  fadeOutDuration: const Duration(
+                                    milliseconds: 100,
+                                  ),
+                                  placeholder: (context, url) => Container(
                                     color: const Color(0xFFE5E7EB),
                                     child: Center(
                                       child: Icon(
                                         Icons.image_rounded,
-                                        size: imageW * 0.38,
+                                        size:
+                                            imageW *
+                                            0.38, // use cardW * 0.28 in _buildSmallCard
+                                        color: const Color(0xFF9CA3AF),
+                                      ),
+                                    ),
+                                  ),
+                                  errorWidget: (context, url, error) => Container(
+                                    color: const Color(0xFFE5E7EB),
+                                    child: Center(
+                                      child: Icon(
+                                        Icons.image_rounded,
+                                        size:
+                                            imageW *
+                                            0.38, // use cardW * 0.28 in _buildSmallCard
                                         color: const Color(0xFF9CA3AF),
                                       ),
                                     ),
@@ -759,7 +842,14 @@ class _EventsScreenState extends State<EventsScreen>
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
-                          onPressed: () {},
+                          onPressed: () => Navigator.pushNamed(
+                            context,
+                            '/event_detail',
+                            arguments: {
+                              'event': event,
+                              'username': widget.username,
+                            },
+                          ),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.green,
                             elevation: 0,
@@ -839,10 +929,22 @@ class _EventsScreenState extends State<EventsScreen>
                     width: cardW,
                     height: imageH,
                     child: event.imageUrl != null
-                        ? Image.network(
-                            event.imageUrl!,
+                        ? CachedNetworkImage(
+                            imageUrl: event.imageUrl!,
                             fit: BoxFit.cover,
-                            errorBuilder: (_, _, _) => Container(
+                            fadeInDuration: const Duration(milliseconds: 300),
+                            fadeOutDuration: const Duration(milliseconds: 100),
+                            placeholder: (context, url) => Container(
+                              color: const Color(0xFFE5E7EB),
+                              child: Center(
+                                child: Icon(
+                                  Icons.image_rounded,
+                                  size: cardW * 0.28,
+                                  color: const Color(0xFF9CA3AF),
+                                ),
+                              ),
+                            ),
+                            errorWidget: (context, url, error) => Container(
                               color: const Color(0xFFE5E7EB),
                               child: Center(
                                 child: Icon(
@@ -927,7 +1029,14 @@ class _EventsScreenState extends State<EventsScreen>
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed: () {},
+                      onPressed: () => Navigator.pushNamed(
+                        context,
+                        '/event_detail',
+                        arguments: {
+                          'event': event,
+                          'username': widget.username,
+                        },
+                      ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primaryBlue,
                         elevation: 0,
@@ -1057,6 +1166,127 @@ class _EventsScreenState extends State<EventsScreen>
           ),
         ],
       ),
+    );
+  }
+}
+
+class _EventsCardsSkeleton extends StatefulWidget {
+  final double w;
+  const _EventsCardsSkeleton({required this.w});
+
+  @override
+  State<_EventsCardsSkeleton> createState() => _EventsCardsSkeletonState();
+}
+
+class _EventsCardsSkeletonState extends State<_EventsCardsSkeleton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _shimmer;
+
+  @override
+  void initState() {
+    super.initState();
+    _shimmer = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _shimmer.dispose();
+    super.dispose();
+  }
+
+  Widget _box(double w, double h, {double radius = 8}) => AnimatedBuilder(
+    animation: _shimmer,
+    builder: (_, _) => Container(
+      width: w,
+      height: h,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(radius),
+        color: Color.lerp(
+          const Color(0xFFE5E7EB),
+          const Color(0xFFF3F4F6),
+          _shimmer.value,
+        ),
+      ),
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final w = widget.w;
+    final cardW = w * 0.42;
+    final cardH = cardW * 1.42;
+    final imageH = cardW * 0.62;
+
+    Widget cardSkeleton() => Padding(
+      padding: EdgeInsets.only(right: w * 0.03),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _box(cardW, imageH, radius: w * 0.03),
+          SizedBox(height: w * 0.015),
+          _box(cardW * 0.75, w * 0.030),
+          SizedBox(height: w * 0.010),
+          _box(cardW * 0.55, w * 0.025),
+          SizedBox(height: w * 0.008),
+          _box(cardW * 0.45, w * 0.025),
+        ],
+      ),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(height: w * 0.045),
+        // Featured label
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: w * 0.04),
+          child: _box(w * 0.38, w * 0.042, radius: 6),
+        ),
+        SizedBox(height: w * 0.02),
+        // Featured card
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: w * 0.04),
+          child: _box(double.infinity, w * 0.42, radius: w * 0.035),
+        ),
+        SizedBox(height: w * 0.045),
+        // Today label
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: w * 0.04),
+          child: _box(w * 0.30, w * 0.042, radius: 6),
+        ),
+        SizedBox(height: w * 0.02),
+        SizedBox(
+          height: cardH,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            physics: const NeverScrollableScrollPhysics(),
+            padding: EdgeInsets.symmetric(horizontal: w * 0.04),
+            itemCount: 3,
+            itemBuilder: (_, _) => cardSkeleton(),
+          ),
+        ),
+        SizedBox(height: w * 0.045),
+        // Upcoming label
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: w * 0.04),
+          child: _box(w * 0.34, w * 0.042, radius: 6),
+        ),
+        SizedBox(height: w * 0.02),
+        SizedBox(
+          height: cardH,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            physics: const NeverScrollableScrollPhysics(),
+            padding: EdgeInsets.symmetric(horizontal: w * 0.04),
+            itemCount: 3,
+            itemBuilder: (_, _) => cardSkeleton(),
+          ),
+        ),
+        SizedBox(height: w * 0.04),
+      ],
     );
   }
 }

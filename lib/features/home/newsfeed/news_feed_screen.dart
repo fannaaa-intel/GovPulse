@@ -9,6 +9,7 @@ import '../../../core/widgets/Home/Newsfeed/image_grid.dart';
 import '../../../core/widgets/Home/Newsfeed/comment_item.dart';
 import '../../../core/widgets/Home/Newsfeed/comments_sheet.dart';
 import '../../../core/widgets/loading/loading_overlay.dart';
+import '../../../core/widgets/Home/Newsfeed/rate_limit_dialogs.dart';
 
 enum PostFilter {
   latest('Latest', null),
@@ -62,8 +63,11 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
       });
     });
     CommunityPostsProvider.instance.addListener(_onPostsChanged);
-    CommunityPostsProvider.instance.refresh();
-    _loadMyInteractions();
+    // ← Move refresh inside addPostFrameCallback so it runs AFTER build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      CommunityPostsProvider.instance.refresh();
+      _loadMyInteractions();
+    });
   }
 
   @override
@@ -109,28 +113,6 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
       final ts = p['timestamp'] as DateTime?;
       return ts != null && ts.isAfter(cutoff);
     }).toList();
-  }
-
-  String _friendlyError(Object e) {
-    final msg = e.toString();
-    if (msg.contains('rate_limit') ||
-        msg.contains('Rate limit') ||
-        msg.contains('slow down') ||
-        msg.contains('Slow down')) {
-      return 'Slow down — too many actions in a short time.';
-    }
-    if (msg.contains('row-level security') ||
-        msg.contains('violates row-level')) {
-      return 'You don\'t have permission for that action.';
-    }
-    return 'Something went wrong. Try again.';
-  }
-
-  void _showSnack(String message) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
-    );
   }
 
   Widget _animated(int i, Widget child) {
@@ -183,7 +165,10 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
     }
     final userId = _supabase.auth.currentUser?.id;
     if (userId == null) {
-      _showSnack('Please log in again.');
+      showFriendlyErrorDialog(
+        context,
+        'Your session has expired. Please log in again.',
+      );
       return;
     }
     final wasLiked = _likedComments.contains(commentId);
@@ -213,8 +198,19 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
               ? _likedComments.add(commentId)
               : _likedComments.remove(commentId),
         );
+        if (e is PostgrestException &&
+            (e.hint ?? '') == 'rate_limit_exceeded') {
+          showRateLimitDialog(
+            context,
+            'You\'ve liked too many comments. You can like up to 60 comments per minute. Please wait a moment before trying again.',
+          );
+        } else {
+          showFriendlyErrorDialog(
+            context,
+            'Unable to process your like. Please try again.',
+          );
+        }
       }
-      _showSnack(_friendlyError(e));
     }
   }
 
@@ -229,7 +225,10 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
     }
     final userId = _supabase.auth.currentUser?.id;
     if (userId == null) {
-      _showSnack('Please log in again.');
+      showFriendlyErrorDialog(
+        context,
+        'Your session has expired. Please log in again.',
+      );
       return;
     }
     final wasLiked = _likedPosts.contains(postId);
@@ -255,8 +254,19 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
         setState(
           () => wasLiked ? _likedPosts.add(postId) : _likedPosts.remove(postId),
         );
+        if (e is PostgrestException &&
+            (e.hint ?? '') == 'rate_limit_exceeded') {
+          showRateLimitDialog(
+            context,
+            'You\'ve liked too many posts. You can like up to 60 posts per minute. Please wait a moment before trying again.',
+          );
+        } else {
+          showFriendlyErrorDialog(
+            context,
+            'Unable to process your like. Please try again.',
+          );
+        }
       }
-      _showSnack(_friendlyError(e));
     }
   }
 
@@ -644,7 +654,23 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
   Widget _buildPostCard(double width, Map<String, dynamic> post) {
     final comments = post['comments'] as List<dynamic>;
     final commentCount = post['commentCount'] as int? ?? comments.length;
-    final previewComments = comments.take(3).toList();
+
+    // Flatten top-level comments + replies into one activity list
+    final allActivity = <Map<String, dynamic>>[];
+    for (final c in comments) {
+      final comment = c as Map<String, dynamic>;
+      allActivity.add(comment);
+      final replies = (comment['replies'] as List<dynamic>?) ?? [];
+      allActivity.addAll(replies.cast<Map<String, dynamic>>());
+    }
+    // Sort newest first so latest activity shows in preview
+    allActivity.sort((a, b) {
+      final ta = a['timestamp'] as DateTime?;
+      final tb = b['timestamp'] as DateTime?;
+      if (ta == null || tb == null) return 0;
+      return tb.compareTo(ta);
+    });
+    final previewComments = allActivity.take(3).toList();
     final postId = post['id'] as String;
     final isPostLiked = _likedPosts.contains(postId);
 
@@ -705,23 +731,37 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
                 padding: EdgeInsets.symmetric(vertical: width * 0.025),
                 child: Container(height: 1, color: const Color(0xFFE5E7EB)),
               ),
-              ...previewComments.map(
-                (c) => buildCommentItem(
+              ...previewComments.map((comment) {
+                final isReply = comment['parentId'] != null;
+                if (isReply) {
+                  return buildReplyItem(
+                    context,
+                    width,
+                    comment,
+                    likedComments: _likedComments,
+                    onToggleLike: _toggleLike,
+                    onReply: () => _openCommentsSheet(
+                      post,
+                      initialReplyTo: comment['author'] as String,
+                    ),
+                  );
+                }
+                return buildCommentItem(
                   context,
                   width,
-                  c as Map<String, dynamic>,
+                  comment,
                   likedComments: _likedComments,
                   onToggleLike: _toggleLike,
                   onReply: () => _openCommentsSheet(
                     post,
-                    initialReplyTo: c['author'] as String,
+                    initialReplyTo: comment['author'] as String,
                   ),
                   showReplies: false,
                   expandedReplies: const {},
                   onToggleExpandReplies: (_) {},
-                  onReplyToReply: (_) {},
-                ),
-              ),
+                  onReplyToReply: (_, _) {},
+                );
+              }),
               if (commentCount > 3)
                 Padding(
                   padding: EdgeInsets.only(top: width * 0.015),
@@ -761,7 +801,11 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        buildAuthorAvatar(width * 0.105, post['authorPhotoUrl'] as String?),
+        buildAuthorAvatar(
+          width * 0.105,
+          post['authorPhotoUrl'] as String?,
+          photoPath: post['authorPhotoPath'] as String?,
+        ),
         SizedBox(width: width * 0.025),
         Expanded(
           child: Column(

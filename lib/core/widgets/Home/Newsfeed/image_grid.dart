@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'news_feed_helpers.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 Widget buildImageGrid(
   double width,
@@ -20,10 +21,11 @@ Widget buildImageGrid(
 
   Widget cell(int index, {bool overlay = false}) {
     final img = imageUrls.length > index
-        ? Image.network(
-            imageUrls[index],
+        ? CachedNetworkImage(
+            imageUrl: imageUrls[index],
             fit: BoxFit.cover,
-            errorBuilder: (_, _, _) => buildImagePlaceholder(width),
+            placeholder: (context, url) => buildImagePlaceholder(width),
+            errorWidget: (context, url, error) => buildImagePlaceholder(width),
           )
         : buildImagePlaceholder(width);
     return Expanded(
@@ -60,10 +62,11 @@ Widget buildImageGrid(
 
   if (imageCount == 1) {
     final img = imageUrls.isNotEmpty
-        ? Image.network(
-            imageUrls[0],
+        ? CachedNetworkImage(
+            imageUrl: imageUrls[0],
             fit: BoxFit.cover,
-            errorBuilder: (_, _, _) => buildImagePlaceholder(width),
+            placeholder: (context, url) => buildImagePlaceholder(width),
+            errorWidget: (context, url, error) => buildImagePlaceholder(width),
           )
         : buildImagePlaceholder(width);
     return ClipRRect(
@@ -89,10 +92,13 @@ Widget buildImageGrid(
             AspectRatio(
               aspectRatio: 16 / 9,
               child: imageUrls.isNotEmpty
-                  ? Image.network(
-                      imageUrls[0],
+                  ? CachedNetworkImage(
+                      imageUrl: imageUrls[0],
                       fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => buildImagePlaceholder(width),
+                      placeholder: (context, url) =>
+                          buildImagePlaceholder(width),
+                      errorWidget: (context, url, error) =>
+                          buildImagePlaceholder(width),
                     )
                   : buildImagePlaceholder(width),
             ),
@@ -217,9 +223,23 @@ class _ImageViewerState extends State<_ImageViewer> {
                     child: widget.urls.length > index
                         ? ClipRRect(
                             borderRadius: BorderRadius.circular(width * 0.02),
-                            child: Image.network(
-                              widget.urls[index],
+                            child: CachedNetworkImage(
+                              imageUrl: widget.urls[index],
                               fit: BoxFit.cover,
+                              placeholder: (context, url) => Container(
+                                color: const Color(0xFF374151),
+                                child: const Center(
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white54,
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                              ),
+                              errorWidget: (context, url, error) => Icon(
+                                Icons.broken_image_outlined,
+                                size: width * 0.25,
+                                color: const Color(0xFF9CA3AF),
+                              ),
                             ),
                           )
                         : Icon(

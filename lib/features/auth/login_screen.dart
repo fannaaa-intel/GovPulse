@@ -634,14 +634,26 @@ class _LoginScreenState extends State<LoginScreen>
     });
 
     try {
-      final canLogin = await Supabase.instance.client.rpc(
-        'can_attempt_login',
-        params: {'p_identifier': cleanUsername},
-      );
+      // ── Wrap RPC in its own try-catch so network errors show a clean message
+      Map<String, dynamic> canLogin;
+      try {
+        canLogin = await Supabase.instance.client.rpc(
+          'can_attempt_login',
+          params: {'p_identifier': cleanUsername},
+        );
+      } catch (_) {
+        setState(
+          () => errorMessage =
+              "No internet connection. Please check your network and try again.",
+        );
+        return;
+      }
+
       if (canLogin['allowed'] != true) {
         setState(() => errorMessage = canLogin['message'] as String);
         return;
       }
+
       await widget.onLoginClick(cleanUsername, cleanPassword);
     } catch (e) {
       setState(() {

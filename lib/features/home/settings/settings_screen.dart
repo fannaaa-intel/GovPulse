@@ -6,6 +6,7 @@ import '../../../core/widgets/modal/verification_required_dialog.dart';
 import '../../../core/widgets/Home/nav/app_bottom_nav.dart';
 import '../../auth/services/chat_service.dart';
 import '../../../core/widgets/Home/Chat-bubbles/home_chat_bubble.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class SettingScreen extends StatefulWidget {
   final String username;
@@ -24,6 +25,7 @@ class _SettingScreenState extends State<SettingScreen>
 
   // ── Profile state ─────────────────────────────────────────────────────────
   String? _facePhotoUrl;
+  String? _facePhotoPath;
   String? _fullName;
   String? _email;
   String _verifStatus = 'none';
@@ -152,26 +154,19 @@ class _SettingScreenState extends State<SettingScreen>
         resolvedPhotoPath = verifRow?['face_photo_path'] as String?;
       }
 
-      // 3. Resolve signed URL
+      // 3. Resolve URL — use stable public URL so cache always hits
       String? photoUrl;
       if (resolvedPhotoPath != null && resolvedPhotoPath.isNotEmpty) {
-        try {
-          photoUrl = await supabase.storage
-              .from('verification-assets')
-              .createSignedUrl(resolvedPhotoPath, 3600);
-        } catch (_) {
-          try {
-            photoUrl = supabase.storage
-                .from('verification-assets')
-                .getPublicUrl(resolvedPhotoPath);
-          } catch (_) {}
-        }
+        photoUrl = supabase.storage
+            .from('verification-assets')
+            .getPublicUrl(resolvedPhotoPath);
       }
 
       if (mounted) {
         setState(() {
           _verifStatus = status;
           _facePhotoUrl = photoUrl;
+          _facePhotoPath = resolvedPhotoPath;
           _fullName = (fullName?.isNotEmpty == true) ? fullName : null;
           _profileLoading = false;
         });
@@ -655,13 +650,29 @@ class _SettingScreenState extends State<SettingScreen>
     }
 
     if (_facePhotoUrl != null && _facePhotoUrl!.isNotEmpty) {
-      return Image.network(
-        _facePhotoUrl!,
+      return CachedNetworkImage(
+        imageUrl: _facePhotoUrl!,
+        cacheKey: _facePhotoPath ?? _facePhotoUrl!,
+        memCacheWidth: 160,
         width: size,
         height: size,
         fit: BoxFit.cover,
-        errorBuilder: (_, _, _) =>
-            Image.asset('assets/images/profilenew.png', fit: BoxFit.cover),
+        placeholder: (context, url) => Container(
+          color: const Color(0xFFE5E7EB),
+          child: const Center(
+            child: SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: AppColors.primaryBlue,
+              ),
+            ),
+          ),
+        ),
+        errorWidget:
+            (context, url, error) => // ← was (_, _, _)
+                Image.asset('assets/images/profilenew.png', fit: BoxFit.cover),
       );
     }
 

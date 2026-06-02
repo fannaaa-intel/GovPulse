@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../theme/app_colors.dart';
 import '../home_enums.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 // ── Main card widget ──────────────────────────────────────────────────────────
 class HomeProfileCard extends StatelessWidget {
@@ -8,6 +9,7 @@ class HomeProfileCard extends StatelessWidget {
   final VerifStatus verifStatus;
   final String? fullName;
   final String? facePhotoUrl;
+  final String? facePhotoPath;
   final bool profileLoading;
   final int notificationCount;
   final VoidCallback onNotificationTap;
@@ -24,6 +26,7 @@ class HomeProfileCard extends StatelessWidget {
     required this.verifStatus,
     required this.fullName,
     required this.facePhotoUrl,
+    this.facePhotoPath,
     required this.profileLoading,
     required this.notificationCount,
     required this.onNotificationTap,
@@ -83,30 +86,31 @@ class HomeProfileCard extends StatelessWidget {
     }
 
     if (facePhotoUrl != null && facePhotoUrl!.isNotEmpty) {
-      return Image.network(
-        facePhotoUrl!,
+      return CachedNetworkImage(
+        imageUrl: facePhotoUrl!,
+        cacheKey: facePhotoPath ?? facePhotoUrl!,
+        memCacheWidth: 170,
         width: size,
         height: size,
         fit: BoxFit.cover,
-        loadingBuilder: (context, child, progress) {
-          if (progress == null) return child;
-          return Container(
-            width: size,
-            height: size,
-            color: const Color(0xFFE5E7EB),
-            child: Center(
-              child: SizedBox(
-                width: size * 0.40,
-                height: size * 0.40,
-                child: const CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: AppColors.primaryBlue,
-                ),
+        fadeInDuration: const Duration(milliseconds: 300),
+        fadeOutDuration: const Duration(milliseconds: 100),
+        placeholder: (context, url) => Container(
+          width: size,
+          height: size,
+          color: const Color(0xFFE5E7EB),
+          child: Center(
+            child: SizedBox(
+              width: size * 0.40,
+              height: size * 0.40,
+              child: const CircularProgressIndicator(
+                strokeWidth: 2,
+                color: AppColors.primaryBlue,
               ),
             ),
-          );
-        },
-        errorBuilder: (context, error, stackTrace) => Image.asset(
+          ),
+        ),
+        errorWidget: (context, url, error) => Image.asset(
           'assets/images/profilenew.png',
           fit: BoxFit.cover,
           width: size,

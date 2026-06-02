@@ -9,6 +9,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'location_picker_screen.dart';
+import '../../../../core/widgets/Home/Newsfeed/rate_limit_dialogs.dart';
 
 // ── Aparri bounding box — must match location_picker_screen.dart ──────────
 const double _riMinLat = 18.2750;
@@ -185,6 +186,16 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
   bool _locationOutsideAparri = false;
   bool _locationPermissionDenied = false;
 
+  bool _hasAnyInput() {
+    return _selectedCategory != null ||
+        _othersCtrl.text.isNotEmpty ||
+        _remarksCtrl.text.isNotEmpty ||
+        _streetDetailCtrl.text.isNotEmpty ||
+        _attachedFiles.isNotEmpty ||
+        _submitAnonymously ||
+        (_pickedBarangay != null && !_useCurrentLocation); // manually picked
+  }
+
   // ── Categories ─────────────────────────────────────────────────────────────
   final List<Map<String, dynamic>> _categories = [
     {
@@ -249,6 +260,129 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
     _remarksCtrl.dispose();
     _streetDetailCtrl.dispose();
     super.dispose();
+  }
+
+  Future<bool> _showDiscardConfirmation() async {
+    if (!_hasAnyInput()) return true;
+
+    FocusScope.of(context).unfocus();
+    await Future.delayed(const Duration(milliseconds: 50));
+    if (!mounted) return false;
+
+    final result = await showGeneralDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      barrierLabel: 'Discard',
+      barrierColor: Colors.black54,
+      transitionDuration: const Duration(milliseconds: 280),
+      transitionBuilder: (ctx, anim, secondAnim, child) {
+        final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutBack);
+        return FadeTransition(
+          opacity: CurvedAnimation(parent: anim, curve: Curves.easeOut),
+          child: ScaleTransition(scale: curved, child: child),
+        );
+      },
+      pageBuilder: (ctx, anim, secondAnim) {
+        final width = MediaQuery.of(ctx).size.width;
+        return Center(
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              margin: EdgeInsets.symmetric(horizontal: width * 0.07),
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Theme.of(ctx).dialogBackgroundColor,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 64,
+                    height: 64,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF3F4F6),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.edit_off_rounded,
+                      color: Color(0xFF6B7280),
+                      size: 30,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Discard changes?',
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF1F2937),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'You have unsaved information. Are you sure you want to go back? All your entries will be lost.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Color(0xFF6B7280),
+                      height: 1.55,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.pop(ctx, false),
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide(color: AppColors.primaryBlue),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                          child: Text(
+                            'Keep editing',
+                            style: TextStyle(
+                              color: AppColors.primaryBlue,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.pop(ctx, true),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                          child: const Text(
+                            'Discard',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    FocusManager.instance.primaryFocus?.unfocus();
+    return result ?? false;
   }
 
   // ── GPS auto-fetch — sets current location (no barangay name needed) ────────
@@ -474,37 +608,52 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
-    return Scaffold(
-      backgroundColor: const Color(0xFFF3F4F6),
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildHeader(width),
-            Expanded(
-              child: SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                padding: EdgeInsets.only(bottom: width * 0.06),
-                child: Column(
-                  children: [
-                    SizedBox(height: width * 0.04),
-                    _animated(0, _buildCategorySection(width)),
-                    SizedBox(height: width * 0.04),
-                    _animated(1, _buildLocationSection(width)),
-                    SizedBox(height: width * 0.04),
-                    _animated(2, _buildRemarksSection(width)),
-                    SizedBox(height: width * 0.04),
-                    _animated(3, _buildAttachSection(width)),
-                    SizedBox(height: width * 0.04),
-                    _animated(4, _buildAnonymousSection(width)),
-                    SizedBox(height: width * 0.035),
-                    _animated(5, _buildDisclaimer(width)),
-                    SizedBox(height: width * 0.045),
-                    _animated(5, _buildSubmitButton(width)),
-                  ],
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        final navigator = Navigator.of(context);
+        final shouldPop = await _showDiscardConfirmation();
+        if (shouldPop && mounted) navigator.pop();
+      },
+      child: GestureDetector(
+        onTap: () => FocusScope.of(context).unfocus(),
+        behavior: HitTestBehavior.translucent,
+        child: Scaffold(
+          backgroundColor: const Color(0xFFF3F4F6),
+          body: SafeArea(
+            child: Column(
+              children: [
+                _buildHeader(width),
+                Expanded(
+                  child: SingleChildScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
+                    padding: EdgeInsets.only(bottom: width * 0.06),
+                    child: Column(
+                      children: [
+                        SizedBox(height: width * 0.04),
+                        _animated(0, _buildCategorySection(width)),
+                        SizedBox(height: width * 0.04),
+                        _animated(1, _buildLocationSection(width)),
+                        SizedBox(height: width * 0.04),
+                        _animated(2, _buildRemarksSection(width)),
+                        SizedBox(height: width * 0.04),
+                        _animated(3, _buildAttachSection(width)),
+                        SizedBox(height: width * 0.04),
+                        _animated(4, _buildAnonymousSection(width)),
+                        SizedBox(height: width * 0.035),
+                        _animated(5, _buildDisclaimer(width)),
+                        SizedBox(height: width * 0.045),
+                        _animated(5, _buildSubmitButton(width)),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -521,7 +670,10 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
       child: Row(
         children: [
           GestureDetector(
-            onTap: () => Navigator.pop(context),
+            onTap: () async {
+              final shouldPop = await _showDiscardConfirmation();
+              if (shouldPop && mounted) Navigator.pop(context);
+            },
             child: Container(
               width: width * 0.09,
               height: width * 0.09,
@@ -1122,6 +1274,8 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
     final remaining = _maxFiles - _attachedFiles.length;
     if (remaining <= 0) return;
 
+    FocusManager.instance.primaryFocus?.unfocus();
+
     final choice = await showModalBottomSheet<String>(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -1281,6 +1435,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
     }
 
     if (validFiles.isEmpty) return;
+    FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
       final canAdd = _maxFiles - _attachedFiles.length;
       _attachedFiles.addAll(validFiles.take(canAdd));
@@ -1708,6 +1863,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
                         onPressed: () {
                           Navigator.pop(ctx);
                           setState(() => _submitAnonymously = false);
+                          FocusScope.of(context).unfocus();
                         },
                         style: TextButton.styleFrom(
                           padding: EdgeInsets.zero,
@@ -1728,6 +1884,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
                         onPressed: () {
                           Navigator.pop(ctx);
                           setState(() => _submitAnonymously = true);
+                          FocusScope.of(context).unfocus();
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.primaryBlue,
@@ -1894,14 +2051,14 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
       final userId = supabase.auth.currentUser!.id;
 
       // ── 2. Upload media files to storage ─────────────────────────────────
-      final List<String> mediaPaths = [];
-      for (final file in _attachedFiles) {
+      final List<Map<String, String>> mediaItems = [];
+      for (int i = 0; i < _attachedFiles.length; i++) {
+        final file = _attachedFiles[i];
         final bytes = await file.readAsBytes();
         final ext = file.name.split('.').last.toLowerCase();
         final fileName =
-            '${DateTime.now().millisecondsSinceEpoch}_${file.name}';
+            '${DateTime.now().millisecondsSinceEpoch}_${i}_${file.name}';
         final storagePath = 'reports/$userId/$fileName';
-
         final contentType = _isVideo(file) ? 'video/$ext' : 'image/$ext';
 
         await supabase.storage
@@ -1912,53 +2069,69 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
               fileOptions: FileOptions(contentType: contentType),
             );
 
-        mediaPaths.add(storagePath);
+        mediaItems.add({'path': storagePath, 'mime': contentType});
       }
 
       // ── 3. Insert report into database ────────────────────────────────────
-      //
-      //  ANONYMOUS LOGIC:
-      //  user_id is ALWAYS stored — admins need it for moderation.
-      //  is_anonymous = true just tells the DB (and the reports_public view)
-      //  to hide the identity when staff/public reads it.
-      //
-      await supabase.from('reports').insert({
-        'user_id': userId, // always stored
-        'category': _selectedCategory,
-        'category_other': _selectedCategory == 'others'
-            ? _othersCtrl.text.trim()
-            : null,
-        'barangay': _pickedBarangay, // e.g. 'Maura'
-        'address':
-            _streetDetailCtrl.text
-                .trim()
-                .isEmpty // optional street
-            ? null
-            : _streetDetailCtrl.text.trim(),
-        'latitude': _pickedLatLng!.latitude,
-        'longitude': _pickedLatLng!.longitude,
-        'remarks': _remarksCtrl.text.trim(),
-        'is_anonymous': _submitAnonymously, // hides identity in UI
-        'media_paths': mediaPaths,
-        'status': 'pending',
-      });
+      final response = await supabase
+          .from('reports')
+          .insert({
+            'user_id': userId,
+            'category': _selectedCategory,
+            'category_other': _selectedCategory == 'others'
+                ? _othersCtrl.text.trim()
+                : null,
+            'barangay': _pickedBarangay,
+            'address': _streetDetailCtrl.text.trim().isEmpty
+                ? null
+                : _streetDetailCtrl.text.trim(),
+            'latitude': _pickedLatLng!.latitude,
+            'longitude': _pickedLatLng!.longitude,
+            'remarks': _remarksCtrl.text.trim(),
+            'is_anonymous': _submitAnonymously,
+            'status': 'pending',
+          })
+          .select('id')
+          .single();
 
-      // ── 4. Success ────────────────────────────────────────────────────────
+      final reportId = response['id'] as String;
+
+      // ── 4. Insert media rows into report_media table ──────────────────────
+      for (int i = 0; i < mediaItems.length; i++) {
+        await supabase.from('report_media').insert({
+          'report_id': reportId,
+          'storage_path': mediaItems[i]['path'],
+          'mime_type': mediaItems[i]['mime'],
+          'display_order': i + 1,
+        });
+      }
+      // ── 5. Success ────────────────────────────────────────────────────────
       if (mounted) _showSuccessDialog();
     } on StorageException catch (e) {
       if (mounted) {
-        _showErrorDialog('File upload failed: ${e.message}');
+        showFriendlyErrorDialog(context, 'File upload failed: ${e.message}');
       }
     } on PostgrestException catch (e) {
       if (mounted) {
-        _showErrorDialog('Could not save report: ${e.message}');
+        if ((e.hint ?? '') == 'rate_limit_exceeded') {
+          showRateLimitDialog(
+            context,
+            'You have reached the daily limit of 5 reports. Please come back tomorrow to submit another report.',
+          );
+        } else {
+          showFriendlyErrorDialog(
+            context,
+            'Could not save your report. Please try again.',
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
-        _showErrorDialog('Something went wrong. Please try again.');
+        showFriendlyErrorDialog(
+          context,
+          'Something went wrong. Please try again.',
+        );
       }
-    } finally {
-      if (mounted) setState(() => _isSubmitting = false);
     }
   }
 
@@ -2019,77 +2192,6 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
                   ),
                   child: const Text(
                     'OK',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ── Error dialog ─────────────────────────────────────────────────────────────
-  void _showErrorDialog(String message) {
-    showDialog(
-      context: context,
-      builder: (ctx) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 64,
-                height: 64,
-                decoration: BoxDecoration(
-                  color: Colors.red.withValues(alpha: 0.10),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.error_outline_rounded,
-                  color: Colors.red,
-                  size: 32,
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Submission Failed',
-                style: TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w800,
-                  color: Color(0xFF1F2937),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                message,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: Color(0xFF6B7280),
-                  height: 1.55,
-                ),
-              ),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primaryBlue,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                  child: const Text(
-                    'Try Again',
                     style: TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.w700,

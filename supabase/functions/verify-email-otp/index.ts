@@ -20,11 +20,11 @@ serve(async (req) => {
   }
 
   try {
-    const { email, code } = await req.json()
+    const { email, code, password } = await req.json()
 
-    if (!email || !code) {
+    if (!email || !code || !password) {
       return new Response(JSON.stringify({
-        success: false, message: "Email and code are required"
+        success: false, message: "Email, code and password are required"
       }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } })
     }
 
@@ -38,13 +38,11 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     )
 
-    // Check IP rate limit
     const ipLimit = await checkRateLimit(supabase, `verify-otp:ip:${ip}`, 20, 600)
     if (!ipLimit.allowed) {
       return rateLimitResponse(ipLimit.retryAfter, "Too many attempts. Please try again later.")
     }
 
-    // Check OTP failures
     const since = new Date(Date.now() - LOCKOUT_WINDOW * 1000).toISOString()
     const { count: failureCount } = await supabase
       .from("otp_failures")
@@ -56,10 +54,10 @@ serve(async (req) => {
       return rateLimitResponse(LOCKOUT_WINDOW, "Too many failed attempts. Please request a new code in 15 minutes.")
     }
 
-    // Step 1 — fetch pending signup
+    // Step 1 — fetch pending signup (username only, password never stored)
     const { data: pending, error: pendingError } = await supabase
       .from("pending_signups")
-      .select("username, password")
+      .select("username")
       .eq("email", normalizedEmail)
       .single()
 
@@ -71,7 +69,7 @@ serve(async (req) => {
       }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } })
     }
 
-    // Step 2 — try "signup" type first (new users), fall back to "email" (returning users)
+    // Step 2 — verify OTP
     let data: { user: User; session: Session } | null = null
     let otpError: AuthError | null = null
     let usedType = ""
@@ -103,10 +101,10 @@ serve(async (req) => {
       }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } })
     }
 
-    // Step 3 — set password
+    // Step 3 — set password from request body, never from DB
     const { error: passError } = await supabase.auth.admin.updateUserById(
       data.user.id,
-      { password: pending.password }
+      { password: password }
     )
 
     if (passError) {

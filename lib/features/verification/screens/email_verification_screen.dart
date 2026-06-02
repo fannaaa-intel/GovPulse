@@ -152,7 +152,11 @@ class VerificationScreenState extends State<VerificationScreen>
           "Content-Type": "application/json",
           "apikey": "sb_publishable_ZBDaQPQdFyC5kOHGbce9Ig_zdtIi6Mo",
         },
-        body: jsonEncode({"email": widget.email, "code": code.trim()}),
+        body: jsonEncode({
+          "email": widget.email,
+          "code": code.trim(),
+          "password": widget.password,
+        }),
       );
 
       final data = jsonDecode(response.body);

@@ -63,7 +63,7 @@ const List<String> _barangayList = [
 ];
 
 // ── Verified coordinates — sourced from PhilAtlas (PSA census data) ──────
-const Map<String, LatLng> _barangayCoords = {
+const Map<String, LatLng> barangayCoords = {
   // ── Verified from PhilAtlas ──
   'Backiling': LatLng(18.2861, 121.5849),
   'Bangag': LatLng(18.2964, 121.5615),
@@ -114,7 +114,7 @@ const Map<String, LatLng> _barangayCoords = {
 String findNearestBarangay(LatLng pos) {
   String nearest = _barangayList.first;
   double minDist = double.maxFinite;
-  for (final entry in _barangayCoords.entries) {
+  for (final entry in barangayCoords.entries) {
     final dlat = entry.value.latitude - pos.latitude;
     final dlng = entry.value.longitude - pos.longitude;
     final d = dlat * dlat + dlng * dlng;
@@ -131,11 +131,13 @@ String findNearestBarangay(LatLng pos) {
 class LocationPickerScreen extends StatefulWidget {
   final LatLng? initialPosition;
   final String? initialBarangay;
+  final bool readOnly;
 
   const LocationPickerScreen({
     super.key,
     this.initialPosition,
     this.initialBarangay,
+    this.readOnly = false,
   });
 
   @override
@@ -157,7 +159,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
         widget.initialBarangay != 'Current Location') {
       _selectedBarangay = widget.initialBarangay;
       _markerPosition =
-          _barangayCoords[_selectedBarangay] ?? widget.initialPosition;
+          barangayCoords[_selectedBarangay] ?? widget.initialPosition;
     } else if (widget.initialPosition != null) {
       _markerPosition = widget.initialPosition;
     }
@@ -245,7 +247,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
         'latLng': _markerPosition,
       });
     } else {
-      final coords = _barangayCoords[_selectedBarangay] ?? _aparriCenter;
+      final coords = barangayCoords[_selectedBarangay] ?? _aparriCenter;
       Navigator.pop(context, {
         'barangay': _selectedBarangay,
         'useCurrentLocation': false,
@@ -525,7 +527,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                   children: [
                     // ── Title + subtitle ─────────────────────────────────────
                     Text(
-                      'Edit Location',
+                      widget.readOnly ? 'Pinned Location' : 'Edit Location',
                       style: TextStyle(
                         fontSize: width * 0.044,
                         fontWeight: FontWeight.w700,
@@ -534,7 +536,9 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                     ),
                     SizedBox(height: width * 0.008),
                     Text(
-                      'Toggle GPS or select a barangay from the list.',
+                      widget.readOnly
+                          ? 'Showing the exact location of the reported issue.'
+                          : 'Toggle GPS or select a barangay from the list.',
                       style: TextStyle(
                         fontSize: width * 0.030,
                         color: const Color(0xFF9CA3AF),
@@ -546,7 +550,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                     ClipRRect(
                       borderRadius: BorderRadius.circular(width * 0.035),
                       child: SizedBox(
-                        height: width * 0.62,
+                        height: widget.readOnly ? width * 1.10 : width * 0.62,
                         child: GoogleMap(
                           initialCameraPosition: CameraPosition(
                             target: _markerPosition ?? _aparriCenter,
@@ -571,315 +575,319 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                       ),
                     ),
 
-                    SizedBox(height: width * 0.04),
+                    if (!widget.readOnly) ...[
+                      SizedBox(height: width * 0.04),
 
-                    // ── Unified form card ────────────────────────────────────
-                    Container(
-                      width: double.infinity,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(width * 0.04),
-                        border: Border.all(color: const Color(0xFFE5E7EB)),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.04),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // ── Toggle row ─────────────────────────────────────
-                          Padding(
-                            padding: EdgeInsets.all(width * 0.04),
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: width * 0.105,
-                                  height: width * 0.105,
-                                  decoration: BoxDecoration(
-                                    color: AppColors.primaryBlue.withValues(
-                                      alpha: 0.08,
-                                    ),
-                                    borderRadius: BorderRadius.circular(
-                                      width * 0.03,
-                                    ),
-                                  ),
-                                  child: Icon(
-                                    Icons.my_location_rounded,
-                                    size: width * 0.05,
-                                    color: AppColors.primaryBlue,
-                                  ),
-                                ),
-                                SizedBox(width: width * 0.03),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'Use my current location',
-                                        style: TextStyle(
-                                          fontSize: width * 0.034,
-                                          fontWeight: FontWeight.w600,
-                                          color: const Color(0xFF1F2937),
-                                        ),
-                                      ),
-                                      SizedBox(height: width * 0.005),
-                                      Text(
-                                        'Detects your GPS position',
-                                        style: TextStyle(
-                                          fontSize: width * 0.027,
-                                          color: const Color(0xFF9CA3AF),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                if (_isLoadingGPS)
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                    ),
-                                    child: SizedBox(
-                                      width: 22,
-                                      height: 22,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2.5,
-                                        color: AppColors.primaryBlue,
-                                      ),
-                                    ),
-                                  )
-                                else
-                                  Switch(
-                                    value: _useCurrentLocation,
-                                    onChanged: (v) async {
-                                      setState(() {
-                                        _useCurrentLocation = v;
-                                        if (!v) {
-                                          _markerPosition =
-                                              _selectedBarangay != null
-                                              ? _barangayCoords[_selectedBarangay]
-                                              : null;
-                                          if (_markerPosition != null) {
-                                            _mapController?.animateCamera(
-                                              CameraUpdate.newLatLngZoom(
-                                                _markerPosition!,
-                                                15,
-                                              ),
-                                            );
-                                          }
-                                        }
-                                      });
-                                      if (v) await _fetchCurrentLocation();
-                                    },
-                                    activeTrackColor: AppColors.primaryBlue,
-                                    activeThumbColor: Colors.white,
-                                    inactiveThumbColor: Colors.white,
-                                    inactiveTrackColor: const Color(0xFFD1D5DB),
-                                  ),
-                              ],
+                      // ── Unified form card ────────────────────────────────────
+                      Container(
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(width * 0.04),
+                          border: Border.all(color: const Color(0xFFE5E7EB)),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.04),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
                             ),
-                          ),
-
-                          const Divider(height: 1, color: Color(0xFFE5E7EB)),
-
-                          // ── Barangay section ───────────────────────────────
-                          Padding(
-                            padding: EdgeInsets.all(width * 0.04),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Icon(
-                                      Icons.location_on_rounded,
-                                      size: width * 0.038,
+                          ],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // ── Toggle row ─────────────────────────────────────
+                            Padding(
+                              padding: EdgeInsets.all(width * 0.04),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: width * 0.105,
+                                    height: width * 0.105,
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primaryBlue.withValues(
+                                        alpha: 0.08,
+                                      ),
+                                      borderRadius: BorderRadius.circular(
+                                        width * 0.03,
+                                      ),
+                                    ),
+                                    child: Icon(
+                                      Icons.my_location_rounded,
+                                      size: width * 0.05,
                                       color: AppColors.primaryBlue,
                                     ),
-                                    SizedBox(width: width * 0.015),
-                                    Text(
-                                      'Barangay',
-                                      style: TextStyle(
-                                        fontSize: width * 0.032,
-                                        fontWeight: FontWeight.w600,
-                                        color: AppColors.primaryBlue,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                SizedBox(height: width * 0.025),
-
-                                // Dropdown
-                                AnimatedOpacity(
-                                  opacity: _useCurrentLocation ? 0.45 : 1.0,
-                                  duration: const Duration(milliseconds: 200),
-                                  child: IgnorePointer(
-                                    ignoring: _useCurrentLocation,
-                                    child: Container(
-                                      width: double.infinity,
-                                      padding: EdgeInsets.symmetric(
-                                        horizontal: width * 0.04,
-                                        vertical: width * 0.005,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFFF9FAFB),
-                                        border: Border.all(
-                                          color: const Color(0xFFE5E7EB),
-                                        ),
-                                        borderRadius: BorderRadius.circular(
-                                          width * 0.025,
-                                        ),
-                                      ),
-                                      child: DropdownButton<String>(
-                                        value: _selectedBarangay,
-                                        isExpanded: true,
-                                        underline: const SizedBox(),
-                                        icon: Icon(
-                                          Icons.keyboard_arrow_down_rounded,
-                                          color: AppColors.primaryBlue,
-                                          size: width * 0.06,
-                                        ),
-                                        hint: Text(
-                                          _useCurrentLocation
-                                              ? 'Using current location'
-                                              : 'Select barangay',
+                                  ),
+                                  SizedBox(width: width * 0.03),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Use my current location',
                                           style: TextStyle(
                                             fontSize: width * 0.034,
+                                            fontWeight: FontWeight.w600,
+                                            color: const Color(0xFF1F2937),
+                                          ),
+                                        ),
+                                        SizedBox(height: width * 0.005),
+                                        Text(
+                                          'Detects your GPS position',
+                                          style: TextStyle(
+                                            fontSize: width * 0.027,
                                             color: const Color(0xFF9CA3AF),
                                           ),
                                         ),
-                                        style: TextStyle(
-                                          fontSize: width * 0.034,
-                                          color: const Color(0xFF1F2937),
-                                        ),
-                                        items: _barangayList
-                                            .map(
-                                              (b) => DropdownMenuItem(
-                                                value: b,
-                                                child: Text(b),
-                                              ),
-                                            )
-                                            .toList(),
-                                        onChanged: (val) {
-                                          if (val == null) return;
-                                          final coords = _barangayCoords[val];
-                                          setState(() {
-                                            _selectedBarangay = val;
-                                            _markerPosition = coords;
-                                          });
-                                          if (coords != null) {
-                                            _mapController?.animateCamera(
-                                              CameraUpdate.newLatLngZoom(
-                                                coords,
-                                                15,
-                                              ),
-                                            );
-                                          }
-                                        },
-                                      ),
+                                      ],
                                     ),
                                   ),
-                                ),
-
-                                // Confirmation chip — manual selection
-                                if (_selectedBarangay != null &&
-                                    !_useCurrentLocation) ...[
-                                  SizedBox(height: width * 0.025),
-                                  Row(
-                                    children: [
-                                      Container(
-                                        padding: const EdgeInsets.all(3),
-                                        decoration: BoxDecoration(
-                                          color: AppColors.primaryBlue
-                                              .withValues(alpha: 0.12),
-                                          shape: BoxShape.circle,
-                                        ),
-                                        child: Icon(
-                                          Icons.check_rounded,
-                                          size: width * 0.032,
+                                  if (_isLoadingGPS)
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                      ),
+                                      child: SizedBox(
+                                        width: 22,
+                                        height: 22,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2.5,
                                           color: AppColors.primaryBlue,
                                         ),
                                       ),
-                                      SizedBox(width: width * 0.02),
-                                      Expanded(
-                                        child: Text(
-                                          '$_selectedBarangay selected',
-                                          style: TextStyle(
-                                            fontSize: width * 0.029,
-                                            color: AppColors.primaryBlue,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
+                                    )
+                                  else
+                                    Switch(
+                                      value: _useCurrentLocation,
+                                      onChanged: (v) async {
+                                        setState(() {
+                                          _useCurrentLocation = v;
+                                          if (!v) {
+                                            _markerPosition =
+                                                _selectedBarangay != null
+                                                ? barangayCoords[_selectedBarangay]
+                                                : null;
+                                            if (_markerPosition != null) {
+                                              _mapController?.animateCamera(
+                                                CameraUpdate.newLatLngZoom(
+                                                  _markerPosition!,
+                                                  15,
+                                                ),
+                                              );
+                                            }
+                                          }
+                                        });
+                                        if (v) await _fetchCurrentLocation();
+                                      },
+                                      activeTrackColor: AppColors.primaryBlue,
+                                      activeThumbColor: Colors.white,
+                                      inactiveThumbColor: Colors.white,
+                                      inactiveTrackColor: const Color(
+                                        0xFFD1D5DB,
                                       ),
-                                    ],
-                                  ),
+                                    ),
                                 ],
+                              ),
+                            ),
 
-                                // Confirmation chip — GPS placed
-                                if (_selectedBarangay != null &&
-                                    _useCurrentLocation) ...[
-                                  SizedBox(height: width * 0.025),
+                            const Divider(height: 1, color: Color(0xFFE5E7EB)),
+
+                            // ── Barangay section ───────────────────────────────
+                            Padding(
+                              padding: EdgeInsets.all(width * 0.04),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
                                   Row(
                                     children: [
                                       Icon(
-                                        Icons.my_location_rounded,
+                                        Icons.location_on_rounded,
                                         size: width * 0.038,
                                         color: AppColors.primaryBlue,
                                       ),
-                                      SizedBox(width: width * 0.02),
-                                      Expanded(
-                                        child: Text(
-                                          'GPS placed in $_selectedBarangay',
-                                          style: TextStyle(
-                                            fontSize: width * 0.029,
-                                            color: AppColors.primaryBlue,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                          overflow: TextOverflow.ellipsis,
+                                      SizedBox(width: width * 0.015),
+                                      Text(
+                                        'Barangay',
+                                        style: TextStyle(
+                                          fontSize: width * 0.032,
+                                          fontWeight: FontWeight.w600,
+                                          color: AppColors.primaryBlue,
                                         ),
                                       ),
                                     ],
                                   ),
+                                  SizedBox(height: width * 0.025),
+
+                                  // Dropdown
+                                  AnimatedOpacity(
+                                    opacity: _useCurrentLocation ? 0.45 : 1.0,
+                                    duration: const Duration(milliseconds: 200),
+                                    child: IgnorePointer(
+                                      ignoring: _useCurrentLocation,
+                                      child: Container(
+                                        width: double.infinity,
+                                        padding: EdgeInsets.symmetric(
+                                          horizontal: width * 0.04,
+                                          vertical: width * 0.005,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFF9FAFB),
+                                          border: Border.all(
+                                            color: const Color(0xFFE5E7EB),
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            width * 0.025,
+                                          ),
+                                        ),
+                                        child: DropdownButton<String>(
+                                          value: _selectedBarangay,
+                                          isExpanded: true,
+                                          underline: const SizedBox(),
+                                          icon: Icon(
+                                            Icons.keyboard_arrow_down_rounded,
+                                            color: AppColors.primaryBlue,
+                                            size: width * 0.06,
+                                          ),
+                                          hint: Text(
+                                            _useCurrentLocation
+                                                ? 'Using current location'
+                                                : 'Select barangay',
+                                            style: TextStyle(
+                                              fontSize: width * 0.034,
+                                              color: const Color(0xFF9CA3AF),
+                                            ),
+                                          ),
+                                          style: TextStyle(
+                                            fontSize: width * 0.034,
+                                            color: const Color(0xFF1F2937),
+                                          ),
+                                          items: _barangayList
+                                              .map(
+                                                (b) => DropdownMenuItem(
+                                                  value: b,
+                                                  child: Text(b),
+                                                ),
+                                              )
+                                              .toList(),
+                                          onChanged: (val) {
+                                            if (val == null) return;
+                                            final coords = barangayCoords[val];
+                                            setState(() {
+                                              _selectedBarangay = val;
+                                              _markerPosition = coords;
+                                            });
+                                            if (coords != null) {
+                                              _mapController?.animateCamera(
+                                                CameraUpdate.newLatLngZoom(
+                                                  coords,
+                                                  15,
+                                                ),
+                                              );
+                                            }
+                                          },
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+
+                                  // Confirmation chip — manual selection
+                                  if (_selectedBarangay != null &&
+                                      !_useCurrentLocation) ...[
+                                    SizedBox(height: width * 0.025),
+                                    Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.all(3),
+                                          decoration: BoxDecoration(
+                                            color: AppColors.primaryBlue
+                                                .withValues(alpha: 0.12),
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: Icon(
+                                            Icons.check_rounded,
+                                            size: width * 0.032,
+                                            color: AppColors.primaryBlue,
+                                          ),
+                                        ),
+                                        SizedBox(width: width * 0.02),
+                                        Expanded(
+                                          child: Text(
+                                            '$_selectedBarangay selected',
+                                            style: TextStyle(
+                                              fontSize: width * 0.029,
+                                              color: AppColors.primaryBlue,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+
+                                  // Confirmation chip — GPS placed
+                                  if (_selectedBarangay != null &&
+                                      _useCurrentLocation) ...[
+                                    SizedBox(height: width * 0.025),
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          Icons.my_location_rounded,
+                                          size: width * 0.038,
+                                          color: AppColors.primaryBlue,
+                                        ),
+                                        SizedBox(width: width * 0.02),
+                                        Expanded(
+                                          child: Text(
+                                            'GPS placed in $_selectedBarangay',
+                                            style: TextStyle(
+                                              fontSize: width * 0.029,
+                                              color: AppColors.primaryBlue,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
                                 ],
-                              ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      SizedBox(height: width * 0.04),
+
+                      // ── Confirm button ────────────────────────────────────────
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: _canConfirm ? _confirm : null,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primaryBlue,
+                            disabledBackgroundColor: const Color(0xFFD1D5DB),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(width * 0.03),
+                            ),
+                            padding: EdgeInsets.symmetric(
+                              vertical: width * 0.042,
+                            ),
+                            elevation: 2,
+                          ),
+                          child: Text(
+                            'Confirm Address',
+                            style: TextStyle(
+                              fontSize: width * 0.04,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
                             ),
                           ),
-                        ],
-                      ),
-                    ),
-
-                    SizedBox(height: width * 0.04),
-
-                    // ── Confirm button ────────────────────────────────────────
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: _canConfirm ? _confirm : null,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primaryBlue,
-                          disabledBackgroundColor: const Color(0xFFD1D5DB),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(width * 0.03),
-                          ),
-                          padding: EdgeInsets.symmetric(
-                            vertical: width * 0.042,
-                          ),
-                          elevation: 2,
-                        ),
-                        child: Text(
-                          'Confirm Address',
-                          style: TextStyle(
-                            fontSize: width * 0.04,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                          ),
                         ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),
@@ -914,29 +922,79 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
             ),
           ),
           SizedBox(width: w * 0.03),
-          Image.asset(
-            'assets/images/newslogo.png',
-            height: w * 0.085,
-            fit: BoxFit.contain,
-            errorBuilder: (_, _, _) => Row(
-              children: [
-                Icon(
-                  Icons.account_balance_rounded,
-                  size: w * 0.07,
-                  color: AppColors.primaryBlue,
+          if (!widget.readOnly)
+            Image.asset(
+              'assets/images/newslogo.png',
+              height: w * 0.085,
+              fit: BoxFit.contain,
+              errorBuilder: (_, _, _) => Icon(
+                Icons.account_balance_rounded,
+                size: w * 0.065,
+                color: AppColors.primaryBlue,
+              ),
+            ),
+          if (!widget.readOnly) SizedBox(width: w * 0.03),
+          Expanded(
+            child: widget.readOnly
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Report Location',
+                        style: TextStyle(
+                          fontSize: w * 0.040,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF1F2937),
+                          letterSpacing: -0.2,
+                        ),
+                      ),
+                      if (widget.initialBarangay != null)
+                        Text(
+                          '${widget.initialBarangay}, Aparri, Cagayan',
+                          style: TextStyle(
+                            fontSize: w * 0.027,
+                            color: const Color(0xFF9CA3AF),
+                            fontWeight: FontWeight.w500,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                    ],
+                  )
+                : const SizedBox.shrink(),
+          ),
+          if (widget.readOnly)
+            Container(
+              padding: EdgeInsets.symmetric(
+                horizontal: w * 0.025,
+                vertical: w * 0.010,
+              ),
+              decoration: BoxDecoration(
+                color: AppColors.primaryBlue.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(w * 0.04),
+                border: Border.all(
+                  color: AppColors.primaryBlue.withValues(alpha: 0.20),
                 ),
-                SizedBox(width: w * 0.02),
-                Text(
-                  'GovPulse',
-                  style: TextStyle(
-                    fontSize: w * 0.048,
-                    fontWeight: FontWeight.w700,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.visibility_rounded,
+                    size: w * 0.030,
                     color: AppColors.primaryBlue,
                   ),
-                ),
-              ],
+                  SizedBox(width: w * 0.010),
+                  Text(
+                    'View only',
+                    style: TextStyle(
+                      fontSize: w * 0.024,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.primaryBlue,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
         ],
       ),
     );

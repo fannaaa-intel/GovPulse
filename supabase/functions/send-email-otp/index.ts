@@ -48,10 +48,10 @@ serve(async (req) => {
       return rateLimitResponse(emailLong.retryAfter, "Too many code requests for this email. Try again in an hour.")
     }
 
-    // Save signup info to waiting room — no user created yet
+    // Store username only — password never touches the DB
     const { error: pendingError } = await supabase
       .from("pending_signups")
-      .upsert({ email: normalizedEmail, username, password })
+      .upsert({ email: normalizedEmail, username })
 
     if (pendingError) {
       return new Response(
@@ -60,14 +60,13 @@ serve(async (req) => {
       )
     }
 
-    // Send OTP — this creates a ghost auth user but no profile/password yet
-   const { error } = await supabase.auth.signInWithOtp({
-  email: normalizedEmail,
-  options: {
-    shouldCreateUser: true,
-    emailRedirectTo: undefined,  // disables magic link, forces OTP
-  }
-})
+    const { error } = await supabase.auth.signInWithOtp({
+      email: normalizedEmail,
+      options: {
+        shouldCreateUser: true,
+        emailRedirectTo: undefined,
+      }
+    })
 
     if (error) {
       return new Response(

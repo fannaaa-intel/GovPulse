@@ -132,39 +132,28 @@ class CommunityPostsProvider extends ChangeNotifier {
   ) async {
     final out = <String, Map<String, String?>>{};
 
-    final results = await Future.wait([
-      _supabase
-          .from('citizen_details')
-          .select('user_id, first_name, last_name, profile_photo_path')
-          .inFilter('user_id', userIds),
-      _supabase
-          .from('admin_details')
-          .select('user_id, first_name, last_name')
-          .inFilter('user_id', userIds),
-      _supabase
-          .from('staff_details')
-          .select('user_id, first_name, last_name')
-          .inFilter('user_id', userIds),
-    ]);
+    // Single query to the safe public view instead of 3 separate tables
+    final rows = await _supabase
+        .from('public_user_profiles')
+        .select('user_id, first_name, last_name, profile_photo_path')
+        .inFilter('user_id', userIds);
 
-    for (final list in results) {
-      for (final row in list) {
-        final id = row['user_id'] as String;
-        final first = (row['first_name'] as String?) ?? '';
-        final last = (row['last_name'] as String?) ?? '';
-        final full = '$first $last'.trim();
-        final photoPath = row['profile_photo_path'] as String?;
-        out[id] = {
-          'name': full.isEmpty ? null : full,
-          'photoPath': (photoPath != null && photoPath.isNotEmpty)
-              ? photoPath
-              : null,
-          'photoUrl': null,
-        };
-      }
+    for (final row in rows) {
+      final id = row['user_id'] as String;
+      final first = (row['first_name'] as String?) ?? '';
+      final last = (row['last_name'] as String?) ?? '';
+      final full = '$first $last'.trim();
+      final photoPath = row['profile_photo_path'] as String?;
+      out[id] = {
+        'name': full.isEmpty ? null : full,
+        'photoPath': (photoPath != null && photoPath.isNotEmpty)
+            ? photoPath
+            : null,
+        'photoUrl': null,
+      };
     }
 
-    // Resolve signed URLs in parallel for everyone with a photo
+    // Resolve signed URLs (keep exactly as before)
     final withPhotos = out.entries
         .where((e) => e.value['photoPath'] != null)
         .toList();
@@ -173,12 +162,12 @@ class CommunityPostsProvider extends ChangeNotifier {
         withPhotos.map((e) async {
           try {
             return await _supabase.storage
-                .from(_photoBucket)
+                .from('verification-assets')
                 .createSignedUrl(e.value['photoPath']!, 3600);
           } catch (_) {
             try {
               return _supabase.storage
-                  .from(_photoBucket)
+                  .from('verification-assets')
                   .getPublicUrl(e.value['photoPath']!);
             } catch (_) {
               return null;
@@ -189,14 +178,6 @@ class CommunityPostsProvider extends ChangeNotifier {
       for (var i = 0; i < withPhotos.length; i++) {
         out[withPhotos[i].key]!['photoUrl'] = urls[i];
       }
-    }
-
-    // Log any unresolved IDs in debug
-    final missing = userIds.where((id) => !out.containsKey(id)).toList();
-    if (missing.isNotEmpty && kDebugMode) {
-      debugPrint(
-        'CommunityPostsProvider: could not resolve details for: $missing',
-      );
     }
 
     return out;
@@ -233,6 +214,9 @@ class CommunityPostsProvider extends ChangeNotifier {
       'author': (row['author_name'] as String?) ?? 'Unknown',
       'authorRole': row['author_role'] as String? ?? 'user',
       'authorPhotoUrl': authorPhotoUrl,
+      'authorPhotoPath': (authorPhotoPath != null && authorPhotoPath.isNotEmpty)
+          ? authorPhotoPath
+          : null,
       'barangay': row['barangay'] as String? ?? '',
       'tag': row['tag'] as String? ?? '',
       'tagColor': _hexToColor(row['tag_color'] as String? ?? '#22C55E'),
@@ -262,6 +246,7 @@ class CommunityPostsProvider extends ChangeNotifier {
       'authorId': authorId,
       'author': authorInfo?['name'] ?? 'Resident',
       'authorPhotoUrl': authorInfo?['photoUrl'],
+      'authorPhotoPath': authorInfo?['photoPath'],
       'mentionedUser': mentionedInfo?['name'],
       'mentionedUserId': mentionedId,
       'text': row['body'] as String? ?? '',

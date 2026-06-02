@@ -64,7 +64,7 @@ Widget buildCommentItem(
   required bool showReplies,
   required Set<String> expandedReplies,
   required ValueChanged<String> onToggleExpandReplies,
-  required ValueChanged<String> onReplyToReply,
+  required void Function(String authorName, String commentId) onReplyToReply,
   String? currentUserId,
   ValueChanged<Map<String, dynamic>>? onEdit,
   ValueChanged<Map<String, dynamic>>? onDelete,
@@ -90,7 +90,11 @@ Widget buildCommentItem(
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            buildAvatar(width * 0.085, comment['authorPhotoUrl'] as String?),
+            buildAvatar(
+              width * 0.085,
+              comment['authorPhotoUrl'] as String?,
+              photoPath: comment['authorPhotoPath'] as String?,
+            ),
             SizedBox(width: width * 0.025),
             Expanded(
               child: Column(
@@ -197,7 +201,10 @@ Widget buildCommentItem(
               r as Map<String, dynamic>,
               likedComments: likedComments,
               onToggleLike: onToggleLike,
-              onReply: () => onReplyToReply(r['author'] as String? ?? ''),
+              onReply: () => onReplyToReply(
+                r['author'] as String? ?? '',
+                r['id'] as String,
+              ),
               currentUserId: currentUserId,
               onEdit: onEdit,
               onDelete: onDelete,
@@ -268,7 +275,11 @@ Widget buildReplyItem(
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        buildAvatar(width * 0.07, reply['authorPhotoUrl'] as String?),
+        buildAvatar(
+          width * 0.07,
+          reply['authorPhotoUrl'] as String?,
+          photoPath: reply['authorPhotoPath'] as String?,
+        ),
         SizedBox(width: width * 0.022),
         Expanded(
           child: Column(

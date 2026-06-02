@@ -50,6 +50,7 @@ class _HomePageState extends State<HomePage>
 
   VerifStatus _verifStatus = VerifStatus.none;
   String? _facePhotoUrl;
+  String? _facePhotoPath;
   String? _fullName;
   bool _profileLoading = true;
 
@@ -527,22 +528,15 @@ class _HomePageState extends State<HomePage>
           }
         } catch (_) {}
         if (facePath != null && facePath.isNotEmpty) {
-          try {
-            faceUrl = await supabase.storage
-                .from('verification-assets')
-                .createSignedUrl(facePath, 3600);
-          } catch (_) {
-            try {
-              faceUrl = supabase.storage
-                  .from('verification-assets')
-                  .getPublicUrl(facePath);
-            } catch (_) {}
-          }
+          faceUrl = supabase.storage
+              .from('verification-assets')
+              .getPublicUrl(facePath);
         }
         if (mounted) {
           setState(() {
             _verifStatus = verifStatus;
             _facePhotoUrl = faceUrl;
+            _facePhotoPath = facePath;
             _fullName = fullName;
             _profileLoading = false;
           });
@@ -559,22 +553,15 @@ class _HomePageState extends State<HomePage>
           if (res != null) fullName = res['username'] as String?;
         } catch (_) {}
         if (facePath != null && facePath.isNotEmpty) {
-          try {
-            faceUrl = await supabase.storage
-                .from('verification-assets')
-                .createSignedUrl(facePath, 3600);
-          } catch (_) {
-            try {
-              faceUrl = supabase.storage
-                  .from('verification-assets')
-                  .getPublicUrl(facePath);
-            } catch (_) {}
-          }
+          faceUrl = supabase.storage
+              .from('verification-assets')
+              .getPublicUrl(facePath);
         }
         if (mounted) {
           setState(() {
             _verifStatus = verifStatus;
             _facePhotoUrl = faceUrl;
+            _facePhotoPath = facePath;
             _fullName = fullName;
             _profileLoading = false;
           });
@@ -655,9 +642,7 @@ class _HomePageState extends State<HomePage>
         child: Scaffold(
           // Mobile keeps its own soft-blue page bg; web bands use the lighter
           // dashboard bg so the hero/stats/footer blend seamlessly.
-          backgroundColor: useMobile
-              ? const Color(0xFFDDE4F5)
-              : const Color(0xFFF3F6FC),
+          backgroundColor: useMobile ? Colors.white : const Color(0xFFF3F6FC),
 
           // Drawer app bar ONLY in the 600–900 band.
           appBar: useDrawer ? _buildDrawerAppBar(width) : null,
@@ -729,6 +714,7 @@ class _HomePageState extends State<HomePage>
                         verifStatus: _verifStatus,
                         fullName: _fullName,
                         facePhotoUrl: _facePhotoUrl,
+                        facePhotoPath: _facePhotoPath,
                         profileLoading: _profileLoading,
                         notificationCount: NotificationService.count,
                         onNotificationTap: () =>
@@ -792,7 +778,7 @@ class _HomePageState extends State<HomePage>
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   // Fade into the mobile scaffold bg for a seamless join.
-                  colors: [Colors.transparent, Color(0xFFDDE4F5)],
+                  colors: [Colors.transparent, Colors.white],
                 ),
               ),
             ),
@@ -845,6 +831,7 @@ class _HomePageState extends State<HomePage>
                 username: widget.username,
                 fullName: _fullName,
                 facePhotoUrl: _facePhotoUrl,
+                facePhotoPath: _facePhotoPath,
                 verifStatus: _verifStatus,
                 profileLoading: _profileLoading,
                 onVerifyTap: _goToVerification,

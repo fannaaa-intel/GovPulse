@@ -8,6 +8,7 @@ import 'package:video_player/video_player.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../Report/location_picker_screen.dart';
+import '../../../../core/widgets/Home/Newsfeed/rate_limit_dialogs.dart';
 
 // ── Video preview dialog (same as Report) ─────────────────────────────────────
 class _VideoPreviewDialog extends StatefulWidget {
@@ -166,6 +167,16 @@ class _SuggestionScreenState extends State<SuggestionScreen>
   String? _pickedBarangay;
   bool _useCurrentLocation = false;
 
+  bool _hasAnyInput() {
+    return _selectedCategory != null ||
+        _othersCtrl.text.isNotEmpty ||
+        _detailsCtrl.text.isNotEmpty ||
+        _streetDetailCtrl.text.isNotEmpty ||
+        _attachedFiles.isNotEmpty ||
+        _submitAnonymously ||
+        _pickedBarangay != null;
+  }
+
   // ── Categories (suggestion-specific) ───────────────────────────────────────
   final List<Map<String, dynamic>> _categories = [
     {
@@ -229,6 +240,128 @@ class _SuggestionScreenState extends State<SuggestionScreen>
     _detailsCtrl.dispose();
     _streetDetailCtrl.dispose();
     super.dispose();
+  }
+
+  Future<bool> _showDiscardConfirmation() async {
+    if (!_hasAnyInput()) return true;
+
+    FocusScope.of(context).unfocus();
+    await Future.delayed(const Duration(milliseconds: 50));
+    if (!mounted) return false;
+
+    final result = await showGeneralDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      barrierLabel: 'Discard',
+      barrierColor: Colors.black54,
+      transitionDuration: const Duration(milliseconds: 280),
+      transitionBuilder: (ctx, anim, secondAnim, child) {
+        final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutBack);
+        return FadeTransition(
+          opacity: CurvedAnimation(parent: anim, curve: Curves.easeOut),
+          child: ScaleTransition(scale: curved, child: child),
+        );
+      },
+      pageBuilder: (ctx, anim, secondAnim) {
+        final width = MediaQuery.of(ctx).size.width;
+        return Center(
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              margin: EdgeInsets.symmetric(horizontal: width * 0.07),
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Theme.of(ctx).dialogBackgroundColor,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 64,
+                    height: 64,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF3F4F6),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.edit_off_rounded,
+                      color: Color(0xFF6B7280),
+                      size: 30,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Discard changes?',
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF1F2937),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'You have unsaved information. Are you sure you want to go back? All your entries will be lost.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Color(0xFF6B7280),
+                      height: 1.55,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.pop(ctx, false),
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide(color: AppColors.primaryBlue),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                          child: Text(
+                            'Keep editing',
+                            style: TextStyle(
+                              color: AppColors.primaryBlue,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.pop(ctx, true),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                          child: const Text(
+                            'Discard',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+    FocusManager.instance.primaryFocus?.unfocus();
+    return result ?? false;
   }
 
   // ── Open location picker (optional for suggestions) ────────────────────────
@@ -295,37 +428,52 @@ class _SuggestionScreenState extends State<SuggestionScreen>
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
-    return Scaffold(
-      backgroundColor: const Color(0xFFF3F4F6),
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildHeader(width),
-            Expanded(
-              child: SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                padding: EdgeInsets.only(bottom: width * 0.06),
-                child: Column(
-                  children: [
-                    SizedBox(height: width * 0.04),
-                    _animated(0, _buildCategorySection(width)),
-                    SizedBox(height: width * 0.04),
-                    _animated(1, _buildLocationSection(width)),
-                    SizedBox(height: width * 0.04),
-                    _animated(2, _buildDetailsSection(width)),
-                    SizedBox(height: width * 0.04),
-                    _animated(3, _buildAttachSection(width)),
-                    SizedBox(height: width * 0.04),
-                    _animated(4, _buildAnonymousSection(width)),
-                    SizedBox(height: width * 0.035),
-                    _animated(5, _buildDisclaimer(width)),
-                    SizedBox(height: width * 0.045),
-                    _animated(5, _buildSubmitButton(width)),
-                  ],
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        final navigator = Navigator.of(context);
+        final shouldPop = await _showDiscardConfirmation();
+        if (shouldPop && mounted) navigator.pop();
+      },
+      child: GestureDetector(
+        onTap: () => FocusScope.of(context).unfocus(),
+        behavior: HitTestBehavior.translucent,
+        child: Scaffold(
+          backgroundColor: const Color(0xFFF3F4F6),
+          body: SafeArea(
+            child: Column(
+              children: [
+                _buildHeader(width),
+                Expanded(
+                  child: SingleChildScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
+                    padding: EdgeInsets.only(bottom: width * 0.06),
+                    child: Column(
+                      children: [
+                        SizedBox(height: width * 0.04),
+                        _animated(0, _buildCategorySection(width)),
+                        SizedBox(height: width * 0.04),
+                        _animated(1, _buildLocationSection(width)),
+                        SizedBox(height: width * 0.04),
+                        _animated(2, _buildDetailsSection(width)),
+                        SizedBox(height: width * 0.04),
+                        _animated(3, _buildAttachSection(width)),
+                        SizedBox(height: width * 0.04),
+                        _animated(4, _buildAnonymousSection(width)),
+                        SizedBox(height: width * 0.035),
+                        _animated(5, _buildDisclaimer(width)),
+                        SizedBox(height: width * 0.045),
+                        _animated(5, _buildSubmitButton(width)),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -342,7 +490,10 @@ class _SuggestionScreenState extends State<SuggestionScreen>
       child: Row(
         children: [
           GestureDetector(
-            onTap: () => Navigator.pop(context),
+            onTap: () async {
+              final shouldPop = await _showDiscardConfirmation();
+              if (shouldPop && mounted) Navigator.pop(context);
+            },
             child: Container(
               width: width * 0.09,
               height: width * 0.09,
@@ -905,6 +1056,10 @@ class _SuggestionScreenState extends State<SuggestionScreen>
     final remaining = _maxFiles - _attachedFiles.length;
     if (remaining <= 0) return;
 
+    FocusManager.instance.primaryFocus?.unfocus();
+    await Future.delayed(const Duration(milliseconds: 50));
+    if (!mounted) return;
+
     final choice = await showModalBottomSheet<String>(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -967,6 +1122,7 @@ class _SuggestionScreenState extends State<SuggestionScreen>
       ),
     );
 
+    FocusManager.instance.primaryFocus?.unfocus();
     if (choice == null) return;
 
     List<XFile> picked = [];
@@ -1064,6 +1220,10 @@ class _SuggestionScreenState extends State<SuggestionScreen>
     }
 
     if (validFiles.isEmpty) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      FocusManager.instance.primaryFocus?.unfocus();
+    });
     setState(() {
       final canAdd = _maxFiles - _attachedFiles.length;
       _attachedFiles.addAll(validFiles.take(canAdd));
@@ -1493,6 +1653,7 @@ class _SuggestionScreenState extends State<SuggestionScreen>
                         onPressed: () {
                           Navigator.pop(ctx);
                           setState(() => _submitAnonymously = false);
+                          FocusManager.instance.primaryFocus?.unfocus();
                         },
                         style: TextButton.styleFrom(
                           padding: EdgeInsets.zero,
@@ -1513,6 +1674,7 @@ class _SuggestionScreenState extends State<SuggestionScreen>
                         onPressed: () {
                           Navigator.pop(ctx);
                           setState(() => _submitAnonymously = true);
+                          FocusManager.instance.primaryFocus?.unfocus();
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.primaryBlue,
@@ -1711,13 +1873,14 @@ class _SuggestionScreenState extends State<SuggestionScreen>
       final supabase = Supabase.instance.client;
       final userId = supabase.auth.currentUser!.id;
 
-      // ── Upload optional media ─────────────────────────────────────────────
-      final List<String> mediaPaths = [];
-      for (final file in _attachedFiles) {
+      // ── Upload media ──────────────────────────────────────────────────────
+      final List<Map<String, String>> mediaItems = [];
+      for (int i = 0; i < _attachedFiles.length; i++) {
+        final file = _attachedFiles[i];
         final bytes = await file.readAsBytes();
         final ext = file.name.split('.').last.toLowerCase();
         final fileName =
-            '${DateTime.now().millisecondsSinceEpoch}_${file.name}';
+            '${DateTime.now().millisecondsSinceEpoch}_${i}_${file.name}';
         final storagePath = 'suggestions/$userId/$fileName';
         final contentType = _isVideo(file) ? 'video/$ext' : 'image/$ext';
 
@@ -1729,41 +1892,74 @@ class _SuggestionScreenState extends State<SuggestionScreen>
               fileOptions: FileOptions(contentType: contentType),
             );
 
-        mediaPaths.add(storagePath);
+        mediaItems.add({'path': storagePath, 'mime': contentType});
       }
 
       // ── Insert suggestion ─────────────────────────────────────────────────
-      await supabase.from('suggestions').insert({
-        'user_id': userId,
-        'category': _selectedCategory,
-        'category_other': _selectedCategory == 'others'
-            ? _othersCtrl.text.trim()
-            : null,
-        'barangay': _pickedBarangay, // nullable
-        'address': _streetDetailCtrl.text.trim().isEmpty
-            ? null
-            : _streetDetailCtrl.text.trim(),
-        'latitude': _pickedLatLng?.latitude,
-        'longitude': _pickedLatLng?.longitude,
-        'details': _detailsCtrl.text.trim(),
-        'is_anonymous': _submitAnonymously,
-        'media_paths': mediaPaths.isEmpty ? null : mediaPaths,
-        'status': 'pending',
-      });
+      final response = await supabase
+          .from('suggestions')
+          .insert({
+            'user_id': userId,
+            'category': _selectedCategory,
+            'category_other': _selectedCategory == 'others'
+                ? _othersCtrl.text.trim()
+                : null,
+            'barangay': _pickedBarangay,
+            'address': _streetDetailCtrl.text.trim().isEmpty
+                ? null
+                : _streetDetailCtrl.text.trim(),
+            'latitude': _pickedLatLng?.latitude,
+            'longitude': _pickedLatLng?.longitude,
+            'details': _detailsCtrl.text.trim(),
+            'is_anonymous': _submitAnonymously,
+            'status': 'pending',
+          })
+          .select('id')
+          .single();
+
+      final suggestionId = response['id'] as String;
+
+      // ── Insert media rows ─────────────────────────────────────────────────
+      for (int i = 0; i < mediaItems.length; i++) {
+        await supabase.from('suggestion_media').insert({
+          'suggestion_id': suggestionId,
+          'storage_path': mediaItems[i]['path'],
+          'mime_type': mediaItems[i]['mime'],
+          'display_order': i + 1,
+        });
+      }
 
       if (mounted) _showSuccessDialog();
     } on StorageException catch (e) {
-      if (mounted) _showErrorDialog('File upload failed: ${e.message}');
+      if (mounted) {
+        showFriendlyErrorDialog(context, 'File upload failed: ${e.message}');
+      }
     } on PostgrestException catch (e) {
-      if (mounted) _showErrorDialog('Could not save suggestion: ${e.message}');
+      if (mounted) {
+        if ((e.hint ?? '') == 'rate_limit_exceeded') {
+          showRateLimitDialog(
+            context,
+            'You have reached the daily limit of 3 suggestions. Please come back tomorrow to submit another suggestion.',
+          );
+        } else {
+          showFriendlyErrorDialog(
+            context,
+            'Could not save your suggestion. Please try again.',
+          );
+        }
+      }
     } catch (e) {
-      if (mounted) _showErrorDialog('Something went wrong. Please try again.');
-    } finally {
-      if (mounted) setState(() => _isSubmitting = false);
+      if (mounted) {
+        showFriendlyErrorDialog(
+          context,
+          'Something went wrong. Please try again.',
+        );
+      }
     }
   }
 
   // ── Dialogs ─────────────────────────────────────────────────────────────────
+
   void _showValidationDialog(String message) {
     showDialog(
       context: context,
@@ -1820,76 +2016,6 @@ class _SuggestionScreenState extends State<SuggestionScreen>
                   ),
                   child: const Text(
                     'OK',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _showErrorDialog(String message) {
-    showDialog(
-      context: context,
-      builder: (ctx) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 64,
-                height: 64,
-                decoration: BoxDecoration(
-                  color: Colors.red.withValues(alpha: 0.10),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.error_outline_rounded,
-                  color: Colors.red,
-                  size: 32,
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Submission Failed',
-                style: TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w800,
-                  color: Color(0xFF1F2937),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                message,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: Color(0xFF6B7280),
-                  height: 1.55,
-                ),
-              ),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primaryBlue,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                  child: const Text(
-                    'Try Again',
                     style: TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.w700,
