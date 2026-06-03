@@ -368,11 +368,19 @@ class _SuggestionScreenState extends State<SuggestionScreen>
   Future<void> _openLocationPicker() async {
     final result = await Navigator.push<Map<String, dynamic>>(
       context,
-      MaterialPageRoute(
-        builder: (_) => LocationPickerScreen(
+      PageRouteBuilder(
+        pageBuilder: (_, _, _) => LocationPickerScreen(
           initialPosition: _pickedLatLng,
           initialBarangay: _pickedBarangay,
         ),
+        transitionDuration: const Duration(milliseconds: 380),
+        reverseTransitionDuration: const Duration(milliseconds: 300),
+        transitionsBuilder: (_, animation, _, child) {
+          return FadeTransition(
+            opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
+            child: child,
+          );
+        },
       ),
     );
 

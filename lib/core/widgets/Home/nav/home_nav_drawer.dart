@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../theme/app_colors.dart';
 import '../home_enums.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class HomeNavDrawer extends StatelessWidget {
   final int currentIndex;
@@ -61,11 +62,24 @@ class HomeNavDrawer extends StatelessWidget {
                   CircleAvatar(
                     radius: 26,
                     backgroundColor: const Color(0xFFE5E7EB),
-                    backgroundImage:
-                        (facePhotoUrl != null && facePhotoUrl!.isNotEmpty)
-                        ? NetworkImage(facePhotoUrl!)
-                        : const AssetImage('assets/images/profilenew.png')
-                              as ImageProvider,
+
+                    child: (facePhotoUrl != null && facePhotoUrl!.isNotEmpty)
+                        ? ClipOval(
+                            child: CachedNetworkImage(
+                              imageUrl: facePhotoUrl!,
+                              cacheKey: Uri.parse(facePhotoUrl!).path,
+                              width: 52,
+                              height: 52,
+                              fit: BoxFit.cover,
+                              placeholder: (_, _) =>
+                                  const CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                              errorWidget: (_, _, _) =>
+                                  Image.asset('assets/images/profilenew.png'),
+                            ),
+                          )
+                        : Image.asset('assets/images/profilenew.png'),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -135,7 +149,10 @@ class HomeNavDrawer extends StatelessWidget {
                       iconPath: item.iconPath,
                       active: currentIndex == item.index,
                       onTap: () {
-                        Navigator.of(context).pop();
+                        if (Navigator.of(context).canPop()) {
+                          Navigator.of(context).pop();
+                        }
+
                         onTap(item.index);
                       },
                     ),
@@ -148,7 +165,9 @@ class HomeNavDrawer extends StatelessWidget {
               color: Colors.transparent,
               child: InkWell(
                 onTap: () {
-                  Navigator.of(context).pop(); // close the drawer first
+                  if (Navigator.of(context).canPop()) {
+                    Navigator.of(context).pop();
+                  }
                   onLogout();
                 },
                 child: Container(

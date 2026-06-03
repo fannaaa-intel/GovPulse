@@ -75,10 +75,7 @@ class _SettingScreenState extends State<SettingScreen>
     );
 
     final slide =
-        Tween<Offset>(
-          begin: const Offset(0.30, 0.0), // ← starts from right
-          end: Offset.zero,
-        ).animate(
+        Tween<Offset>(begin: const Offset(0.0, 0.28), end: Offset.zero).animate(
           CurvedAnimation(
             parent: _entryCtrl,
             curve: Interval(start, end, curve: Curves.easeOutCubic),
@@ -151,10 +148,10 @@ class _SettingScreenState extends State<SettingScreen>
           }
         } catch (_) {}
 
-        resolvedPhotoPath = verifRow?['face_photo_path'] as String?;
+        resolvedPhotoPath = null;
       }
 
-      // 3. Resolve URL — use stable public URL so cache always hits
+      // 3. Resolve URL — approved only; pending/none resolvedPhotoPath is null
       String? photoUrl;
       if (resolvedPhotoPath != null && resolvedPhotoPath.isNotEmpty) {
         photoUrl = supabase.storage
@@ -170,9 +167,13 @@ class _SettingScreenState extends State<SettingScreen>
           _fullName = (fullName?.isNotEmpty == true) ? fullName : null;
           _profileLoading = false;
         });
+        _entryCtrl.forward(from: 0);
       }
     } catch (_) {
-      if (mounted) setState(() => _profileLoading = false);
+      if (mounted) {
+        setState(() => _profileLoading = false);
+        _entryCtrl.forward(from: 0);
+      }
     }
   }
 
@@ -406,17 +407,17 @@ class _SettingScreenState extends State<SettingScreen>
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
 
-    return LoadingOverlay(
-      isLoading: _profileLoading,
-      skeletonLayout: SkeletonLayout.settings,
-      child: Scaffold(
-        backgroundColor: const Color(0xFFF3F4F6),
-        body: SafeArea(
-          child: Column(
-            children: [
-              // Header slides in first (index 0)
-              _animated(0, _buildHeader(width)),
-              Expanded(
+    return Scaffold(
+      extendBody: true,
+      backgroundColor: const Color(0xFFF3F4F6),
+      body: SafeArea(
+        child: Column(
+          children: [
+            _buildHeader(width),
+            Expanded(
+              child: LoadingOverlay.bodyOrSkeleton(
+                isLoading: _profileLoading,
+                layout: SkeletonLayout.settings,
                 child: SingleChildScrollView(
                   physics: const BouncingScrollPhysics(),
                   padding: EdgeInsets.fromLTRB(
@@ -452,15 +453,15 @@ class _SettingScreenState extends State<SettingScreen>
                   ),
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
-        bottomNavigationBar: AppBottomNav(
-          width: width,
-          currentIndex: 4,
-          username: widget.username,
-          isVerified: _verifStatus == 'approved',
-        ),
+      ),
+      bottomNavigationBar: AppBottomNav(
+        width: width,
+        currentIndex: 4,
+        username: widget.username,
+        isVerified: _verifStatus == 'approved',
       ),
     );
   }

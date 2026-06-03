@@ -255,10 +255,12 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
     );
     _shimmerCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 5000),
+      duration: const Duration(milliseconds: 1200),
     )..repeat();
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await Future.delayed(const Duration(milliseconds: 100)); // ← add this
+      if (!mounted) return;
       _entryCtrl.forward();
       await Future.delayed(const Duration(milliseconds: 300));
       if (mounted) _timelineCtrl.forward();
@@ -416,7 +418,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
           ),
         ],
       ),
-      bottomNavigationBar: _fadeSlide(6, _buildBottomBar(w), up: false),
+      bottomNavigationBar: _buildBottomBar(w),
     );
   }
 
@@ -735,24 +737,21 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
                     Navigator.push(
                       context,
                       PageRouteBuilder(
-                        transitionDuration: const Duration(milliseconds: 400),
+                        transitionDuration: const Duration(milliseconds: 380),
+                        reverseTransitionDuration: const Duration(
+                          milliseconds: 300,
+                        ),
                         pageBuilder: (_, _, _) => LocationPickerScreen(
                           initialPosition: coords,
                           initialBarangay: barangay,
                           readOnly: true,
                         ),
-                        transitionsBuilder: (_, anim, _, child) =>
-                            SlideTransition(
-                              position:
-                                  Tween<Offset>(
-                                    begin: const Offset(0, 1),
-                                    end: Offset.zero,
-                                  ).animate(
-                                    CurvedAnimation(
-                                      parent: anim,
-                                      curve: Curves.easeOutCubic,
-                                    ),
-                                  ),
+                        transitionsBuilder: (_, animation, _, child) =>
+                            FadeTransition(
+                              opacity: CurvedAnimation(
+                                parent: animation,
+                                curve: Curves.easeOut,
+                              ),
                               child: child,
                             ),
                       ),
@@ -1002,25 +1001,21 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
   // ── Shimmer box ───────────────────────────────────────────────────────────────
 
   Widget _shimmerBox(double w, double width, double height) {
+    final resolvedH = height == double.infinity ? w * .45 : height;
     return AnimatedBuilder(
       animation: _shimmerCtrl,
       builder: (context, _) {
         return Container(
           width: width,
-          height: height == double.infinity ? w * .45 : height,
+          height: resolvedH,
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              begin: Alignment.centerLeft,
-              end: Alignment.centerRight,
-              stops: [
-                (_shimmerCtrl.value - 0.3).clamp(0.0, 1.0),
-                _shimmerCtrl.value.clamp(0.0, 1.0),
-                (_shimmerCtrl.value + 0.3).clamp(0.0, 1.0),
-              ],
+              begin: Alignment(-1.5 + _shimmerCtrl.value * 3, 0),
+              end: Alignment(-0.5 + _shimmerCtrl.value * 3, 0),
               colors: const [
-                Color(0xFFEEEEEE),
-                Color(0xFFF8F8F8),
-                Color(0xFFEEEEEE),
+                Color(0xFFE5E7EB),
+                Color(0xFFF3F4F6),
+                Color(0xFFE5E7EB),
               ],
             ),
           ),
@@ -1771,12 +1766,14 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
                     ),
                     SizedBox(height: w * .015),
                     _mediaLoading
-                        ? SizedBox(
-                            height: w * .20,
-                            child: Center(
-                              child: CircularProgressIndicator(
-                                color: AppColors.primaryBlue,
-                                strokeWidth: 2,
+                        ? Wrap(
+                            spacing: w * .025,
+                            runSpacing: w * .025,
+                            children: List.generate(
+                              widget.report.mediaCount.clamp(1, 6),
+                              (_) => ClipRRect(
+                                borderRadius: BorderRadius.circular(w * .025),
+                                child: _shimmerBox(w, w * .20, w * .20),
                               ),
                             ),
                           )

@@ -4,7 +4,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../auth/services/chat_service.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import '../../profileVerification/verification_screen.dart';
+import 'package:flutter/services.dart';
 import '../../../features/home/screen/notification_popup.dart';
 import '../../../core/network/network_wrapper.dart';
 import '../../../core/utils/overlay_exit.dart';
@@ -90,11 +90,7 @@ class _HomePageState extends State<HomePage>
       vsync: this,
       duration: const Duration(milliseconds: 900),
     );
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      Future.delayed(const Duration(milliseconds: 100), () {
-        if (mounted) _entryCtrl.forward();
-      });
-    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {});
 
     Future.delayed(const Duration(minutes: 3), () {
       if (mounted && _verifStatus == VerifStatus.none) {
@@ -117,7 +113,13 @@ class _HomePageState extends State<HomePage>
   }
 
   @override
-  void didPopNext() => _loadVerificationStatus();
+  void didPopNext() {
+    _loadVerificationStatus();
+    Future.delayed(const Duration(milliseconds: 320), () {
+      if (mounted) _entryCtrl.forward(from: 0);
+    });
+  }
+
   @override
   void didPush() {}
   @override
@@ -153,6 +155,18 @@ class _HomePageState extends State<HomePage>
     child: SlideTransition(position: _slideAnim(i), child: child),
   );
 
+  Route<T> _quickActionRoute<T>(Widget page) {
+    return PageRouteBuilder<T>(
+      // Entry is instant — the screen's own content does the slide-up.
+      transitionDuration: Duration.zero,
+      // Back animates: fade out, no slide.
+      reverseTransitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (_, _, _) => page,
+      transitionsBuilder: (_, anim, _, child) =>
+          FadeTransition(opacity: anim, child: child),
+    );
+  }
+
   void _goToNewsFeed() {
     Navigator.pushNamed(
       context,
@@ -176,17 +190,8 @@ class _HomePageState extends State<HomePage>
     }
     Navigator.push(
       context,
-      PageRouteBuilder(
-        transitionDuration: const Duration(milliseconds: 400),
-        pageBuilder: (_, _, _) =>
-            NetworkWrapper(child: ReportIssueScreen(username: widget.username)),
-        transitionsBuilder: (_, anim, _, child) => SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(0, 1),
-            end: Offset.zero,
-          ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
-          child: child,
-        ),
+      _quickActionRoute(
+        NetworkWrapper(child: ReportIssueScreen(username: widget.username)),
       ),
     );
   }
@@ -203,17 +208,8 @@ class _HomePageState extends State<HomePage>
     }
     Navigator.push(
       context,
-      PageRouteBuilder(
-        transitionDuration: const Duration(milliseconds: 400),
-        pageBuilder: (_, _, _) =>
-            NetworkWrapper(child: SuggestionScreen(username: widget.username)),
-        transitionsBuilder: (_, anim, _, child) => SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(0, 1),
-            end: Offset.zero,
-          ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
-          child: child,
-        ),
+      _quickActionRoute(
+        NetworkWrapper(child: SuggestionScreen(username: widget.username)),
       ),
     );
   }
@@ -221,20 +217,12 @@ class _HomePageState extends State<HomePage>
   void _goToEvents() {
     Navigator.push(
       context,
-      PageRouteBuilder(
-        transitionDuration: const Duration(milliseconds: 420),
-        pageBuilder: (_, _, _) => NetworkWrapper(
+      _quickActionRoute(
+        NetworkWrapper(
           child: EventsScreen(
             username: widget.username,
             isVerified: _verifStatus == VerifStatus.verified,
           ),
-        ),
-        transitionsBuilder: (_, anim, _, child) => SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(0, 1),
-            end: Offset.zero,
-          ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
-          child: child,
         ),
       ),
     );
@@ -256,17 +244,8 @@ class _HomePageState extends State<HomePage>
 
     Navigator.push(
       context,
-      PageRouteBuilder(
-        transitionDuration: const Duration(milliseconds: 420),
-        pageBuilder: (_, _, _) =>
-            NetworkWrapper(child: ChatAgentScreen(username: widget.username)),
-        transitionsBuilder: (_, anim, _, child) => SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(0, 1),
-            end: Offset.zero,
-          ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
-          child: child,
-        ),
+      _quickActionRoute(
+        NetworkWrapper(child: ChatAgentScreen(username: widget.username)),
       ),
     ).then((_) {
       if (!mounted) return;
@@ -276,22 +255,7 @@ class _HomePageState extends State<HomePage>
 
   void _goToVerification() {
     if (_verifStatus == VerifStatus.pending) return;
-    Navigator.push(
-      context,
-      PageRouteBuilder(
-        transitionDuration: const Duration(milliseconds: 400),
-        pageBuilder: (_, _, _) => NetworkWrapper(
-          child: VerificationScreen(username: widget.username),
-        ),
-        transitionsBuilder: (_, anim, _, child) => SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(1, 0),
-            end: Offset.zero,
-          ).animate(CurvedAnimation(parent: anim, curve: Curves.easeInOut)),
-          child: child,
-        ),
-      ),
-    );
+    Navigator.pushNamed(context, '/verification', arguments: widget.username);
   }
 
   void _handleQuickAction(String key) {
@@ -518,6 +482,7 @@ class _HomePageState extends State<HomePage>
               .select('first_name, last_name, profile_photo_path')
               .eq('user_id', uid)
               .maybeSingle();
+
           if (res != null) {
             final first = res['first_name'] as String? ?? '';
             final last = res['last_name'] as String? ?? '';
@@ -528,10 +493,11 @@ class _HomePageState extends State<HomePage>
           }
         } catch (_) {}
         if (facePath != null && facePath.isNotEmpty) {
-          faceUrl = supabase.storage
+          faceUrl = await supabase.storage
               .from('verification-assets')
-              .getPublicUrl(facePath);
+              .createSignedUrl(facePath, 3600);
         }
+
         if (mounted) {
           setState(() {
             _verifStatus = verifStatus;
@@ -540,10 +506,11 @@ class _HomePageState extends State<HomePage>
             _fullName = fullName;
             _profileLoading = false;
           });
+          _entryCtrl.forward(from: 0);
         }
       } else {
+        // pending or none
         String? fullName;
-        String? faceUrl;
         try {
           final res = await supabase
               .from('profiles')
@@ -552,23 +519,23 @@ class _HomePageState extends State<HomePage>
               .maybeSingle();
           if (res != null) fullName = res['username'] as String?;
         } catch (_) {}
-        if (facePath != null && facePath.isNotEmpty) {
-          faceUrl = supabase.storage
-              .from('verification-assets')
-              .getPublicUrl(facePath);
-        }
+
         if (mounted) {
           setState(() {
             _verifStatus = verifStatus;
-            _facePhotoUrl = faceUrl;
-            _facePhotoPath = facePath;
+            _facePhotoUrl = null;
+            _facePhotoPath = null;
             _fullName = fullName;
             _profileLoading = false;
           });
+          _entryCtrl.forward(from: 0);
         }
       }
     } catch (_) {
-      if (mounted) setState(() => _profileLoading = false);
+      if (mounted) {
+        setState(() => _profileLoading = false);
+        _entryCtrl.forward(from: 0);
+      }
     }
   }
 
@@ -621,57 +588,54 @@ class _HomePageState extends State<HomePage>
     final bool useMobile = !kIsWeb && width < _kMobileBreakpoint;
     final bool useTopNav = width >= _kTopNavBreakpoint;
     final bool useDrawer = !useMobile && !useTopNav;
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        if (handleChatBubbleBack()) return;
+        final now = DateTime.now();
+        if (lastBackPressed == null ||
+            now.difference(lastBackPressed!) > const Duration(seconds: 2)) {
+          lastBackPressed = now;
+          ExitOverlay.show(context, 'Press again to exit');
+        } else {
+          SystemNavigator.pop();
+        }
+      },
+      child: Scaffold(
+        extendBody: true,
+        backgroundColor: useMobile ? Colors.white : const Color(0xFFF3F6FC),
 
-    return LoadingOverlay(
-      isLoading: _profileLoading,
-      skeletonLayout: SkeletonLayout.home,
-      child: PopScope(
-        canPop: false,
-        onPopInvokedWithResult: (didPop, _) async {
-          if (didPop) return;
-          if (handleChatBubbleBack()) return;
-          final now = DateTime.now();
-          if (lastBackPressed == null ||
-              now.difference(lastBackPressed!) > const Duration(seconds: 2)) {
-            lastBackPressed = now;
-            ExitOverlay.show(context, 'Press again to exit');
-          } else {
-            Navigator.of(context).pop();
-          }
-        },
-        child: Scaffold(
-          // Mobile keeps its own soft-blue page bg; web bands use the lighter
-          // dashboard bg so the hero/stats/footer blend seamlessly.
-          backgroundColor: useMobile ? Colors.white : const Color(0xFFF3F6FC),
+        // Drawer app bar ONLY in the 600–900 band.
+        appBar: useDrawer ? _buildDrawerAppBar(width) : null,
+        drawer: useDrawer
+            ? HomeNavDrawer(
+                currentIndex: _navIndex,
+                onTap: _handleNavTap,
+                username: widget.username,
+                fullName: _fullName,
+                facePhotoUrl: _facePhotoUrl,
+                verifStatus: _verifStatus,
+                onLogout: _handleLogout,
+              )
+            : null,
 
-          // Drawer app bar ONLY in the 600–900 band.
-          appBar: useDrawer ? _buildDrawerAppBar(width) : null,
-          drawer: useDrawer
-              ? HomeNavDrawer(
-                  currentIndex: _navIndex,
-                  onTap: _handleNavTap,
-                  username: widget.username,
-                  fullName: _fullName,
-                  facePhotoUrl: _facePhotoUrl,
-                  verifStatus: _verifStatus,
-                  onLogout: _handleLogout,
-                )
-              : null,
-
-          // Body: mobile body for phones, web body for everything wider.
-          body: useMobile
+        body: LoadingOverlay.bodyOrSkeleton(
+          isLoading: _profileLoading,
+          layout: SkeletonLayout.home,
+          child: useMobile
               ? SafeArea(child: _buildMobileBody(width, height))
               : _buildWebBody(width, height, showTopNav: useTopNav),
-
-          // Bottom nav ONLY on mobile.
-          bottomNavigationBar: useMobile
-              ? HomeBottomNav(
-                  width: width,
-                  currentIndex: _navIndex,
-                  onTap: _handleNavTap,
-                )
-              : null,
         ),
+
+        // Bottom nav ONLY on mobile.
+        bottomNavigationBar: useMobile
+            ? HomeBottomNav(
+                width: width,
+                currentIndex: _navIndex,
+                onTap: _handleNavTap,
+              )
+            : null,
       ),
     );
   }

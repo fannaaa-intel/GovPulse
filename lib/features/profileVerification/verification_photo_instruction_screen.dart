@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-class VerificationPhotoInstructionScreen extends StatelessWidget {
+class VerificationPhotoInstructionScreen extends StatefulWidget {
   final String username;
   final String selectedId;
 
@@ -11,197 +11,253 @@ class VerificationPhotoInstructionScreen extends StatelessWidget {
   });
 
   @override
+  State<VerificationPhotoInstructionScreen> createState() =>
+      _VerificationPhotoInstructionScreenState();
+}
+
+class _VerificationPhotoInstructionScreenState
+    extends State<VerificationPhotoInstructionScreen>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _entryCtrl;
+  late final Animation<Offset> _slideAnim;
+  late final Animation<double> _fadeAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _entryCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
+    _slideAnim = Tween<Offset>(
+      begin: const Offset(0, 0.06),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOutCubic));
+    _fadeAnim = Tween<double>(
+      begin: 0,
+      end: 1,
+    ).animate(CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOut));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (mounted) _entryCtrl.forward();
+      });
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+  }
+
+  @override
+  void dispose() {
+    _entryCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       resizeToAvoidBottomInset: true,
       backgroundColor: const Color(0xFFF3F4F6),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            children: [
-              const SizedBox(height: 10),
+      body: FadeTransition(
+        opacity: _fadeAnim,
+        child: SlideTransition(
+          position: _slideAnim,
+          child: SafeArea(
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  const SizedBox(height: 10),
 
-              /// LOGO
-              Center(
-                child: Image.asset(
-                  "assets/images/applogocrop.png",
-                  height: MediaQuery.of(context).size.height * 0.12,
-                ),
-              ),
-
-              const SizedBox(height: 16),
-
-              /// TITLE
-              const Text(
-                "Aparri Citizenship Verification",
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  color: Color.fromARGB(255, 0, 106, 255),
-                ),
-              ),
-
-              const SizedBox(height: 25),
-
-              /// STEP INDICATOR
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _step("1", "Upload ID", true),
-                    Expanded(child: _line()),
-                    _step("2", "Additional\nInformation", false),
-                    Expanded(child: _line()),
-                    _step("3", "Identity\nVerification", false),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 24),
-
-              /// HEADER TEXT
-              Text(
-                "Get your $selectedId ready",
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-
-              const SizedBox(height: 16),
-
-              const Divider(thickness: 1),
-
-              /// PHOTO INSTRUCTION
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      "Photo Instruction",
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF2563EB),
-                      ),
+                  /// LOGO
+                  Center(
+                    child: Image.asset(
+                      "assets/images/applogocrop.png",
+                      height: MediaQuery.of(context).size.height * 0.12,
                     ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      "Your ID should be original and not modified in any form.",
-                      style: TextStyle(fontSize: 11, color: Colors.grey),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  /// TITLE
+                  const Text(
+                    "Aparri Citizenship Verification",
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: Color.fromARGB(255, 0, 106, 255),
                     ),
+                  ),
 
-                    const SizedBox(height: 20),
+                  const SizedBox(height: 25),
 
-                    /// BAD EXAMPLES
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: const [
-                        _BadExample(
-                          image: "assets/images/idicons/expired.png",
-                          label: "Expired",
+                  /// STEP INDICATOR
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _step("1", "Upload ID", true),
+                        Expanded(child: _line()),
+                        _step("2", "Additional\nInformation", false),
+                        Expanded(child: _line()),
+                        _step("3", "Identity\nVerification", false),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  /// HEADER TEXT
+                  Text(
+                    "Get your ${widget.selectedId} ready",
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  const Divider(thickness: 1),
+
+                  /// PHOTO INSTRUCTION
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          "Photo Instruction",
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF2563EB),
+                          ),
                         ),
-                        _BadExample(
-                          image: "assets/images/idicons/blurry.png",
-                          label: "Blurry",
+                        const SizedBox(height: 4),
+                        const Text(
+                          "Your ID should be original and not modified in any form.",
+                          style: TextStyle(fontSize: 11, color: Colors.grey),
                         ),
-                        _BadExample(
-                          image: "assets/images/idicons/withglare.png",
-                          label: "With Glare",
+
+                        const SizedBox(height: 20),
+
+                        /// BAD EXAMPLES
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: const [
+                            _BadExample(
+                              image: "assets/images/idicons/expired.png",
+                              label: "Expired",
+                            ),
+                            _BadExample(
+                              image: "assets/images/idicons/blurry.png",
+                              label: "Blurry",
+                            ),
+                            _BadExample(
+                              image: "assets/images/idicons/withglare.png",
+                              label: "With Glare",
+                            ),
+                            _BadExample(
+                              image: "assets/images/idicons/dark.png",
+                              label: "Dark",
+                            ),
+                          ],
                         ),
-                        _BadExample(
-                          image: "assets/images/idicons/dark.png",
-                          label: "Dark",
+
+                        const SizedBox(height: 20),
+
+                        /// GOOD EXAMPLE
+                        const Center(
+                          child: Column(
+                            children: [
+                              _GoodExample(
+                                image:
+                                    "assets/images/idicons/correctsample.png",
+                              ),
+                              SizedBox(height: 6),
+                              Text(
+                                "Correct example",
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
+                  ),
 
-                    const SizedBox(height: 20),
+                  const SizedBox(height: 20),
 
-                    /// GOOD EXAMPLE
-                    const Center(
-                      child: Column(
+                  const Divider(thickness: 1),
+
+                  /// NOTE BOX
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE5E7EB),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Column(
                         children: [
-                          _GoodExample(
-                            image: "assets/images/idicons/correctsample.png",
+                          _NoteRow(
+                            icon: Icons.lightbulb_outline,
+                            text:
+                                "Please ensure you are in a well-lit area for best results.",
                           ),
-                          SizedBox(height: 6),
-                          Text(
-                            "Correct example",
-                            style: TextStyle(fontSize: 11, color: Colors.grey),
+                          SizedBox(height: 8),
+                          _NoteRow(
+                            icon: Icons.crop_free,
+                            text:
+                                "Align your ID properly within the camera frame.",
                           ),
                         ],
                       ),
                     ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 30),
-
-              const Divider(thickness: 1),
-
-              /// NOTE BOX
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE5E7EB),
-                    borderRadius: BorderRadius.circular(12),
                   ),
-                  child: const Column(
-                    children: [
-                      _NoteRow(
-                        icon: Icons.lightbulb_outline,
-                        text:
-                            "Please ensure you are in a well-lit area for best results.",
-                      ),
-                      SizedBox(height: 8),
-                      _NoteRow(
-                        icon: Icons.crop_free,
-                        text: "Align your ID properly within the camera frame.",
-                      ),
-                    ],
-                  ),
-                ),
-              ),
 
-              const SizedBox(height: 20),
+                  const SizedBox(height: 20),
 
-              /// BUTTON
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.pushNamed(
-                        context,
-                        '/verification_upload_id',
-                        arguments: {
-                          "username": username,
-                          "selectedId": selectedId,
+                  /// BUTTON
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.pushNamed(
+                            context,
+                            '/verification_upload_id',
+                            arguments: {
+                              "username": widget.username,
+                              "selectedId": widget.selectedId,
+                            },
+                          );
                         },
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF16A34A),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF16A34A),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text("Continue"),
                       ),
                     ),
-                    child: const Text("Continue"),
                   ),
-                ),
-              ),
 
-              const SizedBox(height: 14),
-            ],
+                  const SizedBox(height: 14),
+                ],
+              ),
+            ),
           ),
         ),
       ),
@@ -226,12 +282,12 @@ class VerificationPhotoInstructionScreen extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: 4), // ← was 6
+          const SizedBox(height: 4),
           Text(
             label,
             textAlign: TextAlign.center,
             style: TextStyle(
-              fontSize: 8, // ← was 10
+              fontSize: 8,
               color: active ? const Color(0xFF2563EB) : Colors.grey,
             ),
           ),

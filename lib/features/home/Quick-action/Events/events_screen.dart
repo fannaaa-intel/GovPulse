@@ -266,17 +266,15 @@ class _EventsScreenState extends State<EventsScreen>
   Widget build(BuildContext context) {
     final w = MediaQuery.of(context).size.width;
 
-    if (_isLoading) {
-      return const EventsSkeletonScreen();
-    }
-
     return Scaffold(
       backgroundColor: const Color(0xFFF3F4F6),
       body: SafeArea(
         child: Column(
           children: [
             _buildHeader(w),
-            Expanded(child: _buildBody(w)),
+            Expanded(
+              child: _isLoading ? const EventsBodySkeleton() : _buildBody(w),
+            ),
           ],
         ),
       ),

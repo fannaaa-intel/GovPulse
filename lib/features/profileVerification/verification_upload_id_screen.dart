@@ -41,7 +41,7 @@ const Map<String, Map<String, String>> idImages = {
   },
 };
 
-class VerificationUploadIdScreen extends StatelessWidget {
+class VerificationUploadIdScreen extends StatefulWidget {
   final String username;
   final String selectedId;
 
@@ -52,9 +52,48 @@ class VerificationUploadIdScreen extends StatelessWidget {
   });
 
   @override
+  State<VerificationUploadIdScreen> createState() =>
+      _VerificationUploadIdScreenState();
+}
+
+class _VerificationUploadIdScreenState extends State<VerificationUploadIdScreen>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _entryCtrl;
+  late final Animation<Offset> _slideAnim;
+  late final Animation<double> _fadeAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _entryCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
+    _slideAnim = Tween<Offset>(
+      begin: const Offset(0, 0.06),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOutCubic));
+    _fadeAnim = Tween<double>(
+      begin: 0,
+      end: 1,
+    ).animate(CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOut));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (mounted) _entryCtrl.forward();
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _entryCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final images =
-        idImages[selectedId] ??
+        idImages[widget.selectedId] ??
         {
           "front": "assets/images/idcards/phfront.png",
           "back": "assets/images/idcards/phfront.png",
@@ -63,194 +102,205 @@ class VerificationUploadIdScreen extends StatelessWidget {
     return Scaffold(
       resizeToAvoidBottomInset: true,
       backgroundColor: const Color(0xFFF3F4F6),
-      body: SafeArea(
-        child: Column(
-          children: [
-            const SizedBox(height: 10),
+      body: FadeTransition(
+        opacity: _fadeAnim,
+        child: SlideTransition(
+          position: _slideAnim,
+          child: SafeArea(
+            child: Column(
+              children: [
+                const SizedBox(height: 10),
 
-            /// LOGO
-            Center(
-              child: Image.asset(
-                "assets/images/applogocrop.png",
-                height: MediaQuery.of(context).size.height * 0.12,
-              ),
-            ),
+                /// LOGO
+                Center(
+                  child: Image.asset(
+                    "assets/images/applogocrop.png",
+                    height: MediaQuery.of(context).size.height * 0.12,
+                  ),
+                ),
 
-            const SizedBox(height: 16),
+                const SizedBox(height: 16),
 
-            /// TITLE
-            const Text(
-              "Aparri Citizenship Verification",
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                color: Color.fromARGB(255, 0, 106, 255),
-              ),
-            ),
+                /// TITLE
+                const Text(
+                  "Aparri Citizenship Verification",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: Color.fromARGB(255, 0, 106, 255),
+                  ),
+                ),
 
-            const SizedBox(height: 25),
+                const SizedBox(height: 25),
 
-            /// STEP INDICATOR — lines connected, font fixed
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _step("1", "Upload ID", true),
-                  Expanded(child: _line()),
-                  _step("2", "Additional\nInformation", false),
-                  Expanded(child: _line()),
-                  _step("3", "Identity\nVerification", false),
-                ],
-              ),
-            ),
+                /// STEP INDICATOR
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _step("1", "Upload ID", true),
+                      Expanded(child: _line()),
+                      _step("2", "Additional\nInformation", false),
+                      Expanded(child: _line()),
+                      _step("3", "Identity\nVerification", false),
+                    ],
+                  ),
+                ),
 
-            const SizedBox(height: 24),
+                const SizedBox(height: 24),
 
-            /// HEADER
-            Text(
-              "Upload Your $selectedId",
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-            ),
+                /// HEADER
+                Text(
+                  "Upload Your ${widget.selectedId}",
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
 
-            const SizedBox(height: 12),
-            const Divider(thickness: 1),
+                const SizedBox(height: 12),
+                const Divider(thickness: 1),
 
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Column(
-                  children: [
-                    const SizedBox(height: 38),
-
-                    /// UPLOAD + SAMPLES
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Column(
                       children: [
-                        Expanded(
-                          flex: 3,
-                          child: GestureDetector(
-                            onTap: () async {
-                              final status = await Permission.camera.request();
-                              if (!context.mounted) return;
+                        const SizedBox(height: 38),
 
-                              if (status.isGranted) {
-                                Navigator.pushNamed(
-                                  context,
-                                  '/verification_scan',
-                                  arguments: {
-                                    'username': username,
-                                    'selectedId': selectedId,
-                                  },
-                                );
-                              } else if (status.isDenied) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      "Camera permission is required",
-                                    ),
-                                  ),
-                                );
-                              } else if (status.isPermanentlyDenied) {
-                                openAppSettings();
-                              }
-                            },
-                            child: DottedBorder(
-                              color: const Color(0xFF2563EB),
-                              strokeWidth: 1,
-                              dashPattern: const [8, 4],
-                              borderType: BorderType.RRect,
-                              radius: const Radius.circular(4),
-                              child: Container(
-                                height: 129,
-                                color: Colors.white,
-                                child: const Center(
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      CircleAvatar(
-                                        radius: 28,
-                                        backgroundColor: Color(0xFF0B57A4),
-                                        child: Icon(
-                                          Icons.camera_alt_outlined,
-                                          color: Colors.white,
-                                          size: 30,
+                        /// UPLOAD + SAMPLES
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              flex: 3,
+                              child: GestureDetector(
+                                onTap: () async {
+                                  final status = await Permission.camera
+                                      .request();
+                                  if (!context.mounted) return;
+
+                                  if (status.isGranted) {
+                                    Navigator.pushNamed(
+                                      context,
+                                      '/verification_scan',
+                                      arguments: {
+                                        'username': widget.username,
+                                        'selectedId': widget.selectedId,
+                                      },
+                                    );
+                                  } else if (status.isDenied) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          "Camera permission is required",
                                         ),
                                       ),
-                                      SizedBox(height: 8),
-                                      Text(
-                                        "Tap to Upload your ID",
-                                        style: TextStyle(fontSize: 12),
+                                    );
+                                  } else if (status.isPermanentlyDenied) {
+                                    openAppSettings();
+                                  }
+                                },
+                                child: DottedBorder(
+                                  color: const Color(0xFF2563EB),
+                                  strokeWidth: 1,
+                                  dashPattern: const [8, 4],
+                                  borderType: BorderType.RRect,
+                                  radius: const Radius.circular(4),
+                                  child: Container(
+                                    height: 129,
+                                    color: Colors.white,
+                                    child: const Center(
+                                      child: Column(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          CircleAvatar(
+                                            radius: 28,
+                                            backgroundColor: Color(0xFF0B57A4),
+                                            child: Icon(
+                                              Icons.camera_alt_outlined,
+                                              color: Colors.white,
+                                              size: 30,
+                                            ),
+                                          ),
+                                          SizedBox(height: 8),
+                                          Text(
+                                            "Tap to Upload your ID",
+                                            style: TextStyle(fontSize: 12),
+                                          ),
+                                        ],
                                       ),
-                                    ],
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
+                            const SizedBox(width: 12),
 
-                        Expanded(
-                          flex: 2,
-                          child: Column(
+                            Expanded(
+                              flex: 2,
+                              child: Column(
+                                children: [
+                                  _sampleCard(images["front"]!, "Front sample"),
+                                  const SizedBox(height: 10),
+                                  _sampleCard(images["back"]!, "Back sample"),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        const SizedBox(height: 22),
+                        const Divider(thickness: 1),
+                        const SizedBox(height: 16),
+
+                        /// NOTE BOX
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE5E7EB),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              _sampleCard(images["front"]!, "Front sample"),
-                              const SizedBox(height: 10),
-                              _sampleCard(images["back"]!, "Back sample"),
+                              Text(
+                                "Note",
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.black87,
+                                ),
+                              ),
+                              SizedBox(height: 10),
+                              _UploadNoteRow(
+                                icon: Icons.lightbulb_outline,
+                                text:
+                                    "Please ensure you are in a well-lit area for best results.",
+                              ),
+                              SizedBox(height: 10),
+                              _UploadNoteRow(
+                                icon: Icons.credit_card,
+                                text:
+                                    "Align your ID properly within the camera frame.",
+                              ),
                             ],
                           ),
                         ),
+
+                        const Spacer(),
+                        const SizedBox(height: 20),
                       ],
                     ),
-
-                    const SizedBox(height: 22),
-                    const Divider(thickness: 1),
-                    const SizedBox(height: 16),
-
-                    /// NOTE BOX
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE5E7EB),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            "Note",
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.black87,
-                            ),
-                          ),
-                          SizedBox(height: 10),
-                          _UploadNoteRow(
-                            icon: Icons.lightbulb_outline,
-                            text:
-                                "Please ensure you are in a well-lit area for best results.",
-                          ),
-                          SizedBox(height: 10),
-                          _UploadNoteRow(
-                            icon: Icons.credit_card,
-                            text:
-                                "Align your ID properly within the camera frame.",
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    const Spacer(),
-                    const SizedBox(height: 20),
-                  ],
+                  ),
                 ),
-              ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -278,7 +328,6 @@ class VerificationUploadIdScreen extends StatelessWidget {
     );
   }
 
-  // Fixed-width so Expanded line fills exactly the gap between circles
   static Widget _step(String number, String label, bool active) {
     return SizedBox(
       width: 54,
@@ -297,12 +346,12 @@ class VerificationUploadIdScreen extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: 4), // ← was 6
+          const SizedBox(height: 4),
           Text(
             label,
             textAlign: TextAlign.center,
             style: TextStyle(
-              fontSize: 8, // ← was 10, fits without overflow
+              fontSize: 8,
               color: active ? const Color(0xFF2563EB) : Colors.grey,
             ),
           ),
@@ -311,7 +360,6 @@ class VerificationUploadIdScreen extends StatelessWidget {
     );
   }
 
-  // top: 11 = circle radius (12) - half line height (1) → centers line on circle
   static Widget _line() {
     return Container(
       margin: const EdgeInsets.only(top: 11),

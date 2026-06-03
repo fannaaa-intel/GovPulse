@@ -341,28 +341,28 @@ class _MyReportsScreenState extends State<MyReportsScreen>
   @override
   Widget build(BuildContext context) {
     final w = MediaQuery.of(context).size.width;
-    return LoadingOverlay(
-      isLoading: _isLoading,
-      skeletonLayout:
-          SkeletonLayout.myReports, // ← shows skeleton instead of spinner
-      child: Scaffold(
-        backgroundColor: const Color(0xFFF3F4F6),
-        body: SafeArea(
-          child: Column(
-            children: [
-              _buildTopBar(w),
-              Expanded(
+    return Scaffold(
+      extendBody: true,
+      backgroundColor: const Color(0xFFF3F4F6),
+      body: SafeArea(
+        child: Column(
+          children: [
+            _buildTopBar(w),
+            Expanded(
+              child: LoadingOverlay.bodyOrSkeleton(
+                isLoading: _isLoading,
+                layout: SkeletonLayout.myReports,
                 child: _buildBody(w),
-              ), // _buildBody still handles error state
-            ],
-          ),
+              ),
+            ),
+          ],
         ),
-        bottomNavigationBar: AppBottomNav(
-          width: w,
-          currentIndex: 1,
-          username: widget.username,
-          isVerified: true,
-        ),
+      ),
+      bottomNavigationBar: AppBottomNav(
+        width: w,
+        currentIndex: 1,
+        username: widget.username,
+        isVerified: true,
       ),
     );
   }

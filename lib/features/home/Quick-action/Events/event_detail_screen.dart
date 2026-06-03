@@ -21,7 +21,7 @@ class EventDetailScreen extends StatefulWidget {
 class _EventDetailScreenState extends State<EventDetailScreen>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
-  late final Animation<double> _fadeAnim;
+
   late final Animation<Offset> _slideAnim;
 
   @override
@@ -31,9 +31,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       vsync: this,
       duration: const Duration(milliseconds: 520),
     );
-    _fadeAnim = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
     _slideAnim = Tween<Offset>(
-      begin: const Offset(0, 1),
+      begin: const Offset(0, 0.10),
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic));
     _ctrl.forward();
@@ -59,17 +58,16 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
-        child: FadeTransition(
-          opacity: _fadeAnim,
-          child: SlideTransition(
-            position: _slideAnim,
-            child: Column(
-              children: [
-                _buildHeader(w),
-                Expanded(child: _buildBody(w)),
-              ],
+        child: Column(
+          children: [
+            _buildHeader(w),
+            Expanded(
+              child: SlideTransition(
+                position: _slideAnim,
+                child: _buildBody(w),
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );
@@ -85,10 +83,18 @@ class _EventDetailScreenState extends State<EventDetailScreen>
         children: [
           GestureDetector(
             onTap: () => Navigator.pop(context),
-            child: Icon(
-              Icons.arrow_back,
-              size: w * 0.06,
-              color: const Color(0xFF1F2937),
+            child: Container(
+              width: w * 0.09,
+              height: w * 0.09,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF3F4F6),
+                borderRadius: BorderRadius.circular(w * 0.025),
+              ),
+              child: Icon(
+                Icons.arrow_back_ios_new_rounded,
+                size: w * 0.045,
+                color: AppColors.primaryBlue,
+              ),
             ),
           ),
           SizedBox(width: w * 0.03),

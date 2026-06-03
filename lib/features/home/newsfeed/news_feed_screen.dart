@@ -10,6 +10,7 @@ import '../../../core/widgets/Home/Newsfeed/comment_item.dart';
 import '../../../core/widgets/Home/Newsfeed/comments_sheet.dart';
 import '../../../core/widgets/loading/loading_overlay.dart';
 import '../../../core/widgets/Home/Newsfeed/rate_limit_dialogs.dart';
+import '../../../core/widgets/Home/nav/app_bottom_nav.dart';
 
 enum PostFilter {
   latest('Latest', null),
@@ -78,7 +79,10 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
   }
 
   void _onPostsChanged() {
-    if (mounted) setState(() {});
+    if (mounted) {
+      setState(() {});
+      _entryCtrl.forward(from: 0);
+    }
   }
 
   Future<void> _loadMyInteractions() async {
@@ -141,14 +145,10 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
     Navigator.pushAndRemoveUntil(
       context,
       PageRouteBuilder(
-        transitionDuration: const Duration(milliseconds: 400),
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
         pageBuilder: (_, _, _) => HomePage(username: widget.username),
-        transitionsBuilder: (_, animation, _, child) => SlideTransition(
-          position: Tween(begin: const Offset(-1, 0), end: Offset.zero).animate(
-            CurvedAnimation(parent: animation, curve: Curves.easeInOut),
-          ),
-          child: child,
-        ),
+        transitionsBuilder: (_, _, _, child) => child,
       ),
       (route) => false,
     );
@@ -410,24 +410,23 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
     final provider = CommunityPostsProvider.instance;
     final visiblePosts = _filteredPosts;
 
-    return LoadingOverlay(
-      isLoading: provider.isLoading,
-      skeletonLayout: SkeletonLayout.newsFeed,
-      child: PopScope(
-        canPop: false,
-        onPopInvokedWithResult: (didPop, _) {
-          if (!didPop) _goToHome();
-        },
-        child: Scaffold(
-          backgroundColor: const Color(0xFFF3F4F6),
-          body: SafeArea(
-            child: Column(
-              children: [
-                _animated(0, _buildTopBar(width)),
-                Expanded(
-                  child:
-                      provider.error !=
-                          null // isLoading branch removed
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _goToHome();
+      },
+      child: Scaffold(
+        extendBody: true,
+        backgroundColor: const Color(0xFFF3F4F6),
+        body: SafeArea(
+          child: Column(
+            children: [
+              _buildTopBar(width),
+              Expanded(
+                child: LoadingOverlay.bodyOrSkeleton(
+                  isLoading: provider.isLoading,
+                  layout: SkeletonLayout.newsFeed,
+                  child: provider.error != null
                       ? _buildErrorState(width, provider)
                       : visiblePosts.isEmpty
                       ? _animated(1, _buildEmptyState(width))
@@ -454,10 +453,15 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
                           ),
                         ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-          bottomNavigationBar: _buildBottomNav(width),
+        ),
+        bottomNavigationBar: AppBottomNav(
+          width: width,
+          currentIndex: _navIndex,
+          username: widget.username,
+          isVerified: _isVerified,
         ),
       ),
     );
@@ -987,103 +991,6 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildBottomNav(double width) {
-    final iconSize = width * 0.065;
-    const activeColor = Color(0xFF60A5FA);
-    const inactiveColor = Color(0xFF9CA3AF);
-
-    Widget buildIcon(String path, bool isActive) => SizedBox(
-      width: iconSize,
-      height: iconSize,
-      child: ColorFiltered(
-        colorFilter: ColorFilter.mode(
-          isActive ? activeColor : inactiveColor,
-          BlendMode.srcIn,
-        ),
-        child: Image.asset(path),
-      ),
-    );
-
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: .06),
-            blurRadius: 10,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: BottomNavigationBar(
-        type: BottomNavigationBarType.fixed,
-        backgroundColor: Colors.white,
-        elevation: 0,
-        currentIndex: _navIndex,
-        selectedItemColor: activeColor,
-        unselectedItemColor: inactiveColor,
-        selectedFontSize: width * 0.028,
-        unselectedFontSize: width * 0.028,
-        onTap: (index) {
-          if (index == _navIndex) return;
-          if (index == 0) {
-            _goToHome();
-          } else if (index == 1) {
-            if (!_isVerified) {
-              showVerificationRequiredDialog(
-                context,
-                message: 'Only verified citizens can access My Reports.',
-              );
-              return;
-            }
-            Navigator.pushNamed(
-              context,
-              '/my_reports',
-              arguments: widget.username,
-            );
-          } else if (index == 3) {
-            Navigator.pushNamed(
-              context,
-              '/emergency',
-              arguments: {
-                'username': widget.username,
-                'isVerified': _isVerified,
-              },
-            );
-          } else if (index == 4) {
-            Navigator.pushNamed(
-              context,
-              '/settings',
-              arguments: widget.username,
-            );
-          }
-        },
-        items: [
-          BottomNavigationBarItem(
-            icon: buildIcon('assets/images/home.png', _navIndex == 0),
-            label: 'Home',
-          ),
-          BottomNavigationBarItem(
-            icon: buildIcon('assets/images/my_reports.png', _navIndex == 1),
-            label: 'My Reports',
-          ),
-          BottomNavigationBarItem(
-            icon: buildIcon('assets/images/news_feed.png', _navIndex == 2),
-            label: 'NewsFeed',
-          ),
-          BottomNavigationBarItem(
-            icon: buildIcon('assets/images/emergency.png', _navIndex == 3),
-            label: 'Emergency',
-          ),
-          BottomNavigationBarItem(
-            icon: buildIcon('assets/images/settings.png', _navIndex == 4),
-            label: 'Settings',
-          ),
-        ],
-      ),
     );
   }
 }

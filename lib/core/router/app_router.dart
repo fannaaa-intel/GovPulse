@@ -61,36 +61,16 @@ Route<dynamic> _webFade(Widget child) {
   );
 }
 
+PageRouteBuilder _instant(Widget child) => PageRouteBuilder(
+  transitionDuration: Duration.zero,
+  reverseTransitionDuration: Duration.zero,
+  pageBuilder: (_, _, _) => NetworkWrapper(child: child),
+  transitionsBuilder: (_, _, _, child) => child,
+);
+
 // Web-only fade for inline Navigator.push calls (reset password sub-screens).
 // Returns a MaterialPageRoute on mobile so those flows are untouched.
 Route<dynamic> _webFadeRoute(Widget child) => _webFade(child);
-
-PageRouteBuilder _slide(Widget child) => PageRouteBuilder(
-  transitionDuration: const Duration(milliseconds: 400),
-  pageBuilder: (_, _, _) => NetworkWrapper(child: child),
-  transitionsBuilder: (_, anim, _, child) => SlideTransition(
-    position: Tween(
-      begin: const Offset(1, 0),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: anim, curve: Curves.easeInOut)),
-    child: child,
-  ),
-);
-
-PageRouteBuilder _slideFade(Widget child) => PageRouteBuilder(
-  transitionDuration: const Duration(milliseconds: 400),
-  pageBuilder: (_, _, _) => NetworkWrapper(child: child),
-  transitionsBuilder: (_, anim, _, child) => SlideTransition(
-    position: Tween(
-      begin: const Offset(1, 0),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: anim, curve: Curves.easeInOut)),
-    child: FadeTransition(
-      opacity: Tween<double>(begin: 0, end: 1).animate(anim),
-      child: child,
-    ),
-  ),
-);
 
 PageRouteBuilder _slideUp(Widget child) => PageRouteBuilder(
   transitionDuration: const Duration(milliseconds: 400),
@@ -130,9 +110,12 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
               if (!ctx.mounted) return;
               Navigator.pushReplacement(
                 ctx,
-                MaterialPageRoute(
-                  builder: (_) =>
+                PageRouteBuilder(
+                  transitionDuration: Duration.zero,
+                  reverseTransitionDuration: Duration.zero,
+                  pageBuilder: (_, _, _) =>
                       NetworkWrapper(child: HomePage(username: usernameFromDB)),
+                  transitionsBuilder: (_, _, _, child) => child,
                 ),
               );
             },
@@ -250,11 +233,26 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
 
     case '/verification':
       final username = settings.arguments as String;
-      return _webFade(VerificationScreen(username: username));
+      return PageRouteBuilder(
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: const Duration(milliseconds: 300),
+        pageBuilder: (_, _, _) =>
+            NetworkWrapper(child: VerificationScreen(username: username)),
+        transitionsBuilder: (_, anim, _, child) =>
+            FadeTransition(opacity: anim, child: child),
+      );
 
     case '/verification_id_selection':
       final username = settings.arguments as String;
-      return _webFade(VerificationIdSelectionScreen(username: username));
+      return PageRouteBuilder(
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: const Duration(milliseconds: 300),
+        pageBuilder: (_, _, _) => NetworkWrapper(
+          child: VerificationIdSelectionScreen(username: username),
+        ),
+        transitionsBuilder: (_, anim, _, child) =>
+            FadeTransition(opacity: anim, child: child),
+      );
 
     // ── Intro ────────────────────────────────────────────────────────────────
 
@@ -280,15 +278,24 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
       } else if (args is String) {
         username = args;
       }
-      return _slide(NewsFeedScreen(username: username, isVerified: isVerified));
+      return _instant(
+        NewsFeedScreen(username: username, isVerified: isVerified),
+      );
 
     case '/settings':
       final username = settings.arguments as String? ?? '';
-      return _slide(SettingScreen(username: username));
+      return _instant(SettingScreen(username: username));
 
     case '/edit_profile':
       final username = settings.arguments as String? ?? '';
-      return _slide(EditProfileScreen(username: username));
+      return PageRouteBuilder(
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: const Duration(milliseconds: 300),
+        pageBuilder: (_, _, _) =>
+            NetworkWrapper(child: EditProfileScreen(username: username)),
+        transitionsBuilder: (_, anim, _, child) =>
+            FadeTransition(opacity: anim, child: child),
+      );
 
     case '/report':
       final username = settings.arguments as String? ?? '';
@@ -300,15 +307,21 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
 
     case '/my_reports':
       final username = settings.arguments as String? ?? '';
-      return _slide(MyReportsScreen(username: username));
+      return _instant(MyReportsScreen(username: username));
 
     case '/report_detail':
       final args = settings.arguments as Map<String, dynamic>;
-      return _slideUp(
-        ReportDetailScreen(
-          report: args['report'] as ReportItem,
-          username: args['username'] as String,
+      return PageRouteBuilder(
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: const Duration(milliseconds: 300),
+        pageBuilder: (_, _, _) => NetworkWrapper(
+          child: ReportDetailScreen(
+            report: args['report'] as ReportItem,
+            username: args['username'] as String,
+          ),
         ),
+        transitionsBuilder: (_, anim, _, child) =>
+            FadeTransition(opacity: anim, child: child),
       );
 
     case '/chat':
@@ -326,7 +339,8 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
         username = args;
       }
       return PageRouteBuilder(
-        transitionDuration: const Duration(milliseconds: 400),
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
         pageBuilder: (_, _, _) => username.isEmpty
             ? EmergencyScreen(username: username, isVerified: isVerified)
             : NetworkWrapper(
@@ -335,13 +349,7 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
                   isVerified: isVerified,
                 ),
               ),
-        transitionsBuilder: (_, anim, _, child) => SlideTransition(
-          position: Tween(
-            begin: const Offset(1, 0),
-            end: Offset.zero,
-          ).animate(CurvedAnimation(parent: anim, curve: Curves.easeInOut)),
-          child: child,
-        ),
+        transitionsBuilder: (_, _, _, child) => child,
       );
 
     case '/events':
@@ -368,108 +376,153 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
 
     case '/verification_photo_instruction':
       final args = settings.arguments as Map<String, dynamic>;
-      return _slide(
-        VerificationPhotoInstructionScreen(
-          username: args['username'] as String,
-          selectedId: args['selectedId'] as String,
+      return PageRouteBuilder(
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: const Duration(milliseconds: 300),
+        pageBuilder: (_, _, _) => NetworkWrapper(
+          child: VerificationPhotoInstructionScreen(
+            username: args['username'] as String,
+            selectedId: args['selectedId'] as String,
+          ),
         ),
+        transitionsBuilder: (_, anim, _, child) =>
+            FadeTransition(opacity: anim, child: child),
       );
 
     case '/verification_upload_id':
       final args = settings.arguments as Map<String, dynamic>;
-      return _slideFade(
-        VerificationUploadIdScreen(
-          username: args['username'] as String,
-          selectedId: args['selectedId'] as String,
+      return PageRouteBuilder(
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: const Duration(milliseconds: 300),
+        pageBuilder: (_, _, _) => NetworkWrapper(
+          child: VerificationUploadIdScreen(
+            username: args['username'] as String,
+            selectedId: args['selectedId'] as String,
+          ),
         ),
+        transitionsBuilder: (_, anim, _, child) =>
+            FadeTransition(opacity: anim, child: child),
       );
 
     case '/verification_scan':
       final args = settings.arguments as Map<String, dynamic>;
-      return _slideFade(
-        VerificationScanScreen(
-          username: args['username'] as String,
-          selectedId: args['selectedId'] as String,
+      return PageRouteBuilder(
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: const Duration(milliseconds: 300),
+        pageBuilder: (_, _, _) => NetworkWrapper(
+          child: VerificationScanScreen(
+            username: args['username'] as String,
+            selectedId: args['selectedId'] as String,
+          ),
         ),
+        transitionsBuilder: (_, anim, _, child) =>
+            FadeTransition(opacity: anim, child: child),
       );
 
     case '/verification_review':
       final args = settings.arguments as Map<String, dynamic>;
-      return _slide(
-        VerificationReviewScreen(
-          username: args['username'] as String,
-          selectedId: args['selectedId'] as String,
-          frontImage: args['frontImage'] as Uint8List?,
-          backImage: args['backImage'] as Uint8List?,
-          extractedData: args['extractedData'] as Map<String, String>?,
+      return PageRouteBuilder(
+        transitionDuration: const Duration(milliseconds: 420),
+        reverseTransitionDuration: const Duration(milliseconds: 300),
+        pageBuilder: (_, _, _) => NetworkWrapper(
+          child: VerificationReviewScreen(
+            username: args['username'] as String,
+            selectedId: args['selectedId'] as String,
+            frontImage: args['frontImage'] as Uint8List?,
+            backImage: args['backImage'] as Uint8List?,
+            extractedData: args['extractedData'] as Map<String, String>?,
+          ),
+        ),
+        transitionsBuilder: (_, anim, _, child) => SlideTransition(
+          // ← updated
+          position: Tween<Offset>(
+            begin: const Offset(0, 1),
+            end: Offset.zero,
+          ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
+          child: child,
         ),
       );
 
     case '/verification_identity':
       final args = settings.arguments as Map<String, dynamic>;
-      return _slideFade(
-        VerificationIdentityScreen(
-          username: args['username'] as String,
-          selectedId: args['selectedId'] as String,
-          idNumber: args['idNumber'] as String,
-          firstName: args['firstName'] as String,
-          middleName: args['middleName'] as String,
-          lastName: args['lastName'] as String,
-          suffix: args['suffix'] as String?,
-          gender: args['gender'] as String,
-          birthdate: args['birthdate'] as String,
-          birthplace: args['birthplace'] as String,
-          civilStatus: args['civilStatus'] as String,
-          contactNumber: args['contactNumber'] as String,
-          barangay: args['barangay'] as String,
-          street: args['street'] as String,
-          frontImage: args['frontImage'] as Uint8List?,
-          backImage: args['backImage'] as Uint8List?,
+      return PageRouteBuilder(
+        transitionDuration: const Duration(milliseconds: 420), // ← updated
+        reverseTransitionDuration: const Duration(milliseconds: 300),
+        pageBuilder: (_, _, _) => NetworkWrapper(
+          child: VerificationIdentityScreen(
+            username: args['username'] as String,
+            selectedId: args['selectedId'] as String,
+            idNumber: args['idNumber'] as String,
+            firstName: args['firstName'] as String,
+            middleName: args['middleName'] as String,
+            lastName: args['lastName'] as String,
+            suffix: args['suffix'] as String?,
+            gender: args['gender'] as String,
+            birthdate: args['birthdate'] as String,
+            birthplace: args['birthplace'] as String,
+            civilStatus: args['civilStatus'] as String,
+            contactNumber: args['contactNumber'] as String,
+            barangay: args['barangay'] as String,
+            street: args['street'] as String,
+            frontImage: args['frontImage'] as Uint8List?,
+            backImage: args['backImage'] as Uint8List?,
+          ),
+        ),
+        transitionsBuilder: (_, anim, _, child) => SlideTransition(
+          // ← updated
+          position: Tween<Offset>(
+            begin: const Offset(0, 1),
+            end: Offset.zero,
+          ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
+          child: child,
         ),
       );
 
     case '/verification_face_scan':
       final args = settings.arguments as Map<String, dynamic>;
-      return _slideFade(
-        VerificationFaceScanScreen(
-          username: args['username'] as String,
-          selectedId: args['selectedId'] as String,
-          idNumber: args['idNumber'] as String,
-          firstName: args['firstName'] as String,
-          middleName: args['middleName'] as String,
-          lastName: args['lastName'] as String,
-          suffix: args['suffix'] as String?,
-          gender: args['gender'] as String,
-          birthdate: args['birthdate'] as String,
-          birthplace: args['birthplace'] as String,
-          civilStatus: args['civilStatus'] as String,
-          contactNumber: args['contactNumber'] as String,
-          barangay: args['barangay'] as String,
-          street: args['street'] as String,
-          frontImage: args['frontImage'] as Uint8List?,
-          backImage: args['backImage'] as Uint8List?,
+      return PageRouteBuilder(
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: const Duration(milliseconds: 300),
+        pageBuilder: (_, _, _) => NetworkWrapper(
+          child: VerificationFaceScanScreen(
+            username: args['username'] as String,
+            selectedId: args['selectedId'] as String,
+            idNumber: args['idNumber'] as String,
+            firstName: args['firstName'] as String,
+            middleName: args['middleName'] as String,
+            lastName: args['lastName'] as String,
+            suffix: args['suffix'] as String?,
+            gender: args['gender'] as String,
+            birthdate: args['birthdate'] as String,
+            birthplace: args['birthplace'] as String,
+            civilStatus: args['civilStatus'] as String,
+            contactNumber: args['contactNumber'] as String,
+            barangay: args['barangay'] as String,
+            street: args['street'] as String,
+            frontImage: args['frontImage'] as Uint8List?,
+            backImage: args['backImage'] as Uint8List?,
+          ),
         ),
+        transitionsBuilder: (_, anim, _, child) =>
+            FadeTransition(opacity: anim, child: child),
       );
 
     case '/event_detail':
       final args = settings.arguments as Map<String, dynamic>;
       return PageRouteBuilder(
         settings: settings,
-        transitionDuration: const Duration(milliseconds: 420),
-        reverseTransitionDuration: const Duration(milliseconds: 300),
+        transitionDuration: Duration.zero, // instant in
+        reverseTransitionDuration: const Duration(
+          milliseconds: 300,
+        ), // fade out
         pageBuilder: (_, _, _) => NetworkWrapper(
           child: EventDetailScreen(
             event: args['event'] as EventItem,
             username: args['username'] as String? ?? '',
           ),
         ),
-        transitionsBuilder: (_, anim, _, child) => SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(0, 1), // slides up from bottom
-            end: Offset.zero,
-          ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
-          child: child,
-        ),
+        transitionsBuilder: (_, anim, _, child) =>
+            FadeTransition(opacity: anim, child: child),
       );
 
     // ── Dynamic phone verify route ────────────────────────────────────────────

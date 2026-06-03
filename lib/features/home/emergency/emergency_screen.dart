@@ -368,6 +368,7 @@ class _EmergencyScreenState extends State<EmergencyScreen>
   Widget build(BuildContext context) {
     final w = MediaQuery.of(context).size.width;
     final scaffold = Scaffold(
+      extendBody: true,
       backgroundColor: _C.pageBg,
       body: SafeArea(
         child: Column(
