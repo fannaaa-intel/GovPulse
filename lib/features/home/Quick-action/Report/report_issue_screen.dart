@@ -551,15 +551,20 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
     );
   }
 
-  // ── Open location picker (barangay-aware) ──────────────────────────────────
   Future<void> _openLocationPicker() async {
     final result = await Navigator.push<Map<String, dynamic>>(
       context,
-      MaterialPageRoute(
-        builder: (_) => LocationPickerScreen(
+      PageRouteBuilder<Map<String, dynamic>>(
+        transitionDuration: Duration.zero, // instant in
+        reverseTransitionDuration: const Duration(
+          milliseconds: 300,
+        ), // fade out
+        pageBuilder: (_, _, _) => LocationPickerScreen(
           initialPosition: _pickedLatLng,
-          initialBarangay: _pickedBarangay, // null when using current location
+          initialBarangay: _pickedBarangay,
         ),
+        transitionsBuilder: (_, anim, _, child) =>
+            FadeTransition(opacity: anim, child: child),
       ),
     );
 

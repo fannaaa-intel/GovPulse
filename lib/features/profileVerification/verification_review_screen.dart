@@ -129,10 +129,13 @@ class _VerificationReviewScreenState extends State<VerificationReviewScreen> {
     ]) {
       c.addListener(() => setState(() {}));
     }
-    SystemChrome.setEnabledSystemUIMode(
-      SystemUiMode.manual,
-      overlays: [SystemUiOverlay.top, SystemUiOverlay.bottom],
-    );
+    Future.delayed(const Duration(milliseconds: 250), () {
+      if (!mounted) return;
+      SystemChrome.setEnabledSystemUIMode(
+        SystemUiMode.manual,
+        overlays: [SystemUiOverlay.top, SystemUiOverlay.bottom],
+      );
+    });
   }
 
   @override

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../home_enums.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class HomeProfileStrip extends StatelessWidget {
   final String username;
@@ -276,11 +277,28 @@ class _Avatar extends StatelessWidget {
                       ),
                     ),
                   )
+                // AFTER
                 : (url != null && url!.isNotEmpty)
-                ? Image.network(
-                    url!,
+                ? CachedNetworkImage(
+                    imageUrl: url!,
+                    cacheKey: url,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => Image.asset(
+                    width: size,
+                    height: size,
+                    placeholder: (_, _) => Container(
+                      color: const Color(0xFF1E3A5F),
+                      child: Center(
+                        child: SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white.withOpacity(0.6),
+                          ),
+                        ),
+                      ),
+                    ),
+                    errorWidget: (_, _, _) => Image.asset(
                       'assets/images/profilenew.png',
                       fit: BoxFit.cover,
                     ),

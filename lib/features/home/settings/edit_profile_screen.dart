@@ -71,11 +71,7 @@ class _EditProfileScreenState extends State<EditProfileScreen>
       vsync: this,
       duration: const Duration(milliseconds: 700),
     );
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      Future.delayed(const Duration(milliseconds: 60), () {
-        if (mounted) _entryCtrl.forward();
-      });
-    });
+
     _loadData();
   }
 
@@ -207,6 +203,7 @@ class _EditProfileScreenState extends State<EditProfileScreen>
           _isVerified = true; // we only navigate here if approved
           _loading = false;
         });
+        _entryCtrl.forward(from: 0);
       }
     } catch (_) {
       if (mounted) setState(() => _loading = false);

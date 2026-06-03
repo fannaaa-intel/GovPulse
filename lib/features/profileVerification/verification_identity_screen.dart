@@ -56,10 +56,13 @@ class _VerificationIdentityScreenState
   @override
   void initState() {
     super.initState();
-    SystemChrome.setEnabledSystemUIMode(
-      SystemUiMode.manual,
-      overlays: [SystemUiOverlay.top, SystemUiOverlay.bottom],
-    );
+    Future.delayed(const Duration(milliseconds: 600), () {
+      if (!mounted) return;
+      SystemChrome.setEnabledSystemUIMode(
+        SystemUiMode.manual,
+        overlays: [SystemUiOverlay.top, SystemUiOverlay.bottom],
+      );
+    });
   }
 
   @override

@@ -13,10 +13,36 @@ class VerificationScreen extends StatefulWidget {
 class _VerificationScreenState extends State<VerificationScreen>
     with SingleTickerProviderStateMixin {
   double _scale = 1.0;
+  late final AnimationController _entryCtrl;
+  late final Animation<Offset> _slideAnim;
+  late final Animation<double> _fadeAnim;
 
   @override
   void initState() {
     super.initState();
+    _entryCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
+    _slideAnim = Tween<Offset>(
+      begin: const Offset(0, 0.06),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOutCubic));
+    _fadeAnim = Tween<double>(
+      begin: 0,
+      end: 1,
+    ).animate(CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOut));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (mounted) _entryCtrl.forward();
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _entryCtrl.dispose();
+    super.dispose();
   }
 
   /// FEATURE CARD
@@ -334,7 +360,16 @@ class _VerificationScreenState extends State<VerificationScreen>
           ),
         ),
       ),
-      body: SafeArea(child: SingleChildScrollView(child: _buildContent())),
+
+      body: SafeArea(
+        child: FadeTransition(
+          opacity: _fadeAnim,
+          child: SlideTransition(
+            position: _slideAnim,
+            child: SingleChildScrollView(child: _buildContent()),
+          ),
+        ),
+      ),
     );
   }
 }
