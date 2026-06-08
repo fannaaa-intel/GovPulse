@@ -136,6 +136,8 @@ Future<void> showSuccessDialog(
   required String message,
   String buttonLabel = 'Done',
   String iconAsset = 'assets/images/verification/verified.png',
+  Color? iconColor,
+  Color? iconBgColor,
 }) async {
   final width = MediaQuery.of(context).size.width;
 
@@ -168,18 +170,46 @@ Future<void> showSuccessDialog(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            SizedBox(
-              width: width * 0.22,
-              height: width * 0.22,
-              child: Center(
-                child: Image.asset(
-                  iconAsset,
-                  width: width * 0.18,
-                  height: width * 0.18,
-                  fit: BoxFit.contain,
+            // ── Icon with optional tinted circle background ──────────────
+            () {
+              final size = width * 0.22;
+              if (iconColor != null) {
+                final bg = iconBgColor ?? iconColor.withValues(alpha: 0.12);
+                return Container(
+                  width: size,
+                  height: size,
+                  decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
+                  child: Center(
+                    child: Image.asset(
+                      iconAsset,
+                      width: size * 0.55,
+                      height: size * 0.55,
+                      fit: BoxFit.contain,
+                      color: iconColor,
+                      colorBlendMode: BlendMode.srcIn,
+                      errorBuilder: (_, _, _) => Icon(
+                        Icons.check_circle_outline_rounded,
+                        size: size * 0.55,
+                        color: iconColor,
+                      ),
+                    ),
+                  ),
+                );
+              }
+              // No color — render as-is (for full-color PNGs like verified.png)
+              return SizedBox(
+                width: size,
+                height: size,
+                child: Center(
+                  child: Image.asset(
+                    iconAsset,
+                    width: size * 0.82,
+                    height: size * 0.82,
+                    fit: BoxFit.contain,
+                  ),
                 ),
-              ),
-            ),
+              );
+            }(),
             SizedBox(height: width * 0.045),
             Text(
               title,

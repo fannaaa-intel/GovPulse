@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'package:image/image.dart' as img;
-import '../auth/services/id_verification_service.dart';
+import '../../core/services/id_verification_service.dart';
 
 class VerificationScanScreen extends StatefulWidget {
   final String username;

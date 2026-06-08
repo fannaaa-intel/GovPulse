@@ -2,12 +2,14 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../services/chat_service.dart';
 import '../network/network_wrapper.dart';
 import '../../features/onboarding/splash_screen.dart';
 import '../../features/onboarding/intro_screen.dart';
 import '../../features/onboarding/otp_loading_screen.dart';
 import '../../features/auth/login_screen.dart';
-import '../../features/auth/services/auth_service.dart';
+import '../services/auth_service.dart';
 import '../../features/auth/phone_signup_screen.dart';
 import '../../features/auth/signup_screen.dart';
 import '../../features/guest/screen/guest.dart';
@@ -38,6 +40,11 @@ import '../../features/home/Quick-action/Events/events_screen.dart';
 import '../../features/home/Quick-action/Suggestion/suggestion_screen.dart';
 import '../../features/home/my_report/report_detail_screen.dart';
 import '../../features/home/Quick-action/Events/event_detail_screen.dart';
+import '../../features/home/settings/change-password/change_password_send_screen.dart';
+import '../../features/home/settings/change-password/change_password_verify_screen.dart';
+import '../../features/home/settings/change-password/change_password_new_screen.dart';
+import '../providers/user_profile_provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// Required by [MaterialApp.navigatorObservers] for home route tracking.
 final RouteObserver<ModalRoute<void>> homeRouteObserver =
@@ -107,7 +114,17 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
                 username,
                 password,
               );
+              // Rebind chat storage to THIS user before Home mounts.
+              final uid = Supabase.instance.client.auth.currentUser?.id;
+              if (uid != null) {
+                await ChatService.onUserAuthenticated(uid);
+              }
               if (!ctx.mounted) return;
+
+              // ── ADD THIS LINE ─────────────────────────────────────
+              ProviderScope.containerOf(ctx).invalidate(userProfileProvider);
+              // ──────────────────────────────────────────────────────
+
               Navigator.pushReplacement(
                 ctx,
                 PageRouteBuilder(
@@ -519,6 +536,43 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
           child: EventDetailScreen(
             event: args['event'] as EventItem,
             username: args['username'] as String? ?? '',
+          ),
+        ),
+        transitionsBuilder: (_, anim, _, child) =>
+            FadeTransition(opacity: anim, child: child),
+      );
+
+    case '/change_password':
+      final email = settings.arguments as String;
+      return PageRouteBuilder(
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: const Duration(milliseconds: 280),
+        pageBuilder: (_, _, _) =>
+            NetworkWrapper(child: ChangePasswordSendScreen(email: email)),
+        transitionsBuilder: (_, anim, _, child) =>
+            FadeTransition(opacity: anim, child: child),
+      );
+
+    case '/change_password_verify':
+      final email = settings.arguments as String;
+      return PageRouteBuilder(
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: const Duration(milliseconds: 280),
+        pageBuilder: (_, _, _) =>
+            NetworkWrapper(child: ChangePasswordVerifyScreen(email: email)),
+        transitionsBuilder: (_, anim, _, child) =>
+            FadeTransition(opacity: anim, child: child),
+      );
+
+    case '/change_password_new':
+      final args = settings.arguments as Map<String, dynamic>;
+      return PageRouteBuilder(
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: const Duration(milliseconds: 280),
+        pageBuilder: (_, _, _) => NetworkWrapper(
+          child: ChangePasswordNewScreen(
+            accessToken: args['accessToken'] as String,
+            refreshToken: args['refreshToken'] as String,
           ),
         ),
         transitionsBuilder: (_, anim, _, child) =>

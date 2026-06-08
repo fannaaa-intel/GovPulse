@@ -152,40 +152,63 @@ Widget buildCommentItem(
                       0,
                       0,
                     ),
-                    child: Wrap(
-                      spacing: width * 0.04,
-                      runSpacing: width * 0.005,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        Text(
-                          timeAgo,
-                          style: TextStyle(
-                            fontSize: width * 0.028,
-                            color: const Color(0xFF6B7280),
+                    child: comment['isSending'] == true
+                        ? Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              SizedBox(
+                                width: width * 0.030,
+                                height: width * 0.030,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 1.5,
+                                  color: const Color(0xFF9CA3AF),
+                                ),
+                              ),
+                              SizedBox(width: width * 0.015),
+                              Text(
+                                'Sending...',
+                                style: TextStyle(
+                                  fontSize: width * 0.028,
+                                  color: const Color(0xFF9CA3AF),
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ],
+                          )
+                        : Wrap(
+                            spacing: width * 0.04,
+                            runSpacing: width * 0.005,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              Text(
+                                timeAgo,
+                                style: TextStyle(
+                                  fontSize: width * 0.028,
+                                  color: const Color(0xFF6B7280),
+                                ),
+                              ),
+                              commentAction(
+                                width,
+                                label: 'Like',
+                                count: baseLikes,
+                                active: isLiked,
+                                activeColor: const Color(0xFFEF4444),
+                                pngAsset: 'assets/images/heart.png',
+                                fallbackIcon: Icons.favorite_border_rounded,
+                                onTap: () => onToggleLike(id),
+                              ),
+                              commentAction(
+                                width,
+                                label: 'Reply',
+                                count: replies.length,
+                                active: false,
+                                activeColor: AppColors.primaryBlue,
+                                pngAsset: 'assets/images/comment.png',
+                                fallbackIcon: Icons.reply_rounded,
+                                onTap: onReply,
+                              ),
+                            ],
                           ),
-                        ),
-                        commentAction(
-                          width,
-                          label: 'Like',
-                          count: baseLikes,
-                          active: isLiked,
-                          activeColor: const Color(0xFFEF4444),
-                          pngAsset: 'assets/images/heart.png',
-                          fallbackIcon: Icons.favorite_border_rounded,
-                          onTap: () => onToggleLike(id),
-                        ),
-                        commentAction(
-                          width,
-                          label: 'Reply',
-                          count: replies.length,
-                          active: false,
-                          activeColor: AppColors.primaryBlue,
-                          pngAsset: 'assets/images/comment.png',
-                          fallbackIcon: Icons.reply_rounded,
-                          onTap: onReply,
-                        ),
-                      ],
-                    ),
                   ),
                 ],
               ),
@@ -353,40 +376,63 @@ Widget buildReplyItem(
                   0,
                   0,
                 ),
-                child: Wrap(
-                  spacing: width * 0.035,
-                  runSpacing: width * 0.005,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    Text(
-                      timeAgo,
-                      style: TextStyle(
-                        fontSize: width * 0.026,
-                        color: const Color(0xFF6B7280),
+                child: reply['isSending'] == true
+                    ? Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: width * 0.028,
+                            height: width * 0.028,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 1.5,
+                              color: const Color(0xFF9CA3AF),
+                            ),
+                          ),
+                          SizedBox(width: width * 0.015),
+                          Text(
+                            'Sending...',
+                            style: TextStyle(
+                              fontSize: width * 0.026,
+                              color: const Color(0xFF9CA3AF),
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ],
+                      )
+                    : Wrap(
+                        spacing: width * 0.035,
+                        runSpacing: width * 0.005,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text(
+                            timeAgo,
+                            style: TextStyle(
+                              fontSize: width * 0.026,
+                              color: const Color(0xFF6B7280),
+                            ),
+                          ),
+                          commentAction(
+                            width,
+                            label: 'Like',
+                            count: baseLikes,
+                            active: isLiked,
+                            activeColor: const Color(0xFFEF4444),
+                            pngAsset: 'assets/images/heart.png',
+                            fallbackIcon: Icons.favorite_border_rounded,
+                            onTap: () => onToggleLike(id),
+                          ),
+                          commentAction(
+                            width,
+                            label: 'Reply',
+                            count: 0,
+                            active: false,
+                            activeColor: AppColors.primaryBlue,
+                            pngAsset: 'assets/images/comment.png',
+                            fallbackIcon: Icons.reply_rounded,
+                            onTap: onReply,
+                          ),
+                        ],
                       ),
-                    ),
-                    commentAction(
-                      width,
-                      label: 'Like',
-                      count: baseLikes,
-                      active: isLiked,
-                      activeColor: const Color(0xFFEF4444),
-                      pngAsset: 'assets/images/heart.png',
-                      fallbackIcon: Icons.favorite_border_rounded,
-                      onTap: () => onToggleLike(id),
-                    ),
-                    commentAction(
-                      width,
-                      label: 'Reply',
-                      count: 0,
-                      active: false,
-                      activeColor: AppColors.primaryBlue,
-                      pngAsset: 'assets/images/comment.png',
-                      fallbackIcon: Icons.reply_rounded,
-                      onTap: onReply,
-                    ),
-                  ],
-                ),
               ),
             ],
           ),

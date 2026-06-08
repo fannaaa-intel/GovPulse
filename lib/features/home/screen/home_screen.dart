@@ -2,7 +2,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../../auth/services/chat_service.dart';
+import '../../../core/services/chat_service.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 import '../../../features/home/screen/notification_popup.dart';
@@ -32,27 +32,24 @@ import '../../../core/widgets/Home/Chat-bubbles/home_chat_bubble.dart';
 import '../../../core/widgets/loading/loading_overlay.dart';
 import '../Quick-action/Events/events_screen.dart';
 
-class HomePage extends StatefulWidget {
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/providers/user_profile_provider.dart';
+
+class HomePage extends ConsumerStatefulWidget {
   final String username;
   const HomePage({super.key, required this.username});
 
   @override
-  State<HomePage> createState() => _HomePageState();
+  ConsumerState<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage>
+class _HomePageState extends ConsumerState<HomePage>
     with TickerProviderStateMixin
     implements RouteAware {
   final FlutterLocalNotificationsPlugin notificationsPlugin =
       FlutterLocalNotificationsPlugin();
 
   DateTime? lastBackPressed;
-
-  VerifStatus _verifStatus = VerifStatus.none;
-  String? _facePhotoUrl;
-  String? _facePhotoPath;
-  String? _fullName;
-  bool _profileLoading = true;
 
   late final AnimationController _entryCtrl;
   static const int _navIndex = 0;
@@ -76,26 +73,45 @@ class _HomePageState extends State<HomePage>
   static const double _kSidePadNarrowWeb = 20;
   static const double _kColGap = 28;
 
+  // ── Helper getter so methods outside build() can read verifStatus ─────────
+  VerifStatus get _verifStatus =>
+      ref.read(userProfileProvider).valueOrNull?.verifStatus ??
+      VerifStatus.none;
+
   @override
   void initState() {
     super.initState();
-    _initNotifications();
-    _loadVerificationStatus();
-
-    NotificationService.load().then((_) {
-      if (mounted) setState(() {});
-    });
-
     _entryCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
     );
-    WidgetsBinding.instance.addPostFrameCallback((_) {});
+    _initNotifications();
 
-    Future.delayed(const Duration(minutes: 3), () {
-      if (mounted && _verifStatus == VerifStatus.none) {
-        _triggerVerificationReminder();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      precacheImage(const AssetImage('assets/images/bg.png'), context);
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final current = ref.read(userProfileProvider);
+      if (current.hasValue && !current.isLoading) {
+        _entryCtrl.forward(from: 0);
       }
+    });
+
+    ref.listenManual(userProfileProvider, (prev, next) {
+      if ((prev == null || prev.isLoading) && !next.isLoading && mounted) {
+        final status = next.valueOrNull?.verifStatus ?? VerifStatus.none;
+        if (status == VerifStatus.none) {
+          Future.delayed(const Duration(minutes: 3), () {
+            if (mounted) _triggerVerificationReminder();
+          });
+        }
+        _entryCtrl.forward(from: 0);
+      }
+    });
+
+    NotificationService.load().then((_) {
+      if (mounted) setState(() {});
     });
   }
 
@@ -113,12 +129,7 @@ class _HomePageState extends State<HomePage>
   }
 
   @override
-  void didPopNext() {
-    _loadVerificationStatus();
-    Future.delayed(const Duration(milliseconds: 320), () {
-      if (mounted) _entryCtrl.forward(from: 0);
-    });
-  }
+  void didPopNext() {}
 
   @override
   void didPush() {}
@@ -127,16 +138,18 @@ class _HomePageState extends State<HomePage>
   @override
   void didPop() {}
 
-  Animation<double> _fade(int i) => Tween<double>(begin: 0, end: 1).animate(
-    CurvedAnimation(
-      parent: _entryCtrl,
-      curve: Interval(
-        (i * 0.18).clamp(0.0, 1.0),
-        ((i * 0.18) + 0.5).clamp(0.0, 1.0),
-        curve: Curves.easeOut,
+  Animation<double> _fade(int i) {
+    return Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(
+        parent: _entryCtrl,
+        curve: Interval(
+          (i * 0.18).clamp(0.0, 1.0),
+          ((i * 0.18) + 0.5).clamp(0.0, 1.0),
+          curve: Curves.easeOut,
+        ),
       ),
-    ),
-  );
+    );
+  }
 
   Animation<Offset> _slideAnim(int i) =>
       Tween<Offset>(begin: const Offset(0, 0.28), end: Offset.zero).animate(
@@ -428,9 +441,10 @@ class _HomePageState extends State<HomePage>
 
     try {
       await Supabase.instance.client.auth.signOut();
-      await ChatService.I.clearOnLogout(); // ← same as setting_screen
+      await ChatService.I.clearOnLogout();
       HomeChatBubble.hideGlobal();
       if (!mounted) return;
+
       Navigator.pop(context);
       Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
     } catch (e) {
@@ -443,99 +457,6 @@ class _HomePageState extends State<HomePage>
           behavior: SnackBarBehavior.floating,
         ),
       );
-    }
-  }
-
-  Future<void> _loadVerificationStatus() async {
-    try {
-      final supabase = Supabase.instance.client;
-      final uid = supabase.auth.currentUser?.id;
-      if (uid == null) {
-        if (mounted) setState(() => _profileLoading = false);
-        return;
-      }
-
-      final verifRow = await supabase
-          .from('verification_submissions')
-          .select('status, face_photo_path')
-          .eq('user_id', uid)
-          .order('created_at', ascending: false)
-          .limit(1)
-          .maybeSingle();
-
-      VerifStatus verifStatus = VerifStatus.none;
-      String? facePath;
-
-      if (verifRow != null) {
-        final status = verifRow['status'] as String?;
-        facePath = verifRow['face_photo_path'] as String?;
-        if (status == 'approved') verifStatus = VerifStatus.verified;
-        if (status == 'pending') verifStatus = VerifStatus.pending;
-      }
-
-      if (verifStatus == VerifStatus.verified) {
-        String? fullName;
-        String? faceUrl;
-        try {
-          final res = await supabase
-              .from('citizen_details')
-              .select('first_name, last_name, profile_photo_path')
-              .eq('user_id', uid)
-              .maybeSingle();
-
-          if (res != null) {
-            final first = res['first_name'] as String? ?? '';
-            final last = res['last_name'] as String? ?? '';
-            fullName = '${first.trim()} ${last.trim()}'.trim();
-            if (fullName.trim().isEmpty) fullName = null;
-            final photo = res['profile_photo_path'] as String? ?? '';
-            if (photo.isNotEmpty) facePath = photo;
-          }
-        } catch (_) {}
-        if (facePath != null && facePath.isNotEmpty) {
-          faceUrl = await supabase.storage
-              .from('verification-assets')
-              .createSignedUrl(facePath, 3600);
-        }
-
-        if (mounted) {
-          setState(() {
-            _verifStatus = verifStatus;
-            _facePhotoUrl = faceUrl;
-            _facePhotoPath = facePath;
-            _fullName = fullName;
-            _profileLoading = false;
-          });
-          _entryCtrl.forward(from: 0);
-        }
-      } else {
-        // pending or none
-        String? fullName;
-        try {
-          final res = await supabase
-              .from('profiles')
-              .select('username, email')
-              .eq('id', uid)
-              .maybeSingle();
-          if (res != null) fullName = res['username'] as String?;
-        } catch (_) {}
-
-        if (mounted) {
-          setState(() {
-            _verifStatus = verifStatus;
-            _facePhotoUrl = null;
-            _facePhotoPath = null;
-            _fullName = fullName;
-            _profileLoading = false;
-          });
-          _entryCtrl.forward(from: 0);
-        }
-      }
-    } catch (_) {
-      if (mounted) {
-        setState(() => _profileLoading = false);
-        _entryCtrl.forward(from: 0);
-      }
     }
   }
 
@@ -582,12 +503,22 @@ class _HomePageState extends State<HomePage>
     final width = size.width;
     final height = size.height;
 
+    // ── Read from provider ────────────────────────────────────────────────
+    final profileAsync = ref.watch(userProfileProvider);
+
+    final profile = profileAsync.valueOrNull;
+    final verifStatus = profile?.verifStatus ?? VerifStatus.none;
+    final facePhotoUrl = profile?.facePhotoUrl;
+    final facePhotoPath = profile?.facePhotoPath;
+    final fullName = profile?.fullName;
+    final profileLoading = profileAsync.isLoading;
     // Bottom-nav mobile body is for the native app only. On web we always use
     // the web body: top nav when wide, hamburger drawer when narrow — never
     // the bottom nav, no matter how small the browser window gets.
     final bool useMobile = !kIsWeb && width < _kMobileBreakpoint;
     final bool useTopNav = width >= _kTopNavBreakpoint;
     final bool useDrawer = !useMobile && !useTopNav;
+
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
@@ -605,7 +536,6 @@ class _HomePageState extends State<HomePage>
       child: Scaffold(
         extendBody: true,
         backgroundColor: useMobile ? Colors.white : const Color(0xFFF3F6FC),
-
         // Drawer app bar ONLY in the 600–900 band.
         appBar: useDrawer ? _buildDrawerAppBar(width) : null,
         drawer: useDrawer
@@ -613,19 +543,38 @@ class _HomePageState extends State<HomePage>
                 currentIndex: _navIndex,
                 onTap: _handleNavTap,
                 username: widget.username,
-                fullName: _fullName,
-                facePhotoUrl: _facePhotoUrl,
-                verifStatus: _verifStatus,
+                fullName: fullName,
+                facePhotoUrl: facePhotoUrl,
+                verifStatus: verifStatus,
                 onLogout: _handleLogout,
               )
             : null,
 
         body: LoadingOverlay.bodyOrSkeleton(
-          isLoading: _profileLoading,
+          isLoading: profileLoading,
           layout: SkeletonLayout.home,
           child: useMobile
-              ? SafeArea(child: _buildMobileBody(width, height))
-              : _buildWebBody(width, height, showTopNav: useTopNav),
+              ? SafeArea(
+                  child: _buildMobileBody(
+                    width,
+                    height,
+                    verifStatus,
+                    facePhotoUrl,
+                    facePhotoPath,
+                    fullName,
+                    profileLoading,
+                  ),
+                )
+              : _buildWebBody(
+                  width,
+                  height,
+                  showTopNav: useTopNav,
+                  verifStatus: verifStatus,
+                  facePhotoUrl: facePhotoUrl,
+                  facePhotoPath: facePhotoPath,
+                  fullName: fullName,
+                  profileLoading: profileLoading,
+                ),
         ),
 
         // Bottom nav ONLY on mobile.
@@ -640,29 +589,26 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  // ── Mobile body — responsive: header + spacing clamp so it stays in
-  // proportion from small phones up to the 600px band edge. The inner
-  // section widgets (profile card, community, quick actions) scale themselves
-  // off the `width` they receive. ───────────────────────────────────────────
-  Widget _buildMobileBody(double width, double height) {
-    // Header tracks width but is clamped so it's neither a thin strip on a
-    // 320px phone nor a giant banner approaching 600px.
+  // ── Mobile body ───────────────────────────────────────────────────────────
+  Widget _buildMobileBody(
+    double width,
+    double height,
+    VerifStatus verifStatus,
+    String? facePhotoUrl,
+    String? facePhotoPath,
+    String? fullName,
+    bool profileLoading,
+  ) {
     final double headerHeight = (width * 0.52).clamp(200.0, 300.0);
-    // How far the profile card is pulled up over the header.
     final double cardPull = (width * 0.05).clamp(14.0, 28.0);
-    // Vertical rhythm between the stacked sections.
     final double sectionGap = (width * 0.05).clamp(16.0, 28.0);
-    // Width handed to the section widgets: real width on phones, capped on
-    // wider windows so their proportional sizing stays phone-like.
     final double contentW = math.min(width, _kMobileContentMax);
 
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
       child: Column(
         children: [
-          // Header stays full-bleed across the band.
           _buildMobileHeader(width, headerHeight),
-          // Content column caps + centers; phones (≤480) are unaffected.
           Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: _kMobileContentMax),
@@ -675,11 +621,11 @@ class _HomePageState extends State<HomePage>
                       child: HomeProfileCard(
                         width: contentW,
                         username: widget.username,
-                        verifStatus: _verifStatus,
-                        fullName: _fullName,
-                        facePhotoUrl: _facePhotoUrl,
-                        facePhotoPath: _facePhotoPath,
-                        profileLoading: _profileLoading,
+                        verifStatus: verifStatus,
+                        fullName: fullName,
+                        facePhotoUrl: facePhotoUrl,
+                        facePhotoPath: facePhotoPath,
+                        profileLoading: profileLoading,
                         notificationCount: NotificationService.count,
                         onNotificationTap: () =>
                             _showNotificationsDialog(width),
@@ -741,7 +687,6 @@ class _HomePageState extends State<HomePage>
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  // Fade into the mobile scaffold bg for a seamless join.
                   colors: [Colors.transparent, Colors.white],
                 ),
               ),
@@ -752,11 +697,16 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  // ── Web body — divider line removed, hero handles its own spacing ──────────
+  // ── Web body ──────────────────────────────────────────────────────────────
   Widget _buildWebBody(
     double width,
     double height, {
     required bool showTopNav,
+    required VerifStatus verifStatus,
+    required String? facePhotoUrl,
+    required String? facePhotoPath,
+    required String? fullName,
+    required bool profileLoading,
   }) {
     final sidePad = width >= _kTwoColumnBreakpoint
         ? _kSidePadDesktop
@@ -779,25 +729,25 @@ class _HomePageState extends State<HomePage>
                 onLogoutTap: _handleLogout,
                 compact: width < _kNavCompactBelow,
                 username: widget.username,
-                fullName: _fullName,
-                facePhotoUrl: _facePhotoUrl,
-                verifStatus: _verifStatus == VerifStatus.verified
+                fullName: fullName,
+                facePhotoUrl: facePhotoUrl,
+                verifStatus: verifStatus == VerifStatus.verified
                     ? 'approved'
-                    : _verifStatus == VerifStatus.pending
+                    : verifStatus == VerifStatus.pending
                     ? 'pending'
                     : 'none',
               ),
 
-            // ── Hero section — card overlaps bottom via Stack ──────
+            // ── Hero section ───────────────────────────────────────
             _animated(
               0,
               HomeHeroSection(
                 username: widget.username,
-                fullName: _fullName,
-                facePhotoUrl: _facePhotoUrl,
-                facePhotoPath: _facePhotoPath,
-                verifStatus: _verifStatus,
-                profileLoading: _profileLoading,
+                fullName: fullName,
+                facePhotoUrl: facePhotoUrl,
+                facePhotoPath: facePhotoPath,
+                verifStatus: verifStatus,
+                profileLoading: profileLoading,
                 onVerifyTap: _goToVerification,
                 sidePadding: sidePad,
                 contentMaxWidth: _kDashboardMaxWidth,
@@ -847,7 +797,6 @@ class _HomePageState extends State<HomePage>
           leftWidth: leftW,
           rightWidth: rightW,
           gap: _kColGap,
-          // Community = left, receives the matched height and scrolls internally.
           left: (matchedHeight) => _animated(
             1,
             HomeCommunitySectionWeb(
@@ -855,7 +804,6 @@ class _HomePageState extends State<HomePage>
               height: matchedHeight,
             ),
           ),
-          // Quick Actions = right, drives the height (sized to its 4 tiles).
           right: (matchedHeight) => _animated(
             2,
             HomeQuickActionsSectionWeb(
@@ -990,12 +938,9 @@ class _EqualHeightColumnsState extends State<_EqualHeightColumns> {
   void _measure() {
     if (!mounted) return;
     try {
-      // Read contexts defensively — on the first frame (and after a hot
-      // reload) the keyed subtrees may not be attached yet.
       final leftCtx = _leftKey.currentContext;
       final rightCtx = _rightKey.currentContext;
       if (leftCtx == null || rightCtx == null) {
-        // Not laid out yet — try again next frame.
         _scheduleMeasure();
         return;
       }
@@ -1012,10 +957,7 @@ class _EqualHeightColumnsState extends State<_EqualHeightColumns> {
           (_matched == null || (_matched! - target).abs() > 0.5)) {
         setState(() => _matched = target);
       }
-    } catch (_) {
-      // Swallow stale-callback / detached-element errors (common during
-      // hot reload). The next build will reschedule a clean measure.
-    }
+    } catch (_) {}
   }
 
   @override

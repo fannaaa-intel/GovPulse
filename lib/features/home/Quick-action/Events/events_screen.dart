@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/theme/app_colors.dart';
-import '../../../auth/services/events_service.dart';
+import '../../../../core/services/events_service.dart';
 import '../../../../core/widgets/loading/loading_overlay.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 // ─── UI model (keeps all existing widgets working as-is) ─────────────────────
@@ -740,30 +740,19 @@ class _EventsScreenState extends State<EventsScreen>
                                   fadeOutDuration: const Duration(
                                     milliseconds: 100,
                                   ),
-                                  placeholder: (context, url) => Container(
-                                    color: const Color(0xFFE5E7EB),
-                                    child: Center(
-                                      child: Icon(
-                                        Icons.image_rounded,
-                                        size:
-                                            imageW *
-                                            0.38, // use cardW * 0.28 in _buildSmallCard
-                                        color: const Color(0xFF9CA3AF),
+                                  placeholder: (context, url) =>
+                                      const _ShimmerBox(),
+                                  errorWidget: (context, url, error) =>
+                                      Container(
+                                        color: const Color(0xFFE5E7EB),
+                                        child: Center(
+                                          child: Icon(
+                                            Icons.image_rounded,
+                                            size: imageW * 0.38,
+                                            color: const Color(0xFF9CA3AF),
+                                          ),
+                                        ),
                                       ),
-                                    ),
-                                  ),
-                                  errorWidget: (context, url, error) => Container(
-                                    color: const Color(0xFFE5E7EB),
-                                    child: Center(
-                                      child: Icon(
-                                        Icons.image_rounded,
-                                        size:
-                                            imageW *
-                                            0.38, // use cardW * 0.28 in _buildSmallCard
-                                        color: const Color(0xFF9CA3AF),
-                                      ),
-                                    ),
-                                  ),
                                 )
                               : Container(
                                   color: const Color(0xFFE5E7EB),
@@ -932,16 +921,7 @@ class _EventsScreenState extends State<EventsScreen>
                             fit: BoxFit.cover,
                             fadeInDuration: const Duration(milliseconds: 300),
                             fadeOutDuration: const Duration(milliseconds: 100),
-                            placeholder: (context, url) => Container(
-                              color: const Color(0xFFE5E7EB),
-                              child: Center(
-                                child: Icon(
-                                  Icons.image_rounded,
-                                  size: cardW * 0.28,
-                                  color: const Color(0xFF9CA3AF),
-                                ),
-                              ),
-                            ),
+                            placeholder: (context, url) => const _ShimmerBox(),
                             errorWidget: (context, url, error) => Container(
                               color: const Color(0xFFE5E7EB),
                               child: Center(
@@ -1164,6 +1144,63 @@ class _EventsScreenState extends State<EventsScreen>
           ),
         ],
       ),
+    );
+  }
+}
+
+// ── Per-image shimmer placeholder ─────────────────────────────────────────
+// Self-contained animated shimmer shown while a network image is loading.
+// Dependency-free: a light band swept across a grey box. Fills its parent,
+// so the surrounding SizedBox controls its size.
+class _ShimmerBox extends StatefulWidget {
+  const _ShimmerBox();
+
+  @override
+  State<_ShimmerBox> createState() => _ShimmerBoxState();
+}
+
+class _ShimmerBoxState extends State<_ShimmerBox>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _shimmerCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _shimmerCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _shimmerCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _shimmerCtrl,
+      builder: (context, child) {
+        final t = _shimmerCtrl.value;
+        return ShaderMask(
+          blendMode: BlendMode.srcATop,
+          shaderCallback: (bounds) {
+            return LinearGradient(
+              begin: Alignment(-1.0 - 2.0 * (1 - t), 0),
+              end: Alignment(1.0 - 2.0 * (1 - t), 0),
+              colors: const [
+                Color(0xFFE5E7EB),
+                Color(0xFFF3F4F6),
+                Color(0xFFE5E7EB),
+              ],
+              stops: const [0.35, 0.5, 0.65],
+            ).createShader(bounds);
+          },
+          child: Container(color: const Color(0xFFE5E7EB)),
+        );
+      },
     );
   }
 }

@@ -9,7 +9,7 @@ import '../../core/widgets/indicators/password_strength_bar.dart';
 import '../../core/widgets/web/web.dart';
 import '../../features/verification/screens/email_verification_screen.dart';
 import '../../features/onboarding/otp_loading_screen.dart';
-import 'services/auth_service.dart';
+import '../../core/services/auth_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/widgets/mobile_form_shell.dart';
 import 'dart:async';

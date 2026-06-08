@@ -3,7 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../screen/home_screen.dart';
 import '../../../core/widgets/modal/verification_required_dialog.dart';
-import '../../../core/utils/community_posts_provider.dart';
+import '../../../core/providers/community_posts_provider.dart';
 import '../../../core/widgets/Home/Newsfeed/news_feed_helpers.dart';
 import '../../../core/widgets/Home/Newsfeed/image_grid.dart';
 import '../../../core/widgets/Home/Newsfeed/comment_item.dart';
@@ -79,10 +79,7 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
   }
 
   void _onPostsChanged() {
-    if (mounted) {
-      setState(() {});
-      _entryCtrl.forward(from: 0);
-    }
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadMyInteractions() async {
@@ -190,7 +187,6 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
           'user_id': userId,
         });
       }
-      await CommunityPostsProvider.instance.refresh();
     } catch (e) {
       if (mounted) {
         setState(
@@ -248,7 +244,6 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
           'user_id': userId,
         });
       }
-      await CommunityPostsProvider.instance.refresh();
     } catch (e) {
       if (mounted) {
         setState(
@@ -424,7 +419,7 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
               _buildTopBar(width),
               Expanded(
                 child: LoadingOverlay.bodyOrSkeleton(
-                  isLoading: provider.isLoading,
+                  isLoading: !provider.initialLoadDone && provider.isLoading,
                   layout: SkeletonLayout.newsFeed,
                   child: provider.error != null
                       ? _buildErrorState(width, provider)

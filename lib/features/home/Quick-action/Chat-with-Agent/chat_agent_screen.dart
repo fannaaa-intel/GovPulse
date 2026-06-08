@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../../auth/services/chat_service.dart';
+import '../../../../core/services/chat_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/Home/Chat-agent/chat_agent_info_bar.dart';
 import '../../../../core/widgets/Home/Chat-agent/chat_input_bar.dart';
@@ -12,9 +12,16 @@ import '../../../../core/widgets/Home/Chat-agent/chat_models.dart' as cm;
 /// State lives in [ChatService.I]. This screen and the floating bubble panel
 /// both subscribe to the same service — anything typed in one appears in the
 /// other instantly.
+///
+/// NOTE: "Report Issue" is no longer shown as an intent chip here.
+/// Citizens report issues via the Quick Action button on the Home screen.
+/// Free-text messages like "gusto ko mag-report" still route to the report
+/// flow automatically via AI intent detection ([ACTION:REPORT]).
 class ChatAgentScreen extends StatefulWidget {
   final String username;
-  const ChatAgentScreen({super.key, required this.username});
+  final ChatService service;
+  ChatAgentScreen({super.key, required this.username, ChatService? service})
+    : service = service ?? ChatService.I;
 
   @override
   State<ChatAgentScreen> createState() => _ChatAgentScreenState();
@@ -27,6 +34,7 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
   final TextEditingController _inputCtrl = TextEditingController();
   final ScrollController _scrollCtrl = ScrollController();
   final FocusNode _focusNode = FocusNode();
+  ChatService get _svc => widget.service;
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
   @override
@@ -37,11 +45,11 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
       duration: const Duration(milliseconds: 500),
     );
 
-    // Subscribe to the shared chat state.
-    ChatService.I.addListener(_onChatChanged);
-    ChatService.I.onChatOpened();
+    _svc.addListener(_onChatChanged);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      final isFollowUp = _svc != ChatService.I;
+      _svc.onChatOpened(isFollowUp: isFollowUp);
       _entryCtrl.forward();
       _scrollToBottom();
     });
@@ -49,8 +57,8 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
 
   @override
   void dispose() {
-    ChatService.I.removeListener(_onChatChanged);
-    ChatService.I.onChatClosed();
+    _svc.removeListener(_onChatChanged);
+    _svc.onChatClosed();
     _entryCtrl.dispose();
     _inputCtrl.dispose();
     _scrollCtrl.dispose();
@@ -60,8 +68,11 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
 
   void _onChatChanged() {
     if (!mounted) return;
-    setState(() {});
-    _scrollToBottom();
+    setState(() {}); // ✅ immediate rebuild, no flicker frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _scrollToBottom(); // scroll can still be deferred
+    });
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -87,7 +98,7 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
       composing: TextRange.empty,
     );
 
-    ChatService.I.sendUserText(text);
+    _svc.sendUserText(text);
   }
 
   String _formatTime(DateTime t) {
@@ -97,8 +108,6 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
     return '$h:$m $p';
   }
 
-  /// Bridge cm.ChatMsg (service model) → ChatMessage (legacy view model
-  /// expected by ChatMessageBubble). Same shape, just a different class.
   ChatMessage _toViewMsg(cm.ChatMsg m) {
     return ChatMessage(
       text: m.text,
@@ -110,8 +119,8 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
 
   // ── Terminal-state card ──────────────────────────────────────────────────
   Widget _buildTerminalCard(double width) {
-    final stage = ChatService.I.stage;
-    final reference = ChatService.I.lastTicketReference;
+    final stage = _svc.stage;
+    final reference = _svc.lastTicketReference;
 
     late final IconData icon;
     late final Color tint;
@@ -138,6 +147,12 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
         tint = AppColors.hint;
         title = 'Session ended';
         subtitle = 'No activity for 15 minutes.';
+        break;
+      case cm.ConversationStage.ended:
+        icon = Icons.check_circle_outline_rounded;
+        tint = AppColors.hint;
+        title = 'Conversation ended';
+        subtitle = 'Thanks for chatting with Kuya Gov.';
         break;
       default:
         return const SizedBox.shrink();
@@ -205,30 +220,59 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
           ),
           SizedBox(height: width * 0.030),
 
-          // ── Start new conversation button ──────────────────────────────
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: () => ChatService.I.startNewConversation(),
-              icon: Icon(Icons.refresh_rounded, size: width * 0.045),
-              label: Text(
-                'Start new conversation',
-                style: TextStyle(
-                  fontSize: width * 0.036,
-                  fontWeight: FontWeight.w700,
+          // ── Talk to a person button (main chat only) ───────────────────
+          if (_svc == ChatService.I &&
+              stage == cm.ConversationStage.ticketCreated) ...[
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => _svc.requestLiveAgent(),
+                icon: Icon(Icons.support_agent_rounded, size: width * 0.045),
+                label: Text(
+                  'Talk to a person',
+                  style: TextStyle(
+                    fontSize: width * 0.036,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primaryBlue,
-                foregroundColor: Colors.white,
-                elevation: 0,
-                padding: EdgeInsets.symmetric(vertical: width * 0.038),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(width * 0.028),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.primaryBlue,
+                  side: BorderSide(color: AppColors.primaryBlue),
+                  padding: EdgeInsets.symmetric(vertical: width * 0.038),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(width * 0.028),
+                  ),
                 ),
               ),
             ),
-          ),
+            SizedBox(height: width * 0.022),
+          ],
+
+          // ── Start new conversation button (main chat only) ─────────────
+          if (_svc == ChatService.I)
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () => _svc.startNewConversation(),
+                icon: Icon(Icons.refresh_rounded, size: width * 0.045),
+                label: Text(
+                  'Start new conversation',
+                  style: TextStyle(
+                    fontSize: width * 0.036,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primaryBlue,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: EdgeInsets.symmetric(vertical: width * 0.038),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(width * 0.028),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -246,10 +290,14 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
             _buildHeader(width),
             ChatAgentInfoBar(width: width),
             Expanded(child: _buildMessageList(width)),
-
-            if (ChatService.I.showCategoryChips) _buildCategoryChips(width),
-
-            if (ChatService.I.isTerminal)
+            // AFTER
+            if (_svc.showBackToMenu && _svc == ChatService.I)
+              _buildBackToMenu(width),
+            if (_svc.showIntentChips && _svc == ChatService.I)
+              _buildIntentChips(width),
+            if (_svc.showCategoryChips && _svc == ChatService.I)
+              _buildCategoryChips(width),
+            if (_svc.isTerminal)
               _buildTerminalCard(width)
             else
               ChatInputBar(
@@ -326,8 +374,8 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
 
   // ── Message list ──────────────────────────────────────────────────────────
   Widget _buildMessageList(double width) {
-    final messages = ChatService.I.messages;
-    final isTyping = ChatService.I.isAgentTyping;
+    final messages = _svc.messages;
+    final isTyping = _svc.isAgentTyping;
     final itemCount = messages.length + (isTyping ? 1 : 0);
 
     return ListView.builder(
@@ -336,7 +384,7 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
         horizontal: width * 0.04,
         vertical: width * 0.032,
       ),
-      itemCount: itemCount + 1, // +1 for the TODAY date chip
+      itemCount: itemCount + 1,
       itemBuilder: (context, index) {
         if (index == 0) return _buildDateChip(width);
         final realIndex = index - 1;
@@ -378,7 +426,28 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
     );
   }
 
-  // ── Category chips ────────────────────────────────────────────────────────
+  Widget _buildBackToMenu(double width) {
+    return Container(
+      width: double.infinity,
+      color: Colors.white,
+      padding: EdgeInsets.fromLTRB(
+        width * 0.04,
+        width * 0.02,
+        width * 0.04,
+        width * 0.02,
+      ),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: _CategoryChip(
+          label: '⬅ Main menu',
+          width: width,
+          onTap: () => _svc.backToMenu(),
+        ),
+      ),
+    );
+  }
+
+  // ── Category chips (live agent flow only) ─────────────────────────────────
   Widget _buildCategoryChips(double width) {
     return Container(
       width: double.infinity,
@@ -409,7 +478,48 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
               return _CategoryChip(
                 label: c.label,
                 width: width,
-                onTap: () => ChatService.I.pickCategory(c),
+                onTap: () => _svc.pickCategory(c),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Intent chips — only "Ask a question" and "Talk to a person" ───────────
+  Widget _buildIntentChips(double width) {
+    return Container(
+      width: double.infinity,
+      color: Colors.white,
+      padding: EdgeInsets.fromLTRB(
+        width * 0.04,
+        width * 0.025,
+        width * 0.04,
+        width * 0.03,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'WHAT CAN I DO FOR YOU PO?',
+            style: TextStyle(
+              fontSize: width * 0.026,
+              fontWeight: FontWeight.w700,
+              color: AppColors.hint,
+              letterSpacing: 0.8,
+            ),
+          ),
+          SizedBox(height: width * 0.022),
+          Wrap(
+            spacing: width * 0.022,
+            runSpacing: width * 0.022,
+            // ChatIntent.values now only contains: question, liveAgent
+            children: cm.ChatIntent.values.map((i) {
+              return _CategoryChip(
+                label: i.label,
+                width: width,
+                onTap: () => _svc.pickIntent(i),
               );
             }).toList(),
           ),

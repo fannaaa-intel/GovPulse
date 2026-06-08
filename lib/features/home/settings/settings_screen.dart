@@ -1,35 +1,29 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/loading/loading_overlay.dart';
 import '../../../core/widgets/modal/verification_required_dialog.dart';
 import '../../../core/widgets/Home/nav/app_bottom_nav.dart';
-import '../../auth/services/chat_service.dart';
+import '../../../core/services/chat_service.dart';
 import '../../../core/widgets/Home/Chat-bubbles/home_chat_bubble.dart';
+import '../../../core/providers/user_profile_provider.dart';
+import '../../../core/widgets/Home/home_enums.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
-class SettingScreen extends StatefulWidget {
+class SettingScreen extends ConsumerStatefulWidget {
   final String username;
   const SettingScreen({super.key, required this.username});
   @override
-  State<SettingScreen> createState() => _SettingScreenState();
+  ConsumerState<SettingScreen> createState() => _SettingScreenState();
 }
 
-// ── Changed to TickerProviderStateMixin to support multiple AnimationControllers ──
-class _SettingScreenState extends State<SettingScreen>
+class _SettingScreenState extends ConsumerState<SettingScreen>
     with TickerProviderStateMixin {
   static const String _appVersion = '1.0.0';
 
   // ── Entry animation controller ────────────────────────────────────────────
   late final AnimationController _entryCtrl;
-
-  // ── Profile state ─────────────────────────────────────────────────────────
-  String? _facePhotoUrl;
-  String? _facePhotoPath;
-  String? _fullName;
-  String? _email;
-  String _verifStatus = 'none';
-  bool _profileLoading = true;
 
   // ── Toggle state ──────────────────────────────────────────────────────────
   bool _pushNotifications = true;
@@ -41,7 +35,6 @@ class _SettingScreenState extends State<SettingScreen>
   @override
   void initState() {
     super.initState();
-    _loadProfile();
 
     // ── Init entry animation ──────────────────────────────────────────────
     _entryCtrl = AnimationController(
@@ -62,7 +55,6 @@ class _SettingScreenState extends State<SettingScreen>
   }
 
   // ── Staggered right-to-left entry animation helper ────────────────────────
-  // Each section slides in from the right with a staggered delay (index * 0.08)
   Widget _animated(int i, Widget child) {
     final start = (i * 0.08).clamp(0.0, 1.0);
     final end = (start + 0.50).clamp(0.0, 1.0);
@@ -88,99 +80,10 @@ class _SettingScreenState extends State<SettingScreen>
     );
   }
 
-  // ── Load profile data from Supabase ───────────────────────────────────────
-  Future<void> _loadProfile() async {
-    try {
-      final supabase = Supabase.instance.client;
-      final user = supabase.auth.currentUser;
-
-      if (user == null) {
-        if (mounted) setState(() => _profileLoading = false);
-        return;
-      }
-
-      _email = user.email;
-
-      // 1. Get verification status + fallback face photo
-      final verifRow = await supabase
-          .from('verification_submissions')
-          .select('status, face_photo_path')
-          .eq('user_id', user.id)
-          .order('created_at', ascending: false)
-          .limit(1)
-          .maybeSingle();
-
-      final status = verifRow?['status'] as String? ?? 'none';
-
-      // 2. If approved, prefer citizen_details for name + photo
-      String? resolvedPhotoPath;
-      String? fullName;
-
-      if (status == 'approved') {
-        final cd = await supabase
-            .from('citizen_details')
-            .select('first_name, last_name, profile_photo_path')
-            .eq('user_id', user.id)
-            .maybeSingle();
-
-        if (cd != null) {
-          final firstName = cd['first_name'] as String? ?? '';
-          final lastName = cd['last_name'] as String? ?? '';
-          fullName = '${firstName.trim()} ${lastName.trim()}'.trim();
-
-          // Prefer updated profile photo, else fall back to face scan
-          resolvedPhotoPath =
-              (cd['profile_photo_path'] as String?)?.isNotEmpty == true
-              ? cd['profile_photo_path'] as String
-              : verifRow?['face_photo_path'] as String?;
-        }
-      } else {
-        // Pending or None → get username from profiles
-        try {
-          final profileRes = await supabase
-              .from('profiles')
-              .select('username, email')
-              .eq('user_id', user.id)
-              .maybeSingle();
-
-          if (profileRes != null) {
-            fullName = profileRes['username'] as String?;
-          }
-        } catch (_) {}
-
-        resolvedPhotoPath = null;
-      }
-
-      // 3. Resolve URL — approved only; pending/none resolvedPhotoPath is null
-      String? photoUrl;
-      if (resolvedPhotoPath != null && resolvedPhotoPath.isNotEmpty) {
-        photoUrl = supabase.storage
-            .from('verification-assets')
-            .getPublicUrl(resolvedPhotoPath);
-      }
-
-      if (mounted) {
-        setState(() {
-          _verifStatus = status;
-          _facePhotoUrl = photoUrl;
-          _facePhotoPath = resolvedPhotoPath;
-          _fullName = (fullName?.isNotEmpty == true) ? fullName : null;
-          _profileLoading = false;
-        });
-        _entryCtrl.forward(from: 0);
-      }
-    } catch (_) {
-      if (mounted) {
-        setState(() => _profileLoading = false);
-        _entryCtrl.forward(from: 0);
-      }
-    }
-  }
-
   // ── Status badge config ───────────────────────────────────────────────────
   ({String label, Color bg, Color border, Color dot, Color text})
-  get _statusBadge {
-    switch (_verifStatus) {
+  _statusBadgeFor(String verifStatus) {
+    switch (verifStatus) {
       case 'pending':
         return (
           label: 'Pending',
@@ -337,12 +240,14 @@ class _SettingScreenState extends State<SettingScreen>
       await Supabase.instance.client.auth.signOut();
 
       // ── Wipe local chat cache + hide floating bubble ──────────────────────
-      await ChatService.I.clearOnLogout();
+      await ChatService.onUserSignedOut();
       HomeChatBubble.hideGlobal();
 
       if (!mounted) return;
+
       Navigator.pop(context);
       Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+      ref.invalidate(userProfileProvider);
     } catch (e) {
       if (!mounted) return;
       Navigator.pop(context);
@@ -407,6 +312,22 @@ class _SettingScreenState extends State<SettingScreen>
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
 
+    // ── Read from provider ────────────────────────────────────────────────
+    final profileAsync = ref.watch(userProfileProvider);
+    final profile = profileAsync.valueOrNull;
+    final verifStatus = profile?.verifStatus == VerifStatus.verified
+        ? 'approved'
+        : profile?.verifStatus == VerifStatus.pending
+        ? 'pending'
+        : 'none';
+    final facePhotoUrl = profile?.facePhotoUrl;
+    final facePhotoPath = profile?.facePhotoPath;
+    final fullName = profile?.fullName;
+    final email = profile?.email;
+    final profileLoading = profileAsync.isLoading && !profileAsync.hasValue;
+
+    final badge = _statusBadgeFor(verifStatus);
+
     return Scaffold(
       extendBody: true,
       backgroundColor: const Color(0xFFF3F4F6),
@@ -416,7 +337,7 @@ class _SettingScreenState extends State<SettingScreen>
             _buildHeader(width),
             Expanded(
               child: LoadingOverlay.bodyOrSkeleton(
-                isLoading: _profileLoading,
+                isLoading: profileLoading,
                 layout: SkeletonLayout.settings,
                 child: SingleChildScrollView(
                   physics: const BouncingScrollPhysics(),
@@ -428,9 +349,28 @@ class _SettingScreenState extends State<SettingScreen>
                   ),
                   child: Column(
                     children: [
-                      _animated(1, _buildProfileCard(width)),
+                      _animated(
+                        1,
+                        _buildProfileCard(
+                          width,
+                          fullName,
+                          email,
+                          facePhotoUrl,
+                          facePhotoPath,
+                          profileLoading,
+                          badge,
+                        ),
+                      ),
                       SizedBox(height: width * 0.04),
-                      _animated(2, _buildAccountSection(width)),
+                      _animated(
+                        2,
+                        _buildAccountSection(
+                          width,
+                          verifStatus,
+                          email,
+                          profileLoading,
+                        ),
+                      ),
                       SizedBox(height: width * 0.04),
                       _animated(3, _buildNotificationsSection(width)),
                       SizedBox(height: width * 0.04),
@@ -442,7 +382,7 @@ class _SettingScreenState extends State<SettingScreen>
                       SizedBox(height: width * 0.04),
                       _animated(7, _buildLegalSection(width)),
                       SizedBox(height: width * 0.04),
-                      _animated(8, _buildAboutSection(width)),
+                      _animated(8, _buildAboutSection(width, badge)),
                       SizedBox(height: width * 0.05),
                       _animated(9, _buildLogoutButton(width)),
                       SizedBox(height: width * 0.025),
@@ -461,7 +401,7 @@ class _SettingScreenState extends State<SettingScreen>
         width: width,
         currentIndex: 4,
         username: widget.username,
-        isVerified: _verifStatus == 'approved',
+        isVerified: verifStatus == 'approved',
       ),
     );
   }
@@ -517,9 +457,15 @@ class _SettingScreenState extends State<SettingScreen>
   }
 
   // ── Profile summary card ──────────────────────────────────────────────────
-  Widget _buildProfileCard(double width) {
-    final badge = _statusBadge;
-
+  Widget _buildProfileCard(
+    double width,
+    String? fullName,
+    String? email,
+    String? facePhotoUrl,
+    String? facePhotoPath,
+    bool profileLoading,
+    ({String label, Color bg, Color border, Color dot, Color text}) badge,
+  ) {
     return Container(
       width: double.infinity,
       padding: EdgeInsets.all(width * 0.04),
@@ -551,7 +497,14 @@ class _SettingScreenState extends State<SettingScreen>
                 ),
               ],
             ),
-            child: ClipOval(child: _buildAvatar(width)),
+            child: ClipOval(
+              child: _buildAvatar(
+                width,
+                facePhotoUrl,
+                facePhotoPath,
+                profileLoading,
+              ),
+            ),
           ),
           SizedBox(width: width * 0.035),
           Expanded(
@@ -559,7 +512,7 @@ class _SettingScreenState extends State<SettingScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  _fullName ?? widget.username,
+                  fullName ?? widget.username,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -568,10 +521,10 @@ class _SettingScreenState extends State<SettingScreen>
                     color: const Color(0xFF1F2937),
                   ),
                 ),
-                if (_email != null) ...[
+                if (email != null) ...[
                   SizedBox(height: width * 0.005),
                   Text(
-                    _email!,
+                    email,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -594,7 +547,7 @@ class _SettingScreenState extends State<SettingScreen>
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      _profileLoading
+                      profileLoading
                           ? SizedBox(
                               width: width * 0.022,
                               height: width * 0.022,
@@ -613,7 +566,7 @@ class _SettingScreenState extends State<SettingScreen>
                             ),
                       SizedBox(width: width * 0.012),
                       Text(
-                        _profileLoading ? 'Loading...' : badge.label,
+                        profileLoading ? 'Loading...' : badge.label,
                         style: TextStyle(
                           fontSize: width * 0.028,
                           color: badge.text,
@@ -631,10 +584,15 @@ class _SettingScreenState extends State<SettingScreen>
     );
   }
 
-  Widget _buildAvatar(double width) {
+  Widget _buildAvatar(
+    double width,
+    String? facePhotoUrl,
+    String? facePhotoPath,
+    bool profileLoading,
+  ) {
     final size = width * 0.16;
 
-    if (_profileLoading) {
+    if (profileLoading) {
       return Container(
         color: const Color(0xFFE5E7EB),
         child: const Center(
@@ -650,10 +608,10 @@ class _SettingScreenState extends State<SettingScreen>
       );
     }
 
-    if (_facePhotoUrl != null && _facePhotoUrl!.isNotEmpty) {
+    if (facePhotoUrl != null && facePhotoUrl.isNotEmpty) {
       return CachedNetworkImage(
-        imageUrl: _facePhotoUrl!,
-        cacheKey: _facePhotoPath ?? _facePhotoUrl!,
+        imageUrl: facePhotoUrl,
+        cacheKey: facePhotoPath ?? facePhotoUrl,
         memCacheWidth: 160,
         width: size,
         height: size,
@@ -671,9 +629,8 @@ class _SettingScreenState extends State<SettingScreen>
             ),
           ),
         ),
-        errorWidget:
-            (context, url, error) => // ← was (_, _, _)
-                Image.asset('assets/images/profilenew.png', fit: BoxFit.cover),
+        errorWidget: (context, url, error) =>
+            Image.asset('assets/images/profilenew.png', fit: BoxFit.cover),
       );
     }
 
@@ -840,7 +797,13 @@ class _SettingScreenState extends State<SettingScreen>
   }
 
   // ── Account section ───────────────────────────────────────────────────────
-  Widget _buildAccountSection(double width) {
+  Widget _buildAccountSection(
+    double width,
+    String verifStatus,
+    String? email,
+    bool profileLoading,
+  ) {
+    final badge = _statusBadgeFor(verifStatus);
     return _buildSectionCard(
       title: 'ACCOUNT',
       width: width,
@@ -851,13 +814,12 @@ class _SettingScreenState extends State<SettingScreen>
           title: 'Edit Profile',
           subtitle: 'Update your personal information',
           width: width,
-          // In _buildAccountSection, replace the Edit Profile onTap:
           onTap: () async {
-            if (_profileLoading) return;
+            if (profileLoading) return;
 
             final approved = await showVerificationRequiredDialog(
               context,
-              isVerified: _verifStatus == 'approved',
+              isVerified: verifStatus == 'approved',
               message:
                   'Only verified citizens can edit their profile information. Please complete the identity verification process first.',
             );
@@ -870,8 +832,7 @@ class _SettingScreenState extends State<SettingScreen>
               arguments: widget.username,
             );
             if (refreshed == true && mounted) {
-              setState(() => _profileLoading = true);
-              _loadProfile();
+              ref.read(userProfileProvider.notifier).refresh();
             }
           },
         ),
@@ -880,7 +841,10 @@ class _SettingScreenState extends State<SettingScreen>
           iconBgColor: AppColors.primaryBlue,
           title: 'Change Password',
           width: width,
-          onTap: () => _comingSoon('Change Password'),
+          onTap: () {
+            if (email == null) return;
+            Navigator.pushNamed(context, '/change_password', arguments: email);
+          },
         ),
         _buildTile(
           imagePath: 'assets/images/settings/submission.png',
@@ -894,7 +858,7 @@ class _SettingScreenState extends State<SettingScreen>
           imagePath: 'assets/images/settings/verification_status.png',
           iconBgColor: AppColors.green,
           title: 'Verification Status',
-          subtitle: _statusBadge.label,
+          subtitle: badge.label,
           width: width,
           showDivider: false,
           onTap: () => _comingSoon('Verification Details'),
@@ -1161,7 +1125,10 @@ class _SettingScreenState extends State<SettingScreen>
   }
 
   // ── About section ─────────────────────────────────────────────────────────
-  Widget _buildAboutSection(double width) {
+  Widget _buildAboutSection(
+    double width,
+    ({String label, Color bg, Color border, Color dot, Color text}) badge,
+  ) {
     return _buildSectionCard(
       title: 'ABOUT',
       width: width,
@@ -1268,6 +1235,4 @@ class _SettingScreenState extends State<SettingScreen>
       ],
     );
   }
-
-  // ── Bottom Navigation ─────────────────────────────────────────────────────
 }
