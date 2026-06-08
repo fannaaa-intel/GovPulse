@@ -1,6 +1,10 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:share_plus/share_plus.dart';
 import '../../../../core/theme/app_colors.dart';
 import 'events_screen.dart';
 
@@ -24,6 +28,8 @@ class _EventDetailScreenState extends State<EventDetailScreen>
 
   late final Animation<Offset> _slideAnim;
 
+  bool _isSharing = false;
+
   @override
   void initState() {
     super.initState();
@@ -44,11 +50,55 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     super.dispose();
   }
 
-  void _shareEvent() {
+  Future<void> _shareEvent() async {
+    if (_isSharing) return; // guard against double-tap
     HapticFeedback.lightImpact();
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Share feature coming soon!')));
+    setState(() => _isSharing = true);
+
+    // iPad needs an anchor rectangle for the share popover, or it throws.
+    // Ignored on iPhone/Android. We anchor to this screen's render box.
+    final box = context.findRenderObject() as RenderBox?;
+    final origin = box != null
+        ? box.localToGlobal(Offset.zero) & box.size
+        : null;
+
+    final e = widget.event;
+    final text =
+        '${e.title}\n'
+        '📅 ${e.date}  •  ⏰ ${e.time}\n'
+        '📍 ${e.location}'
+        '${e.description != null && e.description!.isNotEmpty ? '\n\n${e.description}' : ''}';
+
+    try {
+      if (e.imageUrl == null || e.imageUrl!.isEmpty) {
+        await Share.share(text, subject: e.title, sharePositionOrigin: origin);
+      } else {
+        final res = await http.get(Uri.parse(e.imageUrl!));
+        if (res.statusCode == 200) {
+          final dir = await getTemporaryDirectory();
+          final file = File('${dir.path}/event_${e.title.hashCode}.jpg');
+          await file.writeAsBytes(res.bodyBytes);
+          await Share.shareXFiles(
+            [XFile(file.path)],
+            text: text,
+            subject: e.title,
+            sharePositionOrigin: origin,
+          );
+        } else {
+          // Download failed → still share the text.
+          await Share.share(
+            text,
+            subject: e.title,
+            sharePositionOrigin: origin,
+          );
+        }
+      }
+    } catch (_) {
+      // Network/file error → fall back to text-only share.
+      await Share.share(text, subject: e.title, sharePositionOrigin: origin);
+    } finally {
+      if (mounted) setState(() => _isSharing = false);
+    }
   }
 
   @override
@@ -149,289 +199,264 @@ class _EventDetailScreenState extends State<EventDetailScreen>
             .toList() ??
         [];
 
-    return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ── Top card: category badge + title + image + meta ──────────────
-          Padding(
-            padding: EdgeInsets.fromLTRB(w * 0.04, w * 0.02, w * 0.04, 0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // row: left text + right image
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // LEFT — badge + title + description
-                    Expanded(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          child: ConstrainedBox(
+            // Always fill at least the visible height so the Spacer below
+            // can push the Share button to the bottom on short content.
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: IntrinsicHeight(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // ── Top card: category badge + title + image + meta ──────
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      w * 0.04,
+                      w * 0.02,
+                      w * 0.04,
+                      0,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // row: left text + right image
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // LEFT — badge + title + description
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // category badge
+                                  Container(
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: w * 0.028,
+                                      vertical: w * 0.010,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: event.categoryColor,
+                                      borderRadius: BorderRadius.circular(
+                                        w * 0.015,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      event.category,
+                                      style: TextStyle(
+                                        fontSize: w * 0.028,
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                  SizedBox(height: w * 0.025),
+                                  // title
+                                  Text(
+                                    event.title,
+                                    style: TextStyle(
+                                      fontSize: w * 0.052,
+                                      fontWeight: FontWeight.w800,
+                                      color: const Color(0xFF1F2937),
+                                      height: 1.2,
+                                    ),
+                                  ),
+                                  SizedBox(height: w * 0.018),
+                                  // short description under title
+                                  if (event.description != null &&
+                                      event.description!.isNotEmpty)
+                                    Text(
+                                      event.description!,
+                                      maxLines: 3,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: w * 0.032,
+                                        color: const Color(0xFF6B7280),
+                                        height: 1.5,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                            SizedBox(width: w * 0.04),
+                            // RIGHT — image
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(w * 0.025),
+                              child: SizedBox(
+                                width: imageW,
+                                height: imageH,
+                                child: event.imageUrl != null
+                                    ? CachedNetworkImage(
+                                        imageUrl: event.imageUrl!,
+                                        fit: BoxFit.cover,
+                                        fadeInDuration: const Duration(
+                                          milliseconds: 300,
+                                        ),
+                                        fadeOutDuration: const Duration(
+                                          milliseconds: 100,
+                                        ),
+                                        placeholder: (context, url) =>
+                                            const _ShimmerBox(),
+                                        errorWidget: (context, url, error) =>
+                                            _imagePlaceholder(imageW),
+                                      )
+                                    : _imagePlaceholder(imageW),
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        SizedBox(height: w * 0.04),
+                        Divider(color: const Color(0xFFE5E7EB), height: 1),
+                        SizedBox(height: w * 0.04),
+
+                        // ── Location ──────────────────────────────────────
+                        _metaRow(
+                          icon: Icons.location_on_rounded,
+                          iconColor: AppColors.primaryBlue,
+                          label: event.location,
+                          sublabel: _locationSublabel(event.location),
+                          w: w,
+                        ),
+                        SizedBox(height: w * 0.03),
+
+                        // ── Date ──────────────────────────────────────────
+                        _metaRow(
+                          icon: Icons.calendar_month_rounded,
+                          iconColor: AppColors.primaryBlue,
+                          label: event.date,
+                          sublabel: _dayLabel(event.eventDate),
+                          w: w,
+                        ),
+                        SizedBox(height: w * 0.03),
+
+                        // ── Time ──────────────────────────────────────────
+                        _metaRow(
+                          icon: Icons.access_time_rounded,
+                          iconColor: AppColors.primaryBlue,
+                          label: event.time,
+                          sublabel: _durationLabel(event.time),
+                          w: w,
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  SizedBox(height: w * 0.06),
+
+                  // ── About This Event ───────────────────────────────────
+                  if (event.description != null &&
+                      event.description!.isNotEmpty) ...[
+                    _sectionBlock(
+                      title: 'About This Event',
+                      w: w,
+                      child: Text(
+                        event.description!,
+                        style: TextStyle(
+                          fontSize: w * 0.036,
+                          color: const Color(0xFF374151),
+                          height: 1.6,
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: w * 0.04),
+                  ],
+
+                  // ── What to Expect ─────────────────────────────────────
+                  if (whatToExpect.isNotEmpty) ...[
+                    _sectionBlock(
+                      title: 'What to Expect',
+                      w: w,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // category badge
-                          Container(
-                            padding: EdgeInsets.symmetric(
-                              horizontal: w * 0.028,
-                              vertical: w * 0.010,
-                            ),
-                            decoration: BoxDecoration(
-                              color: event.categoryColor,
-                              borderRadius: BorderRadius.circular(w * 0.015),
-                            ),
-                            child: Text(
-                              event.category,
-                              style: TextStyle(
-                                fontSize: w * 0.028,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                          SizedBox(height: w * 0.025),
-                          // title
-                          Text(
-                            event.title,
-                            style: TextStyle(
-                              fontSize: w * 0.052,
-                              fontWeight: FontWeight.w800,
-                              color: const Color(0xFF1F2937),
-                              height: 1.2,
-                            ),
-                          ),
-                          SizedBox(height: w * 0.018),
-                          // short description under title
-                          if (event.description != null &&
-                              event.description!.isNotEmpty)
-                            Text(
-                              event.description!,
-                              maxLines: 3,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: w * 0.032,
-                                color: const Color(0xFF6B7280),
-                                height: 1.5,
-                              ),
-                            ),
-                        ],
+                        children: whatToExpect
+                            .map((item) => _bulletItem(item, w))
+                            .toList(),
                       ),
                     ),
-                    SizedBox(width: w * 0.04),
-                    // RIGHT — image
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(w * 0.025),
-                      child: SizedBox(
-                        width: imageW,
-                        height: imageH,
-                        child: event.imageUrl != null
-                            ? CachedNetworkImage(
-                                imageUrl: event.imageUrl!,
-                                fit: BoxFit.cover,
-                                fadeInDuration: const Duration(
-                                  milliseconds: 300,
-                                ),
-                                fadeOutDuration: const Duration(
-                                  milliseconds: 100,
-                                ),
-                                placeholder: (context, url) =>
-                                    _imagePlaceholder(imageW),
-                                errorWidget: (context, url, error) =>
-                                    _imagePlaceholder(imageW),
-                              )
-                            : _imagePlaceholder(imageW),
-                      ),
-                    ),
+                    SizedBox(height: w * 0.04),
                   ],
-                ),
 
-                SizedBox(height: w * 0.04),
-                Divider(color: const Color(0xFFE5E7EB), height: 1),
-                SizedBox(height: w * 0.04),
+                  // ── Requirements ───────────────────────────────────────
+                  if (requirements.isNotEmpty) ...[
+                    _sectionBlock(
+                      title: 'Requirements',
+                      w: w,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: requirements
+                            .map((item) => _bulletItem(item, w))
+                            .toList(),
+                      ),
+                    ),
+                    SizedBox(height: w * 0.04),
+                  ],
 
-                // ── Location ──────────────────────────────────────────────
-                _metaRow(
-                  icon: Icons.location_on_rounded,
-                  iconColor: AppColors.primaryBlue,
-                  label: event.location,
-                  sublabel: _locationSublabel(event.location),
-                  w: w,
-                ),
-                SizedBox(height: w * 0.03),
+                  // Pushes the Share button to the bottom when content is
+                  // short; collapses to zero when content overflows.
+                  const Spacer(),
 
-                // ── Date ──────────────────────────────────────────────────
-                _metaRow(
-                  icon: Icons.calendar_month_rounded,
-                  iconColor: AppColors.primaryBlue,
-                  label: event.date,
-                  sublabel: _dayLabel(event.eventDate),
-                  w: w,
-                ),
-                SizedBox(height: w * 0.03),
+                  SizedBox(height: w * 0.02),
 
-                // ── Time ──────────────────────────────────────────────────
-                _metaRow(
-                  icon: Icons.access_time_rounded,
-                  iconColor: AppColors.primaryBlue,
-                  label: event.time,
-                  sublabel: _durationLabel(event.time),
-                  w: w,
-                ),
-              ],
-            ),
-          ),
-
-          SizedBox(height: w * 0.06),
-
-          // ── About This Event ─────────────────────────────────────────────
-          if (event.description != null && event.description!.isNotEmpty) ...[
-            _sectionBlock(
-              title: 'About This Event',
-              w: w,
-              child: Text(
-                event.description!,
-                style: TextStyle(
-                  fontSize: w * 0.036,
-                  color: const Color(0xFF374151),
-                  height: 1.6,
-                ),
-              ),
-            ),
-            SizedBox(height: w * 0.04),
-          ],
-
-          // ── What to Expect ───────────────────────────────────────────────
-          if (whatToExpect.isNotEmpty) ...[
-            _sectionBlock(
-              title: 'What to Expect',
-              w: w,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: whatToExpect
-                    .map((item) => _bulletItem(item, w))
-                    .toList(),
-              ),
-            ),
-            SizedBox(height: w * 0.04),
-          ],
-
-          // ── Requirements ─────────────────────────────────────────────────
-          if (requirements.isNotEmpty) ...[
-            _sectionBlock(
-              title: 'Requirements',
-              w: w,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: requirements
-                    .map((item) => _bulletItem(item, w))
-                    .toList(),
-              ),
-            ),
-            SizedBox(height: w * 0.04),
-          ],
-
-          SizedBox(height: w * 0.02),
-
-          // ── Share Event button ────────────────────────────────────────────
-          Padding(
-            padding: EdgeInsets.symmetric(horizontal: w * 0.04),
-            child: OutlinedButton.icon(
-              onPressed: _shareEvent,
-              icon: Icon(
-                Icons.share_rounded,
-                size: w * 0.046,
-                color: const Color(0xFF374151),
-              ),
-              label: Text(
-                'Share Event',
-                style: TextStyle(
-                  fontSize: w * 0.038,
-                  fontWeight: FontWeight.w600,
-                  color: const Color(0xFF374151),
-                ),
-              ),
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: Color(0xFFE5E7EB), width: 1.5),
-                backgroundColor: Colors.white,
-                minimumSize: Size(double.infinity, w * 0.135),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(w * 0.032),
-                ),
-              ),
-            ),
-          ),
-
-          SizedBox(height: w * 0.04),
-
-          // ── Need more information? ────────────────────────────────────────
-          Container(
-            width: double.infinity,
-            color: const Color(0xFFF3F4F6),
-            padding: EdgeInsets.symmetric(
-              horizontal: w * 0.04,
-              vertical: w * 0.04,
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.info_outline_rounded,
-                  size: w * 0.05,
-                  color: const Color(0xFF6B7280),
-                ),
-                SizedBox(width: w * 0.03),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Need more information?',
-                        style: TextStyle(
-                          fontSize: w * 0.034,
-                          fontWeight: FontWeight.w600,
-                          color: const Color(0xFF1F2937),
+                  // ── Share Event button ─────────────────────────────────
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: w * 0.04),
+                    child: OutlinedButton(
+                      onPressed: _isSharing ? null : _shareEvent,
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(
+                          color: Color(0xFFE5E7EB),
+                          width: 1.5,
+                        ),
+                        backgroundColor: Colors.white,
+                        disabledBackgroundColor: Colors.white,
+                        minimumSize: Size(double.infinity, w * 0.135),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(w * 0.032),
                         ),
                       ),
-                      SizedBox(height: w * 0.004),
-                      Text(
-                        'Contact your local health unit for inquiries.',
-                        style: TextStyle(
-                          fontSize: w * 0.028,
-                          color: const Color(0xFF6B7280),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                SizedBox(width: w * 0.02),
-                GestureDetector(
-                  onTap: () {
-                    HapticFeedback.lightImpact();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Contact feature coming soon!'),
-                      ),
-                    );
-                  },
-                  child: Text(
-                    'Contact RHU',
-                    style: TextStyle(
-                      fontSize: w * 0.032,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.primaryBlue,
+                      child: _isSharing
+                          ? SizedBox(
+                              width: w * 0.05,
+                              height: w * 0.05,
+                              child: const CircularProgressIndicator(
+                                strokeWidth: 2.2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Color(0xFF374151),
+                                ),
+                              ),
+                            )
+                          : Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.share_rounded,
+                                  size: w * 0.046,
+                                  color: const Color(0xFF374151),
+                                ),
+                                SizedBox(width: w * 0.02),
+                                Text(
+                                  'Share Event',
+                                  style: TextStyle(
+                                    fontSize: w * 0.038,
+                                    fontWeight: FontWeight.w600,
+                                    color: const Color(0xFF374151),
+                                  ),
+                                ),
+                              ],
+                            ),
                     ),
                   ),
-                ),
-                Icon(
-                  Icons.chevron_right_rounded,
-                  size: w * 0.045,
-                  color: AppColors.primaryBlue,
-                ),
-              ],
+
+                  SizedBox(height: w * 0.06),
+                ],
+              ),
             ),
           ),
-
-          SizedBox(height: w * 0.06),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -588,5 +613,62 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     } catch (_) {
       return '';
     }
+  }
+}
+
+// ── Shimmer placeholder ───────────────────────────────────────────────────
+// Self-contained animated shimmer used while the event image loads.
+// Dependency-free: a gradient swept across a grey box.
+class _ShimmerBox extends StatefulWidget {
+  const _ShimmerBox();
+
+  @override
+  State<_ShimmerBox> createState() => _ShimmerBoxState();
+}
+
+class _ShimmerBoxState extends State<_ShimmerBox>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _shimmerCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _shimmerCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _shimmerCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _shimmerCtrl,
+      builder: (context, child) {
+        // Slide the gradient from off-screen left to off-screen right.
+        final t = _shimmerCtrl.value;
+        return ShaderMask(
+          blendMode: BlendMode.srcATop,
+          shaderCallback: (bounds) {
+            return LinearGradient(
+              begin: Alignment(-1.0 - 2.0 * (1 - t), 0),
+              end: Alignment(1.0 - 2.0 * (1 - t), 0),
+              colors: const [
+                Color(0xFFE5E7EB),
+                Color(0xFFF3F4F6),
+                Color(0xFFE5E7EB),
+              ],
+              stops: const [0.35, 0.5, 0.65],
+            ).createShader(bounds);
+          },
+          child: Container(color: const Color(0xFFE5E7EB)),
+        );
+      },
+    );
   }
 }

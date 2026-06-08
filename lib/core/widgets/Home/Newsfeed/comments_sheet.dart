@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../theme/app_colors.dart';
-import '../../../utils/community_posts_provider.dart';
+import '../../../providers/community_posts_provider.dart';
 import 'news_feed_helpers.dart';
 import 'image_grid.dart';
 import 'comment_item.dart';
@@ -42,6 +42,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
   bool _sending = false;
   String? _myPhotoUrl;
   String? _myPhotoPath;
+  String? _myDisplayName;
 
   List<Map<String, dynamic>>? _optimisticComments;
 
@@ -85,21 +86,32 @@ class _CommentsSheetState extends State<CommentsSheet> {
       if (path == null || path.isEmpty) return;
 
       if (!mounted) return;
+      final nameRes = await _supabase
+          .from('public_user_profiles')
+          .select('first_name, last_name')
+          .eq('user_id', userId)
+          .maybeSingle();
+      final first = (nameRes?['first_name'] as String?) ?? '';
+      final last = (nameRes?['last_name'] as String?) ?? '';
+      final full = '$first $last'.trim();
       setState(() {
         _myPhotoPath = path;
         _myPhotoUrl = _supabase.storage
             .from('verification-assets')
             .getPublicUrl(path);
+        _myDisplayName = full.isNotEmpty ? full : null;
       });
     } catch (_) {}
   }
 
   List<Map<String, dynamic>> _getComments() {
+    // _optimisticComments here is only for local edit/delete patches
     if (_optimisticComments != null) return _optimisticComments!;
     final freshPost = CommunityPostsProvider.instance.sortedPosts.firstWhere(
       (p) => p['id'] == widget.post['id'],
       orElse: () => widget.post,
     );
+    // sortedPosts already merges provider-level optimistic (sent comments)
     return List<Map<String, dynamic>>.from(
       (freshPost['comments'] as List<dynamic>).cast<Map<String, dynamic>>(),
     );
@@ -229,24 +241,57 @@ class _CommentsSheetState extends State<CommentsSheet> {
       return;
     }
 
-    setState(() => _sending = true);
+    final tempId = 'temp_${DateTime.now().millisecondsSinceEpoch}';
+    final optimisticComment = <String, dynamic>{
+      'id': tempId,
+      'postId': widget.post['id'],
+      'parentId': _replyingToParentId,
+      'authorId': userId,
+      'author': _myDisplayName ?? 'You',
+      'authorPhotoUrl': _myPhotoUrl,
+      'authorPhotoPath': _myPhotoPath,
+      'mentionedUser': null,
+      'mentionedUserId': _replyingToUserId,
+      'text': text,
+      'likes': 0,
+      'timestamp': DateTime.now(),
+      'replies': <Map<String, dynamic>>[],
+      'isSending': true,
+    };
+
+    final postId = widget.post['id'] as String;
+
+    // Push into provider — survives sheet close/reopen
+    CommunityPostsProvider.instance.addOptimisticComment(
+      postId,
+      optimisticComment,
+    );
+
+    // Clear local optimistic since provider now owns it
+    setState(() {
+      _optimisticComments = null;
+      _replyingTo = null;
+      _replyingToParentId = null;
+      _replyingToUserId = null;
+      _sending = true;
+    });
+    _inputController.clear();
+
     try {
       await _supabase.from('community_comments').insert({
-        'post_id': widget.post['id'],
-        'parent_comment_id': _replyingToParentId,
+        'post_id': postId,
+        'parent_comment_id': optimisticComment['parentId'],
         'author_id': userId,
-        'mentioned_user_id': _replyingToUserId,
+        'mentioned_user_id': optimisticComment['mentionedUserId'],
         'body': text,
       });
-      _inputController.clear();
-      setState(() {
-        _replyingTo = null;
-        _replyingToParentId = null;
-        _replyingToUserId = null;
-        _optimisticComments = null;
-      });
-      await CommunityPostsProvider.instance.refresh();
+      // DB confirmed — flip isSending flag, keep comment visible
+      if (mounted) {
+        CommunityPostsProvider.instance.markOptimisticSent(postId, tempId);
+      }
     } catch (e) {
+      // Remove optimistic on failure
+      CommunityPostsProvider.instance.removeOptimisticComment(postId, tempId);
       if (mounted) {
         if (e is PostgrestException &&
             (e.hint ?? '') == 'rate_limit_exceeded') {
@@ -299,8 +344,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
           .from('community_comments')
           .update({'body': trimmed})
           .eq('id', id);
-      await CommunityPostsProvider.instance.refresh();
-      if (mounted) setState(() => _optimisticComments = null);
+      // Realtime handles sync — optimistic state stays correct
     } catch (_) {
       if (mounted) {
         if (mounted) setState(() => _optimisticComments = null);
@@ -453,8 +497,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
             .eq('parent_comment_id', id);
       }
       await _supabase.from('community_comments').delete().eq('id', id);
-      await CommunityPostsProvider.instance.refresh();
-      if (mounted) setState(() => _optimisticComments = null);
+      // Realtime handles sync — optimistic state stays correct
     } catch (_) {
       if (mounted) {
         if (mounted) setState(() => _optimisticComments = null);

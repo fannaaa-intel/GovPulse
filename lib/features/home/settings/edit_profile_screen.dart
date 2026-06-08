@@ -7,20 +7,24 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/loading/loading_overlay.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../../core/widgets/modal/verification_required_dialog.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/providers/user_profile_provider.dart';
 
-class EditProfileScreen extends StatefulWidget {
+class EditProfileScreen extends ConsumerStatefulWidget {
   final String username;
 
   const EditProfileScreen({super.key, required this.username});
 
   @override
-  State<EditProfileScreen> createState() => _EditProfileScreenState();
+  ConsumerState<EditProfileScreen> createState() => _EditProfileScreenState();
 }
 
-class _EditProfileScreenState extends State<EditProfileScreen>
+class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
     with TickerProviderStateMixin {
   // ── Animation ─────────────────────────────────────────────────────────────
-  late final AnimationController _entryCtrl;
+  late final AnimationController _slideCtrl;
+  late final Animation<Offset> _slideAnim;
+  late final Animation<double> _fadeAnim;
 
   // ── Form ──────────────────────────────────────────────────────────────────
   final _formKey = GlobalKey<FormState>();
@@ -63,21 +67,27 @@ class _EditProfileScreenState extends State<EditProfileScreen>
   }
 
   @override
-  @override
   void initState() {
     super.initState();
-    _isVerified = true; // pre-set so no flash on load
-    _entryCtrl = AnimationController(
+    _isVerified = true;
+    _slideCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 700),
+      duration: const Duration(milliseconds: 900),
     );
-
+    _slideAnim = Tween<Offset>(
+      begin: const Offset(0, 0.08),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _slideCtrl, curve: Curves.easeOutQuart));
+    _fadeAnim = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(parent: _slideCtrl, curve: Curves.easeOut));
     _loadData();
   }
 
   @override
   void dispose() {
-    _entryCtrl.dispose();
+    _slideCtrl.dispose();
     _firstNameCtrl.dispose();
     _middleNameCtrl.dispose();
     _lastNameCtrl.dispose();
@@ -85,29 +95,6 @@ class _EditProfileScreenState extends State<EditProfileScreen>
     _streetCtrl.dispose();
     _contactCtrl.dispose();
     super.dispose();
-  }
-
-  // ── Staggered entry animation ─────────────────────────────────────────────
-  Widget _animated(int i, Widget child) {
-    final start = (i * 0.09).clamp(0.0, 0.85);
-    final end = (start + 0.45).clamp(0.0, 1.0);
-    final fade = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _entryCtrl,
-        curve: Interval(start, end, curve: Curves.easeOut),
-      ),
-    );
-    final slide =
-        Tween<Offset>(begin: const Offset(0.0, 0.25), end: Offset.zero).animate(
-          CurvedAnimation(
-            parent: _entryCtrl,
-            curve: Interval(start, end, curve: Curves.easeOutCubic),
-          ),
-        );
-    return FadeTransition(
-      opacity: fade,
-      child: SlideTransition(position: slide, child: child),
-    );
   }
 
   // ── Load data ─────────────────────────────────────────────────────────────
@@ -120,7 +107,6 @@ class _EditProfileScreenState extends State<EditProfileScreen>
         return;
       }
 
-      // ── Check verification status ─────────────────────────────────────────
       final verifRow = await supabase
           .from('verification_submissions')
           .select('status, face_photo_path')
@@ -132,9 +118,7 @@ class _EditProfileScreenState extends State<EditProfileScreen>
       final status = verifRow?['status'] as String? ?? 'none';
       final verified = status == 'approved';
 
-      // Always set verified state from fresh DB check
       if (verified) {
-        // ── Fetch ONLY from citizen_details ───────────────────────────────
         final cd = await supabase
             .from('citizen_details')
             .select(
@@ -146,32 +130,27 @@ class _EditProfileScreenState extends State<EditProfileScreen>
             .maybeSingle();
 
         if (cd != null) {
-          // ── Form fields ───────────────────────────────────────────────────
           _firstNameCtrl.text = cd['first_name'] as String? ?? '';
           _middleNameCtrl.text = cd['middle_name'] as String? ?? '';
           _lastNameCtrl.text = cd['last_name'] as String? ?? '';
           _contactCtrl.text = cd['contact_number'] as String? ?? '';
           _streetCtrl.text = cd['street'] as String? ?? '';
 
-          // ── Barangay — both form field and stats card ─────────────────────
           final barangayVal = cd['barangay'] as String? ?? '';
           _barangayCtrl.text = barangayVal;
           _barangay = barangayVal;
 
-          // ── Member since ──────────────────────────────────────────────────
           final createdRaw = cd['created_at'];
           if (createdRaw != null) {
             final dt = DateTime.tryParse(createdRaw.toString());
             if (dt != null) _memberSince = dt.year.toString();
           }
 
-          // ── 30-day lock ───────────────────────────────────────────────────
           final updatedRaw = cd['last_profile_updated_at'];
           if (updatedRaw != null) {
             _lastProfileUpdatedAt = DateTime.tryParse(updatedRaw.toString());
           }
 
-          // ── Profile photo ─────────────────────────────────────────────────
           _facePhotoPath = verifRow?['face_photo_path'] as String?;
           final photoPath =
               (cd['profile_photo_path'] as String?)?.isNotEmpty == true
@@ -186,7 +165,6 @@ class _EditProfileScreenState extends State<EditProfileScreen>
           }
         }
 
-        // ── Report count ──────────────────────────────────────────────────
         try {
           final countRes = await supabase
               .from('reports')
@@ -200,10 +178,10 @@ class _EditProfileScreenState extends State<EditProfileScreen>
 
       if (mounted) {
         setState(() {
-          _isVerified = true; // we only navigate here if approved
+          _isVerified = true;
           _loading = false;
         });
-        _entryCtrl.forward(from: 0);
+        _slideCtrl.forward();
       }
     } catch (_) {
       if (mounted) setState(() => _loading = false);
@@ -290,10 +268,7 @@ class _EditProfileScreenState extends State<EditProfileScreen>
       if (newPhotoPath != null) {
         updateData['profile_photo_path'] = newPhotoPath;
         if (_currentPhotoPath != null) {
-          // Evict old image from local cache
           await CachedNetworkImage.evictFromCache(_currentPhotoPath!);
-          // Delete old file from Supabase storage
-          // Delete old file from Supabase storage (never delete face scan)
           final isFaceScan = _currentPhotoPath == _facePhotoPath;
           if (!isFaceScan) {
             try {
@@ -317,6 +292,7 @@ class _EditProfileScreenState extends State<EditProfileScreen>
         message: 'Your profile information has been saved successfully.',
       );
       if (!mounted) return;
+      ref.read(userProfileProvider.notifier).refresh();
       Navigator.pop(context, true);
     } catch (e) {
       setState(() {
@@ -332,28 +308,35 @@ class _EditProfileScreenState extends State<EditProfileScreen>
     final width = MediaQuery.of(context).size.width;
 
     return LoadingOverlay(
-      isLoading: _loading || _saving,
-      skeletonLayout: _loading
-          ? SkeletonLayout.editProfile
-          : SkeletonLayout.none,
+      isLoading: _saving,
       child: Scaffold(
         backgroundColor: const Color(0xFFF3F4F6),
         body: SafeArea(
           child: Column(
             children: [
-              _animated(0, _buildHeader(width)),
+              _buildHeader(width),
               Expanded(
-                child: SingleChildScrollView(
-                  physics: const BouncingScrollPhysics(),
-                  padding: EdgeInsets.fromLTRB(
-                    width * 0.04,
-                    width * 0.02,
-                    width * 0.04,
-                    width * 0.08,
+                child: LoadingOverlay.bodyOrSkeleton(
+                  isLoading: _loading,
+                  layout: SkeletonLayout.editProfile,
+                  child: FadeTransition(
+                    opacity: _fadeAnim,
+                    child: SlideTransition(
+                      position: _slideAnim,
+                      child: SingleChildScrollView(
+                        physics: const BouncingScrollPhysics(),
+                        padding: EdgeInsets.fromLTRB(
+                          width * 0.04,
+                          width * 0.02,
+                          width * 0.04,
+                          width * 0.08,
+                        ),
+                        child: _isVerified
+                            ? _buildForm(width)
+                            : _buildNotVerifiedState(width),
+                      ),
+                    ),
                   ),
-                  child: _isVerified
-                      ? _buildForm(width)
-                      : _buildNotVerifiedState(width),
                 ),
               ),
             ],
@@ -375,12 +358,24 @@ class _EditProfileScreenState extends State<EditProfileScreen>
       color: const Color(0xFFF3F4F6),
       child: Row(
         children: [
-          IconButton(
-            onPressed: () => Navigator.pop(context),
-            icon: const Icon(Icons.arrow_back_ios_new_rounded),
-            color: AppColors.primaryBlue,
-            iconSize: width * 0.055,
+          GestureDetector(
+            onTap: () => Navigator.pop(context),
+            child: Container(
+              width: width * 0.09,
+              height: width * 0.09,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF3F4F6),
+                borderRadius: BorderRadius.circular(width * 0.025),
+                border: Border.all(color: AppColors.stroke),
+              ),
+              child: Icon(
+                Icons.arrow_back_ios_rounded,
+                size: width * 0.04,
+                color: AppColors.primaryBlue,
+              ),
+            ),
           ),
+          SizedBox(width: width * 0.02),
           Text(
             'Edit Profile',
             style: TextStyle(
@@ -400,82 +395,79 @@ class _EditProfileScreenState extends State<EditProfileScreen>
     return Column(
       children: [
         SizedBox(height: width * 0.08),
-        _animated(
-          1,
-          Container(
-            padding: EdgeInsets.all(width * 0.06),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(width * 0.04),
-              border: Border.all(color: AppColors.stroke),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, 3),
+        Container(
+          padding: EdgeInsets.all(width * 0.06),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(width * 0.04),
+            border: Border.all(color: AppColors.stroke),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              Container(
+                width: width * 0.22,
+                height: width * 0.22,
+                decoration: BoxDecoration(
+                  color: AppColors.orange.withValues(alpha: 0.10),
+                  shape: BoxShape.circle,
                 ),
-              ],
-            ),
-            child: Column(
-              children: [
-                Container(
-                  width: width * 0.22,
-                  height: width * 0.22,
-                  decoration: BoxDecoration(
-                    color: AppColors.orange.withValues(alpha: 0.10),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    Icons.verified_user_outlined,
-                    size: width * 0.12,
-                    color: AppColors.orange,
-                  ),
+                child: Icon(
+                  Icons.verified_user_outlined,
+                  size: width * 0.12,
+                  color: AppColors.orange,
                 ),
-                SizedBox(height: width * 0.05),
-                Text(
-                  'Verification Required',
-                  style: TextStyle(
-                    fontSize: width * 0.048,
-                    fontWeight: FontWeight.w700,
-                    color: const Color(0xFF1F2937),
-                  ),
+              ),
+              SizedBox(height: width * 0.05),
+              Text(
+                'Verification Required',
+                style: TextStyle(
+                  fontSize: width * 0.048,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF1F2937),
                 ),
-                SizedBox(height: width * 0.025),
-                Text(
-                  'Only verified citizens can edit their profile information. '
-                  'Please complete the identity verification process first.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: width * 0.034,
-                    color: AppColors.hint,
-                    height: 1.55,
-                  ),
+              ),
+              SizedBox(height: width * 0.025),
+              Text(
+                'Only verified citizens can edit their profile information. '
+                'Please complete the identity verification process first.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: width * 0.034,
+                  color: AppColors.hint,
+                  height: 1.55,
                 ),
-                SizedBox(height: width * 0.055),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.pop(context),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primaryBlue,
-                      elevation: 0,
-                      padding: EdgeInsets.symmetric(vertical: width * 0.04),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(width * 0.03),
-                      ),
+              ),
+              SizedBox(height: width * 0.055),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primaryBlue,
+                    elevation: 0,
+                    padding: EdgeInsets.symmetric(vertical: width * 0.04),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(width * 0.03),
                     ),
-                    child: Text(
-                      'Go Back',
-                      style: TextStyle(
-                        fontSize: width * 0.038,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                      ),
+                  ),
+                  child: Text(
+                    'Go Back',
+                    style: TextStyle(
+                      fontSize: width * 0.038,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
                     ),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ],
@@ -489,232 +481,208 @@ class _EditProfileScreenState extends State<EditProfileScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _animated(1, _buildAvatarCard(width)),
+          _buildAvatarCard(width),
           SizedBox(height: width * 0.04),
 
           if (_isLocked) ...[
-            _animated(2, _buildLockBanner(width)),
+            _buildLockBanner(width),
             SizedBox(height: width * 0.04),
           ],
 
-          _animated(3, _buildSectionLabel('ACCOUNT', width)),
+          _buildSectionLabel('ACCOUNT', width),
           SizedBox(height: width * 0.02),
-          _animated(
-            4,
-            _buildCard(
-              width: width,
-              children: [
-                _buildLockedDisplayField(
-                  label: 'Email',
-                  value:
-                      Supabase.instance.client.auth.currentUser?.email ?? '—',
-                  icon: 'assets/images/email.png',
-                  width: width,
-                ),
-                _divider(width),
-                _buildLockedDisplayField(
-                  label: 'Username',
-                  value: widget.username,
-                  icon: '@',
-                  width: width,
-                ),
-              ],
-            ),
+          _buildCard(
+            width: width,
+            children: [
+              _buildLockedDisplayField(
+                label: 'Email',
+                value: Supabase.instance.client.auth.currentUser?.email ?? '—',
+                icon: 'assets/images/email.png',
+                width: width,
+              ),
+              _divider(width),
+              _buildLockedDisplayField(
+                label: 'Username',
+                value: widget.username,
+                icon: '@',
+                width: width,
+              ),
+            ],
           ),
           SizedBox(height: width * 0.04),
 
-          _animated(5, _buildSectionLabel('PERSONAL INFORMATION', width)),
+          _buildSectionLabel('PERSONAL INFORMATION', width),
           SizedBox(height: width * 0.02),
-          _animated(
-            6,
-            _buildCard(
-              width: width,
-              children: [
-                _buildField(
-                  ctrl: _firstNameCtrl,
-                  label: 'First Name',
-                  hint: 'Enter first name',
-                  icon: 'assets/images/username.png',
-                  width: width,
-                  enabled: !_isLocked,
-                  validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? 'Required' : null,
-                ),
-                _divider(width),
-                _buildField(
-                  ctrl: _middleNameCtrl,
-                  label: 'Middle Name',
-                  hint: 'Enter middle name (optional)',
-                  icon: 'assets/images/username.png',
-                  width: width,
-                  enabled: !_isLocked,
-                ),
-                _divider(width),
-                _buildField(
-                  ctrl: _lastNameCtrl,
-                  label: 'Last Name',
-                  hint: 'Enter last name',
-                  icon: 'assets/images/username.png',
-                  width: width,
-                  enabled: !_isLocked,
-                  showDivider: false,
-                  validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? 'Required' : null,
-                ),
-              ],
-            ),
+          _buildCard(
+            width: width,
+            children: [
+              _buildField(
+                ctrl: _firstNameCtrl,
+                label: 'First Name',
+                hint: 'Enter first name',
+                icon: 'assets/images/username.png',
+                width: width,
+                enabled: !_isLocked,
+                validator: (v) =>
+                    (v == null || v.trim().isEmpty) ? 'Required' : null,
+              ),
+              _divider(width),
+              _buildField(
+                ctrl: _middleNameCtrl,
+                label: 'Middle Name',
+                hint: 'Enter middle name (optional)',
+                icon: 'assets/images/username.png',
+                width: width,
+                enabled: !_isLocked,
+              ),
+              _divider(width),
+              _buildField(
+                ctrl: _lastNameCtrl,
+                label: 'Last Name',
+                hint: 'Enter last name',
+                icon: 'assets/images/username.png',
+                width: width,
+                enabled: !_isLocked,
+                showDivider: false,
+                validator: (v) =>
+                    (v == null || v.trim().isEmpty) ? 'Required' : null,
+              ),
+            ],
           ),
           SizedBox(height: width * 0.04),
 
-          _animated(7, _buildSectionLabel('CONTACT', width)),
+          _buildSectionLabel('CONTACT', width),
           SizedBox(height: width * 0.02),
-          _animated(
-            8,
-            _buildCard(
-              width: width,
-              children: [
-                _buildField(
-                  ctrl: _contactCtrl,
-                  label: 'Mobile Number',
-                  hint: 'e.g. 09XXXXXXXXX',
-                  icon: 'assets/images/phone.png',
-                  width: width,
-                  enabled: !_isLocked,
-                  showDivider: false,
-                  keyboardType: TextInputType.phone,
-                  validator: (v) {
-                    if (v == null || v.trim().isEmpty) return 'Required';
-                    if (!RegExp(r'^(09|\+639)\d{9}$').hasMatch(v.trim())) {
-                      return 'Enter a valid PH mobile number';
-                    }
-                    return null;
-                  },
-                ),
-              ],
-            ),
+          _buildCard(
+            width: width,
+            children: [
+              _buildField(
+                ctrl: _contactCtrl,
+                label: 'Mobile Number',
+                hint: 'e.g. 09XXXXXXXXX',
+                icon: 'assets/images/phone.png',
+                width: width,
+                enabled: !_isLocked,
+                showDivider: false,
+                keyboardType: TextInputType.phone,
+                validator: (v) {
+                  if (v == null || v.trim().isEmpty) return 'Required';
+                  if (!RegExp(r'^(09|\+639)\d{9}$').hasMatch(v.trim())) {
+                    return 'Enter a valid PH mobile number';
+                  }
+                  return null;
+                },
+              ),
+            ],
           ),
           SizedBox(height: width * 0.04),
 
-          _animated(9, _buildSectionLabel('ADDRESS', width)),
+          _buildSectionLabel('ADDRESS', width),
           SizedBox(height: width * 0.02),
-          _animated(
-            10,
-            _buildCard(
-              width: width,
-              children: [
-                _buildField(
-                  ctrl: _barangayCtrl,
-                  label: 'Barangay',
-                  hint: 'Enter your barangay',
-                  icon: 'assets/images/report/location.png',
-                  width: width,
-                  enabled: !_isLocked,
-                  validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? 'Required' : null,
-                ),
-                _divider(width),
-                _buildField(
-                  ctrl: _streetCtrl,
-                  label: 'Street / Zone',
-                  hint: 'Enter street or zone',
-                  icon: 'assets/images/report/location.png',
-                  width: width,
-                  enabled: !_isLocked,
-                  showDivider: false,
-                  validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? 'Required' : null,
-                ),
-              ],
-            ),
+          _buildCard(
+            width: width,
+            children: [
+              _buildField(
+                ctrl: _barangayCtrl,
+                label: 'Barangay',
+                hint: 'Enter your barangay',
+                icon: 'assets/images/report/location.png',
+                width: width,
+                enabled: !_isLocked,
+                validator: (v) =>
+                    (v == null || v.trim().isEmpty) ? 'Required' : null,
+              ),
+              _divider(width),
+              _buildField(
+                ctrl: _streetCtrl,
+                label: 'Street / Zone',
+                hint: 'Enter street or zone',
+                icon: 'assets/images/report/location.png',
+                width: width,
+                enabled: !_isLocked,
+                showDivider: false,
+                validator: (v) =>
+                    (v == null || v.trim().isEmpty) ? 'Required' : null,
+              ),
+            ],
           ),
           SizedBox(height: width * 0.04),
 
           if (_errorMessage != null)
-            _animated(
-              11,
-              Container(
-                margin: EdgeInsets.only(bottom: width * 0.03),
-                padding: EdgeInsets.all(width * 0.035),
-                decoration: BoxDecoration(
-                  color: AppColors.red.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(width * 0.025),
-                  border: Border.all(
-                    color: AppColors.red.withValues(alpha: 0.3),
+            Container(
+              margin: EdgeInsets.only(bottom: width * 0.03),
+              padding: EdgeInsets.all(width * 0.035),
+              decoration: BoxDecoration(
+                color: AppColors.red.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(width * 0.025),
+                border: Border.all(color: AppColors.red.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.error_outline_rounded,
+                    color: AppColors.red,
+                    size: width * 0.045,
                   ),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.error_outline_rounded,
-                      color: AppColors.red,
-                      size: width * 0.045,
-                    ),
-                    SizedBox(width: width * 0.025),
-                    Expanded(
-                      child: Text(
-                        _errorMessage!,
-                        style: TextStyle(
-                          fontSize: width * 0.032,
-                          color: AppColors.red,
-                        ),
+                  SizedBox(width: width * 0.025),
+                  Expanded(
+                    child: Text(
+                      _errorMessage!,
+                      style: TextStyle(
+                        fontSize: width * 0.032,
+                        color: AppColors.red,
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
 
-          _animated(
-            12,
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: (_saving || _isLocked) ? null : _save,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primaryBlue,
-                  disabledBackgroundColor: AppColors.primaryBlue.withValues(
-                    alpha: 0.4,
-                  ),
-                  elevation: 0,
-                  padding: EdgeInsets.symmetric(vertical: width * 0.045),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(width * 0.03),
-                  ),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: (_saving || _isLocked) ? null : _save,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primaryBlue,
+                disabledBackgroundColor: AppColors.primaryBlue.withValues(
+                  alpha: 0.4,
                 ),
-                child: Text(
-                  _isLocked ? 'Profile Locked' : 'Save Changes',
-                  style: TextStyle(
-                    fontSize: width * 0.042,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                    letterSpacing: 0.2,
-                  ),
+                elevation: 0,
+                padding: EdgeInsets.symmetric(vertical: width * 0.045),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(width * 0.03),
+                ),
+              ),
+              child: Text(
+                _isLocked ? 'Profile Locked' : 'Save Changes',
+                style: TextStyle(
+                  fontSize: width * 0.042,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                  letterSpacing: 0.2,
                 ),
               ),
             ),
           ),
           SizedBox(height: width * 0.03),
 
-          _animated(
-            13,
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton(
-                onPressed: _saving ? null : () => Navigator.pop(context),
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: AppColors.stroke),
-                  padding: EdgeInsets.symmetric(vertical: width * 0.04),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(width * 0.03),
-                  ),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: _saving ? null : () => Navigator.pop(context),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: AppColors.stroke),
+                padding: EdgeInsets.symmetric(vertical: width * 0.04),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(width * 0.03),
                 ),
-                child: Text(
-                  'Cancel',
-                  style: TextStyle(
-                    fontSize: width * 0.038,
-                    fontWeight: FontWeight.w600,
-                    color: const Color(0xFF374151),
-                  ),
+              ),
+              child: Text(
+                'Cancel',
+                style: TextStyle(
+                  fontSize: width * 0.038,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF374151),
                 ),
               ),
             ),
@@ -752,7 +720,6 @@ class _EditProfileScreenState extends State<EditProfileScreen>
       ),
       child: Column(
         children: [
-          // ── Avatar with camera badge ──
           GestureDetector(
             onTap: _isLocked ? null : _pickPhoto,
             child: Stack(
@@ -818,7 +785,6 @@ class _EditProfileScreenState extends State<EditProfileScreen>
 
           SizedBox(height: width * 0.032),
 
-          // ── Display name ──
           Text(
             displayName,
             style: TextStyle(
@@ -830,7 +796,6 @@ class _EditProfileScreenState extends State<EditProfileScreen>
 
           SizedBox(height: width * 0.014),
 
-          // ── Verified badge ──
           if (_isVerified)
             Container(
               padding: EdgeInsets.symmetric(
@@ -867,7 +832,6 @@ class _EditProfileScreenState extends State<EditProfileScreen>
 
           SizedBox(height: width * 0.028),
 
-          // ── Stats row ──
           if (_isVerified)
             Container(
               padding: EdgeInsets.symmetric(
@@ -922,7 +886,6 @@ class _EditProfileScreenState extends State<EditProfileScreen>
 
           SizedBox(height: width * 0.022),
 
-          // ── Photo hint ──
           Text(
             _isLocked
                 ? 'Photo locked for $_daysRemaining more days'

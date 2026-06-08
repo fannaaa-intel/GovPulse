@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../../../features/auth/services/chat_service.dart';
+import '../../../services/chat_service.dart';
 import '../../../theme/app_colors.dart';
 import 'Chat_bubbles_model.dart';
 import 'chat_bubbles_widget.dart';
@@ -145,6 +145,8 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
                 ),
                 Expanded(child: _buildMessages()),
 
+                if (ChatService.I.showIntentChips) _buildIntentChips(),
+                if (ChatService.I.showBackToMenu) _buildBackToMenu(),
                 if (ChatService.I.showCategoryChips) _buildCategoryChips(),
 
                 const Divider(
@@ -245,6 +247,29 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
             ],
           ),
           const SizedBox(height: 12),
+          if (stage == ConversationStage.ticketCreated) ...[
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => ChatService.I.requestLiveAgent(),
+                icon: const Icon(Icons.support_agent_rounded, size: 16),
+                label: const Text('Talk to a person'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.primaryBlue,
+                  side: const BorderSide(color: AppColors.primaryBlue),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  textStyle: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
@@ -481,6 +506,54 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
             }).toList(),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildIntentChips() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+      decoration: const BoxDecoration(color: Colors.white),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'WHAT CAN I DO FOR YOU PO?',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              color: AppColors.hint,
+              letterSpacing: 0.8,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: cm.ChatIntent.values.map((i) {
+              return _CategoryChip(
+                label: i.label,
+                onTap: () => ChatService.I.pickIntent(i),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBackToMenu() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
+      color: Colors.white,
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: _CategoryChip(
+          label: '⬅ Main menu',
+          onTap: () => ChatService.I.backToMenu(),
+        ),
       ),
     );
   }

@@ -3,7 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:shared_preferences/shared_preferences.dart';
-import '../../core/network/connectivity_service.dart';
+import '../../core/services/connectivity_service.dart';
 import '../../core/network/network_wrapper.dart';
 import '../../core/network/no_internet_screen.dart';
 import '../../core/router/app_router.dart';
@@ -35,6 +35,10 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
   @override
   void initState() {
     super.initState();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _start();
+    });
 
     _controller = AnimationController(
       vsync: this,
@@ -69,7 +73,20 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
       textDirection: TextDirection.ltr,
     )..layout();
 
-    _start();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // Let the raster thread finish cold-start work before the first
+      // heavy paint (shadow + gradient). Removes the entrance stutter.
+      await Future.delayed(const Duration(milliseconds: 150));
+      if (mounted) _start();
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Decode the logo before the animation needs it, so the logo-scale
+    // step doesn't drop a frame.
+    precacheImage(const AssetImage('assets/images/applogo.png'), context);
   }
 
   Future<void> _navigateNext() async {
@@ -102,35 +119,45 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
   }
 
   Future<void> _start() async {
+    // Fire the check immediately, in parallel — don't block on it.
+    final internetCheck = hasRealInternet();
+
+    // Always let the full animation play.
+    await _controller.forward();
+    if (!mounted) return;
+
+    // Animation's done; show the loader in case the check is still pending.
+    setState(() => _showLoader = true);
+
+    bool online;
     try {
-      bool online = false;
+      online = await internetCheck;
+    } catch (_) {
+      online = false;
+    }
+    if (!mounted) return;
 
-      await Future.wait<void>([
-        _controller.forward(),
-        hasRealInternet().then((result) => online = result),
-      ]);
+    cachedInternetStatus = online;
 
+    if (!online) {
+      // Settle delay so the offline swap doesn't collide with the
+      // animation's final frame.
+      await Future.delayed(const Duration(milliseconds: 250));
       if (!mounted) return;
+      setState(() {
+        _showLoader = false;
+        _goOffline = true;
+      });
+      _waitForInternet();
+      return;
+    }
 
-      cachedInternetStatus = online;
-
-      if (!online) {
-        setState(() => _goOffline = true);
-        _waitForInternet();
-        return;
-      }
-
-      setState(() => _showLoader = true);
-      await Future.delayed(const Duration(milliseconds: 800));
-      if (!mounted) return;
-
-      // Fade out the loader before navigating
-      setState(() => _showLoader = false);
-      await Future.delayed(const Duration(milliseconds: 300));
-      if (!mounted) return;
-
-      await _navigateNext();
-    } catch (_) {}
+    await Future.delayed(const Duration(milliseconds: 400));
+    if (!mounted) return;
+    setState(() => _showLoader = false);
+    await Future.delayed(const Duration(milliseconds: 300));
+    if (!mounted) return;
+    await _navigateNext();
   }
 
   Future<void> _waitForInternet() async {
@@ -292,10 +319,18 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
                               boxShadow: [
                                 BoxShadow(
                                   color: Colors.black.withValues(
-                                    alpha: (0.05 + (whiteFade * 0.15)),
+                                    alpha:
+                                        (0.05 + (whiteFade * 0.15)) *
+                                        _containerScale.value.clamp(0.0, 1.0),
                                   ),
-                                  blurRadius: 24 + (whiteFade * 20),
-                                  offset: Offset(0, 8 + (whiteFade * 6)),
+                                  blurRadius:
+                                      (24 + (whiteFade * 20)) *
+                                      _containerScale.value.clamp(0.0, 1.0),
+                                  offset: Offset(
+                                    0,
+                                    (8 + (whiteFade * 6)) *
+                                        _containerScale.value.clamp(0.0, 1.0),
+                                  ),
                                 ),
                               ],
                             ),

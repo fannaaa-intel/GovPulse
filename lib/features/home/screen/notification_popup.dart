@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:math' as math;
 
@@ -52,18 +54,71 @@ class NotificationService {
   static SupabaseClient get _db => Supabase.instance.client;
   static String? get _uid => _db.auth.currentUser?.id;
 
-  // Load all notifications for this user from Supabase
+  // ── Local (phone) notifications ────────────────────────────────────────────
+  static final FlutterLocalNotificationsPlugin _local =
+      FlutterLocalNotificationsPlugin();
+  static bool _localReady = false;
+
+  /// Initialise the local-notifications plugin once and request the runtime
+  /// permission (required on Android 13+ and on iOS).
+  static Future<void> _ensureLocalReady() async {
+    if (_localReady) return;
+    const init = InitializationSettings(
+      android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+      iOS: DarwinInitializationSettings(
+        requestAlertPermission: true,
+        requestBadgePermission: true,
+        requestSoundPermission: true,
+      ),
+    );
+    await _local.initialize(init);
+
+    // Android 13+ (API 33) POST_NOTIFICATIONS runtime permission.
+    await _local
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
+        ?.requestNotificationsPermission();
+
+    _localReady = true;
+  }
+
+  /// Mirror an in-app notification to the device's notification tray so the
+  /// user is notified on the phone as well as inside the app.
+  static Future<void> _showOnPhone(AppNotification n) async {
+    try {
+      await _ensureLocalReady();
+      const details = NotificationDetails(
+        android: AndroidNotificationDetails(
+          'general_channel',
+          'Notifications',
+          channelDescription: 'Aparri app notifications',
+          importance: Importance.max,
+          priority: Priority.high,
+          icon: '@mipmap/ic_launcher',
+        ),
+        iOS: DarwinNotificationDetails(),
+      );
+      await _local.show(
+        n.title.hashCode & 0x7fffffff, // stable-ish id per title
+        n.title,
+        n.subtitle,
+        details,
+      );
+    } catch (e) {
+      debugPrint('NotificationService._showOnPhone error: $e');
+    }
+  }
+
   static Future<void> load() async {
     final uid = _uid;
     if (uid == null) return;
-
     try {
       final rows = await _db
           .from('notifications')
           .select()
           .eq('user_id', uid)
           .order('created_at', ascending: false);
-
       notifications = (rows as List)
           .map((r) => AppNotification.fromRow(r as Map<String, dynamic>))
           .toList();
@@ -72,15 +127,10 @@ class NotificationService {
     }
   }
 
-  /// Insert a notification and add it to the in-memory list.
-  /// Returns false if a non-general typed notification already exists
-  /// (prevents duplicate reminders).
   static Future<bool> add(AppNotification n) async {
     final uid = _uid;
     if (uid == null) return false;
-
     try {
-      // ── One-time guard for typed (non-general) notifications ──────────
       if (n.type != 'general') {
         final existing = await _db
             .from('notifications')
@@ -88,7 +138,6 @@ class NotificationService {
             .eq('user_id', uid)
             .eq('type', n.type)
             .maybeSingle();
-
         if (existing != null) {
           debugPrint(
             'NotificationService: type "${n.type}" already exists, skipping.',
@@ -96,8 +145,6 @@ class NotificationService {
           return false;
         }
       }
-
-      // ── Insert row ────────────────────────────────────────────────────
       final row = await _db
           .from('notifications')
           .insert({
@@ -107,13 +154,12 @@ class NotificationService {
             'subtitle': n.subtitle,
             'color_value': n.color.toARGB32(),
             'type': n.type,
-            'is_approved': true, // ← ADD THIS
+            'is_approved': true,
           })
           .select()
           .single();
-
-      // ── Update in-memory list immediately ─────────────────────────────
       notifications.insert(0, AppNotification.fromRow(row));
+      await _showOnPhone(n); // mirror to the phone's notification tray
       debugPrint(
         'NotificationService: inserted "${n.title}" (type: ${n.type})',
       );
@@ -124,7 +170,6 @@ class NotificationService {
     }
   }
 
-  // Delete a single notification
   static Future<void> remove(AppNotification n) async {
     if (n.id == null) return;
     try {
@@ -135,7 +180,6 @@ class NotificationService {
     }
   }
 
-  // Delete all notifications for this user
   static Future<void> clearAll() async {
     final uid = _uid;
     if (uid == null) return;
@@ -147,9 +191,6 @@ class NotificationService {
     }
   }
 
-  // ── ADD THESE TWO METHODS HERE ────────────────────────────────────────────
-
-  /// Admin sends a notification to a specific user
   static Future<bool> adminSend({
     required String targetUserId,
     required String title,
@@ -175,7 +216,6 @@ class NotificationService {
     }
   }
 
-  /// Staff sends a notification — requires admin approval
   static Future<bool> staffSend({
     required String targetUserId,
     required String title,
@@ -201,81 +241,459 @@ class NotificationService {
     }
   }
 
-  static int get count => notifications.length; // ← this was already here
+  static int get count => notifications.length;
 }
 
-// ── UI ────────────────────────────────────────────────────────────────────────
-// ── UI ────────────────────────────────────────────────────────────────────────
+// ── Swipeable Notification Item ───────────────────────────────────────────────
+//
+// Behaviour contract:
+//   • Drag left  → card slides, trash button grows + fades in from right
+//   • Slow drag  → on release, elastic snap-back to origin
+//   • Fast drag (velocity > threshold) OR drag > 35% width → slide off & delete
+//   • Tap trash  → slide off & delete
+//   • External   → slideOut(force: true) lets Clear-All drive it
+//
+class _AnimatedNotifItem extends StatefulWidget {
+  final double width;
+  final AppNotification notification;
+  final bool enabled; // false while Clear-All is running
+  final VoidCallback onDelete; // called after exit animation completes
+  final VoidCallback? onTap; // fired when a closed card is tapped
+
+  const _AnimatedNotifItem({
+    super.key,
+    required this.width,
+    required this.notification,
+    required this.onDelete,
+    this.onTap,
+    this.enabled = true,
+  });
+
+  @override
+  State<_AnimatedNotifItem> createState() => _AnimatedNotifItemState();
+}
+
+class _AnimatedNotifItemState extends State<_AnimatedNotifItem>
+    with TickerProviderStateMixin {
+  // Slides the card fully off-screen, then fires onDelete()
+  late final AnimationController _exitCtrl;
+  // Eases the card to a resting offset (the open detent, or back to closed)
+  late final AnimationController _settleCtrl;
+
+  double _offset = 0; // current translate-X (always <= 0)
+  double _exitOrigin = 0; // _offset captured when exit begins
+  double _settleFrom = 0; // _offset captured when a settle begins
+  double _settleTo = 0; // settle target offset
+  Curve _settleCurve = Curves.easeOutCubic;
+
+  bool _deleted = false; // exit animation started
+  bool _open = false; // currently resting at the revealed detent
+  bool _silentExit = false; // exit with NO trash panel (Clear-All cascade)
+
+  // ── Geometry ─────────────────────────────────────────────────────────────
+
+  // How far the card slides left to fully reveal the trash, then STOP.
+  double get _openOffset => -widget.width * 0.22;
+
+  // Hard left bound while dragging (lets the user pull past the detent to
+  // trigger a "slide-again" delete).
+  double get _maxDrag => -widget.width * 0.55;
+
+  // ── Lifecycle ──────────────────────────────────────────────────────────────
+
+  @override
+  void initState() {
+    super.initState();
+
+    _exitCtrl =
+        AnimationController(
+            vsync: this,
+            duration: const Duration(milliseconds: 300),
+          )
+          ..addListener(_onExitTick)
+          ..addStatusListener((s) {
+            if (s == AnimationStatus.completed && mounted) widget.onDelete();
+          });
+
+    _settleCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    )..addListener(_onSettleTick);
+  }
+
+  @override
+  void dispose() {
+    _exitCtrl.dispose();
+    _settleCtrl.dispose();
+    super.dispose();
+  }
+
+  // ── Animation ticks ──────────────────────────────────────────────────────
+
+  void _onExitTick() {
+    if (!mounted) return;
+    // Clear-All exits glide on a gentler curve and travel a shorter distance
+    // (a fade finishes the disappearance), so the motion reads much softer
+    // than a hard shoot-off-screen.
+    final curve = _silentExit ? Curves.easeInOutCubic : Curves.easeInCubic;
+    final t = curve.transform(_exitCtrl.value);
+    final target = _silentExit ? -widget.width * 0.6 : -(widget.width + 80);
+    setState(() => _offset = _exitOrigin + (target - _exitOrigin) * t);
+  }
+
+  void _onSettleTick() {
+    if (!mounted) return;
+    final t = _settleCurve.transform(_settleCtrl.value.clamp(0.0, 1.0));
+    setState(() => _offset = _settleFrom + (_settleTo - _settleFrom) * t);
+  }
+
+  // ── Internal helpers ───────────────────────────────────────────────────────
+
+  void _settleTowards(
+    double target, {
+    Curve curve = Curves.easeOutCubic,
+    int ms = 300,
+  }) {
+    if (_deleted) return;
+    _settleCtrl.stop();
+    _settleFrom = _offset;
+    _settleTo = target;
+    _settleCurve = curve;
+    _settleCtrl
+      ..duration = Duration(milliseconds: ms)
+      ..forward(from: 0);
+  }
+
+  void _startExit() {
+    if (_deleted) return;
+    _deleted = true;
+    _settleCtrl.stop();
+    _exitOrigin = _offset;
+    _exitCtrl.forward(from: 0);
+  }
+
+  // ── Public API (used by Clear-All in parent) ───────────────────────────────
+
+  /// Drive the exit/delete animation from outside (Clear-All cascade).
+  void slideOut({bool force = false}) {
+    if (_deleted) return;
+    // Clear-All passes force:true — peel the card away with no trash panel.
+    if (force) _silentExit = true;
+    _startExit();
+  }
+
+  // ── Gesture handlers ───────────────────────────────────────────────────────
+
+  void _onDragUpdate(DragUpdateDetails d) {
+    if (_deleted || !widget.enabled) return;
+    _settleCtrl.stop(); // re-grab interrupts any in-flight settle
+    setState(() {
+      _offset = (_offset + d.delta.dx).clamp(_maxDrag, 0.0);
+    });
+  }
+
+  void _onDragEnd(DragEndDetails d) {
+    if (_deleted || !widget.enabled) return;
+    final w = widget.width;
+    final vx = d.velocity.pixelsPerSecond.dx;
+
+    if (!_open) {
+      // From CLOSED: either reveal-and-stop, or snap back home.
+      final shouldOpen = _offset <= -w * 0.08 || vx < -250;
+      if (shouldOpen) {
+        _open = true;
+        _settleTowards(_openOffset, curve: Curves.easeOutCubic, ms: 280);
+      } else {
+        _settleTowards(0, curve: Curves.elasticOut, ms: 460);
+      }
+    } else {
+      // From OPEN: sliding further (or a left flick) deletes; dragging back
+      // closes; anything else re-settles at the detent.
+      final deleteByDrag = _offset < _openOffset - w * 0.12 || vx < -650;
+      final closeByDrag = _offset > -w * 0.11 || vx > 600;
+      if (deleteByDrag) {
+        _startExit();
+      } else if (closeByDrag) {
+        _open = false;
+        _settleTowards(0, curve: Curves.easeOutCubic, ms: 260);
+      } else {
+        _settleTowards(_openOffset, curve: Curves.easeOutCubic, ms: 220);
+      }
+    }
+  }
+
+  // Tapping the visible card closes it if open, otherwise acts on it.
+  void _onTapCard() {
+    if (_deleted) return;
+    if (_open) {
+      _open = false;
+      _settleTowards(0, curve: Curves.easeOutCubic, ms: 260);
+    } else {
+      widget.onTap?.call();
+    }
+  }
+
+  // ── Build ──────────────────────────────────────────────────────────────────
+
+  @override
+  Widget build(BuildContext context) {
+    final w = widget.width;
+    final regionW = -_openOffset; // width of the revealed trash area
+    final reveal = (-_offset / regionW).clamp(0.0, 1.0);
+
+    // The card stays fully rounded while it sits closed. As soon as it
+    // starts opening, its RIGHT corners straighten so it meets the red
+    // panel with a clean flush seam (no rounded gap, no red peeking).
+    final rightR = (18.0 * (1.0 - reveal / 0.15)).clamp(0.0, 18.0);
+    final cardRadius = BorderRadius.only(
+      topLeft: const Radius.circular(18),
+      bottomLeft: const Radius.circular(18),
+      topRight: Radius.circular(rightR),
+      bottomRight: Radius.circular(rightR),
+    );
+
+    // During a Clear-All exit the card also fades out, so the slide and the
+    // height-collapse blend into one soft motion instead of a hard slide.
+    final exitFade = _silentExit
+        ? (1.0 - _exitCtrl.value / 0.9).clamp(0.0, 1.0)
+        : 1.0;
+
+    return Padding(
+      // Vertical gap between rows lives out here so the card itself can be
+      // cleanly clipped (the trash never spills outside the row).
+      padding: EdgeInsets.only(bottom: w * 0.025),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: Stack(
+          children: [
+            // ── Red delete panel: pinned right, fills the card height ───────
+            Positioned(
+              top: 0,
+              bottom: 0,
+              right: 0,
+              width: regionW,
+              child: IgnorePointer(
+                ignoring: !_open || _deleted,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _startExit, // tap trash → slide out + delete
+                  child: Opacity(
+                    opacity: _silentExit ? 0.0 : reveal,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Color.lerp(
+                          Colors.red.shade300,
+                          Colors.red.shade600,
+                          reveal,
+                        ),
+                        // Straight on the left (flush with the card),
+                        // rounded on the right to match the row's corners.
+                        borderRadius: const BorderRadius.only(
+                          topRight: Radius.circular(18),
+                          bottomRight: Radius.circular(18),
+                        ),
+                      ),
+                      alignment: Alignment.center,
+                      child: Transform.scale(
+                        scale: 0.7 + 0.3 * reveal,
+                        child: Image.asset(
+                          'assets/images/trash.png',
+                          width: w * 0.07,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+            // ── Sliding notification card ───────────────────────────────────
+            // Transform is the PARENT of the gesture detector so the card's
+            // hit-test area travels with it. If the detector wrapped the
+            // Transform instead, it would keep its full-width bounds and keep
+            // swallowing taps meant for the trash panel sitting behind it.
+            Transform.translate(
+              offset: Offset(_offset, 0),
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _onTapCard,
+                onHorizontalDragUpdate: _onDragUpdate,
+                onHorizontalDragEnd: _onDragEnd,
+                child: Opacity(
+                  opacity: exitFade,
+                  child: _NotifItem(
+                    width: w,
+                    notification: widget.notification,
+                    spaced: false, // gap is handled by the outer Padding
+                    borderRadius: cardRadius,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── NotificationPopup ─────────────────────────────────────────────────────────
+
 class NotificationPopup extends StatefulWidget {
   final double width;
-  const NotificationPopup({super.key, required this.width});
+  final void Function(AppNotification notification)? onTap;
+  const NotificationPopup({super.key, required this.width, this.onTap});
 
   @override
   State<NotificationPopup> createState() => _NotificationPopupState();
 }
 
 class _NotificationPopupState extends State<NotificationPopup> {
-  bool _loading = true;
-
-  // Cap the width the popup sizes itself against. Above this, it stays put
-  // (centered) instead of bloating on tablets / desktop / wide web.
   static const double _kMaxSizingWidth = 420;
+
+  // Duration for the height-collapse after a card slides out
+  static const Duration _kCollapseD = Duration(milliseconds: 240);
+
+  // Delay between each card during Clear-All stagger
+  static const Duration _kStagger = Duration(milliseconds: 60);
+
+  bool _loading = true;
+  bool _clearingAll = false;
+
+  // Cached effective layout width — set in build(), safe to read in callbacks
+  // because every callback is triggered by user interaction (post-first-build).
+  double _w = 0;
+
+  final GlobalKey<AnimatedListState> _listKey = GlobalKey();
+  final List<AppNotification> _notifications = [];
+  final List<GlobalKey<_AnimatedNotifItemState>> _itemKeys = [];
+
+  // ── Lifecycle ──────────────────────────────────────────────────────────────
 
   @override
   void initState() {
     super.initState();
     NotificationService.load().then((_) {
-      if (mounted) setState(() => _loading = false);
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _notifications
+          ..clear()
+          ..addAll(NotificationService.notifications);
+        _itemKeys
+          ..clear()
+          ..addAll(List.generate(_notifications.length, (_) => GlobalKey()));
+      });
     });
   }
 
+  // ── Removal helpers ────────────────────────────────────────────────────────
+
+  /// Removes [target] from local list + AnimatedList + DB.
+  /// Uses ID-lookup (not index) so concurrent deletions can't corrupt state.
+  void _removeNotification(AppNotification target) {
+    final idx = _notifications.indexWhere(
+      (n) => target.id != null ? n.id == target.id : identical(n, target),
+    );
+    if (idx < 0) return;
+
+    final removed = _notifications.removeAt(idx);
+    _itemKeys.removeAt(idx);
+
+    // Collapse the freed vertical space with a smooth height animation.
+    // We render the already-offscreen card as a size placeholder so Flutter
+    // knows the natural height to collapse from.
+    _listKey.currentState?.removeItem(
+      idx,
+      (_, anim) => SizeTransition(
+        sizeFactor: CurvedAnimation(parent: anim, curve: Curves.easeOut),
+        axisAlignment: -1, // top-anchored collapse (bottom shrinks up)
+        child: IgnorePointer(
+          child: Transform.translate(
+            offset: Offset(-_w * 2, 0), // already off-screen
+            child: _NotifItem(width: _w, notification: removed),
+          ),
+        ),
+      ),
+      duration: _kCollapseD,
+    );
+
+    // Persist to DB (fire-and-forget)
+    NotificationService.remove(removed);
+
+    // Rebuild: updates the empty-state overlay; resets _clearingAll when done
+    if (mounted) {
+      setState(() {
+        if (_notifications.isEmpty) _clearingAll = false;
+      });
+    }
+  }
+
+  // ── Clear All ──────────────────────────────────────────────────────────────
+
+  Future<void> _clearAll() async {
+    if (_clearingAll || _notifications.isEmpty) return;
+    setState(() => _clearingAll = true);
+
+    final count = _itemKeys.length;
+
+    // Snapshot key list before any mutations (removals shift the live list)
+    final keys = List<GlobalKey<_AnimatedNotifItemState>>.from(_itemKeys);
+
+    // Stagger slide-outs bottom → top so notifications peel away sequentially
+    for (int i = count - 1; i >= 0; i--) {
+      if (!mounted) break;
+      keys[i].currentState?.slideOut(force: true);
+      if (i > 0) await Future.delayed(_kStagger);
+    }
+
+    // Failsafe: reset flag even if some onDelete callbacks never fire
+    // (e.g. widget disposed mid-animation, or a state was null)
+    final fallback = Duration(
+      milliseconds: _kStagger.inMilliseconds * count + 900,
+    );
+    await Future.delayed(fallback);
+    if (mounted && _clearingAll) setState(() => _clearingAll = false);
+  }
+
+  // ── Build ──────────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
-    final screenSize = MediaQuery.of(context).size;
-    final screenW = screenSize.width;
-    final screenH = screenSize.height;
+    final sz = MediaQuery.of(context).size;
+    final w = sz.width < _kMaxSizingWidth ? sz.width : _kMaxSizingWidth;
+    _w = w; // cache for callbacks
 
-    // Effective sizing width = min(screen width, cap). All inner spacing,
-    // font sizes, paddings, and icon sizes scale from this. On mobile it
-    // equals the screen; on web it stays at the cap.
-    final w = screenW < _kMaxSizingWidth ? screenW : _kMaxSizingWidth;
-
-    // Final popup box dimensions.
     final popupWidth = w * 0.90;
-    // Height: clamp the desired height to a floor that can never exceed the
-    // ceiling. In landscape, screenH * 0.85 can fall below a fixed 360 floor,
-    // and .clamp(min, max) throws when min > max — that was the crash.
-    final double maxPopupHeight = screenH * 0.85;
-    final double minPopupHeight = math.min(360.0, maxPopupHeight);
-    final double popupHeight = (w * 1.1).clamp(minPopupHeight, maxPopupHeight);
+    final double maxH = sz.height * 0.85;
+    final double minH = math.min(360.0, maxH);
+    final double popupHeight = (w * 1.1).clamp(minH, maxH);
 
     return TweenAnimationBuilder<double>(
       duration: const Duration(milliseconds: 250),
       tween: Tween(begin: 0, end: 1),
-      builder: (context, value, _) {
+      builder: (context, v, _) {
         return Stack(
           children: [
-            // ── Blur backdrop ─────────────────────────────────────────────
+            // ── Blurred / dimmed backdrop ────────────────────────────────
             GestureDetector(
               onTap: () => Navigator.of(context).pop(),
               child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 8 * value, sigmaY: 8 * value),
-                child: Container(
-                  color: Colors.black.withValues(alpha: .2 * value),
-                ),
+                filter: ImageFilter.blur(sigmaX: 8 * v, sigmaY: 8 * v),
+                child: Container(color: Colors.black.withValues(alpha: .2 * v)),
               ),
             ),
 
-            // ── Panel ─────────────────────────────────────────────────────
+            // ── Frosted-glass panel ──────────────────────────────────────
             Center(
               child: GestureDetector(
-                onTap: () {},
+                onTap: () {}, // absorb taps so backdrop doesn't close
                 child: Material(
                   color: Colors.transparent,
                   child: Opacity(
-                    opacity: value,
+                    opacity: v,
                     child: Transform.scale(
-                      scale: 0.95 + (0.05 * value),
+                      scale: 0.95 + 0.05 * v,
                       child: Container(
                         width: popupWidth,
                         height: popupHeight,
@@ -308,16 +726,17 @@ class _NotificationPopupState extends State<NotificationPopup> {
                                   ),
                                 ),
                                 GestureDetector(
-                                  onTap: () async {
-                                    await NotificationService.clearAll();
-                                    if (mounted) setState(() {});
-                                  },
-                                  child: Text(
-                                    "Clear All",
-                                    style: TextStyle(
-                                      fontSize: w * 0.032,
-                                      color: Colors.blue,
-                                      fontWeight: FontWeight.w500,
+                                  onTap: _clearingAll ? null : _clearAll,
+                                  child: AnimatedOpacity(
+                                    duration: const Duration(milliseconds: 200),
+                                    opacity: _clearingAll ? 0.35 : 1.0,
+                                    child: Text(
+                                      "Clear All",
+                                      style: TextStyle(
+                                        fontSize: w * 0.032,
+                                        color: Colors.blue,
+                                        fontWeight: FontWeight.w500,
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -325,7 +744,7 @@ class _NotificationPopupState extends State<NotificationPopup> {
                             ),
                             SizedBox(height: w * 0.04),
 
-                            // ── List ──────────────────────────────────────
+                            // ── List area ─────────────────────────────────
                             Expanded(
                               child: _loading
                                   ? const Center(
@@ -333,53 +752,68 @@ class _NotificationPopupState extends State<NotificationPopup> {
                                         strokeWidth: 2,
                                       ),
                                     )
-                                  : NotificationService.notifications.isEmpty
-                                  ? Center(
-                                      child: Text(
-                                        "No notifications",
-                                        style: TextStyle(
-                                          color: Colors.grey,
-                                          fontSize: w * 0.035,
-                                        ),
-                                      ),
-                                    )
-                                  : ListView.builder(
-                                      padding: EdgeInsets.zero,
-                                      itemCount: NotificationService
-                                          .notifications
-                                          .length,
-                                      itemBuilder: (_, i) {
-                                        final n = NotificationService
-                                            .notifications[i];
-                                        return Dismissible(
-                                          key: ValueKey(n.id ?? i),
-                                          direction:
-                                              DismissDirection.endToStart,
-                                          background: Container(
-                                            alignment: Alignment.centerRight,
-                                            padding: EdgeInsets.only(
-                                              right: w * 0.05,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: Colors.red,
-                                              borderRadius:
-                                                  BorderRadius.circular(18),
-                                            ),
-                                            child: Image.asset(
-                                              'assets/images/trash.png',
-                                              width: w * 0.06,
-                                            ),
-                                          ),
-                                          onDismissed: (_) async {
-                                            await NotificationService.remove(n);
-                                            if (mounted) setState(() {});
+                                  : Stack(
+                                      children: [
+                                        // AnimatedList: always present when
+                                        // loaded; manages its own item-level
+                                        // enter/exit animations.
+                                        AnimatedList(
+                                          key: _listKey,
+                                          initialItemCount:
+                                              _notifications.length,
+                                          padding: EdgeInsets.zero,
+                                          itemBuilder: (ctx, idx, anim) {
+                                            if (idx >= _notifications.length) {
+                                              return const SizedBox.shrink();
+                                            }
+                                            final n = _notifications[idx];
+                                            final key = _itemKeys[idx];
+                                            return SizeTransition(
+                                              sizeFactor: CurvedAnimation(
+                                                parent: anim,
+                                                curve: Curves.easeOut,
+                                              ),
+                                              axisAlignment: -1,
+                                              child: _AnimatedNotifItem(
+                                                key: key,
+                                                width: w,
+                                                notification: n,
+                                                enabled: !_clearingAll,
+                                                onTap: () =>
+                                                    widget.onTap?.call(n),
+                                                onDelete: () =>
+                                                    _removeNotification(n),
+                                              ),
+                                            );
                                           },
-                                          child: _NotifItem(
-                                            width: w,
-                                            notification: n,
+                                        ),
+
+                                        // Empty-state overlay fades in once
+                                        // all notifications are gone.
+                                        // Hidden during Clear-All so it
+                                        // doesn't flash during the cascade.
+                                        AnimatedOpacity(
+                                          duration: const Duration(
+                                            milliseconds: 400,
                                           ),
-                                        );
-                                      },
+                                          opacity:
+                                              _notifications.isEmpty &&
+                                                  !_clearingAll
+                                              ? 1.0
+                                              : 0.0,
+                                          child: IgnorePointer(
+                                            child: Center(
+                                              child: Text(
+                                                "No notifications",
+                                                style: TextStyle(
+                                                  color: Colors.grey,
+                                                  fontSize: w * 0.035,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
                                     ),
                             ),
                           ],
@@ -397,11 +831,18 @@ class _NotificationPopupState extends State<NotificationPopup> {
   }
 }
 
-// ── Single notification item ──────────────────────────────────────────────────
+// ── Single notification item (visual only, no gesture logic) ──────────────────
 class _NotifItem extends StatelessWidget {
   final double width;
   final AppNotification notification;
-  const _NotifItem({required this.width, required this.notification});
+  final bool spaced; // include the bottom gap margin
+  final BorderRadius? borderRadius; // null -> fully rounded (r = 18)
+  const _NotifItem({
+    required this.width,
+    required this.notification,
+    this.spaced = true,
+    this.borderRadius,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -409,11 +850,11 @@ class _NotifItem extends StatelessWidget {
     final w = width;
 
     return Container(
-      margin: EdgeInsets.only(bottom: w * 0.025),
+      margin: spaced ? EdgeInsets.only(bottom: w * 0.025) : EdgeInsets.zero,
       padding: EdgeInsets.all(w * 0.03),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: .65),
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: borderRadius ?? BorderRadius.circular(18),
       ),
       child: Row(
         children: [

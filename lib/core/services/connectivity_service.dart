@@ -17,8 +17,8 @@ Future<bool> hasRealInternet() async {
 }
 
 Future<bool> _pingEndpoint(String url) async {
+  final client = HttpClient();
   try {
-    final client = HttpClient();
     client.connectionTimeout = const Duration(seconds: 5);
     final request = await client.getUrl(Uri.parse(url));
     final response = await request.close();
@@ -26,5 +26,7 @@ Future<bool> _pingEndpoint(String url) async {
     return response.statusCode < 500;
   } catch (_) {
     return false;
+  } finally {
+    client.close(force: true);
   }
 }

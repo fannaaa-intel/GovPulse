@@ -9,6 +9,7 @@ enum SkeletonLayout {
   myReports,
   newsFeed,
   events,
+  changePassword,
 }
 
 // ── Slow connection stage ─────────────────────────────────────────────────────
@@ -429,6 +430,7 @@ class _SkeletonScreen extends StatelessWidget {
       SkeletonLayout.myReports => const _MyReportsSkeletonScreen(),
       SkeletonLayout.newsFeed => const _NewsFeedSkeletonScreen(),
       SkeletonLayout.events => const EventsSkeletonScreen(),
+      SkeletonLayout.changePassword => const _ChangePasswordSkeletonScreen(),
     };
     return Material(color: const Color(0xFFF3F4F6), child: body);
   }
@@ -796,30 +798,6 @@ class _EditProfileSkeletonScreen extends StatelessWidget {
     return SafeArea(
       child: Column(
         children: [
-          Container(
-            padding: EdgeInsets.fromLTRB(
-              w * 0.02,
-              w * 0.04,
-              w * 0.04,
-              w * 0.03,
-            ),
-            color: const Color(0xFFF3F4F6),
-            child: Row(
-              children: [
-                SizedBox(
-                  width: w * 0.13,
-                  child: Center(
-                    child: _Shimmer(
-                      width: w * 0.05,
-                      height: w * 0.05,
-                      radius: w * 0.012,
-                    ),
-                  ),
-                ),
-                _Shimmer(width: w * 0.36, height: w * 0.055, radius: w * 0.012),
-              ],
-            ),
-          ),
           Expanded(
             child: SingleChildScrollView(
               physics: const NeverScrollableScrollPhysics(),
@@ -1663,6 +1641,82 @@ class EventsBodySkeleton extends StatelessWidget {
           SizedBox(height: w * 0.02),
           eventCardList(),
           SizedBox(height: w * 0.04),
+        ],
+      ),
+    );
+  }
+}
+
+class _ChangePasswordSkeletonScreen extends StatelessWidget {
+  const _ChangePasswordSkeletonScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    final w = MediaQuery.of(context).size.width;
+    final size = (w * 0.28).clamp(80.0, 140.0);
+
+    return SafeArea(
+      child: Column(
+        children: [
+          Expanded(
+            child: Container(
+              color: Colors.white,
+              child: SingleChildScrollView(
+                physics: const NeverScrollableScrollPhysics(),
+                padding: EdgeInsets.symmetric(horizontal: w * 0.06),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    SizedBox(height: w * 0.08),
+                    // Icon circle
+                    _Shimmer(width: size, height: size, radius: size / 2),
+                    SizedBox(height: w * 0.07),
+                    // Title
+                    _Shimmer(
+                      width: w * 0.52,
+                      height: w * 0.052,
+                      radius: w * 0.012,
+                    ),
+                    SizedBox(height: w * 0.025),
+                    // Subtitle line 1
+                    _Shimmer(
+                      width: w * 0.64,
+                      height: w * 0.032,
+                      radius: w * 0.008,
+                    ),
+                    SizedBox(height: w * 0.010),
+                    // Subtitle line 2
+                    _Shimmer(
+                      width: w * 0.50,
+                      height: w * 0.032,
+                      radius: w * 0.008,
+                    ),
+                    SizedBox(height: w * 0.07),
+                    // Email field
+                    _Shimmer(
+                      width: double.infinity,
+                      height: w * 0.18,
+                      radius: w * 0.035,
+                    ),
+                    SizedBox(height: w * 0.04),
+                    // Info chip
+                    _Shimmer(
+                      width: double.infinity,
+                      height: w * 0.18,
+                      radius: w * 0.03,
+                    ),
+                    SizedBox(height: w * 0.07),
+                    // Button
+                    _Shimmer(
+                      width: double.infinity,
+                      height: w * 0.138,
+                      radius: w * 0.035,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );

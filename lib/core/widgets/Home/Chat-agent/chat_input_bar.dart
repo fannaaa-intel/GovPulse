@@ -39,6 +39,7 @@ class ChatInputBar extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
+          // ── Text field ───────────────────────────────────────────────────
           Expanded(
             child: Container(
               decoration: BoxDecoration(
@@ -47,7 +48,7 @@ class ChatInputBar extends StatelessWidget {
                 border: Border.all(color: AppColors.stroke, width: 1),
               ),
               child: TextField(
-                key: _chatInputFieldKey, // ← the fix
+                key: _chatInputFieldKey,
                 controller: controller,
                 focusNode: focusNode,
                 maxLines: 4,
@@ -78,7 +79,10 @@ class ChatInputBar extends StatelessWidget {
               ),
             ),
           ),
+
           SizedBox(width: width * 0.022),
+
+          // ── Send button ──────────────────────────────────────────────────
           GestureDetector(
             onTap: onSend,
             child: Container(

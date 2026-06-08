@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
-import 'connectivity_service.dart';
+import '../services/connectivity_service.dart';
 import 'no_internet_screen.dart';
 
 bool? cachedInternetStatus;

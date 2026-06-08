@@ -5,7 +5,8 @@ import '../../../../core/theme/app_colors.dart';
 import '../my_report/my_reports_screen.dart';
 import '../Quick-action/Report/location_picker_screen.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-
+import '../../../../core/services/chat_service.dart';
+import '../Quick-action/Chat-with-Agent/chat_agent_screen.dart';
 // ─── Timeline step model ──────────────────────────────────────────────────────
 
 enum TimelineStepStatus { completed, active, pending }
@@ -45,6 +46,7 @@ class ReportDetailScreen extends StatefulWidget {
 class _ReportDetailScreenState extends State<ReportDetailScreen>
     with TickerProviderStateMixin {
   late final AnimationController _entryCtrl;
+  late final ChatService _chatService;
   late final AnimationController _timelineCtrl;
   late final AnimationController _shimmerCtrl;
 
@@ -57,6 +59,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
   bool get _isRejected => widget.report.status == ReportStatus.rejected;
   bool get _isPending => widget.report.status == ReportStatus.pending;
   bool get _isUnderReview => widget.report.status == ReportStatus.underReview;
+  bool _openingChat = false;
 
   // Determine if the report was forwarded to an external department
   // based on the category — roads/drainage/environment often go to DPWH or DENR
@@ -76,6 +79,23 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
         return 'DENR — Environmental Management Bureau';
       default:
         return 'Concerned Department';
+    }
+  }
+
+  String _departmentFromCategory(String category) {
+    switch (category.toLowerCase()) {
+      case 'road & infrastructure':
+        return 'Engineering Office';
+      case 'waste & garbage':
+        return 'Sanitation Office';
+      case 'drainage & flooding':
+        return 'Engineering Office';
+      case 'streetlight outage':
+        return 'Engineering Office';
+      case 'environment & pollution':
+        return 'Environment Office';
+      default:
+        return "Mayor's Office";
     }
   }
 
@@ -267,6 +287,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
     });
 
     _loadMediaUrls();
+    _chatService = ChatService.forReport('RPT-${widget.report.id}');
   }
 
   @override
@@ -274,6 +295,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
     _entryCtrl.dispose();
     _timelineCtrl.dispose();
     _shimmerCtrl.dispose();
+    _chatService.onChatClosed();
+    _chatService.dispose();
     super.dispose();
   }
 
@@ -2028,21 +2051,33 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
           ),
           SizedBox(width: w * .03),
           ElevatedButton.icon(
-            onPressed: _goToChat,
-            icon: const Icon(
-              Icons.chat_bubble_outline_rounded,
-              color: Colors.white,
-              size: 16,
-            ),
-            label: const Text(
-              'Chat with agent',
-              style: TextStyle(
+            onPressed: _openingChat ? null : _goToChat,
+            icon: _openingChat
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(
+                    Icons.chat_bubble_outline_rounded,
+                    color: Colors.white,
+                    size: 16,
+                  ),
+            label: Text(
+              _openingChat ? 'Opening…' : 'Chat with agent',
+              style: const TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.w700,
               ),
             ),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primaryBlue,
+              disabledBackgroundColor: AppColors.primaryBlue.withValues(
+                alpha: 0.6,
+              ),
               elevation: 0,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -2091,8 +2126,28 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
     );
   }
 
-  void _goToChat() {
-    Navigator.pushNamed(context, '/chat', arguments: widget.username);
+  Future<void> _goToChat() async {
+    if (_openingChat) return; // re-entry guard
+    setState(() => _openingChat = true); // disable button immediately
+    try {
+      await _chatService.openFollowUp(
+        reportRef: 'RPT-${widget.report.id}',
+        reportCategory: widget.report.category,
+        reportStatus: _statusLabel,
+        reportId: widget.report.fullId,
+        reportDepartment: _departmentFromCategory(widget.report.category),
+      );
+      if (!mounted) return;
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) =>
+              ChatAgentScreen(username: widget.username, service: _chatService),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _openingChat = false);
+    }
   }
 }
 

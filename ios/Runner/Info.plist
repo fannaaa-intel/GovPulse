@@ -2,8 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 	<dict>
-		<key>NSCameraUsageDescription</key>
-		<string>This app needs camera access to scan your ID</string>
+
 		<key>LSApplicationQueriesSchemes</key>
 		<array>
 			<string>tel</string>
@@ -43,8 +42,11 @@
 		<string>$(FLUTTER_BUILD_NUMBER)</string>
 		<key>LSRequiresIPhoneOS</key>
 		<true/>
+		<key>GMSApiKey</key>
+<string>$(MAPS_API_KEY)</string>
 		<key>UIApplicationSceneManifest</key>
 		<dict>
+
 			<key>UIApplicationSupportsMultipleScenes</key>
 			<false/>
 			<key>UISceneConfigurations</key>
