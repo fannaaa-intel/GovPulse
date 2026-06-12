@@ -12,6 +12,9 @@ import '../../../core/widgets/modal/verification_required_dialog.dart';
 import '../Quick-action/Report/report_issue_screen.dart';
 import '../Quick-action/Chat-with-Agent/chat_agent_screen.dart';
 import '../Quick-action/Suggestion/suggestion_screen.dart';
+// ─── NEW ──────────────────────────────────────────────────────────────────────
+import '../Quick-action/Feedback/feedback_screen.dart';
+// ─────────────────────────────────────────────────────────────────────────────
 
 import '../../../core/widgets/Home/nav/home_bottom_nav.dart';
 import '../../../core/widgets/Home/nav/home_top_nav.dart';
@@ -60,12 +63,7 @@ class _HomePageState extends ConsumerState<HomePage>
   //   width >= _kTopNavBreakpoint   → WEB body      + top nav      (desktop)
   static const double _kMobileBreakpoint = 600;
   static const double _kTopNavBreakpoint = 900;
-  // Mobile sections scale every dimension off the width they receive. Capping
-  // that width keeps phone proportions stable across the whole < 600 band:
-  // true phones (≤ this) are unchanged; 480–600 windows get a centered,
-  // phone-width column instead of ballooned fonts/avatars.
   static const double _kMobileContentMax = 480;
-
   static const double _kTwoColumnBreakpoint = 1100;
   static const double _kNavCompactBelow = 1050;
   static const double _kDashboardMaxWidth = 1280;
@@ -88,7 +86,7 @@ class _HomePageState extends ConsumerState<HomePage>
     _initNotifications();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      precacheImage(const AssetImage('assets/images/bg.png'), context);
+      precacheImage(const AssetImage('assets/images/bg.webp'), context);
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -130,7 +128,6 @@ class _HomePageState extends ConsumerState<HomePage>
 
   @override
   void didPopNext() {}
-
   @override
   void didPush() {}
   @override
@@ -168,17 +165,19 @@ class _HomePageState extends ConsumerState<HomePage>
     child: SlideTransition(position: _slideAnim(i), child: child),
   );
 
+  /// Instant push — the destination screen's AnimationController handles the
+  /// slide-up of its own content, so there is no double-animation.
   Route<T> _quickActionRoute<T>(Widget page) {
     return PageRouteBuilder<T>(
-      // Entry is instant — the screen's own content does the slide-up.
       transitionDuration: Duration.zero,
-      // Back animates: fade out, no slide.
       reverseTransitionDuration: const Duration(milliseconds: 300),
       pageBuilder: (_, _, _) => page,
       transitionsBuilder: (_, anim, _, child) =>
           FadeTransition(opacity: anim, child: child),
     );
   }
+
+  // ── Navigation helpers ────────────────────────────────────────────────────
 
   void _goToNewsFeed() {
     Navigator.pushNamed(
@@ -227,6 +226,26 @@ class _HomePageState extends ConsumerState<HomePage>
     );
   }
 
+  // ─── NEW ────────────────────────────────────────────────────────────────────
+  void _goToFeedback() {
+    if (_verifStatus != VerifStatus.verified) {
+      showVerificationRequiredDialog(
+        context,
+        message:
+            'Only verified Aparri citizens can submit feedback. '
+            'Please complete your identity verification first.',
+      );
+      return;
+    }
+    Navigator.push(
+      context,
+      _quickActionRoute(
+        NetworkWrapper(child: FeedbackScreen(username: widget.username)),
+      ),
+    );
+  }
+  // ────────────────────────────────────────────────────────────────────────────
+
   void _goToEvents() {
     Navigator.push(
       context,
@@ -271,13 +290,14 @@ class _HomePageState extends ConsumerState<HomePage>
     Navigator.pushNamed(context, '/verification', arguments: widget.username);
   }
 
+  // ─── Quick-action dispatcher ─────────────────────────────────────────────
   void _handleQuickAction(String key) {
     switch (key) {
-      case 'chat':
-        _goToChat();
-        break;
       case 'report':
         _goToReport();
+        break;
+      case 'chat':
+        _goToChat();
         break;
       case 'events':
         _goToEvents();
@@ -285,6 +305,11 @@ class _HomePageState extends ConsumerState<HomePage>
       case 'suggestion':
         _goToSuggestion();
         break;
+      // ─── NEW ─────────────────────────────────────────────────────────────
+      case 'feedback':
+        _goToFeedback();
+        break;
+      // ─────────────────────────────────────────────────────────────────────
     }
   }
 
@@ -370,7 +395,7 @@ class _HomePageState extends ConsumerState<HomePage>
               ),
               const SizedBox(height: 8),
               const Text(
-                'You\'ll need to sign in again to access your account.',
+                "You'll need to sign in again to access your account.",
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 13,
@@ -497,24 +522,21 @@ class _HomePageState extends ConsumerState<HomePage>
     }
   }
 
+  // ── BUILD ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
     final width = size.width;
     final height = size.height;
 
-    // ── Read from provider ────────────────────────────────────────────────
     final profileAsync = ref.watch(userProfileProvider);
-
     final profile = profileAsync.valueOrNull;
     final verifStatus = profile?.verifStatus ?? VerifStatus.none;
     final facePhotoUrl = profile?.facePhotoUrl;
     final facePhotoPath = profile?.facePhotoPath;
     final fullName = profile?.fullName;
     final profileLoading = profileAsync.isLoading;
-    // Bottom-nav mobile body is for the native app only. On web we always use
-    // the web body: top nav when wide, hamburger drawer when narrow — never
-    // the bottom nav, no matter how small the browser window gets.
+
     final bool useMobile = !kIsWeb && width < _kMobileBreakpoint;
     final bool useTopNav = width >= _kTopNavBreakpoint;
     final bool useDrawer = !useMobile && !useTopNav;
@@ -536,7 +558,6 @@ class _HomePageState extends ConsumerState<HomePage>
       child: Scaffold(
         extendBody: true,
         backgroundColor: useMobile ? Colors.white : const Color(0xFFF3F6FC),
-        // Drawer app bar ONLY in the 600–900 band.
         appBar: useDrawer ? _buildDrawerAppBar(width) : null,
         drawer: useDrawer
             ? HomeNavDrawer(
@@ -549,7 +570,6 @@ class _HomePageState extends ConsumerState<HomePage>
                 onLogout: _handleLogout,
               )
             : null,
-
         body: LoadingOverlay.bodyOrSkeleton(
           isLoading: profileLoading,
           layout: SkeletonLayout.home,
@@ -576,8 +596,6 @@ class _HomePageState extends ConsumerState<HomePage>
                   profileLoading: profileLoading,
                 ),
         ),
-
-        // Bottom nav ONLY on mobile.
         bottomNavigationBar: useMobile
             ? HomeBottomNav(
                 width: width,
@@ -667,7 +685,7 @@ class _HomePageState extends ConsumerState<HomePage>
         fit: StackFit.expand,
         children: [
           Image.asset(
-            'assets/images/bg.png',
+            'assets/images/bg.webp',
             fit: BoxFit.cover,
             errorBuilder: (_, _, _) => Container(
               decoration: const BoxDecoration(
@@ -719,7 +737,6 @@ class _HomePageState extends ConsumerState<HomePage>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // ── Top navigation bar (wide only) ─────────────────────
             if (showTopNav)
               HomeTopNav(
                 currentIndex: _navIndex,
@@ -737,8 +754,6 @@ class _HomePageState extends ConsumerState<HomePage>
                     ? 'pending'
                     : 'none',
               ),
-
-            // ── Hero section ───────────────────────────────────────
             _animated(
               0,
               HomeHeroSection(
@@ -753,8 +768,6 @@ class _HomePageState extends ConsumerState<HomePage>
                 contentMaxWidth: _kDashboardMaxWidth,
               ),
             ),
-
-            // ── Two-column / single-column content ─────────────────
             Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(
@@ -774,11 +787,7 @@ class _HomePageState extends ConsumerState<HomePage>
                 ),
               ),
             ),
-
-            // ── Stats bar ──────────────────────────────────────────
             _animated(3, const HomeStatsBar()),
-
-            // ── Footer ────────────────────────────────────────────
             _animated(4, const HomeFooter()),
           ],
         ),
@@ -797,18 +806,15 @@ class _HomePageState extends ConsumerState<HomePage>
           leftWidth: leftW,
           rightWidth: rightW,
           gap: _kColGap,
-          left: (matchedHeight) => _animated(
+          left: (h) => _animated(
             1,
-            HomeCommunitySectionWeb(
-              onViewAll: _goToNewsFeed,
-              height: matchedHeight,
-            ),
+            HomeCommunitySectionWeb(onViewAll: _goToNewsFeed, height: h),
           ),
-          right: (matchedHeight) => _animated(
+          right: (h) => _animated(
             2,
             HomeQuickActionsSectionWeb(
               onActionTap: _handleQuickAction,
-              height: matchedHeight,
+              height: h,
             ),
           ),
         );
@@ -838,7 +844,7 @@ class _HomePageState extends ConsumerState<HomePage>
       surfaceTintColor: Colors.white,
       iconTheme: const IconThemeData(color: Color(0xFF374151)),
       title: Image.asset(
-        'assets/images/applogocrop.png',
+        'assets/images/applogocrop.webp',
         height: 32,
         errorBuilder: (_, _, _) => const Text(
           'Aparri',
@@ -860,7 +866,7 @@ class _HomePageState extends ConsumerState<HomePage>
             clipBehavior: Clip.none,
             children: [
               Image.asset(
-                'assets/images/notifications.png',
+                'assets/images/notifications.webp',
                 width: 28,
                 height: 28,
                 errorBuilder: (_, _, _) =>
@@ -901,6 +907,8 @@ class _HomePageState extends ConsumerState<HomePage>
   }
 }
 
+// ── Equal-height two-column layout ────────────────────────────────────────────
+
 class _EqualHeightColumns extends StatefulWidget {
   final double leftWidth;
   final double rightWidth;
@@ -938,20 +946,12 @@ class _EqualHeightColumnsState extends State<_EqualHeightColumns> {
   void _measure() {
     if (!mounted) return;
     try {
-      final leftCtx = _leftKey.currentContext;
-      final rightCtx = _rightKey.currentContext;
-      if (leftCtx == null || rightCtx == null) {
-        _scheduleMeasure();
-        return;
-      }
-
-      final lh = leftCtx.size?.height;
-      final rh = rightCtx.size?.height;
+      final lh = _leftKey.currentContext?.size?.height;
+      final rh = _rightKey.currentContext?.size?.height;
       if (lh == null || rh == null) {
         _scheduleMeasure();
         return;
       }
-
       final target = math.max(lh, rh);
       if (target > 0 &&
           (_matched == null || (_matched! - target).abs() > 0.5)) {
@@ -972,7 +972,6 @@ class _EqualHeightColumnsState extends State<_EqualHeightColumns> {
   @override
   Widget build(BuildContext context) {
     _scheduleMeasure();
-
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

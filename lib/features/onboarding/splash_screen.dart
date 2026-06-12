@@ -86,7 +86,7 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
     super.didChangeDependencies();
     // Decode the logo before the animation needs it, so the logo-scale
     // step doesn't drop a frame.
-    precacheImage(const AssetImage('assets/images/applogo.png'), context);
+    precacheImage(const AssetImage('assets/images/applogo.webp'), context);
   }
 
   Future<void> _navigateNext() async {
@@ -340,7 +340,7 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
                                 child: Transform.scale(
                                   scale: _logoScale.value,
                                   child: Image.asset(
-                                    'assets/images/applogo.png',
+                                    'assets/images/applogo.webp',
                                     width: 70,
                                   ),
                                 ),

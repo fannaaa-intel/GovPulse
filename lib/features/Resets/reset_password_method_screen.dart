@@ -20,8 +20,13 @@ class ResetPasswordMethodScreen extends StatefulWidget {
 }
 
 class _ResetPasswordMethodScreenState extends State<ResetPasswordMethodScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late AnimationController _heroController;
+
+  // ── Content entrance: instant screen, content fades + slides up ──────────
+  late final AnimationController _entranceController;
+  late final Animation<double> _fadeAnim;
+  late final Animation<Offset> _slideAnim;
 
   @override
   void initState() {
@@ -30,11 +35,32 @@ class _ResetPasswordMethodScreenState extends State<ResetPasswordMethodScreen>
       vsync: this,
       duration: const Duration(seconds: 8),
     )..repeat(reverse: true);
+
+    _entranceController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
+    _fadeAnim = CurvedAnimation(
+      parent: _entranceController,
+      curve: Curves.easeOut,
+    );
+    _slideAnim = Tween<Offset>(begin: const Offset(0, 0.06), end: Offset.zero)
+        .animate(
+          CurvedAnimation(
+            parent: _entranceController,
+            curve: Curves.easeOutCubic,
+          ),
+        );
+
+    Future.delayed(const Duration(milliseconds: 80), () {
+      if (mounted) _entranceController.forward();
+    });
   }
 
   @override
   void dispose() {
     _heroController.dispose();
+    _entranceController.dispose();
     super.dispose();
   }
 
@@ -53,165 +79,174 @@ class _ResetPasswordMethodScreenState extends State<ResetPasswordMethodScreen>
       backgroundColor: Colors.white,
       resizeToAvoidBottomInset: true,
       body: SafeArea(
-        child: MobileFormShell(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 28),
-            child: Column(
-              children: [
-                const SizedBox(height: 20),
-
-                Image.asset(
-                  "assets/images/applogocrop.png",
-                  width: (w * 0.46).clamp(0.0, 200.0).toDouble(),
-                ),
-
-                const SizedBox(height: 20),
-
-                Text(
-                  "Reset Your Password",
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.primaryBlue,
-                  ),
-                ),
-
-                const SizedBox(height: 8),
-
-                Text(
-                  "Choose how you want to receive a\nverification code.",
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
-                ),
-
-                const SizedBox(height: 40),
-
-                SizedBox(
-                  width: double.infinity,
-                  height: 56,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primaryBlue,
-                      elevation: 3,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                    onPressed: widget.onEmailTap,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Image.asset(
-                          "assets/images/email.png",
-                          width: 22,
-                          height: 22,
-                          color: Colors.white,
-                        ),
-                        const SizedBox(width: 12),
-                        const Text(
-                          "Email Address",
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
-                SizedBox(
-                  width: double.infinity,
-                  height: 56,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primaryBlue,
-                      elevation: 3,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                    onPressed: widget.onPhoneTap,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Image.asset(
-                          "assets/images/phone.png",
-                          width: 22,
-                          height: 22,
-                          color: Colors.white,
-                        ),
-                        const SizedBox(width: 12),
-                        const Text(
-                          "Phone Number",
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 36),
-
-                Row(
+        child: FadeTransition(
+          opacity: _fadeAnim,
+          child: SlideTransition(
+            position: _slideAnim,
+            child: MobileFormShell(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 28),
+                child: Column(
                   children: [
-                    Expanded(child: Divider(color: Colors.grey.shade300)),
-                    const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 10),
-                      child: Text(
-                        "Or Return to",
-                        style: TextStyle(fontSize: 13, color: Colors.grey),
+                    const SizedBox(height: 20),
+
+                    Image.asset(
+                      "assets/images/applogocrop.webp",
+                      width: (w * 0.46).clamp(0.0, 200.0).toDouble(),
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    Text(
+                      "Reset Your Password",
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.primaryBlue,
                       ),
                     ),
-                    Expanded(child: Divider(color: Colors.grey.shade300)),
+
+                    const SizedBox(height: 8),
+
+                    Text(
+                      "Choose how you want to receive a\nverification code.",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+
+                    const SizedBox(height: 40),
+
+                    SizedBox(
+                      width: double.infinity,
+                      height: 56,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primaryBlue,
+                          elevation: 3,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        onPressed: widget.onEmailTap,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Image.asset(
+                              "assets/images/email.webp",
+                              width: 22,
+                              height: 22,
+                              color: Colors.white,
+                            ),
+                            const SizedBox(width: 12),
+                            const Text(
+                              "Email Address",
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    SizedBox(
+                      width: double.infinity,
+                      height: 56,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primaryBlue,
+                          elevation: 3,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        onPressed: widget.onPhoneTap,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Image.asset(
+                              "assets/images/phone.webp",
+                              width: 22,
+                              height: 22,
+                              color: Colors.white,
+                            ),
+                            const SizedBox(width: 12),
+                            const Text(
+                              "Phone Number",
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 36),
+
+                    Row(
+                      children: [
+                        Expanded(child: Divider(color: Colors.grey.shade300)),
+                        const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 10),
+                          child: Text(
+                            "Or Return to",
+                            style: TextStyle(fontSize: 13, color: Colors.grey),
+                          ),
+                        ),
+                        Expanded(child: Divider(color: Colors.grey.shade300)),
+                      ],
+                    ),
+
+                    const SizedBox(height: 18),
+
+                    SizedBox(
+                      height: 54,
+                      width: 170,
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(color: Colors.grey.shade300),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        onPressed: () => Navigator.pop(context),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Image.asset(
+                              "assets/images/out.webp",
+                              width: 20,
+                              height: 20,
+                              color: AppColors.primaryBlue,
+                            ),
+                            const SizedBox(width: 10),
+                            Text(
+                              "Log In",
+                              style: TextStyle(
+                                color: AppColors.primaryBlue,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 25),
                   ],
                 ),
-
-                const SizedBox(height: 18),
-
-                SizedBox(
-                  height: 54,
-                  width: 170,
-                  child: OutlinedButton(
-                    style: OutlinedButton.styleFrom(
-                      side: BorderSide(color: Colors.grey.shade300),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                    onPressed: () => Navigator.pop(context),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Image.asset(
-                          "assets/images/out.png",
-                          width: 20,
-                          height: 20,
-                          color: AppColors.primaryBlue,
-                        ),
-                        const SizedBox(width: 10),
-                        Text(
-                          "Log In",
-                          style: TextStyle(
-                            color: AppColors.primaryBlue,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 25),
-              ],
+              ),
             ),
           ),
         ),

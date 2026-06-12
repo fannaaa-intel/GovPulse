@@ -161,22 +161,22 @@ class _VerificationScreenState extends State<VerificationScreen>
                   ),
                   children: [
                     _featureCard(
-                      icon: "assets/images/verification/access.png",
+                      icon: "assets/images/verification/access.webp",
                       title: "Access Full Services",
                       subtitle: "Unlock all LGU features",
                     ),
                     _featureCard(
-                      icon: "assets/images/verification/checksec.png",
+                      icon: "assets/images/verification/checksec.webp",
                       title: "Secure & Trusted",
                       subtitle: "Safe and protected account",
                     ),
                     _featureCard(
-                      icon: "assets/images/verification/faster.png",
+                      icon: "assets/images/verification/faster.webp",
                       title: "Faster Transaction",
                       subtitle: "Quick processing of request",
                     ),
                     _featureCard(
-                      icon: "assets/images/verification/verified.png",
+                      icon: "assets/images/verification/verified.webp",
                       title: "Verified Access",
                       subtitle: "Be recognized as a verified citizen",
                     ),

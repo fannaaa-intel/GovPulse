@@ -16,7 +16,7 @@ class HomeQuickActionsSectionWeb extends StatelessWidget {
   static const List<_ActionDef> _actions = [
     _ActionDef(
       key: 'chat',
-      iconPath: 'assets/images/customer.png',
+      iconPath: 'assets/images/customer.webp',
       fallback: Icons.support_agent_rounded,
       title: 'Chat with Agent',
       subtitle: 'Talk to our support team',
@@ -27,7 +27,7 @@ class HomeQuickActionsSectionWeb extends StatelessWidget {
     ),
     _ActionDef(
       key: 'report',
-      iconPath: 'assets/images/problem.png',
+      iconPath: 'assets/images/problem.webp',
       fallback: Icons.report_problem_rounded,
       title: 'Report an Issue',
       subtitle: 'Report problems in your community',
@@ -38,7 +38,7 @@ class HomeQuickActionsSectionWeb extends StatelessWidget {
     ),
     _ActionDef(
       key: 'events',
-      iconPath: 'assets/images/events.png',
+      iconPath: 'assets/images/events.webp',
       fallback: Icons.event_rounded,
       title: 'View Events',
       subtitle: 'Discover upcoming events in Aparri',
@@ -49,7 +49,7 @@ class HomeQuickActionsSectionWeb extends StatelessWidget {
     ),
     _ActionDef(
       key: 'suggestion',
-      iconPath: 'assets/images/suggestions.png',
+      iconPath: 'assets/images/suggestions.webp',
       fallback: Icons.lightbulb_rounded,
       title: 'Submit Suggestion',
       subtitle: 'Share your ideas for a better Aparri',
@@ -58,6 +58,19 @@ class HomeQuickActionsSectionWeb extends StatelessWidget {
       accent: Color(0xFF8B5CF6),
       iconBg: Color(0xFFF5F3FF),
     ),
+    // ─── NEW ────────────────────────────────────────────────────────────────
+    _ActionDef(
+      key: 'feedback',
+      iconPath: 'assets/images/feedback.webp',
+      fallback: Icons.star_rounded,
+      title: 'Feedback',
+      subtitle: 'Rate and review LGU services',
+      gradA: Color(0xFFC084FC),
+      gradB: Color(0xFF7C3AED),
+      accent: Color(0xFF8B5CF6),
+      iconBg: Color(0xFFFAF5FF),
+    ),
+    // ────────────────────────────────────────────────────────────────────────
   ];
 
   @override
@@ -117,16 +130,49 @@ class HomeQuickActionsSectionWeb extends StatelessWidget {
           ),
 
           const SizedBox(height: 18),
-          // ── Action list — use LayoutBuilder so the tile can read its
-          // own width and scale the icon container accordingly.
+
+          // ── Action list — LayoutBuilder so each tile reads its own
+          // available width and adapts icon / font sizing accordingly.
           LayoutBuilder(
             builder: (context, constraints) {
-              // FIX: pass the available tile width down so _ActionTile can
-              // scale its icon box. On a narrow right column (≈ 380 px at
-              // 1100 px two-column layout) a 46×46 box is fine; below 340 px
-              // (single-column narrow web) we shrink to 38×38.
               final tileWidth = constraints.maxWidth;
-              final isCompact = tileWidth < 340;
+
+              // Three breakpoint tiers:
+              //   wide   ≥ 420 px  – full-size icons & fonts
+              //   normal 340–419   – standard compact
+              //   narrow < 340     – extra-compact (single-column narrow web)
+              final _TileSizing sizing = tileWidth >= 420
+                  ? const _TileSizing(
+                      boxSize: 48,
+                      imgSize: 25,
+                      titleFs: 14,
+                      subFs: 12,
+                      hPad: 14,
+                      vPad: 12,
+                      gap: 14,
+                      maxSubLines: 2,
+                    )
+                  : tileWidth >= 340
+                  ? const _TileSizing(
+                      boxSize: 42,
+                      imgSize: 22,
+                      titleFs: 13,
+                      subFs: 11,
+                      hPad: 12,
+                      vPad: 10,
+                      gap: 12,
+                      maxSubLines: 1,
+                    )
+                  : const _TileSizing(
+                      boxSize: 36,
+                      imgSize: 18,
+                      titleFs: 12,
+                      subFs: 10,
+                      hPad: 10,
+                      vPad: 9,
+                      gap: 10,
+                      maxSubLines: 1,
+                    );
 
               return Column(
                 children: [
@@ -134,7 +180,7 @@ class HomeQuickActionsSectionWeb extends StatelessWidget {
                     _ActionTile(
                       def: _actions[i],
                       onTap: () => onActionTap(_actions[i].key),
-                      compact: isCompact,
+                      sizing: sizing,
                     ),
                     if (i < _actions.length - 1)
                       Container(
@@ -157,6 +203,32 @@ class HomeQuickActionsSectionWeb extends StatelessWidget {
     return panel;
   }
 }
+
+// ── Sizing token bag ──────────────────────────────────────────────────────────
+
+class _TileSizing {
+  final double boxSize;
+  final double imgSize;
+  final double titleFs;
+  final double subFs;
+  final double hPad;
+  final double vPad;
+  final double gap;
+  final int maxSubLines;
+
+  const _TileSizing({
+    required this.boxSize,
+    required this.imgSize,
+    required this.titleFs,
+    required this.subFs,
+    required this.hPad,
+    required this.vPad,
+    required this.gap,
+    required this.maxSubLines,
+  });
+}
+
+// ── Action definition ─────────────────────────────────────────────────────────
 
 class _ActionDef {
   final String key;
@@ -183,18 +255,16 @@ class _ActionDef {
 }
 
 // ── Action tile ───────────────────────────────────────────────────────────────
+
 class _ActionTile extends StatefulWidget {
   final _ActionDef def;
   final VoidCallback onTap;
-
-  /// When true the tile is inside a narrow panel (< 340 px). Icon box and
-  /// fonts shrink slightly to prevent overflow.
-  final bool compact;
+  final _TileSizing sizing;
 
   const _ActionTile({
     required this.def,
     required this.onTap,
-    required this.compact,
+    required this.sizing,
   });
 
   @override
@@ -207,14 +277,7 @@ class _ActionTileState extends State<_ActionTile> {
   @override
   Widget build(BuildContext context) {
     final d = widget.def;
-    final c = widget.compact;
-
-    // FIX: icon container and image scale with the tile width so the icon
-    // never looks oversized on a narrow right column or undersized on wide.
-    final double boxSize = c ? 38.0 : 46.0;
-    final double imgSize = c ? 20.0 : 24.0;
-    final double titleFs = c ? 12.5 : 13.5;
-    final double subFs = c ? 10.5 : 11.5;
+    final s = widget.sizing;
 
     return MouseRegion(
       cursor: SystemMouseCursors.click,
@@ -225,10 +288,7 @@ class _ActionTileState extends State<_ActionTile> {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeInOut,
-          padding: EdgeInsets.symmetric(
-            horizontal: c ? 10.0 : 14.0,
-            vertical: c ? 9.0 : 11.0,
-          ),
+          padding: EdgeInsets.symmetric(horizontal: s.hPad, vertical: s.vPad),
           decoration: BoxDecoration(
             // Gray-flash fix: fade from d.iconBg at ZERO opacity so the RGB
             // channel never changes — only alpha 0→1 moves.
@@ -245,8 +305,8 @@ class _ActionTileState extends State<_ActionTile> {
               AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 curve: Curves.easeInOut,
-                width: boxSize,
-                height: boxSize,
+                width: s.boxSize,
+                height: s.boxSize,
                 decoration: BoxDecoration(
                   gradient: _hover
                       ? LinearGradient(
@@ -274,21 +334,19 @@ class _ActionTileState extends State<_ActionTile> {
                 child: Center(
                   child: Image.asset(
                     d.iconPath,
-                    // FIX: image size scales with boxSize so it never looks
-                    // clipped on compact tiles or oversized on wide ones.
-                    width: imgSize,
-                    height: imgSize,
+                    width: s.imgSize,
+                    height: s.imgSize,
                     fit: BoxFit.contain,
                     errorBuilder: (_, _, _) => Icon(
                       d.fallback,
-                      size: imgSize,
+                      size: s.imgSize,
                       color: _hover ? Colors.white : d.accent,
                     ),
                   ),
                 ),
               ),
 
-              SizedBox(width: c ? 10.0 : 14.0),
+              SizedBox(width: s.gap),
 
               // ── Labels ────────────────────────────────────────────
               Expanded(
@@ -300,7 +358,7 @@ class _ActionTileState extends State<_ActionTile> {
                       duration: const Duration(milliseconds: 200),
                       curve: Curves.easeInOut,
                       style: TextStyle(
-                        fontSize: titleFs,
+                        fontSize: s.titleFs,
                         fontWeight: FontWeight.w700,
                         color: _hover ? d.accent : const Color(0xFF111827),
                       ),
@@ -313,10 +371,10 @@ class _ActionTileState extends State<_ActionTile> {
                     const SizedBox(height: 1),
                     Text(
                       d.subtitle,
-                      maxLines: c ? 1 : 2,
+                      maxLines: s.maxSubLines,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: subFs,
+                        fontSize: s.subFs,
                         color: const Color(0xFF9CA3AF),
                         height: 1.3,
                       ),

@@ -94,7 +94,7 @@ class ChatInputBar extends StatelessWidget {
               ),
               child: Center(
                 child: Image.asset(
-                  'assets/images/send.png',
+                  'assets/images/send.webp',
                   width: width * 0.046,
                   height: width * 0.046,
                   fit: BoxFit.contain,

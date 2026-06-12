@@ -454,7 +454,7 @@ class _MyReportsScreenState extends State<MyReportsScreen>
         mainAxisSize: MainAxisSize.min,
         children: [
           Image.asset(
-            'assets/images/newslogo.png',
+            'assets/images/newslogo.webp',
             height: w * .075,
             fit: BoxFit.contain,
             alignment: Alignment.centerLeft,
@@ -1050,17 +1050,17 @@ class _MyReportsScreenState extends State<MyReportsScreen>
   String _categoryImagePath(String key) {
     switch (key) {
       case 'road':
-        return 'assets/images/report/roadtwo.png';
+        return 'assets/images/report/roadtwo.webp';
       case 'waste':
-        return 'assets/images/report/bin.png';
+        return 'assets/images/report/bin.webp';
       case 'drainage':
-        return 'assets/images/report/road.png';
+        return 'assets/images/report/road.webp';
       case 'streetlight':
-        return 'assets/images/report/lamppost.png';
+        return 'assets/images/report/lamppost.webp';
       case 'environment':
-        return 'assets/images/report/leaf.png';
+        return 'assets/images/report/leaf.webp';
       default:
-        return 'assets/images/report/menu.png';
+        return 'assets/images/report/menu.webp';
     }
   }
 

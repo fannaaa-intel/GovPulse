@@ -160,7 +160,7 @@ class _AgentAvatar extends StatelessWidget {
       ),
       child: Center(
         child: Image.asset(
-          'assets/images/customer.png',
+          'assets/images/customer.webp',
           width: width * 0.042,
           fit: BoxFit.contain,
           errorBuilder: (_, _, _) => Icon(

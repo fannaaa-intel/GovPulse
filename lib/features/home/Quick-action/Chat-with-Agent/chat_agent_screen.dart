@@ -344,7 +344,7 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
           ),
           SizedBox(width: width * 0.03),
           Image.asset(
-            'assets/images/newslogo.png',
+            'assets/images/newslogo.webp',
             height: width * 0.080,
             fit: BoxFit.contain,
             errorBuilder: (_, _, _) => Row(

@@ -162,7 +162,7 @@ class WebCardHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Image.asset("assets/images/applogocrop.png", height: 44),
+        Image.asset("assets/images/applogocrop.webp", height: 44),
         const SizedBox(height: 28),
         Text(title, textAlign: TextAlign.center, style: WebUi.title),
         const SizedBox(height: 8),

@@ -201,37 +201,37 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
     {
       'key': 'road',
       'label': 'Road &\nInfrastructure',
-      'icon': 'assets/images/report/roadtwo.png',
+      'icon': 'assets/images/report/roadtwo.webp',
       'fallbackIcon': Icons.add_road_rounded,
     },
     {
       'key': 'waste',
       'label': 'Waste &\nGarbage',
-      'icon': 'assets/images/report/bin.png',
+      'icon': 'assets/images/report/bin.webp',
       'fallbackIcon': Icons.delete_outline,
     },
     {
       'key': 'drainage',
       'label': 'Drainage &\nFlooding',
-      'icon': 'assets/images/report/road.png',
+      'icon': 'assets/images/report/road.webp',
       'fallbackIcon': Icons.water,
     },
     {
       'key': 'streetlight',
       'label': 'Streetlight\nOutage',
-      'icon': 'assets/images/report/lamppost.png',
+      'icon': 'assets/images/report/lamppost.webp',
       'fallbackIcon': Icons.light,
     },
     {
       'key': 'environment',
       'label': 'Environment &\nPollution',
-      'icon': 'assets/images/report/leaf.png',
+      'icon': 'assets/images/report/leaf.webp',
       'fallbackIcon': Icons.eco,
     },
     {
       'key': 'others',
       'label': 'Others',
-      'icon': 'assets/images/report/menu.png',
+      'icon': 'assets/images/report/menu.webp',
       'fallbackIcon': Icons.more_horiz,
     },
   ];
@@ -695,7 +695,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
           ),
           SizedBox(width: width * 0.03),
           Image.asset(
-            'assets/images/newslogo.png',
+            'assets/images/newslogo.webp',
             height: width * 0.085,
             fit: BoxFit.contain,
             errorBuilder: (_, _, _) => Row(
@@ -771,7 +771,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
               ),
             ),
             Image.asset(
-              'assets/images/report/clipboard.png',
+              'assets/images/report/clipboard.webp',
               width: width * 0.22,
               height: width * 0.22,
               fit: BoxFit.contain,
@@ -1302,7 +1302,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
             const SizedBox(height: 16),
             ListTile(
               leading: Image.asset(
-                'assets/images/report/gallery.png',
+                'assets/images/report/gallery.webp',
                 width: 28,
                 height: 28,
                 errorBuilder: (_, _, _) => Icon(
@@ -1315,7 +1315,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
             ),
             ListTile(
               leading: Image.asset(
-                'assets/images/report/video.png',
+                'assets/images/report/video.webp',
                 width: 28,
                 height: 28,
                 errorBuilder: (_, _, _) =>
@@ -1326,7 +1326,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
             ),
             ListTile(
               leading: Image.asset(
-                'assets/images/report/cameraicon.png',
+                'assets/images/report/cameraicon.webp',
                 width: 28,
                 height: 28,
                 errorBuilder: (_, _, _) => Icon(
@@ -1384,7 +1384,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
             mainAxisSize: MainAxisSize.min,
             children: [
               Image.asset(
-                'assets/images/report/sad_face.png',
+                'assets/images/report/sad_face.webp',
                 width: 72,
                 height: 72,
                 errorBuilder: (_, _, _) => const Icon(
@@ -1520,7 +1520,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Image.asset(
-                    'assets/images/report/camera.png',
+                    'assets/images/report/camera.webp',
                     width: width * 0.10,
                     height: width * 0.10,
                     errorBuilder: (_, _, _) => Icon(
@@ -1579,7 +1579,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
                       ),
                       child: Center(
                         child: Image.asset(
-                          'assets/images/report/plus_sign.png',
+                          'assets/images/report/plus_sign.webp',
                           width: width * 0.07,
                           height: width * 0.07,
                           errorBuilder: (_, _, _) => Icon(
@@ -1968,7 +1968,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
         child: Row(
           children: [
             Image.asset(
-              'assets/images/report/padlock.png',
+              'assets/images/report/padlock.webp',
               width: width * 0.07,
               height: width * 0.07,
               errorBuilder: (_, _, _) => Icon(

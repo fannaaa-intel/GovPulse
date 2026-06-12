@@ -696,7 +696,7 @@ class _HomeChatBubbleState extends State<HomeChatBubble>
                         ),
                         child: Center(
                           child: Image.asset(
-                            'assets/images/customer.png',
+                            'assets/images/customer.webp',
                             width: _bubbleSize * 0.50,
                             height: _bubbleSize * 0.50,
                             color: Colors.white,

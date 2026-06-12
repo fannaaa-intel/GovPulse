@@ -16,11 +16,44 @@ class OtpLoadingScreen extends StatefulWidget {
   State<OtpLoadingScreen> createState() => _OtpLoadingScreenState();
 }
 
-class _OtpLoadingScreenState extends State<OtpLoadingScreen> {
+class _OtpLoadingScreenState extends State<OtpLoadingScreen>
+    with SingleTickerProviderStateMixin {
+  // ── Content entrance: instant screen, content fades + slides up ──────────
+  late final AnimationController _entranceController;
+  late final Animation<double> _fadeAnim;
+  late final Animation<Offset> _slideAnim;
+
   @override
   void initState() {
     super.initState();
+
+    _entranceController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
+    _fadeAnim = CurvedAnimation(
+      parent: _entranceController,
+      curve: Curves.easeOut,
+    );
+    _slideAnim = Tween<Offset>(begin: const Offset(0, 0.06), end: Offset.zero)
+        .animate(
+          CurvedAnimation(
+            parent: _entranceController,
+            curve: Curves.easeOutCubic,
+          ),
+        );
+
+    Future.delayed(const Duration(milliseconds: 80), () {
+      if (mounted) _entranceController.forward();
+    });
+
     _startProcess();
+  }
+
+  @override
+  void dispose() {
+    _entranceController.dispose();
+    super.dispose();
   }
 
   Future<void> _startProcess() async {
@@ -74,7 +107,7 @@ class _OtpLoadingScreenState extends State<OtpLoadingScreen> {
               children: [
                 // Logo
                 Image.asset(
-                  'assets/images/applogocrop.png',
+                  'assets/images/applogocrop.webp',
                   width: 72,
                   height: 72,
                 ),
@@ -133,26 +166,32 @@ class _OtpLoadingScreenState extends State<OtpLoadingScreen> {
       child: Scaffold(
         backgroundColor: Colors.grey[100],
         body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Image.asset('assets/images/applogocrop.png', width: 150),
-              const SizedBox(height: 40),
-              Image.asset('assets/images/loading.gif', width: 200),
-              const SizedBox(height: 20),
-              const Text(
-                "Please wait...",
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+          child: FadeTransition(
+            opacity: _fadeAnim,
+            child: SlideTransition(
+              position: _slideAnim,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Image.asset('assets/images/applogocrop.webp', width: 150),
+                  const SizedBox(height: 40),
+                  Image.asset('assets/images/loading.gif', width: 200),
+                  const SizedBox(height: 20),
+                  const Text(
+                    "Please wait...",
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    isEmail
+                        ? "We're verifying your Email\nit'll just take a moment"
+                        : "We're verifying your Phone Number\nit'll just take a moment",
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 14, color: Colors.black54),
+                  ),
+                ],
               ),
-              const SizedBox(height: 8),
-              Text(
-                isEmail
-                    ? "We're verifying your Email\nit'll just take a moment"
-                    : "We're verifying your Phone Number\nit'll just take a moment",
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 14, color: Colors.black54),
-              ),
-            ],
+            ),
           ),
         ),
       ),

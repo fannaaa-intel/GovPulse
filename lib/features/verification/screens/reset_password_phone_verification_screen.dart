@@ -1,21 +1,22 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import '../../../core/widgets/indicators/double_back_exit.dart';
+import 'package:http/http.dart' as http;
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/indicators/double_back_exit.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/widgets/web/web.dart';
 import '../../../core/widgets/mobile_form_shell.dart';
 
 class PhoneVerificationScreen extends StatefulWidget {
   final String phone;
-  final VoidCallback onVerifiedSuccess;
   final VoidCallback onTermsClick;
   final VoidCallback onConditionsClick;
 
   const PhoneVerificationScreen({
     super.key,
     required this.phone,
-    required this.onVerifiedSuccess,
     required this.onTermsClick,
     required this.onConditionsClick,
   });
@@ -27,41 +28,33 @@ class PhoneVerificationScreen extends StatefulWidget {
 
 class _PhoneVerificationScreenState extends State<PhoneVerificationScreen>
     with TickerProviderStateMixin {
-  // Mobile-only color constants — kept for _mobileScaffold, never used in web.
-  final Color primaryBlue = const Color(0xFF0D47A1);
-  final Color hint = const Color(0xFF8A8A8A);
-  final Color stroke = const Color(0xFFE3E6EF);
-
-  List<TextEditingController> controllers = List.generate(
+  final List<TextEditingController> controllers = List.generate(
     6,
     (_) => TextEditingController(),
   );
-  List<FocusNode> focusNodes = List.generate(6, (_) => FocusNode());
+  final List<FocusNode> focusNodes = List.generate(6, (_) => FocusNode());
 
   int secondsLeft = 58;
   Timer? timer;
 
-  // FIX: shake controller added — required for WebOtpBoxes error animation.
+  bool isVerifying = false;
+  bool isResending = false;
+  String resendStatusText = '';
   bool showError = false;
+
   late AnimationController _shakeController;
   late Animation<double> _shakeAnimation;
   late AnimationController _heroController;
 
-  String get code => controllers.map((c) => c.text).join();
-
-  String get maskedPhone {
-    if (widget.phone.length >= 6) {
-      return "+63 XXXX XXX ${widget.phone.substring(widget.phone.length - 3)}";
-    }
-    return widget.phone;
-  }
+  static const _baseUrl =
+      'https://vxvflhjbafqwehuxnmeq.supabase.co/functions/v1';
+  static const _apiKey = 'sb_publishable_ZBDaQPQdFyC5kOHGbce9Ig_zdtIi6Mo';
 
   @override
   void initState() {
     super.initState();
     startCountdown();
 
-    // Shake controller for OTP error animation (web).
     _shakeController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 400),
@@ -80,6 +73,19 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen>
     )..repeat(reverse: true);
   }
 
+  void startCountdown() {
+    timer?.cancel();
+    secondsLeft = 58;
+    timer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) return;
+      if (secondsLeft == 0) {
+        t.cancel();
+      } else {
+        setState(() => secondsLeft--);
+      }
+    });
+  }
+
   void triggerErrorAnimation() {
     setState(() => showError = true);
     _shakeController.forward(from: 0);
@@ -89,16 +95,115 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen>
     });
   }
 
-  void startCountdown() {
-    timer?.cancel();
-    secondsLeft = 58;
-    timer = Timer.periodic(const Duration(seconds: 1), (t) {
-      if (secondsLeft == 0) {
-        t.cancel();
-      } else {
-        setState(() => secondsLeft--);
+  String get code => controllers.map((c) => c.text).join();
+
+  String get maskedPhone {
+    if (widget.phone.length >= 6) {
+      return '+63 XXXX XXX ${widget.phone.substring(widget.phone.length - 3)}';
+    }
+    return widget.phone;
+  }
+
+  Future<void> verifyOtp() async {
+    if (isVerifying || code.length != 6) return;
+    setState(() => isVerifying = true);
+
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    final supabase = Supabase.instance.client;
+
+    try {
+      final canVerify = await supabase.rpc(
+        'can_verify_otp',
+        params: {'p_identifier': widget.phone},
+      );
+
+      if (!mounted) return;
+
+      if (canVerify['allowed'] != true) {
+        messenger.showSnackBar(
+          SnackBar(content: Text(canVerify['message'] as String)),
+        );
+        return;
       }
+
+      final response = await http.post(
+        Uri.parse('$_baseUrl/verify-phone-otp'),
+        headers: {'Content-Type': 'application/json', 'apikey': _apiKey},
+        body: jsonEncode({'phone': widget.phone, 'code': code.trim()}),
+      );
+
+      final data = jsonDecode(response.body);
+      if (!mounted) return;
+
+      if (response.statusCode == 200 && data['success'] == true) {
+        await supabase.rpc(
+          'clear_otp_failures',
+          params: {'p_identifier': widget.phone},
+        );
+        if (!mounted) return;
+        navigator.pushReplacementNamed(
+          '/phone_verification_success',
+          arguments: widget.phone,
+        );
+      } else {
+        await supabase.rpc(
+          'record_otp_failure',
+          params: {'p_identifier': widget.phone},
+        );
+        if (!mounted) return;
+        triggerErrorAnimation();
+      }
+    } catch (_) {
+      if (!mounted) return;
+      triggerErrorAnimation();
+    } finally {
+      if (mounted) setState(() => isVerifying = false);
+    }
+  }
+
+  Future<void> resendOtp() async {
+    setState(() {
+      isResending = true;
+      resendStatusText = 'Please wait';
     });
+
+    try {
+      final supabase = Supabase.instance.client;
+
+      final canSend = await supabase.rpc(
+        'can_send_otp',
+        params: {'p_identifier': widget.phone, 'p_purpose': 'signup'},
+      );
+      if (canSend['allowed'] != true) {
+        if (!mounted) return;
+        setState(() => resendStatusText = canSend['message'] as String);
+        return;
+      }
+
+      final response = await http.post(
+        Uri.parse('$_baseUrl/send-phone-otp'),
+        headers: {'Content-Type': 'application/json', 'apikey': _apiKey},
+        body: jsonEncode({'phone': widget.phone}),
+      );
+
+      final data = jsonDecode(response.body);
+      if (!mounted) return;
+
+      if (response.statusCode == 200 && data['success'] == true) {
+        setState(() => resendStatusText = 'Sent successfully');
+        for (final c in controllers) {
+          c.clear();
+        }
+        Future.delayed(const Duration(seconds: 2), () {
+          if (!mounted) return;
+          setState(() => resendStatusText = '');
+          startCountdown();
+        });
+      }
+    } finally {
+      if (mounted) setState(() => isResending = false);
+    }
   }
 
   @override
@@ -106,10 +211,10 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen>
     timer?.cancel();
     _shakeController.dispose();
     _heroController.dispose();
-    for (var c in controllers) {
+    for (final c in controllers) {
       c.dispose();
     }
-    for (var f in focusNodes) {
+    for (final f in focusNodes) {
       f.dispose();
     }
     super.dispose();
@@ -122,257 +227,385 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen>
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  //  MOBILE — untouched
+  //  WEB — uses WebAuthScaffold + kit components
   // ══════════════════════════════════════════════════════════════════════════
-  Widget _mobileScaffold(BuildContext context) {
-    bool canResend = secondsLeft == 0;
+  Widget _webScaffold(BuildContext context) {
+    final bool canResend = secondsLeft == 0;
 
-    return DoubleBackExit(
-      child: Scaffold(
-        backgroundColor: Colors.white,
-        resizeToAvoidBottomInset: true,
-        body: SafeArea(
-          child: MobileFormShell(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 26),
-              child: Column(
-                children: [
-                  const SizedBox(height: 30),
-                  Image.asset(
-                    "assets/images/applogocrop.png",
-                    width: (MediaQuery.of(context).size.width * 0.42)
-                        .clamp(0.0, 180.0)
-                        .toDouble(),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    "Reset Password",
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: primaryBlue,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    "We sent a 6-digit code to $maskedPhone",
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 14, color: hint),
-                  ),
-                  const SizedBox(height: 26),
-                  Image.asset("assets/images/otplogo.png", height: 140),
-                  const SizedBox(height: 30),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: List.generate(6, (index) {
-                      return SizedBox(
-                        width: 46,
-                        child: TextField(
-                          controller: controllers[index],
-                          focusNode: focusNodes[index],
-                          keyboardType: TextInputType.number,
-                          textAlign: TextAlign.center,
-                          maxLength: 1,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                          decoration: InputDecoration(
-                            counterText: "",
-                            contentPadding: const EdgeInsets.symmetric(
-                              vertical: 14,
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(color: stroke),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(
-                                color: primaryBlue,
-                                width: 1.5,
-                              ),
-                            ),
-                          ),
-                          onChanged: (value) {
-                            if (value.isNotEmpty && index < 5) {
-                              focusNodes[index + 1].requestFocus();
-                            }
-                          },
-                        ),
-                      );
-                    }),
-                  ),
-                  const SizedBox(height: 18),
-                  Text.rich(
-                    TextSpan(
-                      children: [
-                        TextSpan(
-                          text: "Resend code in ",
-                          style: TextStyle(fontSize: 12, color: hint),
-                        ),
-                        TextSpan(
-                          text: "00:${secondsLeft.toString().padLeft(2, '0')}",
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: primaryBlue,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 28),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 56,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: primaryBlue,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                      ),
-                      onPressed: code.length == 6
-                          ? () {
-                              widget.onVerifiedSuccess();
-                            }
-                          : null,
-                      child: const Text(
-                        "Verify",
-                        style: TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 26),
-                  Divider(color: stroke),
-                  const SizedBox(height: 16),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        "Didn't receive a code? ",
-                        style: TextStyle(fontSize: 13, color: hint),
-                      ),
-                      GestureDetector(
-                        onTap: canResend
-                            ? () {
-                                for (var c in controllers) {
-                                  c.clear();
-                                }
-                                startCountdown();
-                                setState(() {});
-                              }
-                            : null,
-                        child: Text(
-                          "Resend",
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                            color: canResend ? primaryBlue : hint,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  Divider(color: stroke),
-                ],
+    return WebAuthScaffold(
+      heroController: _heroController,
+      headline: "Verify your\nphone.",
+      subtitle:
+          "Enter the 6-digit code we sent\nto confirm your mobile number.",
+      card: WebAuthCard(
+        children: [
+          const WebCardHeader(
+            title: "Verify your phone",
+            subtitle: "We sent a 6-digit code to",
+          ),
+          const SizedBox(height: 4),
+          Center(
+            child: Text(
+              maskedPhone,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: WebUi.ink,
               ),
             ),
           ),
-        ),
+          const SizedBox(height: 28),
+
+          // OTP boxes
+          WebOtpBoxes(
+            controllers: controllers,
+            focusNodes: focusNodes,
+            showError: showError,
+            shakeAnimation: _shakeAnimation,
+            onChanged: () => setState(() {}),
+          ),
+
+          const SizedBox(height: 14),
+
+          Center(child: WebResendTimer(secondsLeft: secondsLeft)),
+
+          const SizedBox(height: 24),
+
+          WebPrimaryButton(
+            label: "Verify",
+            loading: isVerifying,
+            onPressed: code.length == 6 ? verifyOtp : null,
+          ),
+
+          const SizedBox(height: 20),
+
+          Divider(color: WebUi.divider),
+
+          const SizedBox(height: 14),
+
+          // Resend row
+          Center(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  "Didn't receive a code?  ",
+                  style: TextStyle(fontSize: 13, color: WebUi.sub),
+                ),
+                GestureDetector(
+                  onTap: canResend && !isResending
+                      ? () async => await resendOtp()
+                      : null,
+                  child: Text(
+                    isResending
+                        ? 'Please wait'
+                        : resendStatusText.isNotEmpty
+                        ? resendStatusText
+                        : 'Resend',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: isResending
+                          ? WebUi.faint
+                          : resendStatusText == 'Sent successfully'
+                          ? AppColors.green
+                          : canResend
+                          ? AppColors.primaryBlue
+                          : WebUi.faint,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          Divider(color: WebUi.divider),
+
+          const SizedBox(height: 12),
+
+          // Terms
+          const WebCaption("By signing up, you agree to our"),
+          const SizedBox(height: 4),
+          Center(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                GestureDetector(
+                  onTap: widget.onTermsClick,
+                  child: Text(
+                    'Terms of Service',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.primaryBlue,
+                    ),
+                  ),
+                ),
+                const Text(
+                  ' and ',
+                  style: TextStyle(fontSize: 11, color: WebUi.faint),
+                ),
+                GestureDetector(
+                  onTap: widget.onConditionsClick,
+                  child: Text(
+                    'Conditions.',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.primaryBlue,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  //  WEB — glass via WebAuthScaffold + WebAuthCard (kit)
-  //  Rule 3 FIX: WebOtpBoxes now receives showError + shakeAnimation.
-  //  Token FIX:  resend link uses AppColors.primaryBlue + WebUi tokens only,
-  //              not the mobile-only `primaryBlue` instance field.
+  //  MOBILE — logic untouched, MobileFormShell + logo clamp applied
   // ══════════════════════════════════════════════════════════════════════════
-  Widget _webScaffold(BuildContext context) {
-    return WebAuthScaffold(
-      heroController: _heroController,
-      headline: "Reset your\npassword.",
-      subtitle: "Enter the code we sent to your phone\nto continue securely.",
-      card: _webCard(),
-    );
-  }
+  Widget _mobileScaffold(BuildContext context) {
+    final w = MediaQuery.of(context).size.width;
+    final canResend = secondsLeft == 0;
 
-  Widget _webCard() {
-    final bool canResend = secondsLeft == 0;
-
-    return WebAuthCard(
-      children: [
-        WebCardHeader(
-          title: "Reset password",
-          subtitle: "We sent a 6-digit code to\n$maskedPhone",
-        ),
-        const SizedBox(height: 28),
-
-        // ── OTP boxes — gray empty / blue filled / red error / shake (kit) ──
-        WebOtpBoxes(
-          controllers: controllers,
-          focusNodes: focusNodes,
-          showError: showError, // FIX: was missing
-          shakeAnimation: _shakeAnimation, // FIX: was missing
-          onChanged: () => setState(() {}),
-        ),
-        const SizedBox(height: 14),
-
-        // ── Resend countdown ──────────────────────────────────────────────
-        WebResendTimer(secondsLeft: secondsLeft),
-        const SizedBox(height: 28),
-
-        // ── CTA — blue-fill, deepen-on-hover (WebPrimaryButton) ──────────
-        WebPrimaryButton(
-          label: "Verify",
-          onPressed: code.length == 6 ? widget.onVerifiedSuccess : null,
-        ),
-        const SizedBox(height: 24),
-        const Divider(color: WebUi.divider),
-        const SizedBox(height: 16),
-
-        // ── Resend link — ALL colors use AppColors / WebUi tokens ─────────
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Text(
-              "Didn't receive a code? ",
-              style: TextStyle(fontSize: 13, color: WebUi.sub),
-            ),
-            GestureDetector(
-              onTap: canResend
-                  ? () {
-                      for (var c in controllers) {
-                        c.clear();
-                      }
-                      startCountdown();
-                      setState(() {});
-                    }
-                  : null,
-              child: Text(
-                "Resend",
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  // FIX: was using `primaryBlue` (mobile instance field).
-                  // Now uses AppColors.primaryBlue + WebUi.faint only.
-                  color: canResend ? AppColors.primaryBlue : WebUi.faint,
+    return DoubleBackExit(
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        resizeToAvoidBottomInset: true,
+        body: GestureDetector(
+          onTap: () => FocusScope.of(context).unfocus(),
+          child: SafeArea(
+            child: MobileFormShell(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 26,
+                  vertical: 20,
+                ),
+                child: Column(
+                  children: [
+                    Image.asset(
+                      'assets/images/applogocrop.webp',
+                      width: (w * 0.42).clamp(0.0, 180.0).toDouble(),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Continue with Mobile Number',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.primaryBlue,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'We sent a 6-digit code to\n$maskedPhone',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 14, color: AppColors.hint),
+                    ),
+                    const SizedBox(height: 28),
+                    Image.asset('assets/images/otplogo.webp', height: 110),
+                    const SizedBox(height: 24),
+                    AnimatedBuilder(
+                      animation: _shakeAnimation,
+                      builder: (context, child) => Transform.translate(
+                        offset: Offset(_shakeAnimation.value, 0),
+                        child: child,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: List.generate(6, (index) {
+                          return SizedBox(
+                            width: 46,
+                            child: TextField(
+                              controller: controllers[index],
+                              focusNode: focusNodes[index],
+                              keyboardType: TextInputType.number,
+                              textAlign: TextAlign.center,
+                              maxLength: 1,
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              decoration: InputDecoration(
+                                counterText: '',
+                                contentPadding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(
+                                    color: showError
+                                        ? Colors.red
+                                        : AppColors.stroke,
+                                  ),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(
+                                    color: showError
+                                        ? Colors.red
+                                        : AppColors.primaryBlue,
+                                    width: 1.5,
+                                  ),
+                                ),
+                              ),
+                              onChanged: (value) {
+                                if (value.isNotEmpty && index < 5) {
+                                  focusNodes[index + 1].requestFocus();
+                                } else if (value.isEmpty && index > 0) {
+                                  focusNodes[index - 1].requestFocus();
+                                }
+                                setState(() {});
+                              },
+                            ),
+                          );
+                        }),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text.rich(
+                      TextSpan(
+                        children: [
+                          TextSpan(
+                            text: 'Resend code in ',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppColors.hint,
+                            ),
+                          ),
+                          TextSpan(
+                            text:
+                                '00:${secondsLeft.toString().padLeft(2, '0')}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.green,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 28),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 56,
+                      child: ElevatedButton(
+                        onPressed: (code.length == 6 && !isVerifying)
+                            ? verifyOtp
+                            : null,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primaryBlue,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        child: isVerifying
+                            ? const SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.4,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Text(
+                                'Verify',
+                                style: TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                      ),
+                    ),
+                    const SizedBox(height: 22),
+                    Divider(color: AppColors.stroke),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          "Didn't receive a code? ",
+                          style: TextStyle(fontSize: 13, color: AppColors.hint),
+                        ),
+                        GestureDetector(
+                          onTap: canResend && !isResending
+                              ? () async => await resendOtp()
+                              : null,
+                          child: Text(
+                            isResending
+                                ? 'Please wait'
+                                : resendStatusText.isNotEmpty
+                                ? resendStatusText
+                                : 'Resend',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: isResending
+                                  ? AppColors.hint
+                                  : resendStatusText == 'Sent successfully'
+                                  ? Colors.green
+                                  : canResend
+                                  ? AppColors.primaryBlue
+                                  : AppColors.hint,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Divider(color: AppColors.stroke),
+                    const SizedBox(height: 10),
+                    Text(
+                      'By signing up, you agree to our',
+                      style: TextStyle(fontSize: 11, color: AppColors.hint),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        GestureDetector(
+                          onTap: widget.onTermsClick,
+                          child: Text(
+                            'Terms of Service',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.primaryBlue,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          ' and ',
+                          style: TextStyle(fontSize: 11, color: AppColors.hint),
+                        ),
+                        GestureDetector(
+                          onTap: widget.onConditionsClick,
+                          child: Text(
+                            'Conditions.',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.primaryBlue,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                  ],
                 ),
               ),
             ),
-          ],
+          ),
         ),
-        const SizedBox(height: 16),
-        const Divider(color: WebUi.divider),
-      ],
+      ),
     );
   }
 }

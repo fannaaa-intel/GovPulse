@@ -425,7 +425,7 @@ class _EventsScreenState extends State<EventsScreen>
           ),
           SizedBox(width: w * 0.03),
           Image.asset(
-            'assets/images/newslogo.png',
+            'assets/images/newslogo.webp',
             height: w * 0.085,
             fit: BoxFit.contain,
             errorBuilder: (_, _, _) => Row(
@@ -500,7 +500,7 @@ class _EventsScreenState extends State<EventsScreen>
               ),
             ),
             Image.asset(
-              'assets/images/activity.png',
+              'assets/images/activity.webp',
               width: w * 0.22,
               height: w * 0.22,
               fit: BoxFit.contain,
@@ -795,21 +795,21 @@ class _EventsScreenState extends State<EventsScreen>
                       ),
                       SizedBox(height: w * 0.014),
                       _infoRow(
-                        'assets/images/report/location.png',
+                        'assets/images/report/location.webp',
                         event.location,
                         AppColors.primaryBlue,
                         w,
                       ),
                       SizedBox(height: w * 0.008),
                       _infoRow(
-                        'assets/images/calendar.png',
+                        'assets/images/calendar.webp',
                         event.date,
                         AppColors.green,
                         w,
                       ),
                       SizedBox(height: w * 0.008),
                       _infoRow(
-                        'assets/images/clock.png',
+                        'assets/images/clock.webp',
                         event.time,
                         AppColors.orange,
                         w,
@@ -981,7 +981,7 @@ class _EventsScreenState extends State<EventsScreen>
                   ),
                   SizedBox(height: w * 0.008),
                   _infoRow(
-                    'assets/images/report/location.png',
+                    'assets/images/report/location.webp',
                     event.location,
                     AppColors.primaryBlue,
                     w,
@@ -989,7 +989,7 @@ class _EventsScreenState extends State<EventsScreen>
                   ),
                   SizedBox(height: w * 0.005),
                   _infoRow(
-                    'assets/images/calendar.png',
+                    'assets/images/calendar.webp',
                     event.date,
                     AppColors.green,
                     w,
@@ -997,7 +997,7 @@ class _EventsScreenState extends State<EventsScreen>
                   ),
                   SizedBox(height: w * 0.005),
                   _infoRow(
-                    'assets/images/clock.png',
+                    'assets/images/clock.webp',
                     event.time,
                     AppColors.orange,
                     w,

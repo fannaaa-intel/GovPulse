@@ -99,7 +99,7 @@ class _VerificationIdentityScreenState
     child: Column(
       children: [
         Image.asset(
-          "assets/images/applogocrop.png",
+          "assets/images/applogocrop.webp",
           height: MediaQuery.of(context).size.height * 0.10,
         ),
         const SizedBox(height: 6),
@@ -190,7 +190,7 @@ class _VerificationIdentityScreenState
         const SizedBox(height: 24),
         Center(
           child: Image.asset(
-            "assets/images/face_ver.png",
+            "assets/images/face_ver.webp",
             height: 180,
             fit: BoxFit.contain,
           ),
@@ -202,12 +202,12 @@ class _VerificationIdentityScreenState
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: const [
             _RestrictItem(
-              image: "assets/images/sunglasses.png",
+              image: "assets/images/sunglasses.webp",
               label: "No Shade",
             ),
-            _RestrictItem(image: "assets/images/cap.png", label: "No Cap"),
+            _RestrictItem(image: "assets/images/cap.webp", label: "No Cap"),
             _RestrictItem(
-              image: "assets/images/face_mask.png",
+              image: "assets/images/face_mask.webp",
               label: "No Mask",
             ),
           ],
@@ -325,7 +325,7 @@ class _RestrictItem extends StatelessWidget {
               bottom: -8,
               right: -8,
               child: Image.asset(
-                "assets/images/notwear.png",
+                "assets/images/notwear.webp",
                 width: 26,
                 height: 26,
               ),

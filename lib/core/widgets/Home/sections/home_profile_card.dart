@@ -111,7 +111,7 @@ class HomeProfileCard extends StatelessWidget {
           ),
         ),
         errorWidget: (context, url, error) => Image.asset(
-          'assets/images/profilenew.png',
+          'assets/images/profilenew.webp',
           fit: BoxFit.cover,
           width: size,
           height: size,
@@ -120,7 +120,7 @@ class HomeProfileCard extends StatelessWidget {
     }
 
     return Image.asset(
-      'assets/images/profilenew.png',
+      'assets/images/profilenew.webp',
       fit: BoxFit.cover,
       width: size,
       height: size,
@@ -134,7 +134,7 @@ class HomeProfileCard extends StatelessWidget {
         clipBehavior: Clip.none,
         children: [
           Image.asset(
-            'assets/images/notifications.png',
+            'assets/images/notifications.webp',
             width: width * 0.090,
             height: width * 0.090,
           ),
@@ -545,7 +545,7 @@ class _VerifiedStripShimmerState extends State<_VerifiedStripShimmer>
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Image.asset(
-                'assets/images/check.png',
+                'assets/images/check.webp',
                 width: w * 0.042,
                 height: w * 0.042,
                 color: const Color(0xFF15803D),

@@ -161,7 +161,7 @@ class _ChangePasswordNewScreenState extends State<ChangePasswordNewScreen>
           message:
               'Your password has been updated successfully. You can now use your new password to sign in.',
           buttonLabel: 'Done',
-          iconAsset: 'assets/images/protection.png',
+          iconAsset: 'assets/images/protection.webp',
           iconColor: AppColors.green, // ← tints the shield green
           iconBgColor: AppColors.green.withValues(
             alpha: 0.10,
@@ -260,8 +260,8 @@ class _ChangePasswordNewScreenState extends State<ChangePasswordNewScreen>
                                 padding: EdgeInsets.all(w * 0.03),
                                 child: Image.asset(
                                   _showPassword
-                                      ? 'assets/images/eye.png'
-                                      : 'assets/images/closed_eye.png',
+                                      ? 'assets/images/eye.webp'
+                                      : 'assets/images/closed_eye.webp',
                                   height: w * 0.05,
                                 ),
                               ),
@@ -284,8 +284,8 @@ class _ChangePasswordNewScreenState extends State<ChangePasswordNewScreen>
                                 padding: EdgeInsets.all(w * 0.03),
                                 child: Image.asset(
                                   _showConfirm
-                                      ? 'assets/images/eye.png'
-                                      : 'assets/images/closed_eye.png',
+                                      ? 'assets/images/eye.webp'
+                                      : 'assets/images/closed_eye.webp',
                                   height: w * 0.05,
                                 ),
                               ),
@@ -427,7 +427,7 @@ class _ChangePasswordNewScreenState extends State<ChangePasswordNewScreen>
             child: Padding(
               padding: EdgeInsets.all(size * 0.14),
               child: Image.asset(
-                'assets/images/protection.png',
+                'assets/images/protection.webp',
                 fit: BoxFit.contain,
                 color: AppColors.green,
                 colorBlendMode: BlendMode.srcIn,

@@ -18,6 +18,7 @@ class CommunityPostsProvider extends ChangeNotifier {
   bool _initialLoadDone = false;
   RealtimeChannel? _realtimeChannel;
   final Map<String, List<Map<String, dynamic>>> _optimisticComments = {};
+  final Set<String> _pendingEditIds = {};
 
   // ── Public getters ───────────────────────────────────────────────────
   bool get isLoading => _isLoading;
@@ -49,11 +50,13 @@ class CommunityPostsProvider extends ChangeNotifier {
         final parentId = oc['parentId'] as String?;
 
         if (parentId == null) {
-          // Skip if real comment with same text already arrived from DB
-          final alreadyReal = merged.any(
-            (c) =>
-                !(c['id'] as String).startsWith('temp_') && c['text'] == ocText,
-          );
+          final ocRealId = oc['realId'] as String?;
+          final alreadyReal = merged.any((c) {
+            final cid = c['id'] as String;
+            if (cid.startsWith('temp_')) return false;
+            if (ocRealId != null && cid == ocRealId) return true;
+            return c['text'] == ocText && c['authorId'] == oc['authorId'];
+          });
           if (!alreadyReal && !merged.any((c) => c['id'] == tempId)) {
             merged.add(oc);
           }
@@ -65,11 +68,16 @@ class CommunityPostsProvider extends ChangeNotifier {
                 (merged[i]['replies'] as List<dynamic>? ?? [])
                     .cast<Map<String, dynamic>>(),
               );
-              final alreadyReal = replies.any(
-                (r) =>
-                    !(r['id'] as String).startsWith('temp_') &&
-                    r['text'] == ocText,
-              );
+              final ocRealId = oc['realId'] as String?;
+              final alreadyReal = replies.any((r) {
+                final rid = r['id'] as String;
+                if (rid.startsWith('temp_')) return false;
+                if (ocRealId != null && rid == ocRealId) return true;
+                return r['text'] == ocText && r['authorId'] == oc['authorId'];
+              });
+              if (!alreadyReal && !replies.any((r) => r['id'] == tempId)) {
+                replies.add(oc);
+              }
               if (!alreadyReal && !replies.any((r) => r['id'] == tempId)) {
                 replies.add(oc);
               }
@@ -79,9 +87,110 @@ class CommunityPostsProvider extends ChangeNotifier {
           }
         }
       }
-      return {...post, 'comments': merged};
+      merged.sort((a, b) {
+        final ta = a['timestamp'] as DateTime?;
+        final tb = b['timestamp'] as DateTime?;
+        if (ta == null && tb == null) return 0;
+        if (ta == null) return 1;
+        if (tb == null) return -1;
+        return tb.compareTo(ta); // newest first
+      });
+
+      // Count must reflect what's actually shown (incl. optimistic),
+      // so the footer/badge never disagrees with the visible list.
+      var liveCount = merged.length;
+      for (final c in merged) {
+        liveCount += (c['replies'] as List<dynamic>? ?? []).length;
+      }
+
+      return {...post, 'comments': merged, 'commentCount': liveCount};
     }).toList();
   }
+
+  void decrementCommentCount(String postId, int by) {
+    final idx = _posts.indexWhere((p) => p['id'] == postId);
+    if (idx == -1) return;
+    final current = (_posts[idx]['commentCount'] as int?) ?? 0;
+    _posts[idx] = {
+      ..._posts[idx],
+      'commentCount': (current - by).clamp(0, current),
+    };
+    notifyListeners();
+  }
+
+  void removeCommentFromPost(
+    String postId,
+    String commentId, {
+    required bool isTopLevel,
+  }) {
+    final idx = _posts.indexWhere((p) => p['id'] == postId);
+    if (idx == -1) return;
+
+    final comments = (_posts[idx]['comments'] as List<dynamic>)
+        .cast<Map<String, dynamic>>();
+
+    List<Map<String, dynamic>> updated;
+    if (isTopLevel) {
+      updated = comments.where((c) => c['id'] != commentId).toList();
+    } else {
+      updated = comments.map((c) {
+        final replies = (c['replies'] as List<dynamic>? ?? [])
+            .cast<Map<String, dynamic>>();
+        return {
+          ...c,
+          'replies': replies.where((r) => r['id'] != commentId).toList(),
+        };
+      }).toList();
+    }
+
+    _posts[idx] = {..._posts[idx], 'comments': updated};
+    notifyListeners();
+  }
+
+  // ── Optimistic like counts (no refetch, no flicker) ──────────────────
+  void bumpPostLike(String postId, int delta) {
+    final idx = _posts.indexWhere((p) => p['id'] == postId);
+    if (idx == -1) return;
+    final current = int.tryParse('${_posts[idx]['likes']}') ?? 0;
+    final next = current + delta < 0 ? 0 : current + delta;
+    _posts[idx] = {..._posts[idx], 'likes': '$next'};
+    notifyListeners();
+  }
+
+  void bumpCommentLike(String commentId, int delta) {
+    for (var i = 0; i < _posts.length; i++) {
+      final comments = (_posts[i]['comments'] as List<dynamic>)
+          .cast<Map<String, dynamic>>();
+      var changed = false;
+
+      final newComments = comments.map((c) {
+        if (c['id'] == commentId) {
+          changed = true;
+          final cur = (c['likes'] as int?) ?? 0;
+          return {...c, 'likes': cur + delta < 0 ? 0 : cur + delta};
+        }
+        final replies = (c['replies'] as List<dynamic>? ?? [])
+            .cast<Map<String, dynamic>>();
+        final newReplies = replies.map((r) {
+          if (r['id'] == commentId) {
+            changed = true;
+            final cur = (r['likes'] as int?) ?? 0;
+            return {...r, 'likes': cur + delta < 0 ? 0 : cur + delta};
+          }
+          return r;
+        }).toList();
+        return {...c, 'replies': newReplies};
+      }).toList();
+
+      if (changed) {
+        _posts[i] = {..._posts[i], 'comments': newComments};
+        notifyListeners();
+        return;
+      }
+    }
+  }
+
+  // ── Optimistic comment API ───────────────────────────────────────────
 
   // ── Optimistic comment API ───────────────────────────────────────────
   void addOptimisticComment(String postId, Map<String, dynamic> comment) {
@@ -89,11 +198,31 @@ class CommunityPostsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void markOptimisticSent(String postId, String tempId) {
+  void confirmOptimisticComment(String postId, String tempId, String realId) {
     final list = _optimisticComments[postId];
     if (list == null) return;
     final idx = list.indexWhere((c) => c['id'] == tempId);
-    if (idx != -1) list[idx] = {...list[idx], 'isSending': false};
+    if (idx != -1) {
+      list[idx] = {...list[idx], 'isSending': false, 'realId': realId};
+    }
+    notifyListeners();
+  }
+
+  void purgeOptimisticByAnyId(
+    String postId,
+    String anyId, {
+    bool alsoChildren = false,
+  }) {
+    final list = _optimisticComments[postId];
+    if (list == null) return;
+    list.removeWhere((oc) {
+      // Remove the entry itself (by temp id or stamped real id)
+      if (oc['id'] == anyId || oc['realId'] == anyId) return true;
+      // When deleting a parent, also remove any optimistic replies under it
+      if (alsoChildren && oc['parentId'] == anyId) return true;
+      return false;
+    });
+    if (list.isEmpty) _optimisticComments.remove(postId);
     notifyListeners();
   }
 
@@ -104,6 +233,43 @@ class CommunityPostsProvider extends ChangeNotifier {
 
   void clearOptimisticForPost(String postId) {
     _optimisticComments.remove(postId);
+  }
+
+  void updateOptimisticCommentText(
+    String postId,
+    String commentId,
+    String newText, {
+    bool markAsSending = false,
+  }) {
+    // Track/untrack pending edit to block realtime overwrites
+    if (markAsSending) {
+      _pendingEditIds.add(commentId);
+    } else {
+      _pendingEditIds.remove(commentId);
+    }
+
+    // Update _posts in-place — do NOT set isSending on the comment itself
+    final idx = _posts.indexWhere((p) => p['id'] == postId);
+    if (idx == -1) return;
+    final comments = (_posts[idx]['comments'] as List<dynamic>)
+        .cast<Map<String, dynamic>>();
+    final newComments = comments.map((c) {
+      if (c['id'] == commentId) {
+        return {...c, 'body': newText, 'text': newText};
+      }
+      final replies = (c['replies'] as List<dynamic>? ?? [])
+          .cast<Map<String, dynamic>>();
+      final newReplies = replies
+          .map(
+            (r) => r['id'] == commentId
+                ? {...r, 'body': newText, 'text': newText}
+                : r,
+          )
+          .toList();
+      return {...c, 'replies': newReplies};
+    }).toList();
+    _posts[idx] = {..._posts[idx], 'comments': newComments};
+    notifyListeners();
   }
 
   // ── Realtime ─────────────────────────────────────────────────────────
@@ -123,18 +289,6 @@ class CommunityPostsProvider extends ChangeNotifier {
           table: 'community_comments',
           callback: (_) => _silentRefresh(),
         )
-        .onPostgresChanges(
-          event: PostgresChangeEvent.all,
-          schema: 'public',
-          table: 'community_post_likes',
-          callback: (_) => _silentRefresh(),
-        )
-        .onPostgresChanges(
-          event: PostgresChangeEvent.all,
-          schema: 'public',
-          table: 'community_comment_likes',
-          callback: (_) => _silentRefresh(),
-        )
         .subscribe();
   }
 
@@ -143,7 +297,6 @@ class CommunityPostsProvider extends ChangeNotifier {
     _realtimeChannel = null;
   }
 
-  // Silent refresh — no loading state, no flicker, no skeleton
   Future<void> _silentRefresh() async {
     try {
       final rows = await _supabase
@@ -157,14 +310,85 @@ class CommunityPostsProvider extends ChangeNotifier {
           ? <String, List<Map<String, dynamic>>>{}
           : await _fetchCommentsForPosts(postIds);
 
+      final pendingEdits = <String, String>{};
+      if (_pendingEditIds.isNotEmpty) {
+        for (final post in _posts) {
+          for (final c
+              in (post['comments'] as List<dynamic>)
+                  .cast<Map<String, dynamic>>()) {
+            final cid = c['id'] as String;
+            if (_pendingEditIds.contains(cid)) {
+              pendingEdits[cid] = c['text'] as String;
+            }
+            for (final r
+                in (c['replies'] as List<dynamic>? ?? [])
+                    .cast<Map<String, dynamic>>()) {
+              final rid = r['id'] as String;
+              if (_pendingEditIds.contains(rid)) {
+                pendingEdits[rid] = r['text'] as String;
+              }
+            }
+          }
+        }
+      }
+
       _posts = rows
           .map((r) => _mapPostRow(r, commentsByPost[r['id']] ?? []))
           .toList();
 
-      // Only clear optimistic entries that finished sending
-      // Still-sending ones stay visible until markOptimisticSent fires
-      _optimisticComments.forEach((_, list) {
-        list.removeWhere((c) => c['isSending'] != true);
+      // Re-apply any pending edits so they aren't overwritten by stale DB data
+      if (pendingEdits.isNotEmpty) {
+        for (var i = 0; i < _posts.length; i++) {
+          final comments = (_posts[i]['comments'] as List<dynamic>)
+              .cast<Map<String, dynamic>>();
+          final newComments = comments.map((c) {
+            final editedText = pendingEdits[c['id'] as String];
+            final updatedC = editedText != null
+                ? {...c, 'text': editedText, 'body': editedText}
+                : c;
+            final replies = (c['replies'] as List<dynamic>? ?? [])
+                .cast<Map<String, dynamic>>();
+            final newReplies = replies.map((r) {
+              final rEdit = pendingEdits[r['id'] as String];
+              return rEdit != null ? {...r, 'text': rEdit, 'body': rEdit} : r;
+            }).toList();
+            return {...updatedC, 'replies': newReplies};
+          }).toList();
+          _posts[i] = {..._posts[i], 'comments': newComments};
+        }
+      }
+      _optimisticComments.forEach((postId, list) {
+        final realComments = _posts.firstWhere(
+          (p) => p['id'] == postId,
+          orElse: () => {},
+        )['comments'];
+        if (realComments == null) return;
+        final real = (realComments as List<dynamic>)
+            .cast<Map<String, dynamic>>();
+
+        // Collect every real comment AND reply id for id-based reconciliation
+        final realIds = <String>{};
+        for (final c in real) {
+          realIds.add(c['id'] as String);
+          for (final r
+              in (c['replies'] as List<dynamic>? ?? [])
+                  .cast<Map<String, dynamic>>()) {
+            realIds.add(r['id'] as String);
+          }
+        }
+
+        list.removeWhere((oc) {
+          if (oc['isSending'] == true) return false; // still in-flight, keep it
+          final ocRealId = oc['realId'] as String?;
+          if (ocRealId != null && realIds.contains(ocRealId)) return true;
+          // fallback: top-level text match (legacy safety)
+          return real.any(
+            (c) =>
+                !(c['id'] as String).startsWith('temp_') &&
+                c['text'] == oc['text'] &&
+                c['authorId'] == oc['authorId'],
+          );
+        });
       });
       _optimisticComments.removeWhere((_, list) => list.isEmpty);
 

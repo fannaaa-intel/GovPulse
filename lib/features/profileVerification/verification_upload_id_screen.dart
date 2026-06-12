@@ -4,40 +4,40 @@ import 'package:permission_handler/permission_handler.dart';
 
 const Map<String, Map<String, String>> idImages = {
   "PhilSys ID": {
-    "front": "assets/images/idcards/phfront.png",
-    "back": "assets/images/idcards/phfront.png",
+    "front": "assets/images/idcards/phfront.webp",
+    "back": "assets/images/idcards/phfront.webp",
   },
   "Driver's License ID": {
-    "front": "assets/images/idcards/driversfront.png",
-    "back": "assets/images/idcards/driversfront.png",
+    "front": "assets/images/idcards/driversfront.webp",
+    "back": "assets/images/idcards/driversfront.webp",
   },
   "Postal ID": {
-    "front": "assets/images/idcards/postalfront.png",
-    "back": "assets/images/idcards/postalfront.png",
+    "front": "assets/images/idcards/postalfront.webp",
+    "back": "assets/images/idcards/postalfront.webp",
   },
   "Philippine Passport ID": {
-    "front": "assets/images/idcards/philpassfront.png",
-    "back": "assets/images/idcards/philpassfront.png",
+    "front": "assets/images/idcards/philpassfront.webp",
+    "back": "assets/images/idcards/philpassfront.webp",
   },
   "PhilHealth ID": {
-    "front": "assets/images/idcards/phealthfront.png",
-    "back": "assets/images/idcards/phealthfront.png",
+    "front": "assets/images/idcards/phealthfront.webp",
+    "back": "assets/images/idcards/phealthfront.webp",
   },
   "PRC ID": {
-    "front": "assets/images/idcards/prcharap.png",
-    "back": "assets/images/idcards/prcharap.png",
+    "front": "assets/images/idcards/prcharap.webp",
+    "back": "assets/images/idcards/prcharap.webp",
   },
   "SSS ID": {
-    "front": "assets/images/idcards/sssfront.png",
-    "back": "assets/images/idcards/sssfront.png",
+    "front": "assets/images/idcards/sssfront.webp",
+    "back": "assets/images/idcards/sssfront.webp",
   },
   "TIN ID": {
-    "front": "assets/images/idcards/tinfront.png",
-    "back": "assets/images/idcards/tinfront.png",
+    "front": "assets/images/idcards/tinfront.webp",
+    "back": "assets/images/idcards/tinfront.webp",
   },
   "UMID ID": {
-    "front": "assets/images/idcards/umidharap.png",
-    "back": "assets/images/idcards/umidharap.png",
+    "front": "assets/images/idcards/umidharap.webp",
+    "back": "assets/images/idcards/umidharap.webp",
   },
 };
 
@@ -95,8 +95,8 @@ class _VerificationUploadIdScreenState extends State<VerificationUploadIdScreen>
     final images =
         idImages[widget.selectedId] ??
         {
-          "front": "assets/images/idcards/phfront.png",
-          "back": "assets/images/idcards/phfront.png",
+          "front": "assets/images/idcards/phfront.webp",
+          "back": "assets/images/idcards/phfront.webp",
         };
 
     return Scaffold(
@@ -114,7 +114,7 @@ class _VerificationUploadIdScreenState extends State<VerificationUploadIdScreen>
                 /// LOGO
                 Center(
                   child: Image.asset(
-                    "assets/images/applogocrop.png",
+                    "assets/images/applogocrop.webp",
                     height: MediaQuery.of(context).size.height * 0.12,
                   ),
                 ),

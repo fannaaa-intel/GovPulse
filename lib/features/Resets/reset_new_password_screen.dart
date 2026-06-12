@@ -24,7 +24,7 @@ class ResetNewPasswordScreen extends StatefulWidget {
 }
 
 class _ResetNewPasswordScreenState extends State<ResetNewPasswordScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   final TextEditingController passwordController = TextEditingController();
   final TextEditingController confirmController = TextEditingController();
 
@@ -40,6 +40,11 @@ class _ResetNewPasswordScreenState extends State<ResetNewPasswordScreen>
   bool hasSpecial = false;
 
   late AnimationController _heroController;
+
+  // ── Content entrance: instant screen, content fades + slides up ──────────
+  late final AnimationController _entranceController;
+  late final Animation<double> _fadeAnim;
+  late final Animation<Offset> _slideAnim;
 
   bool get isPasswordMismatch =>
       confirmController.text.isNotEmpty &&
@@ -85,6 +90,26 @@ class _ResetNewPasswordScreenState extends State<ResetNewPasswordScreen>
       vsync: this,
       duration: const Duration(seconds: 8),
     )..repeat(reverse: true);
+
+    _entranceController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
+    _fadeAnim = CurvedAnimation(
+      parent: _entranceController,
+      curve: Curves.easeOut,
+    );
+    _slideAnim = Tween<Offset>(begin: const Offset(0, 0.06), end: Offset.zero)
+        .animate(
+          CurvedAnimation(
+            parent: _entranceController,
+            curve: Curves.easeOutCubic,
+          ),
+        );
+
+    Future.delayed(const Duration(milliseconds: 80), () {
+      if (mounted) _entranceController.forward();
+    });
   }
 
   @override
@@ -92,6 +117,7 @@ class _ResetNewPasswordScreenState extends State<ResetNewPasswordScreen>
     passwordController.dispose();
     confirmController.dispose();
     _heroController.dispose();
+    _entranceController.dispose();
     super.dispose();
   }
 
@@ -147,8 +173,10 @@ class _ResetNewPasswordScreenState extends State<ResetNewPasswordScreen>
                   transitionDuration: Duration.zero,
                   reverseTransitionDuration: Duration.zero,
                 )
-              : MaterialPageRoute(
-                  builder: (_) => const PasswordChangeSuccess(),
+              : PageRouteBuilder(
+                  transitionDuration: Duration.zero,
+                  reverseTransitionDuration: Duration.zero,
+                  pageBuilder: (_, _, _) => const PasswordChangeSuccess(),
                 ),
         );
       } else {
@@ -190,210 +218,226 @@ class _ResetNewPasswordScreenState extends State<ResetNewPasswordScreen>
       child: Scaffold(
         backgroundColor: Colors.white,
         body: SafeArea(
-          child: MobileFormShell(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 26),
-              child: Column(
-                children: [
-                  const SizedBox(height: 25),
+          child: FadeTransition(
+            opacity: _fadeAnim,
+            child: SlideTransition(
+              position: _slideAnim,
+              child: MobileFormShell(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 26),
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 25),
 
-                  Image.asset(
-                    "assets/images/applogocrop.png",
-                    width: (w * 0.40).clamp(0.0, 180.0).toDouble(),
-                  ),
+                      Image.asset(
+                        "assets/images/applogocrop.webp",
+                        width: (w * 0.40).clamp(0.0, 180.0).toDouble(),
+                      ),
 
-                  const SizedBox(height: 16),
+                      const SizedBox(height: 16),
 
-                  Text(
-                    "Reset Password",
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.primaryBlue,
-                    ),
-                  ),
-
-                  const SizedBox(height: 26),
-
-                  RoundedInputField(
-                    controller: passwordController,
-                    value: passwordController.text,
-                    hintText: "Password",
-                    icon: Icons.lock,
-                    obscureText: !showPassword,
-                    onChanged: (val) => validatePassword(val),
-                    suffixWidget: GestureDetector(
-                      onTap: () => setState(() => showPassword = !showPassword),
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Image.asset(
-                          showPassword
-                              ? "assets/images/eye.png"
-                              : "assets/images/closed_eye.png",
-                          height: 20,
+                      Text(
+                        "Reset Password",
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.primaryBlue,
                         ),
                       ),
-                    ),
-                  ),
 
-                  const SizedBox(height: 14),
+                      const SizedBox(height: 26),
 
-                  RoundedInputField(
-                    controller: confirmController,
-                    value: confirmController.text,
-                    hintText: "Confirm Password",
-                    icon: Icons.lock,
-                    obscureText: !showConfirm,
-                    isError: isPasswordMismatch,
-                    onChanged: (_) => setState(() {}),
-                    suffixWidget: GestureDetector(
-                      onTap: () => setState(() => showConfirm = !showConfirm),
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Image.asset(
-                          showConfirm
-                              ? "assets/images/eye.png"
-                              : "assets/images/closed_eye.png",
-                          height: 20,
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  if (isPasswordMismatch)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Text(
-                        "Passwords do not match",
-                        style: TextStyle(color: Colors.red, fontSize: 12),
-                      ),
-                    ),
-
-                  const SizedBox(height: 8),
-
-                  if (password.isNotEmpty)
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          "Strength: $strengthText",
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: strengthColor,
-                            fontWeight: FontWeight.w600,
+                      RoundedInputField(
+                        controller: passwordController,
+                        value: passwordController.text,
+                        hintText: "Password",
+                        icon: Icons.lock,
+                        obscureText: !showPassword,
+                        onChanged: (val) => validatePassword(val),
+                        suffixWidget: GestureDetector(
+                          onTap: () =>
+                              setState(() => showPassword = !showPassword),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Image.asset(
+                              showPassword
+                                  ? "assets/images/eye.webp"
+                                  : "assets/images/closed_eye.webp",
+                              height: 20,
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 6),
-                        PasswordStrengthBar(score: strengthScore),
-                        const SizedBox(height: 10),
-                      ],
-                    ),
-
-                  Row(
-                    children: [
-                      requirement("At least 8 characters", hasMinLength),
-                      const SizedBox(width: 12),
-                      requirement("Must have number", hasNumber),
-                    ],
-                  ),
-
-                  const SizedBox(height: 6),
-
-                  Row(
-                    children: [
-                      requirement("One uppercase letter", hasUpper),
-                      const SizedBox(width: 12),
-                      requirement("One special character", hasSpecial),
-                    ],
-                  ),
-
-                  const SizedBox(height: 30),
-
-                  if (apiError != null)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: Text(
-                        apiError!,
-                        style: const TextStyle(color: Colors.red, fontSize: 12),
-                        textAlign: TextAlign.center,
                       ),
-                    ),
 
-                  SizedBox(
-                    width: double.infinity,
-                    height: 56,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primaryBlue,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
+                      const SizedBox(height: 14),
+
+                      RoundedInputField(
+                        controller: confirmController,
+                        value: confirmController.text,
+                        hintText: "Confirm Password",
+                        icon: Icons.lock,
+                        obscureText: !showConfirm,
+                        isError: isPasswordMismatch,
+                        onChanged: (_) => setState(() {}),
+                        suffixWidget: GestureDetector(
+                          onTap: () =>
+                              setState(() => showConfirm = !showConfirm),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Image.asset(
+                              showConfirm
+                                  ? "assets/images/eye.webp"
+                                  : "assets/images/closed_eye.webp",
+                              height: 20,
+                            ),
+                          ),
                         ),
                       ),
-                      onPressed: (isLoading || !isFormValid)
-                          ? null
-                          : updatePassword,
-                      child: isLoading
-                          ? const CircularProgressIndicator(color: Colors.white)
-                          : const Text(
-                              "Reset Password",
+
+                      if (isPasswordMismatch)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Text(
+                            "Passwords do not match",
+                            style: TextStyle(color: Colors.red, fontSize: 12),
+                          ),
+                        ),
+
+                      const SizedBox(height: 8),
+
+                      if (password.isNotEmpty)
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "Strength: $strengthText",
                               style: TextStyle(
-                                fontSize: 17,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
+                                fontSize: 12,
+                                color: strengthColor,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 18),
-
-                  Row(
-                    children: [
-                      Expanded(child: Divider(color: Colors.grey.shade300)),
-                      const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 10),
-                        child: Text(
-                          "Or Return to",
-                          style: TextStyle(fontSize: 13, color: Colors.grey),
+                            const SizedBox(height: 6),
+                            PasswordStrengthBar(score: strengthScore),
+                            const SizedBox(height: 10),
+                          ],
                         ),
-                      ),
-                      Expanded(child: Divider(color: Colors.grey.shade300)),
-                    ],
-                  ),
 
-                  const SizedBox(height: 16),
-
-                  SizedBox(
-                    height: 54,
-                    width: 170,
-                    child: OutlinedButton(
-                      style: OutlinedButton.styleFrom(
-                        side: BorderSide(color: Colors.grey.shade300),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                      ),
-                      onPressed: () => Navigator.pop(context),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                      Row(
                         children: [
-                          Icon(Icons.logout, color: AppColors.primaryBlue),
-                          const SizedBox(width: 8),
-                          Text(
-                            "Log In",
-                            style: TextStyle(
-                              color: AppColors.primaryBlue,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
+                          requirement("At least 8 characters", hasMinLength),
+                          const SizedBox(width: 12),
+                          requirement("Must have number", hasNumber),
                         ],
                       ),
-                    ),
-                  ),
 
-                  const SizedBox(height: 20),
-                ],
+                      const SizedBox(height: 6),
+
+                      Row(
+                        children: [
+                          requirement("One uppercase letter", hasUpper),
+                          const SizedBox(width: 12),
+                          requirement("One special character", hasSpecial),
+                        ],
+                      ),
+
+                      const SizedBox(height: 30),
+
+                      if (apiError != null)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: Text(
+                            apiError!,
+                            style: const TextStyle(
+                              color: Colors.red,
+                              fontSize: 12,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+
+                      SizedBox(
+                        width: double.infinity,
+                        height: 56,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primaryBlue,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                          onPressed: (isLoading || !isFormValid)
+                              ? null
+                              : updatePassword,
+                          child: isLoading
+                              ? const CircularProgressIndicator(
+                                  color: Colors.white,
+                                )
+                              : const Text(
+                                  "Reset Password",
+                                  style: TextStyle(
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 18),
+
+                      Row(
+                        children: [
+                          Expanded(child: Divider(color: Colors.grey.shade300)),
+                          const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 10),
+                            child: Text(
+                              "Or Return to",
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.grey,
+                              ),
+                            ),
+                          ),
+                          Expanded(child: Divider(color: Colors.grey.shade300)),
+                        ],
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      SizedBox(
+                        height: 54,
+                        width: 170,
+                        child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide(color: Colors.grey.shade300),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                          onPressed: () => Navigator.pop(context),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.logout, color: AppColors.primaryBlue),
+                              const SizedBox(width: 8),
+                              Text(
+                                "Log In",
+                                style: TextStyle(
+                                  color: AppColors.primaryBlue,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 20),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),
@@ -436,8 +480,8 @@ class _ResetNewPasswordScreenState extends State<ResetNewPasswordScreen>
                 padding: const EdgeInsets.all(14),
                 child: Image.asset(
                   showPassword
-                      ? "assets/images/eye.png"
-                      : "assets/images/closed_eye.png",
+                      ? "assets/images/eye.webp"
+                      : "assets/images/closed_eye.webp",
                   height: 18,
                 ),
               ),
@@ -460,8 +504,8 @@ class _ResetNewPasswordScreenState extends State<ResetNewPasswordScreen>
                 padding: const EdgeInsets.all(14),
                 child: Image.asset(
                   showConfirm
-                      ? "assets/images/eye.png"
-                      : "assets/images/closed_eye.png",
+                      ? "assets/images/eye.webp"
+                      : "assets/images/closed_eye.webp",
                   height: 18,
                 ),
               ),

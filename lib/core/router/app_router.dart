@@ -38,6 +38,7 @@ import '../../features/home/my_report/my_reports_screen.dart';
 import '../../features/home/Quick-action/Chat-with-Agent/chat_agent_screen.dart';
 import '../../features/home/Quick-action/Events/events_screen.dart';
 import '../../features/home/Quick-action/Suggestion/suggestion_screen.dart';
+import '../../features/home/Quick-action/Feedback/feedback_screen.dart';
 import '../../features/home/my_report/report_detail_screen.dart';
 import '../../features/home/Quick-action/Events/event_detail_screen.dart';
 import '../../features/home/settings/change-password/change_password_send_screen.dart';
@@ -45,6 +46,7 @@ import '../../features/home/settings/change-password/change_password_verify_scre
 import '../../features/home/settings/change-password/change_password_new_screen.dart';
 import '../providers/user_profile_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../features/home/settings/my-submission/my_submissions_screen.dart';
 
 /// Required by [MaterialApp.navigatorObservers] for home route tracking.
 final RouteObserver<ModalRoute<void>> homeRouteObserver =
@@ -57,7 +59,15 @@ final RouteObserver<ModalRoute<void>> homeRouteObserver =
 // completely unaffected because PageRouteBuilder is only returned on web.
 Route<dynamic> _webFade(Widget child) {
   if (!kIsWeb) {
-    return MaterialPageRoute(builder: (_) => NetworkWrapper(child: child));
+    // Instant on mobile — avoids the slide-from-right "flick" between
+    // reset-password method/email/phone/verify screens. Content-level
+    // slide-up (if any) is handled by the screen's own AnimationController.
+    return PageRouteBuilder(
+      transitionDuration: Duration.zero,
+      reverseTransitionDuration: Duration.zero,
+      pageBuilder: (_, _, _) => NetworkWrapper(child: child),
+      transitionsBuilder: (_, _, _, child) => child,
+    );
   }
   return PageRouteBuilder(
     transitionDuration: const Duration(milliseconds: 200),
@@ -79,16 +89,29 @@ PageRouteBuilder _instant(Widget child) => PageRouteBuilder(
 // Returns a MaterialPageRoute on mobile so those flows are untouched.
 Route<dynamic> _webFadeRoute(Widget child) => _webFade(child);
 
-PageRouteBuilder _slideUp(Widget child) => PageRouteBuilder(
-  transitionDuration: const Duration(milliseconds: 400),
+// ── Instant push, fade-out on back ────────────────────────────────────────
+// Used by reset-password method/email/phone sub-screens: entry is instant
+// (content slide-up handled by the screen's own AnimationController), but
+// popping back fades the screen out.
+PageRouteBuilder _instantInFadeOut(Widget child) => PageRouteBuilder(
+  transitionDuration: Duration.zero,
+  reverseTransitionDuration: const Duration(milliseconds: 220),
   pageBuilder: (_, _, _) => NetworkWrapper(child: child),
-  transitionsBuilder: (_, anim, _, child) => SlideTransition(
-    position: Tween(
-      begin: const Offset(0, 1),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
-    child: child,
-  ),
+  transitionsBuilder: (_, anim, _, child) =>
+      FadeTransition(opacity: anim, child: child),
+);
+
+// ── Slide-up: used by quick-action screens (report, suggestion, chat, feedback)
+// Entry  : entire screen slides up from bottom (400 ms, easeOutCubic)
+// Reverse: instant back-fade handled by the screen's own AnimationController
+PageRouteBuilder _slideUp(Widget child) => PageRouteBuilder(
+  // Entry is instant at the router level — the screen's AnimationController
+  // does the real slide-up of content so there is no double-slide.
+  transitionDuration: Duration.zero,
+  reverseTransitionDuration: const Duration(milliseconds: 300),
+  pageBuilder: (_, _, _) => NetworkWrapper(child: child),
+  transitionsBuilder: (_, anim, _, child) =>
+      FadeTransition(opacity: anim, child: child),
 );
 
 // ─── Named routes map ─────────────────────────────────────────────────────────
@@ -103,10 +126,14 @@ Map<String, WidgetBuilder> get appRoutes => {
 
 Route<dynamic>? onGenerateRoute(RouteSettings settings) {
   switch (settings.name) {
-    // ── Auth flow — _webFade on web, native transition on mobile ─────────────
+    // ── Auth flow ────────────────────────────────────────────────────────────
+    // /login, /signup, /phone_signup use _instantInFadeOut:
+    //  - Entry is instant on all platforms — each screen's own
+    //    _entranceController plays the fade + slide-up of its content.
+    //  - Reverse (back navigation) fades the whole screen out over 220ms.
 
     case '/login':
-      return _webFade(
+      return _instantInFadeOut(
         Builder(
           builder: (ctx) => LoginScreen(
             onLoginClick: (username, password) async {
@@ -121,9 +148,7 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
               }
               if (!ctx.mounted) return;
 
-              // ── ADD THIS LINE ─────────────────────────────────────
               ProviderScope.containerOf(ctx).invalidate(userProfileProvider);
-              // ──────────────────────────────────────────────────────
 
               Navigator.pushReplacement(
                 ctx,
@@ -147,7 +172,7 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
       );
 
     case '/signup':
-      return _webFade(
+      return _instantInFadeOut(
         Builder(
           builder: (ctx) => SignupScreen(
             onSignUpClick: (_, _, _) {},
@@ -163,7 +188,7 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
       );
 
     case '/phone_signup':
-      return _webFade(
+      return _instantInFadeOut(
         Builder(
           builder: (ctx) => PhoneSignupScreen(
             onContinueClick: (phone, password) async {
@@ -192,58 +217,66 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
 
     case '/email_verification_success':
       final email = settings.arguments as String;
-      return _webFade(EmailVerificationSuccess(email: email));
+      return _instantInFadeOut(EmailVerificationSuccess(email: email));
 
     case '/phone_verification_success':
       final phone = settings.arguments as String;
-      return _webFade(PhoneVerificationSuccess(phone: phone));
+      return _instantInFadeOut(PhoneVerificationSuccess(phone: phone));
 
     // ── Reset password — sub-screens also use _webFadeRoute inline ───────────
 
     case '/reset_password':
-      return _webFade(
-        Builder(
-          builder: (ctx) => ResetPasswordMethodScreen(
-            onEmailTap: () {
-              Navigator.push(
-                ctx,
-                _webFadeRoute(
-                  Builder(
-                    builder: (ctx2) => ResetPasswordEmailScreen(
-                      onVerify: () {
-                        Navigator.push(
-                          ctx2,
-                          _webFadeRoute(
-                            ResetPasswordEmailVerifyScreen(
-                              email: '',
-                              onVerifiedSuccess: () {},
-                              onTermsClick: () {},
-                              onConditionsClick: () {},
+      return PageRouteBuilder(
+        // Forward: instant — content slide-up handled by the screen itself.
+        transitionDuration: Duration.zero,
+        // Back (to login): fade out.
+        reverseTransitionDuration: const Duration(milliseconds: 220),
+        pageBuilder: (_, _, _) => NetworkWrapper(
+          child: Builder(
+            builder: (ctx) => ResetPasswordMethodScreen(
+              onEmailTap: () {
+                Navigator.push(
+                  ctx,
+                  _instantInFadeOut(
+                    Builder(
+                      builder: (ctx2) => ResetPasswordEmailScreen(
+                        onVerify: () {
+                          Navigator.push(
+                            ctx2,
+                            _webFadeRoute(
+                              ResetPasswordEmailVerifyScreen(
+                                email: '',
+                                onVerifiedSuccess: () {},
+                                onTermsClick: () {},
+                                onConditionsClick: () {},
+                              ),
                             ),
-                          ),
-                        );
-                      },
-                      onLogin: () => Navigator.pushNamed(ctx2, '/login'),
+                          );
+                        },
+                        onLogin: () => Navigator.pushNamed(ctx2, '/login'),
+                      ),
                     ),
                   ),
-                ),
-              );
-            },
-            onPhoneTap: () {
-              Navigator.push(
-                ctx,
-                _webFadeRoute(
-                  Builder(
-                    builder: (ctx2) => ResetPasswordPhoneScreen(
-                      onVerify: () {},
-                      onLogin: () => Navigator.pushNamed(ctx2, '/login'),
+                );
+              },
+              onPhoneTap: () {
+                Navigator.push(
+                  ctx,
+                  _instantInFadeOut(
+                    Builder(
+                      builder: (ctx2) => ResetPasswordPhoneScreen(
+                        onVerify: () {},
+                        onLogin: () => Navigator.pushNamed(ctx2, '/login'),
+                      ),
                     ),
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
         ),
+        transitionsBuilder: (_, anim, _, child) =>
+            FadeTransition(opacity: anim, child: child),
       );
 
     // ── Verification ─────────────────────────────────────────────────────────
@@ -283,7 +316,7 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
         ),
       );
 
-    // ── Home sub-screens — keep their original slide/slideUp transitions ─────
+    // ── Home sub-screens ─────────────────────────────────────────────────────
 
     case '/newsfeed':
       final args = settings.arguments;
@@ -321,6 +354,12 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
     case '/suggestion':
       final username = settings.arguments as String? ?? '';
       return _slideUp(SuggestionScreen(username: username));
+
+    // ─── FEEDBACK — instant push, content slides up internally ───────────────
+    case '/feedback':
+      final username = settings.arguments as String? ?? '';
+      return _slideUp(FeedbackScreen(username: username));
+    // ─────────────────────────────────────────────────────────────────────────
 
     case '/my_reports':
       final username = settings.arguments as String? ?? '';
@@ -451,7 +490,6 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
           ),
         ),
         transitionsBuilder: (_, anim, _, child) => SlideTransition(
-          // ← updated
           position: Tween<Offset>(
             begin: const Offset(0, 1),
             end: Offset.zero,
@@ -463,7 +501,7 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
     case '/verification_identity':
       final args = settings.arguments as Map<String, dynamic>;
       return PageRouteBuilder(
-        transitionDuration: const Duration(milliseconds: 420), // ← updated
+        transitionDuration: const Duration(milliseconds: 420),
         reverseTransitionDuration: const Duration(milliseconds: 300),
         pageBuilder: (_, _, _) => NetworkWrapper(
           child: VerificationIdentityScreen(
@@ -486,7 +524,6 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
           ),
         ),
         transitionsBuilder: (_, anim, _, child) => SlideTransition(
-          // ← updated
           position: Tween<Offset>(
             begin: const Offset(0, 1),
             end: Offset.zero,
@@ -528,10 +565,8 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
       final args = settings.arguments as Map<String, dynamic>;
       return PageRouteBuilder(
         settings: settings,
-        transitionDuration: Duration.zero, // instant in
-        reverseTransitionDuration: const Duration(
-          milliseconds: 300,
-        ), // fade out
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: const Duration(milliseconds: 300),
         pageBuilder: (_, _, _) => NetworkWrapper(
           child: EventDetailScreen(
             event: args['event'] as EventItem,
@@ -549,6 +584,17 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
         reverseTransitionDuration: const Duration(milliseconds: 280),
         pageBuilder: (_, _, _) =>
             NetworkWrapper(child: ChangePasswordSendScreen(email: email)),
+        transitionsBuilder: (_, anim, _, child) =>
+            FadeTransition(opacity: anim, child: child),
+      );
+
+    case '/my_submissions':
+      final username = settings.arguments as String? ?? '';
+      return PageRouteBuilder(
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: const Duration(milliseconds: 280),
+        pageBuilder: (_, _, _) =>
+            NetworkWrapper(child: MySubmissionsScreen(username: username)),
         transitionsBuilder: (_, anim, _, child) =>
             FadeTransition(opacity: anim, child: child),
       );
@@ -585,7 +631,7 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
       if (settings.name != null &&
           settings.name!.startsWith('/phone_verify/')) {
         final phone = settings.name!.split('/').last;
-        return _webFade(
+        return _instantInFadeOut(
           PhoneVerificationScreen(
             phone: phone,
             onTermsClick: () {},

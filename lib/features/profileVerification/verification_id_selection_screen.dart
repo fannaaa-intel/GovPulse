@@ -52,47 +52,47 @@ class _VerificationIdSelectionScreenState
     {
       "title": "PhilSys ID",
       "subtitle": "Recommended",
-      "image": "assets/images/idcards/phfront.png",
+      "image": "assets/images/idcards/phfront.webp",
     },
     {
       "title": "Driver's License ID",
       "subtitle": "Recommended",
-      "image": "assets/images/idcards/driversfront.png",
+      "image": "assets/images/idcards/driversfront.webp",
     },
     {
       "title": "Postal ID",
       "subtitle": "Recommended",
-      "image": "assets/images/idcards/postalfront.png",
+      "image": "assets/images/idcards/postalfront.webp",
     },
     {
       "title": "Philippine Passport ID",
       "subtitle": "",
-      "image": "assets/images/idcards/philpassfront.png",
+      "image": "assets/images/idcards/philpassfront.webp",
     },
     {
       "title": "PhilHealth ID",
       "subtitle": "",
-      "image": "assets/images/idcards/phealthfront.png",
+      "image": "assets/images/idcards/phealthfront.webp",
     },
     {
       "title": "PRC ID",
       "subtitle": "",
-      "image": "assets/images/idcards/prcharap.png",
+      "image": "assets/images/idcards/prcharap.webp",
     },
     {
       "title": "SSS ID",
       "subtitle": "",
-      "image": "assets/images/idcards/sssfront.png",
+      "image": "assets/images/idcards/sssfront.webp",
     },
     {
       "title": "TIN ID",
       "subtitle": "",
-      "image": "assets/images/idcards/tinfront.png",
+      "image": "assets/images/idcards/tinfront.webp",
     },
     {
       "title": "UMID ID",
       "subtitle": "",
-      "image": "assets/images/idcards/umidharap.png",
+      "image": "assets/images/idcards/umidharap.webp",
     },
   ];
 
@@ -115,7 +115,7 @@ class _VerificationIdSelectionScreenState
                   /// LOGO
                   Center(
                     child: Image.asset(
-                      "assets/images/applogocrop.png",
+                      "assets/images/applogocrop.webp",
                       height: MediaQuery.of(context).size.height * 0.12,
                     ),
                   ),

@@ -139,7 +139,7 @@ class _BrandLogo extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Image.asset(
-          'assets/images/applogocrop.png',
+          'assets/images/applogocrop.webp',
           width: 28,
           height: 28,
           fit: BoxFit.contain,

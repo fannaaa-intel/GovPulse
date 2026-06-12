@@ -205,7 +205,7 @@ class _LoginScreenState extends State<LoginScreen>
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Image.asset(
-          "assets/images/applogocrop.png",
+          "assets/images/applogocrop.webp",
           width: MediaQuery.of(context).size.width * 0.30,
         ),
         const SizedBox(height: 32),
@@ -237,7 +237,7 @@ class _LoginScreenState extends State<LoginScreen>
         // Logo mark
         Row(
           children: [
-            Image.asset("assets/images/applogo.png", height: 30),
+            Image.asset("assets/images/applogo.webp", height: 30),
             const SizedBox(width: 10),
             Text(
               "GovPulse",
@@ -510,8 +510,8 @@ class _LoginScreenState extends State<LoginScreen>
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 child: Image.asset(
                   showPassword
-                      ? "assets/images/eye.png"
-                      : "assets/images/closed_eye.png",
+                      ? "assets/images/eye.webp"
+                      : "assets/images/closed_eye.webp",
                   width: 22,
                   height: 22,
                 ),
@@ -599,7 +599,7 @@ class _LoginScreenState extends State<LoginScreen>
             children: [
               Expanded(
                 child: SocialButton(
-                  iconPath: "assets/images/guest.png",
+                  iconPath: "assets/images/guest.webp",
                   label: "As Guest",
                   onTap: widget.onGuestClick ?? () {},
                 ),
@@ -607,7 +607,7 @@ class _LoginScreenState extends State<LoginScreen>
               const SizedBox(width: 16),
               Expanded(
                 child: SocialButton(
-                  iconPath: "assets/images/out.png",
+                  iconPath: "assets/images/out.webp",
                   label: "Sign Up",
                   onTap: widget.onSignUpClick,
                 ),

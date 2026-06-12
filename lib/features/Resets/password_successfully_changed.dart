@@ -12,8 +12,13 @@ class PasswordChangeSuccess extends StatefulWidget {
 }
 
 class _PasswordChangeSuccessState extends State<PasswordChangeSuccess>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late AnimationController _heroController;
+
+  // ── Content entrance: instant screen, content fades + slides up ──────────
+  late final AnimationController _entranceController;
+  late final Animation<double> _fadeAnim;
+  late final Animation<Offset> _slideAnim;
 
   @override
   void initState() {
@@ -22,11 +27,32 @@ class _PasswordChangeSuccessState extends State<PasswordChangeSuccess>
       vsync: this,
       duration: const Duration(seconds: 8),
     )..repeat(reverse: true);
+
+    _entranceController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
+    _fadeAnim = CurvedAnimation(
+      parent: _entranceController,
+      curve: Curves.easeOut,
+    );
+    _slideAnim = Tween<Offset>(begin: const Offset(0, 0.06), end: Offset.zero)
+        .animate(
+          CurvedAnimation(
+            parent: _entranceController,
+            curve: Curves.easeOutCubic,
+          ),
+        );
+
+    Future.delayed(const Duration(milliseconds: 80), () {
+      if (mounted) _entranceController.forward();
+    });
   }
 
   @override
   void dispose() {
     _heroController.dispose();
+    _entranceController.dispose();
     super.dispose();
   }
 
@@ -45,71 +71,80 @@ class _PasswordChangeSuccessState extends State<PasswordChangeSuccess>
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
-        child: MobileFormShell(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 26),
-            child: Column(
-              children: [
-                const SizedBox(height: 40),
+        child: FadeTransition(
+          opacity: _fadeAnim,
+          child: SlideTransition(
+            position: _slideAnim,
+            child: MobileFormShell(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 26),
+                child: Column(
+                  children: [
+                    const SizedBox(height: 40),
 
-                Image.asset(
-                  "assets/images/applogocrop.png",
-                  width: (w * 0.28).clamp(0.0, 140.0).toDouble(),
-                ),
+                    Image.asset(
+                      "assets/images/applogocrop.webp",
+                      width: (w * 0.28).clamp(0.0, 140.0).toDouble(),
+                    ),
 
-                const SizedBox(height: 20),
+                    const SizedBox(height: 20),
 
-                Center(
-                  child: Image.asset("assets/images/success.gif", height: 130),
-                ),
-
-                const SizedBox(height: 20),
-
-                Text(
-                  "Password Changed",
-                  style: TextStyle(
-                    fontSize: 21,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.primaryBlue,
-                  ),
-                ),
-
-                const SizedBox(height: 14),
-
-                const Text(
-                  "Your password has been successfully updated.\nYou can now log in with your new password.",
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 13, color: AppColors.hint),
-                ),
-
-                const SizedBox(height: 48),
-
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primaryBlue,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
+                    Center(
+                      child: Image.asset(
+                        "assets/images/success.gif",
+                        height: 130,
                       ),
                     ),
-                    onPressed: () => Navigator.of(
-                      context,
-                    ).pushNamedAndRemoveUntil('/login', (route) => false),
-                    child: const Text(
-                      "Continue",
+
+                    const SizedBox(height: 20),
+
+                    Text(
+                      "Password Changed",
                       style: TextStyle(
-                        fontSize: 16,
+                        fontSize: 21,
                         fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                        color: AppColors.primaryBlue,
                       ),
                     ),
-                  ),
-                ),
 
-                const SizedBox(height: 30),
-              ],
+                    const SizedBox(height: 14),
+
+                    const Text(
+                      "Your password has been successfully updated.\nYou can now log in with your new password.",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 13, color: AppColors.hint),
+                    ),
+
+                    const SizedBox(height: 48),
+
+                    SizedBox(
+                      width: double.infinity,
+                      height: 52,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primaryBlue,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        onPressed: () => Navigator.of(
+                          context,
+                        ).pushNamedAndRemoveUntil('/login', (route) => false),
+                        child: const Text(
+                          "Continue",
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 30),
+                  ],
+                ),
+              ),
             ),
           ),
         ),
@@ -131,7 +166,7 @@ class _PasswordChangeSuccessState extends State<PasswordChangeSuccess>
         children: [
           // ── Logo ──────────────────────────────────────────────────────────
           Center(
-            child: Image.asset("assets/images/applogocrop.png", height: 44),
+            child: Image.asset("assets/images/applogocrop.webp", height: 44),
           ),
           const SizedBox(height: 28),
 

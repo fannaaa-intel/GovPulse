@@ -113,7 +113,7 @@ class _IntroScreenState extends State<IntroScreen>
 
                   // ── Logo ────────────────────────────────────────────────
                   Image.asset(
-                    "assets/images/applogocrop.png",
+                    "assets/images/applogocrop.webp",
                     width: logoWidth,
                     filterQuality: FilterQuality.high,
                   ),
