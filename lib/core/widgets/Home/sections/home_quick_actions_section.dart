@@ -17,32 +17,41 @@ class HomeQuickActionsSection extends StatelessWidget {
   static const List<Map<String, dynamic>> _actions = [
     {
       'key': 'report',
-      'iconPath': 'assets/images/problem.png',
+      'iconPath': 'assets/images/problem.webp',
       'title': 'Report Issue',
       'subtitle': 'Report a problem in your area',
       'accentColor': Color(0xFFEF4444),
     },
     {
       'key': 'chat',
-      'iconPath': 'assets/images/customer.png',
+      'iconPath': 'assets/images/customer.webp',
       'title': 'Chat with Agent',
       'subtitle': 'Talk to an LGU support agent',
       'accentColor': Color(0xFF3B82F6),
     },
     {
       'key': 'events',
-      'iconPath': 'assets/images/events.png',
+      'iconPath': 'assets/images/events.webp',
       'title': 'Events',
       'subtitle': 'Browse upcoming local events',
       'accentColor': Color(0xFF22C55E),
     },
     {
       'key': 'suggestion',
-      'iconPath': 'assets/images/suggestions.png',
+      'iconPath': 'assets/images/suggestions.webp',
       'title': 'Suggestion',
       'subtitle': 'Share your ideas with the LGU',
       'accentColor': Color(0xFF60A5FA),
     },
+    // ─── NEW ────────────────────────────────────────────────────────────────
+    {
+      'key': 'feedback',
+      'iconPath': 'assets/images/feedback.webp',
+      'title': 'Feedback',
+      'subtitle': 'Rate and review LGU services',
+      'accentColor': Color(0xFF8B5CF6),
+    },
+    // ────────────────────────────────────────────────────────────────────────
   ];
 
   @override
@@ -118,6 +127,7 @@ class HomeQuickActionsSection extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
+            // Icon container
             Container(
               width: width * 0.13,
               height: width * 0.13,
@@ -131,10 +141,17 @@ class HomeQuickActionsSection extends StatelessWidget {
                   width: width * 0.075,
                   height: width * 0.075,
                   fit: BoxFit.contain,
+                  // Graceful fallback if the asset isn't in pubspec yet
+                  errorBuilder: (_, _, _) => Icon(
+                    _fallbackIcon(key),
+                    size: width * 0.065,
+                    color: accent,
+                  ),
                 ),
               ),
             ),
             SizedBox(width: width * 0.04),
+            // Text
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -169,5 +186,23 @@ class HomeQuickActionsSection extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  /// Material icon fallback shown when the PNG asset is missing.
+  static IconData _fallbackIcon(String key) {
+    switch (key) {
+      case 'report':
+        return Icons.report_problem_rounded;
+      case 'chat':
+        return Icons.support_agent_rounded;
+      case 'events':
+        return Icons.event_rounded;
+      case 'suggestion':
+        return Icons.lightbulb_rounded;
+      case 'feedback':
+        return Icons.star_rounded;
+      default:
+        return Icons.touch_app_rounded;
+    }
   }
 }

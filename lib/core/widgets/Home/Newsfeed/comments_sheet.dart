@@ -44,8 +44,6 @@ class _CommentsSheetState extends State<CommentsSheet> {
   String? _myPhotoPath;
   String? _myDisplayName;
 
-  List<Map<String, dynamic>>? _optimisticComments;
-
   final SupabaseClient _supabase = Supabase.instance.client;
   String? get _currentUserId => _supabase.auth.currentUser?.id;
 
@@ -64,13 +62,19 @@ class _CommentsSheetState extends State<CommentsSheet> {
       });
     }
     _loadMyPhoto();
+    CommunityPostsProvider.instance.addListener(_onProviderChanged);
   }
 
   @override
   void dispose() {
+    CommunityPostsProvider.instance.removeListener(_onProviderChanged);
     _inputController.dispose();
     _inputFocus.dispose();
     super.dispose();
+  }
+
+  void _onProviderChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadMyPhoto() async {
@@ -104,47 +108,26 @@ class _CommentsSheetState extends State<CommentsSheet> {
     } catch (_) {}
   }
 
+  // Always reads from the provider — single source of truth.
+  // The provider's sortedPosts already merges optimistic (isSending) comments.
   List<Map<String, dynamic>> _getComments() {
-    // _optimisticComments here is only for local edit/delete patches
-    if (_optimisticComments != null) return _optimisticComments!;
-    final freshPost = CommunityPostsProvider.instance.sortedPosts.firstWhere(
-      (p) => p['id'] == widget.post['id'],
-      orElse: () => widget.post,
+    final raw = List<Map<String, dynamic>>.from(
+      (CommunityPostsProvider.instance.sortedPosts.firstWhere(
+                (p) => p['id'] == widget.post['id'],
+                orElse: () => widget.post,
+              )['comments']
+              as List<dynamic>)
+          .cast<Map<String, dynamic>>(),
     );
-    // sortedPosts already merges provider-level optimistic (sent comments)
-    return List<Map<String, dynamic>>.from(
-      (freshPost['comments'] as List<dynamic>).cast<Map<String, dynamic>>(),
-    );
-  }
-
-  List<Map<String, dynamic>> _patchText(
-    List<Map<String, dynamic>> comments,
-    String id,
-    String newText,
-  ) {
-    return comments.map((c) {
-      if (c['id'] == id) return {...c, 'text': newText};
-      final replies = (c['replies'] as List<dynamic>? ?? [])
-          .cast<Map<String, dynamic>>();
-      return {
-        ...c,
-        'replies': replies.map((r) {
-          if (r['id'] == id) return {...r, 'text': newText};
-          return r;
-        }).toList(),
-      };
-    }).toList();
-  }
-
-  List<Map<String, dynamic>> _removeById(
-    List<Map<String, dynamic>> comments,
-    String id,
-  ) {
-    return comments.where((c) => c['id'] != id).map((c) {
-      final replies = (c['replies'] as List<dynamic>? ?? [])
-          .cast<Map<String, dynamic>>();
-      return {...c, 'replies': replies.where((r) => r['id'] != id).toList()};
-    }).toList();
+    raw.sort((a, b) {
+      final ta = a['timestamp'] as DateTime?;
+      final tb = b['timestamp'] as DateTime?;
+      if (ta == null && tb == null) return 0;
+      if (ta == null) return 1;
+      if (tb == null) return -1;
+      return tb.compareTo(ta); // newest first
+    });
+    return raw;
   }
 
   void _setReplyByAuthorName(String authorName) {
@@ -267,9 +250,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
       optimisticComment,
     );
 
-    // Clear local optimistic since provider now owns it
     setState(() {
-      _optimisticComments = null;
       _replyingTo = null;
       _replyingToParentId = null;
       _replyingToUserId = null;
@@ -278,16 +259,25 @@ class _CommentsSheetState extends State<CommentsSheet> {
     _inputController.clear();
 
     try {
-      await _supabase.from('community_comments').insert({
-        'post_id': postId,
-        'parent_comment_id': optimisticComment['parentId'],
-        'author_id': userId,
-        'mentioned_user_id': optimisticComment['mentionedUserId'],
-        'body': text,
-      });
-      // DB confirmed — flip isSending flag, keep comment visible
+      final inserted = await _supabase
+          .from('community_comments')
+          .insert({
+            'post_id': postId,
+            'parent_comment_id': optimisticComment['parentId'],
+            'author_id': userId,
+            'mentioned_user_id': optimisticComment['mentionedUserId'],
+            'body': text,
+          })
+          .select('id')
+          .single();
+      final realId = inserted['id'] as String;
+      // DB confirmed — record real id so reconciliation is id-based, not text-based
       if (mounted) {
-        CommunityPostsProvider.instance.markOptimisticSent(postId, tempId);
+        CommunityPostsProvider.instance.confirmOptimisticComment(
+          postId,
+          tempId,
+          realId,
+        );
       }
     } catch (e) {
       // Remove optimistic on failure
@@ -332,22 +322,40 @@ class _CommentsSheetState extends State<CommentsSheet> {
         newText.trim() == currentText) {
       return;
     }
-
     final trimmed = newText.trim();
+    final postId = widget.post['id'] as String;
 
-    setState(() {
-      _optimisticComments = _patchText(_getComments(), id, trimmed);
-    });
+    // Optimistically update AND mark as sending to block realtime overwrites
+    CommunityPostsProvider.instance.updateOptimisticCommentText(
+      postId,
+      id,
+      trimmed,
+      markAsSending: true, // <-- add this flag
+    );
 
     try {
       await _supabase
           .from('community_comments')
           .update({'body': trimmed})
           .eq('id', id);
-      // Realtime handles sync — optimistic state stays correct
-    } catch (_) {
+
+      // Confirmed — unmark sending so realtime can resume normally
       if (mounted) {
-        if (mounted) setState(() => _optimisticComments = null);
+        CommunityPostsProvider.instance.updateOptimisticCommentText(
+          postId,
+          id,
+          trimmed,
+          markAsSending: false,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        CommunityPostsProvider.instance.updateOptimisticCommentText(
+          postId,
+          id,
+          currentText,
+          markAsSending: false, // roll back and unblock
+        );
         showFriendlyErrorDialog(
           context,
           'Could not edit your comment. Please try again.',
@@ -482,11 +490,25 @@ class _CommentsSheetState extends State<CommentsSheet> {
     );
 
     if (confirmed != true) return;
+    if (!mounted) return;
 
-    final snapshot = _getComments();
-    setState(() {
-      _optimisticComments = _removeById(snapshot, id);
-    });
+    FocusManager.instance.primaryFocus?.unfocus();
+
+    final loaderNavigator = Navigator.of(context);
+
+    showDialog(
+      context: context,
+      useRootNavigator: false,
+      barrierDismissible: false,
+      barrierColor: Colors.black.withValues(alpha: 0.25),
+      builder: (_) => const Center(
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: CircularProgressIndicator(strokeWidth: 3),
+        ),
+      ),
+    );
 
     try {
       final isTopLevel = entry['parentId'] == null;
@@ -497,10 +519,36 @@ class _CommentsSheetState extends State<CommentsSheet> {
             .eq('parent_comment_id', id);
       }
       await _supabase.from('community_comments').delete().eq('id', id);
-      // Realtime handles sync — optimistic state stays correct
+
+      if (mounted) {
+        loaderNavigator.pop();
+        final postId = widget.post['id'] as String;
+        final replyCount = isTopLevel
+            ? ((entry['replies'] as List<dynamic>?)?.length ?? 0)
+            : 0;
+        final deleteCount = 1 + replyCount;
+
+        CommunityPostsProvider.instance.purgeOptimisticByAnyId(
+          postId,
+          id,
+          alsoChildren: isTopLevel,
+        );
+        CommunityPostsProvider.instance.removeCommentFromPost(
+          postId,
+          id,
+          isTopLevel: isTopLevel,
+        );
+        CommunityPostsProvider.instance.decrementCommentCount(
+          postId,
+          deleteCount,
+        );
+        // Provider notifyListeners() already triggers _onProviderChanged → setState,
+        // but call explicitly in case the widget is not yet listening after pop.
+        if (mounted) setState(() {});
+      }
     } catch (_) {
       if (mounted) {
-        if (mounted) setState(() => _optimisticComments = null);
+        loaderNavigator.pop();
         showFriendlyErrorDialog(
           context,
           'Could not delete your comment. Please try again.',
@@ -756,7 +804,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
               child: Row(
                 children: [
                   Image.asset(
-                    'assets/images/heart.png',
+                    'assets/images/heart.webp',
                     width: width * 0.046,
                     height: width * 0.046,
                     color: isPostLiked
@@ -789,7 +837,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
             ),
             SizedBox(width: width * 0.05),
             Image.asset(
-              'assets/images/comment.png',
+              'assets/images/comment.webp',
               width: width * 0.048,
               height: width * 0.048,
               color: AppColors.primaryBlue,
@@ -1000,7 +1048,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
                             ),
                           )
                         : Image.asset(
-                            'assets/images/send.png',
+                            'assets/images/send.webp',
                             width: width * 0.058,
                             height: width * 0.058,
                             fit: BoxFit.contain,

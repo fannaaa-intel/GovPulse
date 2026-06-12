@@ -7,6 +7,7 @@ enum SkeletonLayout {
   settings,
   editProfile,
   myReports,
+  mySubmissions,
   newsFeed,
   events,
   changePassword,
@@ -428,6 +429,7 @@ class _SkeletonScreen extends StatelessWidget {
       SkeletonLayout.settings ||
       SkeletonLayout.none => const _SettingsSkeletonScreen(),
       SkeletonLayout.myReports => const _MyReportsSkeletonScreen(),
+      SkeletonLayout.mySubmissions => const MySubmissionsBodySkeleton(),
       SkeletonLayout.newsFeed => const _NewsFeedSkeletonScreen(),
       SkeletonLayout.events => const EventsSkeletonScreen(),
       SkeletonLayout.changePassword => const _ChangePasswordSkeletonScreen(),
@@ -1719,6 +1721,81 @@ class _ChangePasswordSkeletonScreen extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ── My Submissions BODY skeleton (cards only — caller keeps header + tabs) ───
+class MySubmissionsBodySkeleton extends StatelessWidget {
+  const MySubmissionsBodySkeleton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final w = MediaQuery.of(context).size.width;
+
+    Widget card() => Container(
+      margin: EdgeInsets.only(bottom: w * 0.03),
+      padding: EdgeInsets.all(w * 0.035),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(w * 0.035),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _Shimmer(width: w * 0.12, height: w * 0.12, radius: w * 0.03),
+              SizedBox(height: w * 0.012),
+              _Shimmer(width: w * 0.13, height: w * 0.022, radius: w * 0.006),
+            ],
+          ),
+          SizedBox(width: w * 0.03),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: _Shimmer(
+                        width: double.infinity,
+                        height: w * 0.034,
+                        radius: w * 0.008,
+                      ),
+                    ),
+                    SizedBox(width: w * 0.02),
+                    _Shimmer(
+                      width: w * 0.22,
+                      height: w * 0.05,
+                      radius: w * 0.04,
+                    ),
+                  ],
+                ),
+                SizedBox(height: w * 0.025),
+                _Shimmer(
+                  width: double.infinity,
+                  height: w * 0.028,
+                  radius: w * 0.008,
+                ),
+                SizedBox(height: w * 0.012),
+                _Shimmer(width: w * 0.62, height: w * 0.028, radius: w * 0.008),
+                SizedBox(height: w * 0.02),
+                _Shimmer(width: w * 0.34, height: w * 0.024, radius: w * 0.006),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+
+    return ListView.builder(
+      physics: const NeverScrollableScrollPhysics(),
+      padding: EdgeInsets.fromLTRB(w * 0.04, w * 0.025, w * 0.04, w * 0.08),
+      itemCount: 5,
+      itemBuilder: (_, _) => card(),
     );
   }
 }

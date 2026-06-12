@@ -182,37 +182,37 @@ class _SuggestionScreenState extends State<SuggestionScreen>
     {
       'key': 'public_service',
       'label': 'Public\nService',
-      'icon': 'assets/images/suggestion/courthouse.png',
+      'icon': 'assets/images/suggestion/courthouse.webp',
       'fallbackIcon': Icons.account_balance_rounded,
     },
     {
       'key': 'community_program',
       'label': 'Community\nProgram',
-      'icon': 'assets/images/suggestion/group.png',
+      'icon': 'assets/images/suggestion/group.webp',
       'fallbackIcon': Icons.groups_rounded,
     },
     {
       'key': 'health_safety',
       'label': 'Health &\nSafety',
-      'icon': 'assets/images/suggestion/health.png',
+      'icon': 'assets/images/suggestion/health.webp',
       'fallbackIcon': Icons.health_and_safety_rounded,
     },
     {
       'key': 'infrastructure',
       'label': 'Infrastructure',
-      'icon': 'assets/images/suggestion/building.png',
+      'icon': 'assets/images/suggestion/building.webp',
       'fallbackIcon': Icons.apartment_rounded,
     },
     {
       'key': 'environment',
       'label': 'Environment &\nCleanliness',
-      'icon': 'assets/images/suggestion/trees.png',
+      'icon': 'assets/images/suggestion/trees.webp',
       'fallbackIcon': Icons.eco_rounded,
     },
     {
       'key': 'others',
       'label': 'Others',
-      'icon': 'assets/images/report/menu.png',
+      'icon': 'assets/images/report/menu.webp',
       'fallbackIcon': Icons.more_horiz,
     },
   ];
@@ -518,7 +518,7 @@ class _SuggestionScreenState extends State<SuggestionScreen>
           ),
           SizedBox(width: width * 0.03),
           Image.asset(
-            'assets/images/newslogo.png',
+            'assets/images/newslogo.webp',
             height: width * 0.085,
             fit: BoxFit.contain,
             errorBuilder: (_, _, _) => Row(
@@ -594,7 +594,7 @@ class _SuggestionScreenState extends State<SuggestionScreen>
               ),
             ),
             Image.asset(
-              'assets/images/suggestion/suggestion.png',
+              'assets/images/suggestion/suggestion.webp',
               width: width * 0.22,
               height: width * 0.22,
               fit: BoxFit.contain,
@@ -1089,7 +1089,7 @@ class _SuggestionScreenState extends State<SuggestionScreen>
             const SizedBox(height: 16),
             ListTile(
               leading: Image.asset(
-                'assets/images/report/gallery.png',
+                'assets/images/report/gallery.webp',
                 width: 28,
                 height: 28,
                 errorBuilder: (_, _, _) => Icon(
@@ -1102,7 +1102,7 @@ class _SuggestionScreenState extends State<SuggestionScreen>
             ),
             ListTile(
               leading: Image.asset(
-                'assets/images/report/video.png',
+                'assets/images/report/video.webp',
                 width: 28,
                 height: 28,
                 errorBuilder: (_, _, _) =>
@@ -1113,7 +1113,7 @@ class _SuggestionScreenState extends State<SuggestionScreen>
             ),
             ListTile(
               leading: Image.asset(
-                'assets/images/report/cameraicon.png',
+                'assets/images/report/cameraicon.webp',
                 width: 28,
                 height: 28,
                 errorBuilder: (_, _, _) => Icon(
@@ -1172,7 +1172,7 @@ class _SuggestionScreenState extends State<SuggestionScreen>
             mainAxisSize: MainAxisSize.min,
             children: [
               Image.asset(
-                'assets/images/report/sad_face.png',
+                'assets/images/report/sad_face.webp',
                 width: 72,
                 height: 72,
                 errorBuilder: (_, _, _) => const Icon(
@@ -1311,7 +1311,7 @@ class _SuggestionScreenState extends State<SuggestionScreen>
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Image.asset(
-                    'assets/images/report/camera.png',
+                    'assets/images/report/camera.webp',
                     width: width * 0.10,
                     height: width * 0.10,
                     errorBuilder: (_, _, _) => Icon(
@@ -1370,7 +1370,7 @@ class _SuggestionScreenState extends State<SuggestionScreen>
                       ),
                       child: Center(
                         child: Image.asset(
-                          'assets/images/report/plus_sign.png',
+                          'assets/images/report/plus_sign.webp',
                           width: width * 0.07,
                           height: width * 0.07,
                           errorBuilder: (_, _, _) => Icon(
@@ -1761,7 +1761,7 @@ class _SuggestionScreenState extends State<SuggestionScreen>
         child: Row(
           children: [
             Image.asset(
-              'assets/images/report/padlock.png',
+              'assets/images/report/padlock.webp',
               width: width * 0.07,
               height: width * 0.07,
               errorBuilder: (_, _, _) => Icon(
@@ -1879,7 +1879,36 @@ class _SuggestionScreenState extends State<SuggestionScreen>
 
     try {
       final supabase = Supabase.instance.client;
-      final userId = supabase.auth.currentUser!.id;
+
+      final session = supabase.auth.currentSession;
+
+      if (session == null) {
+        setState(() => _isSubmitting = false);
+        showFriendlyErrorDialog(
+          context,
+          'Session expired. Please log in again.',
+        );
+        return;
+      }
+
+      await supabase.auth.refreshSession();
+
+      if (!mounted) return;
+
+      final freshSession = supabase.auth.currentSession;
+
+      if (freshSession == null) {
+        setState(() => _isSubmitting = false);
+
+        showFriendlyErrorDialog(
+          context,
+          'Session expired. Please log in again.',
+        );
+
+        return;
+      }
+
+      final userId = session.user.id;
 
       // ── Upload media ──────────────────────────────────────────────────────
       final List<Map<String, String>> mediaItems = [];
@@ -1904,24 +1933,26 @@ class _SuggestionScreenState extends State<SuggestionScreen>
       }
 
       // ── Insert suggestion ─────────────────────────────────────────────────
+      final insertPayload = {
+        'user_id': userId, // ← always send real user_id
+        'category': _selectedCategory,
+        'category_other': _selectedCategory == 'others'
+            ? _othersCtrl.text.trim()
+            : null,
+        'barangay': _pickedBarangay,
+        'address': _streetDetailCtrl.text.trim().isEmpty
+            ? null
+            : _streetDetailCtrl.text.trim(),
+        'latitude': _pickedLatLng?.latitude,
+        'longitude': _pickedLatLng?.longitude,
+        'details': _detailsCtrl.text.trim(),
+        'is_anonymous': _submitAnonymously,
+        'status': 'pending',
+      };
+
       final response = await supabase
           .from('suggestions')
-          .insert({
-            'user_id': userId,
-            'category': _selectedCategory,
-            'category_other': _selectedCategory == 'others'
-                ? _othersCtrl.text.trim()
-                : null,
-            'barangay': _pickedBarangay,
-            'address': _streetDetailCtrl.text.trim().isEmpty
-                ? null
-                : _streetDetailCtrl.text.trim(),
-            'latitude': _pickedLatLng?.latitude,
-            'longitude': _pickedLatLng?.longitude,
-            'details': _detailsCtrl.text.trim(),
-            'is_anonymous': _submitAnonymously,
-            'status': 'pending',
-          })
+          .insert(insertPayload)
           .select('id')
           .single();
 
@@ -1940,10 +1971,12 @@ class _SuggestionScreenState extends State<SuggestionScreen>
       if (mounted) _showSuccessDialog();
     } on StorageException catch (e) {
       if (mounted) {
+        setState(() => _isSubmitting = false); // ← FIX: reset spinner
         showFriendlyErrorDialog(context, 'File upload failed: ${e.message}');
       }
     } on PostgrestException catch (e) {
       if (mounted) {
+        setState(() => _isSubmitting = false); // ← FIX: reset spinner
         if ((e.hint ?? '') == 'rate_limit_exceeded') {
           showRateLimitDialog(
             context,
@@ -1958,11 +1991,12 @@ class _SuggestionScreenState extends State<SuggestionScreen>
       }
     } catch (e) {
       if (mounted) {
-        showFriendlyErrorDialog(
-          context,
-          'Something went wrong. Please try again.',
-        );
+        setState(() => _isSubmitting = false);
+        showFriendlyErrorDialog(context, e.toString());
       }
+    } finally {
+      // Safety net — always reset spinner
+      if (mounted) setState(() => _isSubmitting = false);
     }
   }
 

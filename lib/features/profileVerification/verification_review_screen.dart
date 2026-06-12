@@ -253,7 +253,7 @@ class _VerificationReviewScreenState extends State<VerificationReviewScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Image.asset("assets/images/sad.png", width: 62, height: 62),
+            Image.asset("assets/images/sad.webp", width: 62, height: 62),
             const SizedBox(height: 14),
             const Text(
               "Incomplete Information",
@@ -339,7 +339,7 @@ class _VerificationReviewScreenState extends State<VerificationReviewScreen> {
                 BlendMode.srcIn,
               ),
               child: Image.asset(
-                "assets/images/info.png",
+                "assets/images/info.webp",
                 width: 56,
                 height: 56,
               ),
@@ -449,7 +449,7 @@ class _VerificationReviewScreenState extends State<VerificationReviewScreen> {
     child: Column(
       children: [
         Image.asset(
-          "assets/images/applogocrop.png",
+          "assets/images/applogocrop.webp",
           height: MediaQuery.of(context).size.height * 0.10,
         ),
         const SizedBox(height: 8),
@@ -574,7 +574,7 @@ class _VerificationReviewScreenState extends State<VerificationReviewScreen> {
                     height: previewH,
                   )
                 : Image.asset(
-                    "assets/images/idcards/phfront.png",
+                    "assets/images/idcards/phfront.webp",
                     fit: BoxFit.cover,
                   ),
           ),

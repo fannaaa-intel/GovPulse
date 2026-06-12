@@ -149,7 +149,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
           ),
           SizedBox(width: w * 0.03),
           Image.asset(
-            'assets/images/newslogo.png',
+            'assets/images/newslogo.webp',
             height: w * 0.085,
             fit: BoxFit.contain,
             errorBuilder: (context, url, error) => Row(

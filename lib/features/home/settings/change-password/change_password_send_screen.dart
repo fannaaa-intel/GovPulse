@@ -344,7 +344,7 @@ class _ChangePasswordSendScreenState extends State<ChangePasswordSendScreen>
             child: Padding(
               padding: EdgeInsets.all(size * 0.14),
               child: Image.asset(
-                'assets/images/padlock.png',
+                'assets/images/padlock.webp',
                 fit: BoxFit.contain,
                 color: AppColors.primaryBlue,
                 colorBlendMode: BlendMode.srcIn,

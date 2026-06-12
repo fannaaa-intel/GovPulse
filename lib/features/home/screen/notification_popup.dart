@@ -497,7 +497,7 @@ class _AnimatedNotifItemState extends State<_AnimatedNotifItem>
                       child: Transform.scale(
                         scale: 0.7 + 0.3 * reveal,
                         child: Image.asset(
-                          'assets/images/trash.png',
+                          'assets/images/trash.webp',
                           width: w * 0.07,
                         ),
                       ),

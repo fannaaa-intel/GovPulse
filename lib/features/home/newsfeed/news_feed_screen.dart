@@ -174,6 +174,10 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
           ? _likedComments.remove(commentId)
           : _likedComments.add(commentId),
     );
+    CommunityPostsProvider.instance.bumpCommentLike(
+      commentId,
+      wasLiked ? -1 : 1,
+    );
     try {
       if (wasLiked) {
         await _supabase
@@ -193,6 +197,10 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
           () => wasLiked
               ? _likedComments.add(commentId)
               : _likedComments.remove(commentId),
+        );
+        CommunityPostsProvider.instance.bumpCommentLike(
+          commentId,
+          wasLiked ? 1 : -1,
         );
         if (e is PostgrestException &&
             (e.hint ?? '') == 'rate_limit_exceeded') {
@@ -231,6 +239,7 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
     setState(
       () => wasLiked ? _likedPosts.remove(postId) : _likedPosts.add(postId),
     );
+    CommunityPostsProvider.instance.bumpPostLike(postId, wasLiked ? -1 : 1);
     try {
       if (wasLiked) {
         await _supabase
@@ -249,6 +258,7 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
         setState(
           () => wasLiked ? _likedPosts.add(postId) : _likedPosts.remove(postId),
         );
+        CommunityPostsProvider.instance.bumpPostLike(postId, wasLiked ? 1 : -1);
         if (e is PostgrestException &&
             (e.hint ?? '') == 'rate_limit_exceeded') {
           showRateLimitDialog(
@@ -485,7 +495,7 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Image.asset(
-            'assets/images/newslogo.png',
+            'assets/images/newslogo.webp',
             height: width * 0.075,
             fit: BoxFit.contain,
             alignment: Alignment.centerLeft,
@@ -655,20 +665,21 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
     final commentCount = post['commentCount'] as int? ?? comments.length;
 
     // Flatten top-level comments + replies into one activity list
+    // Sort top-level newest first, then keep each reply directly under its
+    // parent so a reply never appears above the comment it answers.
+    final topLevel = comments.cast<Map<String, dynamic>>().toList()
+      ..sort((a, b) {
+        final ta = a['timestamp'] as DateTime?;
+        final tb = b['timestamp'] as DateTime?;
+        if (ta == null || tb == null) return 0;
+        return tb.compareTo(ta);
+      });
     final allActivity = <Map<String, dynamic>>[];
-    for (final c in comments) {
-      final comment = c as Map<String, dynamic>;
+    for (final comment in topLevel) {
       allActivity.add(comment);
       final replies = (comment['replies'] as List<dynamic>?) ?? [];
       allActivity.addAll(replies.cast<Map<String, dynamic>>());
     }
-    // Sort newest first so latest activity shows in preview
-    allActivity.sort((a, b) {
-      final ta = a['timestamp'] as DateTime?;
-      final tb = b['timestamp'] as DateTime?;
-      if (ta == null || tb == null) return 0;
-      return tb.compareTo(ta);
-    });
     final previewComments = allActivity.take(3).toList();
     final postId = post['id'] as String;
     final isPostLiked = _likedPosts.contains(postId);
@@ -924,7 +935,7 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
           child: Row(
             children: [
               Image.asset(
-                'assets/images/heart.png',
+                'assets/images/heart.webp',
                 width: width * 0.046,
                 height: width * 0.046,
                 color: liked
@@ -962,7 +973,7 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
           child: Row(
             children: [
               Image.asset(
-                'assets/images/comment.png',
+                'assets/images/comment.webp',
                 width: width * 0.048,
                 height: width * 0.048,
                 color: const Color(0xFF6B7280),

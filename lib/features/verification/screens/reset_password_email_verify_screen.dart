@@ -55,6 +55,11 @@ class _ResetPasswordEmailVerifyScreenState
   late Animation<double> _shakeAnimation;
   late AnimationController _heroController;
 
+  // ── Content entrance: instant screen, content fades + slides up ──────────
+  late final AnimationController _entranceController;
+  late final Animation<double> _fadeAnim;
+  late final Animation<Offset> _slideAnim;
+
   @override
   void initState() {
     super.initState();
@@ -76,6 +81,26 @@ class _ResetPasswordEmailVerifyScreenState
       vsync: this,
       duration: const Duration(seconds: 8),
     )..repeat(reverse: true);
+
+    _entranceController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
+    _fadeAnim = CurvedAnimation(
+      parent: _entranceController,
+      curve: Curves.easeOut,
+    );
+    _slideAnim = Tween<Offset>(begin: const Offset(0, 0.06), end: Offset.zero)
+        .animate(
+          CurvedAnimation(
+            parent: _entranceController,
+            curve: Curves.easeOutCubic,
+          ),
+        );
+
+    Future.delayed(const Duration(milliseconds: 80), () {
+      if (mounted) _entranceController.forward();
+    });
   }
 
   void triggerErrorAnimation() {
@@ -216,8 +241,10 @@ class _ResetPasswordEmailVerifyScreenState
                   transitionDuration: Duration.zero,
                   reverseTransitionDuration: Duration.zero,
                 )
-              : MaterialPageRoute(
-                  builder: (_) => ResetNewPasswordScreen(
+              : PageRouteBuilder(
+                  transitionDuration: Duration.zero,
+                  reverseTransitionDuration: Duration.zero,
+                  pageBuilder: (_, _, _) => ResetNewPasswordScreen(
                     accessToken: session["access_token"],
                     refreshToken: session["refresh_token"],
                   ),
@@ -241,6 +268,7 @@ class _ResetPasswordEmailVerifyScreenState
     timer?.cancel();
     _shakeController.dispose();
     _heroController.dispose();
+    _entranceController.dispose();
     for (var c in controllers) {
       c.dispose();
     }
@@ -266,237 +294,257 @@ class _ResetPasswordEmailVerifyScreenState
       child: Scaffold(
         backgroundColor: Colors.white,
         body: SafeArea(
-          child: MobileFormShell(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 20),
-              child: Column(
-                children: [
-                  Image.asset(
-                    "assets/images/applogocrop.png",
-                    width: (MediaQuery.of(context).size.width * 0.42)
-                        .clamp(0.0, 180.0)
-                        .toDouble(),
+          child: FadeTransition(
+            opacity: _fadeAnim,
+            child: SlideTransition(
+              position: _slideAnim,
+              child: MobileFormShell(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 26,
+                    vertical: 20,
                   ),
-                  const SizedBox(height: 16),
-                  Text(
-                    "Reset Password",
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: primaryBlue,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    "We send a 6-digit code to\n$maskedEmail",
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 14, color: hint),
-                  ),
-                  const SizedBox(height: 28),
-                  AnimatedBuilder(
-                    animation: _shakeAnimation,
-                    builder: (context, child) {
-                      return Transform.translate(
-                        offset: Offset(_shakeAnimation.value, 0),
-                        child: child,
-                      );
-                    },
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: List.generate(6, (index) {
-                        return SizedBox(
-                          width: 46,
-                          child: TextField(
-                            controller: controllers[index],
-                            focusNode: focusNodes[index],
-                            keyboardType: TextInputType.number,
-                            textAlign: TextAlign.center,
-                            maxLength: 1,
-                            decoration: InputDecoration(
-                              counterText: "",
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                borderSide: BorderSide(
-                                  color: showError ? Colors.red : stroke,
-                                ),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                borderSide: BorderSide(
-                                  color: showError ? Colors.red : primaryBlue,
-                                  width: 1.5,
-                                ),
-                              ),
-                            ),
-                            onChanged: (value) {
-                              if (value.isNotEmpty && index < 5) {
-                                focusNodes[index + 1].requestFocus();
-                              } else if (value.isEmpty && index > 0) {
-                                focusNodes[index - 1].requestFocus();
-                              }
-                              setState(() {});
-                            },
-                          ),
-                        );
-                      }),
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  Text.rich(
-                    TextSpan(
-                      children: [
-                        TextSpan(
-                          text: "Resend code in ",
-                          style: TextStyle(fontSize: 12, color: hint),
-                        ),
-                        TextSpan(
-                          text: "00:${secondsLeft.toString().padLeft(2, '0')}",
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: primaryBlue,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 28),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 56,
-                    child: ElevatedButton(
-                      onPressed: (code.length == 6 && !isVerifying)
-                          ? () async {
-                              setState(() => isVerifying = true);
-                              final messenger = ScaffoldMessenger.of(context);
-                              final navigator = Navigator.of(context);
-                              final supabase = Supabase.instance.client;
-                              try {
-                                final canVerify = await supabase.rpc(
-                                  'can_verify_otp',
-                                  params: {'p_identifier': widget.email},
-                                );
-                                if (!mounted) return;
-                                if (canVerify['allowed'] != true) {
-                                  messenger.showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        canVerify['message'] as String,
-                                      ),
-                                    ),
-                                  );
-                                  setState(() => isVerifying = false);
-                                  return;
-                                }
-                                final response = await http.post(
-                                  Uri.parse(
-                                    "https://vxvflhjbafqwehuxnmeq.supabase.co/functions/v1/reset-verify-otp",
-                                  ),
-                                  headers: {
-                                    "Content-Type": "application/json",
-                                    "apikey": "eyJhbGciOiJIUzI1Ni...",
-                                  },
-                                  body: jsonEncode({
-                                    "email": widget.email,
-                                    "code": code,
-                                  }),
-                                );
-                                final data = jsonDecode(response.body);
-                                if (!mounted) return;
-                                if (response.statusCode == 200 &&
-                                    data["success"] == true) {
-                                  await supabase.rpc(
-                                    'clear_otp_failures',
-                                    params: {'p_identifier': widget.email},
-                                  );
-                                  if (!mounted) return;
-                                  final session = data["session"];
-                                  navigator.push(
-                                    MaterialPageRoute(
-                                      builder: (_) => ResetNewPasswordScreen(
-                                        accessToken: session["access_token"],
-                                        refreshToken: session["refresh_token"],
-                                      ),
-                                    ),
-                                  );
-                                } else {
-                                  await supabase.rpc(
-                                    'record_otp_failure',
-                                    params: {'p_identifier': widget.email},
-                                  );
-                                  if (!mounted) return;
-                                  triggerErrorAnimation();
-                                }
-                              } finally {
-                                if (mounted) {
-                                  setState(() => isVerifying = false);
-                                }
-                              }
-                            }
-                          : null,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: primaryBlue,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                      ),
-                      child: isVerifying
-                          ? const SizedBox(
-                              height: 22,
-                              width: 22,
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
-                                strokeWidth: 2.4,
-                              ),
-                            )
-                          : const Text(
-                              "Verify",
-                              style: TextStyle(
-                                fontSize: 17,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                            ),
-                    ),
-                  ),
-                  const SizedBox(height: 22),
-                  Divider(color: stroke),
-                  const SizedBox(height: 16),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                  child: Column(
                     children: [
-                      Text(
-                        "Didn't receive a code? ",
-                        style: TextStyle(fontSize: 13, color: hint),
+                      Image.asset(
+                        "assets/images/applogocrop.webp",
+                        width: (MediaQuery.of(context).size.width * 0.42)
+                            .clamp(0.0, 180.0)
+                            .toDouble(),
                       ),
-                      GestureDetector(
-                        onTap: canResend && !isResending
-                            ? () async => await resendOtp()
-                            : null,
-                        child: Text(
-                          isResending
-                              ? "Please wait"
-                              : resendStatusText.isNotEmpty
-                              ? resendStatusText
-                              : "Resend",
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                            color: isResending
-                                ? hint
-                                : resendStatusText == "Sent successfully"
-                                ? Colors.green
-                                : canResend
-                                ? primaryBlue
-                                : hint,
-                          ),
+                      const SizedBox(height: 16),
+                      Text(
+                        "Reset Password",
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color: primaryBlue,
                         ),
                       ),
+                      const SizedBox(height: 8),
+                      Text(
+                        "We send a 6-digit code to\n$maskedEmail",
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 14, color: hint),
+                      ),
+                      const SizedBox(height: 28),
+                      AnimatedBuilder(
+                        animation: _shakeAnimation,
+                        builder: (context, child) {
+                          return Transform.translate(
+                            offset: Offset(_shakeAnimation.value, 0),
+                            child: child,
+                          );
+                        },
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: List.generate(6, (index) {
+                            return SizedBox(
+                              width: 46,
+                              child: TextField(
+                                controller: controllers[index],
+                                focusNode: focusNodes[index],
+                                keyboardType: TextInputType.number,
+                                textAlign: TextAlign.center,
+                                maxLength: 1,
+                                decoration: InputDecoration(
+                                  counterText: "",
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide(
+                                      color: showError ? Colors.red : stroke,
+                                    ),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide(
+                                      color: showError
+                                          ? Colors.red
+                                          : primaryBlue,
+                                      width: 1.5,
+                                    ),
+                                  ),
+                                ),
+                                onChanged: (value) {
+                                  if (value.isNotEmpty && index < 5) {
+                                    focusNodes[index + 1].requestFocus();
+                                  } else if (value.isEmpty && index > 0) {
+                                    focusNodes[index - 1].requestFocus();
+                                  }
+                                  setState(() {});
+                                },
+                              ),
+                            );
+                          }),
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      Text.rich(
+                        TextSpan(
+                          children: [
+                            TextSpan(
+                              text: "Resend code in ",
+                              style: TextStyle(fontSize: 12, color: hint),
+                            ),
+                            TextSpan(
+                              text:
+                                  "00:${secondsLeft.toString().padLeft(2, '0')}",
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: primaryBlue,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 28),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 56,
+                        child: ElevatedButton(
+                          onPressed: (code.length == 6 && !isVerifying)
+                              ? () async {
+                                  setState(() => isVerifying = true);
+                                  final messenger = ScaffoldMessenger.of(
+                                    context,
+                                  );
+                                  final navigator = Navigator.of(context);
+                                  final supabase = Supabase.instance.client;
+                                  try {
+                                    final canVerify = await supabase.rpc(
+                                      'can_verify_otp',
+                                      params: {'p_identifier': widget.email},
+                                    );
+                                    if (!mounted) return;
+                                    if (canVerify['allowed'] != true) {
+                                      messenger.showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            canVerify['message'] as String,
+                                          ),
+                                        ),
+                                      );
+                                      setState(() => isVerifying = false);
+                                      return;
+                                    }
+                                    final response = await http.post(
+                                      Uri.parse(
+                                        "https://vxvflhjbafqwehuxnmeq.supabase.co/functions/v1/reset-verify-otp",
+                                      ),
+                                      headers: {
+                                        "Content-Type": "application/json",
+                                        "apikey": "eyJhbGciOiJIUzI1Ni...",
+                                      },
+                                      body: jsonEncode({
+                                        "email": widget.email,
+                                        "code": code,
+                                      }),
+                                    );
+                                    final data = jsonDecode(response.body);
+                                    if (!mounted) return;
+                                    if (response.statusCode == 200 &&
+                                        data["success"] == true) {
+                                      await supabase.rpc(
+                                        'clear_otp_failures',
+                                        params: {'p_identifier': widget.email},
+                                      );
+                                      if (!mounted) return;
+                                      final session = data["session"];
+                                      navigator.push(
+                                        PageRouteBuilder(
+                                          transitionDuration: Duration.zero,
+                                          reverseTransitionDuration:
+                                              Duration.zero,
+                                          pageBuilder: (_, _, _) =>
+                                              ResetNewPasswordScreen(
+                                                accessToken:
+                                                    session["access_token"],
+                                                refreshToken:
+                                                    session["refresh_token"],
+                                              ),
+                                        ),
+                                      );
+                                    } else {
+                                      await supabase.rpc(
+                                        'record_otp_failure',
+                                        params: {'p_identifier': widget.email},
+                                      );
+                                      if (!mounted) return;
+                                      triggerErrorAnimation();
+                                    }
+                                  } finally {
+                                    if (mounted) {
+                                      setState(() => isVerifying = false);
+                                    }
+                                  }
+                                }
+                              : null,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: primaryBlue,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                          child: isVerifying
+                              ? const SizedBox(
+                                  height: 22,
+                                  width: 22,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 2.4,
+                                  ),
+                                )
+                              : const Text(
+                                  "Verify",
+                                  style: TextStyle(
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                        ),
+                      ),
+                      const SizedBox(height: 22),
+                      Divider(color: stroke),
+                      const SizedBox(height: 16),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            "Didn't receive a code? ",
+                            style: TextStyle(fontSize: 13, color: hint),
+                          ),
+                          GestureDetector(
+                            onTap: canResend && !isResending
+                                ? () async => await resendOtp()
+                                : null,
+                            child: Text(
+                              isResending
+                                  ? "Please wait"
+                                  : resendStatusText.isNotEmpty
+                                  ? resendStatusText
+                                  : "Resend",
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                color: isResending
+                                    ? hint
+                                    : resendStatusText == "Sent successfully"
+                                    ? Colors.green
+                                    : canResend
+                                    ? primaryBlue
+                                    : hint,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Divider(color: stroke),
                     ],
                   ),
-                  const SizedBox(height: 16),
-                  Divider(color: stroke),
-                ],
+                ),
               ),
             ),
           ),

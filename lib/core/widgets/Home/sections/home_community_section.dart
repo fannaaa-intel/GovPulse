@@ -398,7 +398,7 @@ class _HomeCommunitySectionState extends State<HomeCommunitySection> {
                       Row(
                         children: [
                           Image.asset(
-                            'assets/images/heart.png',
+                            'assets/images/heart.webp',
                             width: width * 0.036,
                             height: width * 0.036,
                             fit: BoxFit.contain,
@@ -421,7 +421,7 @@ class _HomeCommunitySectionState extends State<HomeCommunitySection> {
                           ),
                           SizedBox(width: width * 0.028),
                           Image.asset(
-                            'assets/images/comment.png',
+                            'assets/images/comment.webp',
                             width: width * 0.040,
                             height: width * 0.040,
                             fit: BoxFit.contain,

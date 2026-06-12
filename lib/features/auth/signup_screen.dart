@@ -16,12 +16,14 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
-// NOTE: the web hero palette, the 1000px breakpoint, and every web widget now
-// come from the shared kit (web.dart): kHeroBgTop/Bottom, kWebTwoPanelMinWidth,
-// WebHeroPanel, WebInputField, WebStrengthBar, WebFieldError, WebOutlinedButton.
-// The ~290 lines of private copies that used to live at the bottom of this file
-// are gone — fixes to the kit (overflow-proof hero, fluid headline) now reach
-// this screen automatically.
+// Screens navigated to from here — imported so PageRouteBuilder can reference them.
+import '../auth/phone_signup_screen.dart';
+import '../guest/screen/guest.dart';
+
+// Route observer — declare once at app level and pass to MaterialApp's navigatorObservers.
+// If you already have one, just reuse it here instead.
+final RouteObserver<ModalRoute<void>> signupRouteObserver =
+    RouteObserver<ModalRoute<void>>();
 
 class SignupScreen extends StatefulWidget {
   final Function(String, String, String) onSignUpClick;
@@ -42,7 +44,7 @@ class SignupScreen extends StatefulWidget {
 }
 
 class _SignupScreenState extends State<SignupScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, RouteAware {
   String email = "";
   String username = "";
   String password = "";
@@ -77,7 +79,7 @@ class _SignupScreenState extends State<SignupScreen>
   bool hasNumber = false;
   bool hasSpecial = false;
 
-  // ── Web entrance + background animations (no effect on mobile) ────────────
+  // ── Entrance + background animations ──────────────────────────────────────
   late final AnimationController _entranceController;
   late final Animation<double> _fadeAnim;
   late final Animation<Offset> _slideAnim;
@@ -85,13 +87,26 @@ class _SignupScreenState extends State<SignupScreen>
 
   String _friendly(String raw) {
     final cleaned = raw.replaceFirst('Exception: ', '');
-
-    // Match the full Supabase message in one shot — order matters, specific first
     if (cleaned.toLowerCase().contains('invalid format')) {
       return 'Unable to validate email address';
     }
-
     return cleaned;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    signupRouteObserver.subscribe(this, ModalRoute.of(context)!);
+  }
+
+  /// Called when a route above this one (e.g. PhoneSignupScreen) is popped.
+  /// Resets and replays the entrance animation so content slides up again.
+  @override
+  void didPopNext() {
+    _entranceController.reset();
+    Future.delayed(const Duration(milliseconds: 80), () {
+      if (mounted) _entranceController.forward();
+    });
   }
 
   @override
@@ -126,17 +141,20 @@ class _SignupScreenState extends State<SignupScreen>
 
   @override
   void dispose() {
+    signupRouteObserver.unsubscribe(this);
     emailController.dispose();
     usernameController.dispose();
     passwordController.dispose();
     confirmPasswordController.dispose();
     passwordFocusNode.dispose();
+    _emailDebounce?.cancel();
+    _usernameDebounce?.cancel();
     _entranceController.dispose();
     _bgController.dispose();
     super.dispose();
   }
 
-  // ── Shared logic (used by both mobile and web fields) ─────────────────────
+  // ── Shared logic ──────────────────────────────────────────────────────────
   void validatePassword(String value) {
     hasMinLength = PasswordValidator.hasMinLength(value);
     hasUpper = PasswordValidator.hasUpper(value);
@@ -174,9 +192,7 @@ class _SignupScreenState extends State<SignupScreen>
       emailErrorText = null;
     });
 
-    if (_emailDebounce?.isActive ?? false) {
-      _emailDebounce!.cancel();
-    }
+    if (_emailDebounce?.isActive ?? false) _emailDebounce!.cancel();
 
     _emailDebounce = Timer(const Duration(milliseconds: 600), () async {
       final exists = await AuthService.checkEmailExists(email);
@@ -194,9 +210,7 @@ class _SignupScreenState extends State<SignupScreen>
       usernameErrorText = null;
     });
 
-    if (_usernameDebounce?.isActive ?? false) {
-      _usernameDebounce!.cancel();
-    }
+    if (_usernameDebounce?.isActive ?? false) _usernameDebounce!.cancel();
 
     _usernameDebounce = Timer(const Duration(milliseconds: 600), () async {
       if (username.isEmpty) return;
@@ -206,7 +220,6 @@ class _SignupScreenState extends State<SignupScreen>
       final exists = await AuthService.checkUsernameExists(username);
       if (!mounted) return;
 
-      // Prevents stale result bug
       if (username != usernameController.text) return;
 
       setState(() {
@@ -227,6 +240,44 @@ class _SignupScreenState extends State<SignupScreen>
     setState(() => confirmPassword = val);
   }
 
+  // ── Navigation helpers ────────────────────────────────────────────────────
+
+  /// Instant screen swap — the destination's own entrance animation does the work.
+  void _goToPhone() {
+    Navigator.push(
+      context,
+      PageRouteBuilder(
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+        pageBuilder: (_, _, _) => PhoneSignupScreen(
+          onContinueClick: (phone, password) async {
+            widget.onPhoneClick();
+          },
+          onBackClick: () {
+            Navigator.pop(context);
+            _entranceController.reset();
+            Future.delayed(const Duration(milliseconds: 80), () {
+              if (mounted) _entranceController.forward();
+            });
+          },
+          onLoginClick: widget.onLoginClick,
+        ),
+      ),
+    );
+  }
+
+  /// Instant screen swap to Guest — destination slides up & fades in itself.
+  void _goToGuest() {
+    Navigator.push(
+      context,
+      PageRouteBuilder(
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+        pageBuilder: (_, _, _) => const GuestScreen(),
+      ),
+    );
+  }
+
   Future<void> _submitSignup(BuildContext context) async {
     final email = emailController.text.trim();
     final username = usernameController.text.trim();
@@ -236,7 +287,6 @@ class _SignupScreenState extends State<SignupScreen>
       Map<String, dynamic>? result;
 
       if (kIsWeb) {
-        // ── Web: show as dialog overlay so the hero panel stays visible ──
         result = await showDialog<Map<String, dynamic>>(
           context: context,
           barrierDismissible: false,
@@ -247,11 +297,12 @@ class _SignupScreenState extends State<SignupScreen>
           ),
         );
       } else {
-        // ── Mobile: full-screen push is fine ──
         result = await Navigator.push<Map<String, dynamic>>(
           context,
-          MaterialPageRoute(
-            builder: (_) => OtpLoadingScreen(
+          PageRouteBuilder(
+            transitionDuration: Duration.zero,
+            reverseTransitionDuration: Duration.zero,
+            pageBuilder: (_, _, _) => OtpLoadingScreen(
               type: "email",
               onSendOtp: () => _sendEmailOtp(email, username, password),
             ),
@@ -261,8 +312,6 @@ class _SignupScreenState extends State<SignupScreen>
 
       if (!context.mounted) return;
 
-      // ── Handle failure from OtpLoadingScreen ──
-
       if (result == null || result["success"] != true) {
         final raw =
             result?["error"] as String? ??
@@ -271,11 +320,12 @@ class _SignupScreenState extends State<SignupScreen>
         return;
       }
 
-      // ── Success: proceed to verification ──
       Navigator.push(
         context,
-        MaterialPageRoute(
-          builder: (_) => VerificationScreen(
+        PageRouteBuilder(
+          transitionDuration: Duration.zero,
+          reverseTransitionDuration: const Duration(milliseconds: 220),
+          pageBuilder: (_, _, _) => VerificationScreen(
             email: email,
             username: username,
             password: password,
@@ -289,6 +339,8 @@ class _SignupScreenState extends State<SignupScreen>
             onTermsClick: () {},
             onConditionsClick: () {},
           ),
+          transitionsBuilder: (_, anim, _, child) =>
+              FadeTransition(opacity: anim, child: child),
         ),
       );
     } catch (e) {
@@ -322,8 +374,8 @@ class _SignupScreenState extends State<SignupScreen>
       },
       body: jsonEncode({
         "email": email,
-        "username": username, // add this
-        "password": password, // add this
+        "username": username,
+        "password": password,
       }),
     );
 
@@ -337,15 +389,13 @@ class _SignupScreenState extends State<SignupScreen>
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
 
-    // Native app (phones & tablets) — mobile UI, identical on every size.
     if (!kIsWeb) return _mobileScaffold(context);
 
-    // Web — responsive across all widths.
     if (width >= kWebTwoPanelMinWidth) return _webScaffold(context);
     return _webCompactScaffold(context);
   }
 
-  // ── Mobile layout — visually unchanged ────────────────────────────────────
+  // ── Mobile layout ─────────────────────────────────────────────────────────
   Widget _mobileScaffold(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
@@ -353,306 +403,321 @@ class _SignupScreenState extends State<SignupScreen>
       body: GestureDetector(
         onTap: () => FocusScope.of(context).unfocus(),
         child: SafeArea(
-          child: MobileFormShell(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 26),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  const SizedBox(height: 18),
-
-                  Image.asset(
-                    "assets/images/applogocrop.png",
-                    width: (MediaQuery.of(context).size.width * 0.30)
-                        .clamp(0.0, 150.0)
-                        .toDouble(),
-                  ),
-
-                  const SizedBox(height: 10),
-
-                  Column(
+          child: FadeTransition(
+            opacity: _fadeAnim,
+            child: SlideTransition(
+              position: _slideAnim,
+              child: MobileFormShell(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 26),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      Text(
-                        "Sign Up for GovPulse",
-                        style: TextStyle(
-                          fontSize: 21,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.primaryBlue,
+                      const SizedBox(height: 18),
+
+                      Image.asset(
+                        "assets/images/applogocrop.webp",
+                        width: (MediaQuery.of(context).size.width * 0.30)
+                            .clamp(0.0, 150.0)
+                            .toDouble(),
+                      ),
+
+                      const SizedBox(height: 10),
+
+                      Column(
+                        children: [
+                          Text(
+                            "Sign Up for GovPulse",
+                            style: TextStyle(
+                              fontSize: 21,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.primaryBlue,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            "Stay Updated and report community\nissues in Aparri",
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: AppColors.hint,
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      // EMAIL
+                      RoundedInputField(
+                        controller: emailController,
+                        enabled: !emailLocked,
+                        value: email,
+                        hintText: "Email Address",
+                        icon: Icons.email,
+                        isError: emailErrorText != null,
+                        suffixWidget: isCheckingEmail
+                            ? const Padding(
+                                padding: EdgeInsets.all(12),
+                                child: SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                              )
+                            : null,
+                        onChanged: _onEmailChanged,
+                      ),
+
+                      if (emailErrorText != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6, left: 6),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              emailErrorText!,
+                              style: const TextStyle(
+                                color: Colors.red,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        ),
+
+                      const SizedBox(height: 12),
+
+                      // USERNAME
+                      RoundedInputField(
+                        controller: usernameController,
+                        value: username,
+                        hintText: "Username",
+                        icon: Icons.person,
+                        isError: usernameErrorText != null,
+                        suffixWidget: isCheckingUsername
+                            ? const Padding(
+                                padding: EdgeInsets.all(12),
+                                child: SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                              )
+                            : null,
+                        onChanged: _onUsernameChanged,
+                      ),
+
+                      if (usernameErrorText != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6, left: 6),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              usernameErrorText!,
+                              style: const TextStyle(
+                                color: Colors.red,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        ),
+
+                      const SizedBox(height: 14),
+
+                      // PASSWORD
+                      RoundedInputField(
+                        controller: passwordController,
+                        focusNode: passwordFocusNode,
+                        value: password,
+                        hintText: "Password",
+                        icon: Icons.lock,
+                        obscureText: !showPassword,
+                        onChanged: _onPasswordChanged,
+                        suffixWidget: GestureDetector(
+                          onTap: () =>
+                              setState(() => showPassword = !showPassword),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Image.asset(
+                              showPassword
+                                  ? "assets/images/eye.webp"
+                                  : "assets/images/closed_eye.webp",
+                              height: 20,
+                            ),
+                          ),
                         ),
                       ),
+
+                      const SizedBox(height: 14),
+
+                      // CONFIRM PASSWORD
+                      RoundedInputField(
+                        controller: confirmPasswordController,
+                        value: confirmPassword,
+                        hintText: "Confirm Password",
+                        icon: Icons.lock,
+                        obscureText: !showConfirmPassword,
+                        isError: isPasswordMismatch,
+                        onChanged: _onConfirmChanged,
+                        suffixWidget: GestureDetector(
+                          onTap: () => setState(
+                            () => showConfirmPassword = !showConfirmPassword,
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Image.asset(
+                              showConfirmPassword
+                                  ? "assets/images/eye.webp"
+                                  : "assets/images/closed_eye.webp",
+                              height: 20,
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 8),
+
+                      if (password.isNotEmpty)
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "Strength: $strengthText",
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: strengthColor,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            PasswordStrengthBar(score: strengthScore),
+                            const SizedBox(height: 10),
+                          ],
+                        ),
+
+                      Row(
+                        children: [
+                          _requirement("Atleast 8 characters", hasMinLength),
+                          const SizedBox(width: 12),
+                          _requirement("Must have number", hasNumber),
+                        ],
+                      ),
+
                       const SizedBox(height: 6),
-                      Text(
-                        "Stay Updated and report community\nissues in Aparri",
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 13, color: AppColors.hint),
+
+                      Row(
+                        children: [
+                          _requirement("One uppercase letter", hasUpper),
+                          const SizedBox(width: 12),
+                          _requirement("One special Character", hasSpecial),
+                        ],
                       ),
-                    ],
-                  ),
 
-                  const SizedBox(height: 12),
+                      const SizedBox(height: 16),
 
-                  /// 🔥 EMAIL
-                  RoundedInputField(
-                    controller: emailController,
-                    enabled: !emailLocked,
-                    value: email,
-                    hintText: "Email Address",
-                    icon: Icons.email,
-                    isError: emailErrorText != null,
-                    suffixWidget: isCheckingEmail
-                        ? const Padding(
-                            padding: EdgeInsets.all(12),
-                            child: SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 52,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: canSubmit
+                                ? AppColors.primaryBlue
+                                : AppColors.primaryBlue.withValues(alpha: 0.4),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
                             ),
-                          )
-                        : null,
-                    onChanged: _onEmailChanged,
-                  ),
-
-                  if (emailErrorText != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6, left: 6),
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          emailErrorText!,
-                          style: const TextStyle(
-                            color: Colors.red,
-                            fontSize: 12,
                           ),
-                        ),
-                      ),
-                    ),
-
-                  const SizedBox(height: 12),
-
-                  /// 🔥 USERNAME
-                  RoundedInputField(
-                    controller: usernameController,
-                    value: username,
-                    hintText: "Username",
-                    icon: Icons.person,
-                    isError: usernameErrorText != null,
-                    suffixWidget: isCheckingUsername
-                        ? const Padding(
-                            padding: EdgeInsets.all(12),
-                            child: SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
+                          onPressed: canSubmit
+                              ? () => _submitSignup(context)
+                              : null,
+                          child: const Text(
+                            "Sign Up",
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
                             ),
-                          )
-                        : null,
-                    onChanged: _onUsernameChanged,
-                  ),
-
-                  if (usernameErrorText != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6, left: 6),
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          usernameErrorText!,
-                          style: const TextStyle(
-                            color: Colors.red,
-                            fontSize: 12,
                           ),
                         ),
                       ),
-                    ),
 
-                  const SizedBox(height: 14),
+                      const SizedBox(height: 10),
 
-                  /// PASSWORD
-                  RoundedInputField(
-                    controller: passwordController,
-                    focusNode: passwordFocusNode,
-                    value: password,
-                    hintText: "Password",
-                    icon: Icons.lock,
-                    obscureText: !showPassword,
-                    onChanged: _onPasswordChanged,
-                    suffixWidget: GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          showPassword = !showPassword;
-                        });
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Image.asset(
-                          showPassword
-                              ? "assets/images/eye.png"
-                              : "assets/images/closed_eye.png",
-                          height: 20,
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 14),
-
-                  /// CONFIRM PASSWORD
-                  RoundedInputField(
-                    controller: confirmPasswordController,
-                    value: confirmPassword,
-                    hintText: "Confirm Password",
-                    icon: Icons.lock,
-                    obscureText: !showConfirmPassword,
-                    isError: isPasswordMismatch,
-                    onChanged: _onConfirmChanged,
-                    suffixWidget: GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          showConfirmPassword = !showConfirmPassword;
-                        });
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Image.asset(
-                          showConfirmPassword
-                              ? "assets/images/eye.png"
-                              : "assets/images/closed_eye.png",
-                          height: 20,
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 8),
-
-                  if (password.isNotEmpty)
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          "Strength: $strengthText",
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: strengthColor,
-                            fontWeight: FontWeight.w600,
+                      Row(
+                        children: [
+                          Expanded(child: Divider(color: AppColors.stroke)),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            child: Text(
+                              "Or Continue with",
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: AppColors.hint,
+                              ),
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 6),
-                        PasswordStrengthBar(score: strengthScore),
-                        const SizedBox(height: 10),
-                      ],
-                    ),
-
-                  Row(
-                    children: [
-                      _requirement("Atleast 8 characters", hasMinLength),
-                      const SizedBox(width: 12),
-                      _requirement("Must have number", hasNumber),
-                    ],
-                  ),
-
-                  const SizedBox(height: 6),
-
-                  Row(
-                    children: [
-                      _requirement("One uppercase letter", hasUpper),
-                      const SizedBox(width: 12),
-                      _requirement("One special Character", hasSpecial),
-                    ],
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  /// 🔥 BUTTON UPDATED CONDITION
-                  SizedBox(
-                    width: double.infinity,
-                    height: 52,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: canSubmit
-                            ? AppColors.primaryBlue
-                            : AppColors.primaryBlue.withValues(alpha: 0.4),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
+                          Expanded(child: Divider(color: AppColors.stroke)),
+                        ],
                       ),
-                      onPressed: canSubmit
-                          ? () => _submitSignup(context)
-                          : null,
-                      child: const Text(
-                        "Sign Up",
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
 
-                  const SizedBox(height: 10),
+                      const SizedBox(height: 12),
 
-                  Row(
-                    children: [
-                      Expanded(child: Divider(color: AppColors.stroke)),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        child: Text(
-                          "Or Continue with",
-                          style: TextStyle(fontSize: 13, color: AppColors.hint),
-                        ),
-                      ),
-                      Expanded(child: Divider(color: AppColors.stroke)),
-                    ],
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  Row(
-                    children: [
-                      Expanded(
-                        child: SocialButton(
-                          iconPath: "assets/images/guest.png",
-                          label: "As Guest",
-                          onTap: widget.onGuestClick,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: SocialButton(
-                          icon: Icons.phone,
-                          isIconData: true,
-                          label: "With Phone",
-                          onTap: widget.onPhoneClick,
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 10),
-
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        "Already have an account? ",
-                        style: TextStyle(fontSize: 13, color: AppColors.hint),
-                      ),
-                      GestureDetector(
-                        onTap: widget.onLoginClick,
-                        child: Text(
-                          "Log In",
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.primaryBlue,
+                      Row(
+                        children: [
+                          Expanded(
+                            child: SocialButton(
+                              iconPath: "assets/images/guest.webp",
+                              label: "As Guest",
+                              // ── Instant push; GuestScreen animates itself in ──
+                              onTap: _goToGuest,
+                            ),
                           ),
-                        ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: SocialButton(
+                              icon: Icons.phone,
+                              isIconData: true,
+                              label: "With Phone",
+                              // ── Instant push; PhoneSignupScreen animates itself in ──
+                              onTap: _goToPhone,
+                            ),
+                          ),
+                        ],
                       ),
+
+                      const SizedBox(height: 10),
+
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            "Already have an account? ",
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: AppColors.hint,
+                            ),
+                          ),
+                          GestureDetector(
+                            onTap: widget.onLoginClick,
+                            child: Text(
+                              "Log In",
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.primaryBlue,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 18),
                     ],
                   ),
-
-                  const SizedBox(height: 18),
-                ],
+                ),
               ),
             ),
           ),
@@ -748,10 +813,9 @@ class _SignupScreenState extends State<SignupScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Logo mark
         Row(
           children: [
-            Image.asset("assets/images/applogo.png", height: 30),
+            Image.asset("assets/images/applogo.webp", height: 30),
             const SizedBox(width: 10),
             Text(
               "GovPulse",
@@ -882,7 +946,6 @@ class _SignupScreenState extends State<SignupScreen>
 
         const SizedBox(height: 18),
 
-        // Strength meter
         if (password.isNotEmpty) ...[
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -909,7 +972,6 @@ class _SignupScreenState extends State<SignupScreen>
           const SizedBox(height: 18),
         ],
 
-        // Requirements
         Row(
           children: [
             _requirement("Atleast 8 characters", hasMinLength),
@@ -928,7 +990,6 @@ class _SignupScreenState extends State<SignupScreen>
 
         const SizedBox(height: 26),
 
-        // Submit
         SizedBox(
           width: double.infinity,
           height: 50,
@@ -988,14 +1049,14 @@ class _SignupScreenState extends State<SignupScreen>
 
         const SizedBox(height: 18),
 
-        // Guest + Phone
         Row(
           children: [
             Expanded(
               child: WebOutlinedButton(
                 icon: Icons.person_outline_rounded,
                 label: "Guest",
-                onTap: widget.onGuestClick,
+                // ── Instant push; GuestScreen animates itself in ──
+                onTap: _goToGuest,
               ),
             ),
             const SizedBox(width: 14),
@@ -1003,7 +1064,8 @@ class _SignupScreenState extends State<SignupScreen>
               child: WebOutlinedButton(
                 icon: Icons.phone_outlined,
                 label: "Phone",
-                onTap: widget.onPhoneClick,
+                // ── Instant push; PhoneSignupScreen animates itself in ──
+                onTap: _goToPhone,
               ),
             ),
           ],

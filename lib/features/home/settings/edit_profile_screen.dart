@@ -497,7 +497,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
               _buildLockedDisplayField(
                 label: 'Email',
                 value: Supabase.instance.client.auth.currentUser?.email ?? '—',
-                icon: 'assets/images/email.png',
+                icon: 'assets/images/email.webp',
                 width: width,
               ),
               _divider(width),
@@ -520,7 +520,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
                 ctrl: _firstNameCtrl,
                 label: 'First Name',
                 hint: 'Enter first name',
-                icon: 'assets/images/username.png',
+                icon: 'assets/images/username.webp',
                 width: width,
                 enabled: !_isLocked,
                 validator: (v) =>
@@ -531,7 +531,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
                 ctrl: _middleNameCtrl,
                 label: 'Middle Name',
                 hint: 'Enter middle name (optional)',
-                icon: 'assets/images/username.png',
+                icon: 'assets/images/username.webp',
                 width: width,
                 enabled: !_isLocked,
               ),
@@ -540,7 +540,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
                 ctrl: _lastNameCtrl,
                 label: 'Last Name',
                 hint: 'Enter last name',
-                icon: 'assets/images/username.png',
+                icon: 'assets/images/username.webp',
                 width: width,
                 enabled: !_isLocked,
                 showDivider: false,
@@ -560,7 +560,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
                 ctrl: _contactCtrl,
                 label: 'Mobile Number',
                 hint: 'e.g. 09XXXXXXXXX',
-                icon: 'assets/images/phone.png',
+                icon: 'assets/images/phone.webp',
                 width: width,
                 enabled: !_isLocked,
                 showDivider: false,
@@ -586,7 +586,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
                 ctrl: _barangayCtrl,
                 label: 'Barangay',
                 hint: 'Enter your barangay',
-                icon: 'assets/images/report/location.png',
+                icon: 'assets/images/report/location.webp',
                 width: width,
                 enabled: !_isLocked,
                 validator: (v) =>
@@ -597,7 +597,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
                 ctrl: _streetCtrl,
                 label: 'Street / Zone',
                 hint: 'Enter street or zone',
-                icon: 'assets/images/report/location.png',
+                icon: 'assets/images/report/location.webp',
                 width: width,
                 enabled: !_isLocked,
                 showDivider: false,
@@ -772,7 +772,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
                                 BlendMode.srcIn,
                               ),
                               child: Image.asset(
-                                'assets/images/report/cameraicon.png',
+                                'assets/images/report/cameraicon.webp',
                                 fit: BoxFit.contain,
                               ),
                             ),
@@ -849,7 +849,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
                   children: [
                     _buildStatItem(
                       width: width,
-                      iconPath: 'assets/images/report/report.png',
+                      iconPath: 'assets/images/report/report.webp',
                       iconColor: const Color(0xFF3B82F6),
                       value: '$_reportCount',
                       label: 'Reports',
@@ -861,7 +861,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
                     ),
                     _buildStatItem(
                       width: width,
-                      iconPath: 'assets/images/calendar.png',
+                      iconPath: 'assets/images/calendar.webp',
                       iconColor: const Color(0xFF22C55E),
                       value: _memberSince ?? '—',
                       label: 'Member Since',
@@ -873,7 +873,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
                     ),
                     _buildStatItem(
                       width: width,
-                      iconPath: 'assets/images/report/location.png',
+                      iconPath: 'assets/images/report/location.webp',
                       iconColor: const Color(0xFFF59E0B),
                       value: _barangay ?? '—',
                       label: 'Barangay',
@@ -1003,10 +1003,10 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
           ),
         ),
         errorWidget: (context, url, error) =>
-            Image.asset('assets/images/profilenew.png', fit: BoxFit.cover),
+            Image.asset('assets/images/profilenew.webp', fit: BoxFit.cover),
       );
     }
-    return Image.asset('assets/images/profilenew.png', fit: BoxFit.cover);
+    return Image.asset('assets/images/profilenew.webp', fit: BoxFit.cover);
   }
 
   // ── Lock banner ───────────────────────────────────────────────────────────
@@ -1036,7 +1036,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
               borderRadius: BorderRadius.circular(width * 0.02),
             ),
             child: Image.asset(
-              'assets/images/settings/time.png',
+              'assets/images/settings/time.webp',
               width: width * 0.06,
               height: width * 0.06,
               color: AppColors.orange,
@@ -1175,7 +1175,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
                 ),
               ),
               Image.asset(
-                'assets/images/settings/password.png',
+                'assets/images/settings/password.webp',
                 width: width * 0.038,
                 height: width * 0.038,
                 color: const Color(0xFFD1D5DB),
@@ -1298,7 +1298,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
                         ? Padding(
                             padding: EdgeInsets.all(width * 0.03),
                             child: Image.asset(
-                              'assets/images/settings/password.png',
+                              'assets/images/settings/password.webp',
                               width: width * 0.038,
                               height: width * 0.038,
                               color: const Color(0xFFD1D5DB),

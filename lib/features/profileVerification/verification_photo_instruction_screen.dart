@@ -73,7 +73,7 @@ class _VerificationPhotoInstructionScreenState
                   /// LOGO
                   Center(
                     child: Image.asset(
-                      "assets/images/applogocrop.png",
+                      "assets/images/applogocrop.webp",
                       height: MediaQuery.of(context).size.height * 0.12,
                     ),
                   ),
@@ -149,19 +149,19 @@ class _VerificationPhotoInstructionScreenState
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: const [
                             _BadExample(
-                              image: "assets/images/idicons/expired.png",
+                              image: "assets/images/idicons/expired.webp",
                               label: "Expired",
                             ),
                             _BadExample(
-                              image: "assets/images/idicons/blurry.png",
+                              image: "assets/images/idicons/blurry.webp",
                               label: "Blurry",
                             ),
                             _BadExample(
-                              image: "assets/images/idicons/withglare.png",
+                              image: "assets/images/idicons/withglare.webp",
                               label: "With Glare",
                             ),
                             _BadExample(
-                              image: "assets/images/idicons/dark.png",
+                              image: "assets/images/idicons/dark.webp",
                               label: "Dark",
                             ),
                           ],
@@ -175,7 +175,7 @@ class _VerificationPhotoInstructionScreenState
                             children: [
                               _GoodExample(
                                 image:
-                                    "assets/images/idicons/correctsample.png",
+                                    "assets/images/idicons/correctsample.webp",
                               ),
                               SizedBox(height: 6),
                               Text(

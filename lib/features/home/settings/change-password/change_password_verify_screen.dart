@@ -404,7 +404,7 @@ class _ChangePasswordVerifyScreenState extends State<ChangePasswordVerifyScreen>
             child: Padding(
               padding: EdgeInsets.all(size * 0.14),
               child: Image.asset(
-                'assets/images/mail.png',
+                'assets/images/mail.webp',
                 fit: BoxFit.contain,
                 color: AppColors.primaryBlue,
                 colorBlendMode: BlendMode.srcIn,

@@ -111,23 +111,23 @@ class AppBottomNav extends StatelessWidget {
         onTap: (index) => _handleTap(context, index),
         items: [
           BottomNavigationBarItem(
-            icon: buildIcon('assets/images/home.png', currentIndex == 0),
+            icon: buildIcon('assets/images/home.webp', currentIndex == 0),
             label: 'Home',
           ),
           BottomNavigationBarItem(
-            icon: buildIcon('assets/images/my_reports.png', currentIndex == 1),
+            icon: buildIcon('assets/images/my_reports.webp', currentIndex == 1),
             label: 'My Reports',
           ),
           BottomNavigationBarItem(
-            icon: buildIcon('assets/images/news_feed.png', currentIndex == 2),
+            icon: buildIcon('assets/images/news_feed.webp', currentIndex == 2),
             label: 'NewsFeed',
           ),
           BottomNavigationBarItem(
-            icon: buildIcon('assets/images/emergency.png', currentIndex == 3),
+            icon: buildIcon('assets/images/emergency.webp', currentIndex == 3),
             label: 'Emergency',
           ),
           BottomNavigationBarItem(
-            icon: buildIcon('assets/images/settings.png', currentIndex == 4),
+            icon: buildIcon('assets/images/settings.webp', currentIndex == 4),
             label: 'Settings',
           ),
         ],

@@ -40,7 +40,7 @@ class ChatAgentInfoBar extends StatelessWidget {
               ),
               child: Center(
                 child: Image.asset(
-                  'assets/images/customer.png',
+                  'assets/images/customer.webp',
                   width: width * 0.058,
                   fit: BoxFit.contain,
                   errorBuilder: (_, _, _) => Icon(

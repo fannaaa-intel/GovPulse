@@ -232,7 +232,7 @@ class _NoInternetOverlayState extends State<_NoInternetOverlay>
                                 BlendMode.srcIn,
                               ),
                               child: Image.asset(
-                                'assets/images/settings/emergency.png',
+                                'assets/images/settings/emergency.webp',
                                 width: 22,
                                 height: 22,
                                 fit: BoxFit.contain,

@@ -431,7 +431,7 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
         mainAxisSize: MainAxisSize.min,
         children: [
           Image.asset(
-            'assets/images/newslogo.png',
+            'assets/images/newslogo.webp',
             height: width * 0.075,
             fit: BoxFit.contain,
             alignment: Alignment.centerLeft,
@@ -630,11 +630,11 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
           ),
         ),
         errorWidget: (context, url, error) =>
-            Image.asset('assets/images/profilenew.png', fit: BoxFit.cover),
+            Image.asset('assets/images/profilenew.webp', fit: BoxFit.cover),
       );
     }
 
-    return Image.asset('assets/images/profilenew.png', fit: BoxFit.cover);
+    return Image.asset('assets/images/profilenew.webp', fit: BoxFit.cover);
   }
 
   // ── Section card ──────────────────────────────────────────────────────────
@@ -809,7 +809,7 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
       width: width,
       children: [
         _buildTile(
-          imagePath: 'assets/images/settings/user.png',
+          imagePath: 'assets/images/settings/user.webp',
           iconBgColor: AppColors.primaryBlue,
           title: 'Edit Profile',
           subtitle: 'Update your personal information',
@@ -837,7 +837,7 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
           },
         ),
         _buildTile(
-          imagePath: 'assets/images/settings/password.png',
+          imagePath: 'assets/images/settings/password.webp',
           iconBgColor: AppColors.primaryBlue,
           title: 'Change Password',
           width: width,
@@ -847,15 +847,19 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
           },
         ),
         _buildTile(
-          imagePath: 'assets/images/settings/submission.png',
+          imagePath: 'assets/images/settings/submission.webp',
           iconBgColor: AppColors.primaryBlue,
           title: 'My Submissions',
           subtitle: 'View your verification & report history',
           width: width,
-          onTap: () => _comingSoon('My Submissions'),
+          onTap: () => Navigator.pushNamed(
+            context,
+            '/my_submissions',
+            arguments: widget.username,
+          ),
         ),
         _buildTile(
-          imagePath: 'assets/images/settings/verification_status.png',
+          imagePath: 'assets/images/settings/verification_status.webp',
           iconBgColor: AppColors.green,
           title: 'Verification Status',
           subtitle: badge.label,
@@ -874,7 +878,7 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
       width: width,
       children: [
         _buildToggleTile(
-          imagePath: 'assets/images/settings/notification.png',
+          imagePath: 'assets/images/settings/notification.webp',
           iconBgColor: AppColors.primaryBlue,
           title: 'Push Notifications',
           subtitle: 'Receive alerts on this device',
@@ -883,7 +887,7 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
           width: width,
         ),
         _buildToggleTile(
-          imagePath: 'assets/images/settings/updates.png',
+          imagePath: 'assets/images/settings/updates.webp',
           iconBgColor: AppColors.green,
           title: 'Community Updates',
           subtitle: 'Local news and announcements',
@@ -892,7 +896,7 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
           width: width,
         ),
         _buildToggleTile(
-          imagePath: 'assets/images/settings/emergency.png',
+          imagePath: 'assets/images/settings/emergency.webp',
           iconBgColor: AppColors.red,
           title: 'Emergency Alerts',
           subtitle: 'Critical safety notifications',
@@ -901,7 +905,7 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
           width: width,
         ),
         _buildToggleTile(
-          imagePath: 'assets/images/settings/email.png',
+          imagePath: 'assets/images/settings/email.webp',
           iconBgColor: AppColors.orange,
           title: 'Email Notifications',
           value: _emailNotifications,
@@ -920,7 +924,7 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
       width: width,
       children: [
         _buildTile(
-          imagePath: 'assets/images/settings/language.png',
+          imagePath: 'assets/images/settings/language.webp',
           iconBgColor: AppColors.primaryBlue,
           title: 'Language',
           width: width,
@@ -946,7 +950,7 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
           ),
         ),
         _buildTile(
-          imagePath: 'assets/images/settings/location.png',
+          imagePath: 'assets/images/settings/location.webp',
           iconBgColor: AppColors.green,
           title: 'Location',
           subtitle: 'Aparri, Cagayan',
@@ -1033,7 +1037,7 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
       width: width,
       children: [
         _buildTile(
-          imagePath: 'assets/images/settings/twofactorauth.png',
+          imagePath: 'assets/images/settings/twofactorauth.webp',
           iconBgColor: AppColors.primaryBlue,
           title: 'Two-Factor Authentication',
           subtitle: 'Add an extra layer of security',
@@ -1041,14 +1045,14 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
           onTap: () => _comingSoon('Two-Factor Authentication'),
         ),
         _buildTile(
-          imagePath: 'assets/images/settings/loginact.png',
+          imagePath: 'assets/images/settings/loginact.webp',
           iconBgColor: AppColors.primaryBlue,
           title: 'Login Activity',
           width: width,
           onTap: () => _comingSoon('Login Activity'),
         ),
         _buildTile(
-          imagePath: 'assets/images/settings/block_user.png',
+          imagePath: 'assets/images/settings/block_user.webp',
           iconBgColor: AppColors.red,
           title: 'Blocked Users',
           width: width,
@@ -1066,7 +1070,7 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
       width: width,
       children: [
         _buildTile(
-          imagePath: 'assets/images/settings/helpcenter.png',
+          imagePath: 'assets/images/settings/helpcenter.webp',
           iconBgColor: AppColors.primaryBlue,
           title: 'Help Center',
           subtitle: 'FAQs and troubleshooting',
@@ -1074,21 +1078,21 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
           onTap: () => _comingSoon('Help Center'),
         ),
         _buildTile(
-          imagePath: 'assets/images/settings/contact.png',
+          imagePath: 'assets/images/settings/contact.webp',
           iconBgColor: AppColors.green,
           title: 'Contact Support',
           width: width,
           onTap: () => _comingSoon('Contact Support'),
         ),
         _buildTile(
-          imagePath: 'assets/images/settings/bug.png',
+          imagePath: 'assets/images/settings/bug.webp',
           iconBgColor: AppColors.orange,
           title: 'Report a Bug',
           width: width,
           onTap: () => _comingSoon('Report a Bug'),
         ),
         _buildTile(
-          imagePath: 'assets/images/settings/feedback.png',
+          imagePath: 'assets/images/settings/feedback.webp',
           iconBgColor: AppColors.primaryBlue,
           title: 'Send Feedback',
           width: width,
@@ -1106,14 +1110,14 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
       width: width,
       children: [
         _buildTile(
-          imagePath: 'assets/images/settings/terms.png',
+          imagePath: 'assets/images/settings/terms.webp',
           iconBgColor: AppColors.primaryBlue,
           title: 'Terms of Service',
           width: width,
           onTap: () => _comingSoon('Terms of Service'),
         ),
         _buildTile(
-          imagePath: 'assets/images/settings/privacy.png',
+          imagePath: 'assets/images/settings/privacy.webp',
           iconBgColor: AppColors.primaryBlue,
           title: 'Privacy Policy',
           width: width,
@@ -1134,14 +1138,14 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
       width: width,
       children: [
         _buildTile(
-          imagePath: 'assets/images/settings/about.png',
+          imagePath: 'assets/images/settings/about.webp',
           iconBgColor: AppColors.primaryBlue,
           title: 'About GovPulse',
           width: width,
           onTap: () => _comingSoon('About'),
         ),
         _buildTile(
-          imagePath: 'assets/images/settings/app.png',
+          imagePath: 'assets/images/settings/app.webp',
           iconBgColor: AppColors.green,
           title: 'App Version',
           width: width,
@@ -1172,7 +1176,7 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
           child: ColorFiltered(
             colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
             child: Image.asset(
-              'assets/images/settings/logout.png',
+              'assets/images/settings/logout.webp',
               fit: BoxFit.contain,
             ),
           ),

@@ -687,7 +687,7 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
                   ),
                   const Spacer(),
                   Image.asset(
-                    "assets/images/applogocrop.png",
+                    "assets/images/applogocrop.webp",
                     height: 36,
                     fit: BoxFit.contain,
                   ),

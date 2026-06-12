@@ -313,7 +313,7 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
             ),
             child: Center(
               child: Image.asset(
-                'assets/images/customer.png',
+                'assets/images/customer.webp',
                 width: avatarSize * 0.53,
                 fit: BoxFit.contain,
                 errorBuilder: (_, _, _) => Icon(
@@ -620,7 +620,7 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
                 ),
                 child: Center(
                   child: Image.asset(
-                    'assets/images/send.png',
+                    'assets/images/send.webp',
                     width: 18,
                     color: Colors.white,
                     colorBlendMode: BlendMode.srcIn,

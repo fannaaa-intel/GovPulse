@@ -977,7 +977,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
           SizedBox(width: w * 0.03),
           if (!widget.readOnly)
             Image.asset(
-              'assets/images/newslogo.png',
+              'assets/images/newslogo.webp',
               height: w * 0.085,
               fit: BoxFit.contain,
               errorBuilder: (_, _, _) => Icon(

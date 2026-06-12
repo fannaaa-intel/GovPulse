@@ -299,12 +299,12 @@ class _Avatar extends StatelessWidget {
                       ),
                     ),
                     errorWidget: (_, _, _) => Image.asset(
-                      'assets/images/profilenew.png',
+                      'assets/images/profilenew.webp',
                       fit: BoxFit.cover,
                     ),
                   )
                 : Image.asset(
-                    'assets/images/profilenew.png',
+                    'assets/images/profilenew.webp',
                     fit: BoxFit.cover,
                   ),
           ),

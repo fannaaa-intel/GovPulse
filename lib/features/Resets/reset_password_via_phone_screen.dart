@@ -21,10 +21,15 @@ class ResetPasswordPhoneScreen extends StatefulWidget {
 }
 
 class _ResetPasswordPhoneScreenState extends State<ResetPasswordPhoneScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   String phone = "";
 
   late AnimationController _heroController;
+
+  // ── Content entrance: instant screen, content fades + slides up ──────────
+  late final AnimationController _entranceController;
+  late final Animation<double> _fadeAnim;
+  late final Animation<Offset> _slideAnim;
 
   @override
   void initState() {
@@ -33,11 +38,32 @@ class _ResetPasswordPhoneScreenState extends State<ResetPasswordPhoneScreen>
       vsync: this,
       duration: const Duration(seconds: 8),
     )..repeat(reverse: true);
+
+    _entranceController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
+    _fadeAnim = CurvedAnimation(
+      parent: _entranceController,
+      curve: Curves.easeOut,
+    );
+    _slideAnim = Tween<Offset>(begin: const Offset(0, 0.06), end: Offset.zero)
+        .animate(
+          CurvedAnimation(
+            parent: _entranceController,
+            curve: Curves.easeOutCubic,
+          ),
+        );
+
+    Future.delayed(const Duration(milliseconds: 80), () {
+      if (mounted) _entranceController.forward();
+    });
   }
 
   @override
   void dispose() {
     _heroController.dispose();
+    _entranceController.dispose();
     super.dispose();
   }
 
@@ -59,146 +85,163 @@ class _ResetPasswordPhoneScreenState extends State<ResetPasswordPhoneScreen>
       body: GestureDetector(
         onTap: () => FocusScope.of(context).unfocus(),
         child: SafeArea(
-          child: MobileFormShell(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 26),
-              child: Column(
-                children: [
-                  const SizedBox(height: 30),
-
-                  Image.asset(
-                    "assets/images/applogocrop.png",
-                    width: (w * 0.32).clamp(0.0, 160.0).toDouble(),
-                  ),
-
-                  const SizedBox(height: 14),
-
-                  Text(
-                    "Reset Password",
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.primaryBlue,
-                    ),
-                  ),
-
-                  const SizedBox(height: 6),
-
-                  Text(
-                    "Enter your Phone Number to receive a\nverification code.",
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
-                  ),
-
-                  const SizedBox(height: 22),
-
-                  RoundedInputField(
-                    value: phone,
-                    hintText: "Phone number",
-                    icon: Icons.phone,
-                    prefix: Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: Text(
-                        "+63",
-                        style: TextStyle(
-                          color: AppColors.primaryBlue,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    onChanged: (val) {
-                      if (val.length <= 10) {
-                        setState(() => phone = val);
-                      }
-                    },
-                  ),
-
-                  const SizedBox(height: 18),
-
-                  SizedBox(
-                    width: double.infinity,
-                    height: 54,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primaryBlue,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                      ),
-                      onPressed: phone.length == 10 ? widget.onVerify : null,
-                      child: const Text(
-                        "Verify Code",
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 10),
-
-                  Text(
-                    "We will send you a verification code via SMS",
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                  ),
-
-                  const SizedBox(height: 26),
-
-                  Row(
+          child: FadeTransition(
+            opacity: _fadeAnim,
+            child: SlideTransition(
+              position: _slideAnim,
+              child: MobileFormShell(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 26),
+                  child: Column(
                     children: [
-                      Expanded(child: Divider(color: Colors.grey.shade300)),
-                      const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 8),
-                        child: Text(
-                          "Or Return to",
-                          style: TextStyle(fontSize: 13, color: Colors.grey),
+                      const SizedBox(height: 30),
+
+                      Image.asset(
+                        "assets/images/applogocrop.webp",
+                        width: (w * 0.32).clamp(0.0, 160.0).toDouble(),
+                      ),
+
+                      const SizedBox(height: 14),
+
+                      Text(
+                        "Reset Password",
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.primaryBlue,
                         ),
                       ),
-                      Expanded(child: Divider(color: Colors.grey.shade300)),
-                    ],
-                  ),
 
-                  const SizedBox(height: 16),
+                      const SizedBox(height: 6),
 
-                  SizedBox(
-                    height: 56,
-                    width: 170,
-                    child: OutlinedButton(
-                      style: OutlinedButton.styleFrom(
-                        side: BorderSide(color: Colors.grey.shade300),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
+                      Text(
+                        "Enter your Phone Number to receive a\nverification code.",
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey.shade600,
                         ),
                       ),
-                      onPressed: widget.onLogin,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Image.asset(
-                            "assets/images/out.png",
-                            width: 20,
-                            height: 20,
-                            color: AppColors.primaryBlue,
-                          ),
-                          const SizedBox(width: 10),
-                          Text(
-                            "Log In",
+
+                      const SizedBox(height: 22),
+
+                      RoundedInputField(
+                        value: phone,
+                        hintText: "Phone number",
+                        icon: Icons.phone,
+                        prefix: Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: Text(
+                            "+63",
                             style: TextStyle(
                               color: AppColors.primaryBlue,
                               fontWeight: FontWeight.w600,
-                              fontSize: 15,
                             ),
                           ),
+                        ),
+                        onChanged: (val) {
+                          if (val.length <= 10) {
+                            setState(() => phone = val);
+                          }
+                        },
+                      ),
+
+                      const SizedBox(height: 18),
+
+                      SizedBox(
+                        width: double.infinity,
+                        height: 54,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primaryBlue,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                          onPressed: phone.length == 10
+                              ? widget.onVerify
+                              : null,
+                          child: const Text(
+                            "Verify Code",
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 10),
+
+                      Text(
+                        "We will send you a verification code via SMS",
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+
+                      const SizedBox(height: 26),
+
+                      Row(
+                        children: [
+                          Expanded(child: Divider(color: Colors.grey.shade300)),
+                          const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 8),
+                            child: Text(
+                              "Or Return to",
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.grey,
+                              ),
+                            ),
+                          ),
+                          Expanded(child: Divider(color: Colors.grey.shade300)),
                         ],
                       ),
-                    ),
-                  ),
 
-                  const SizedBox(height: 20),
-                ],
+                      const SizedBox(height: 16),
+
+                      SizedBox(
+                        height: 56,
+                        width: 170,
+                        child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide(color: Colors.grey.shade300),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                          onPressed: widget.onLogin,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Image.asset(
+                                "assets/images/out.webp",
+                                width: 20,
+                                height: 20,
+                                color: AppColors.primaryBlue,
+                              ),
+                              const SizedBox(width: 10),
+                              Text(
+                                "Log In",
+                                style: TextStyle(
+                                  color: AppColors.primaryBlue,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 15,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 20),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),

@@ -24,11 +24,11 @@ class HomeNavDrawer extends StatelessWidget {
   });
 
   static const _items = <_DrawerItem>[
-    _DrawerItem('Home', 'assets/images/home.png', 0),
-    _DrawerItem('My Reports', 'assets/images/my_reports.png', 1),
-    _DrawerItem('NewsFeed', 'assets/images/news_feed.png', 2),
-    _DrawerItem('Emergency', 'assets/images/emergency.png', 3),
-    _DrawerItem('Settings', 'assets/images/settings.png', 4),
+    _DrawerItem('Home', 'assets/images/home.webp', 0),
+    _DrawerItem('My Reports', 'assets/images/my_reports.webp', 1),
+    _DrawerItem('NewsFeed', 'assets/images/news_feed.webp', 2),
+    _DrawerItem('Emergency', 'assets/images/emergency.webp', 3),
+    _DrawerItem('Settings', 'assets/images/settings.webp', 4),
   ];
 
   @override
@@ -76,10 +76,10 @@ class HomeNavDrawer extends StatelessWidget {
                                     strokeWidth: 2,
                                   ),
                               errorWidget: (_, _, _) =>
-                                  Image.asset('assets/images/profilenew.png'),
+                                  Image.asset('assets/images/profilenew.webp'),
                             ),
                           )
-                        : Image.asset('assets/images/profilenew.png'),
+                        : Image.asset('assets/images/profilenew.webp'),
                   ),
                   const SizedBox(width: 12),
                   Expanded(

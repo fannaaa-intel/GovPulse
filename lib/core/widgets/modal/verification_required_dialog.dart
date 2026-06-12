@@ -71,7 +71,7 @@ Future<bool> showVerificationRequiredDialog(
               height: width * 0.22,
               child: Center(
                 child: Image.asset(
-                  'assets/images/verification/verified.png',
+                  'assets/images/verification/verified.webp',
                   width: width * 0.18,
                   height: width * 0.18,
                   fit: BoxFit.contain,
@@ -135,7 +135,7 @@ Future<void> showSuccessDialog(
   required String title,
   required String message,
   String buttonLabel = 'Done',
-  String iconAsset = 'assets/images/verification/verified.png',
+  String iconAsset = 'assets/images/verification/verified.webp',
   Color? iconColor,
   Color? iconBgColor,
 }) async {
@@ -196,7 +196,7 @@ Future<void> showSuccessDialog(
                   ),
                 );
               }
-              // No color — render as-is (for full-color PNGs like verified.png)
+              // No color — render as-is (for full-color PNGs like verified.webp)
               return SizedBox(
                 width: size,
                 height: size,

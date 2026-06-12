@@ -40,20 +40,21 @@ class _PhoneSignupScreenState extends State<PhoneSignupScreen>
   bool get isPasswordMismatch =>
       confirmPassword.isNotEmpty && password != confirmPassword;
 
-  // ── Web entrance + background animations (no effect on mobile) ────────────
+  // ── Entrance + background animations ─────────────────────────────────────
+  // Content slides up and fades in — the screen itself appears instantly
+  // (PageRouteBuilder with zero transitionDuration handled by the caller).
   late final AnimationController _entranceController;
   late final Animation<double> _fadeAnim;
   late final Animation<Offset> _slideAnim;
   late final AnimationController _bgController;
 
-  // Web phone field needs a controller so the +63 prefix sits beside it
-  // while keeping the same 10-digit limit logic as mobile.
   final TextEditingController _webPhoneController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
 
+    // Content entrance: 500 ms, slight upward slide + fade
     _entranceController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 500),
@@ -70,11 +71,13 @@ class _PhoneSignupScreenState extends State<PhoneSignupScreen>
           ),
         );
 
+    // Background blob animation (web hero panel)
     _bgController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 16),
     )..repeat(reverse: true);
 
+    // Tiny delay lets the route settle before starting — avoids a 1-frame stutter
     Future.delayed(const Duration(milliseconds: 80), () {
       if (mounted) _entranceController.forward();
     });
@@ -88,7 +91,7 @@ class _PhoneSignupScreenState extends State<PhoneSignupScreen>
     super.dispose();
   }
 
-  // ── Shared logic (used by both mobile and web fields) ─────────────────────
+  // ── Shared logic ──────────────────────────────────────────────────────────
   void validatePassword(String value) {
     hasMinLength = PasswordValidator.hasMinLength(value);
     hasUpper = PasswordValidator.hasUpper(value);
@@ -123,7 +126,6 @@ class _PhoneSignupScreenState extends State<PhoneSignupScreen>
     if (val.length <= 10) {
       setState(() => phone = val);
     } else {
-      // Keep controller in sync if user pasted/typed past the limit (web).
       _webPhoneController.value = TextEditingValue(
         text: phone,
         selection: TextSelection.collapsed(offset: phone.length),
@@ -150,15 +152,13 @@ class _PhoneSignupScreenState extends State<PhoneSignupScreen>
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
 
-    // Native app (phones & tablets) — mobile UI, identical on every size.
     if (!kIsWeb) return _mobileScaffold(context);
 
-    // Web — responsive across all widths.
     if (width >= kWebTwoPanelMinWidth) return _webScaffold(context);
     return _webCompactScaffold(context);
   }
 
-  // ── Mobile layout — visually unchanged ────────────────────────────────────
+  // ── Mobile layout ─────────────────────────────────────────────────────────
   Widget _mobileScaffold(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
@@ -166,299 +166,289 @@ class _PhoneSignupScreenState extends State<PhoneSignupScreen>
       body: GestureDetector(
         onTap: () => FocusScope.of(context).unfocus(),
         child: SafeArea(
-          child: MobileFormShell(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 26),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Image.asset(
-                    "assets/images/applogocrop.png",
-                    width: (MediaQuery.of(context).size.width * 0.30)
-                        .clamp(0.0, 150.0)
-                        .toDouble(),
-                  ),
-
-                  const SizedBox(height: 6),
-
-                  /// TITLE
-                  Text(
-                    "Continue with Mobile Number",
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.primaryBlue,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-
-                  const SizedBox(height: 6),
-
-                  Text(
-                    "Verify your mobile number to create an account",
-                    style: TextStyle(fontSize: 13, color: AppColors.hint),
-                    textAlign: TextAlign.center,
-                  ),
-
-                  const SizedBox(height: 14),
-
-                  RoundedInputField(
-                    value: phone,
-                    hintText: "Phone Number",
-                    icon: Icons.phone,
-                    prefix: Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: Text(
-                        "+63 ",
-                        style: TextStyle(
-                          color: AppColors.primaryBlue,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 15,
-                        ),
-                      ),
-                    ),
-                    onChanged: (val) {
-                      if (val.length <= 10) {
-                        setState(() {
-                          phone = val;
-                        });
-                      }
-                    },
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  /// USERNAME
-                  RoundedInputField(
-                    value: username,
-                    hintText: "Username",
-                    icon: Icons.person,
-                    onChanged: (val) {
-                      setState(() {
-                        username = val;
-                      });
-                    },
-                  ),
-
-                  const SizedBox(height: 14),
-
-                  /// PASSWORD
-                  RoundedInputField(
-                    value: password,
-                    hintText: "Password",
-                    icon: Icons.lock,
-                    obscureText: !showPassword,
-                    onChanged: (val) {
-                      setState(() {
-                        password = val;
-                        validatePassword(val);
-                      });
-                    },
-                    suffixWidget: GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          showPassword = !showPassword;
-                        });
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Image.asset(
-                          showPassword
-                              ? "assets/images/eye.png"
-                              : "assets/images/closed_eye.png",
-                          height: 20,
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 14),
-
-                  /// CONFIRM PASSWORD
-                  RoundedInputField(
-                    value: confirmPassword,
-                    hintText: "Confirm Password",
-                    icon: Icons.lock,
-                    obscureText: !showConfirmPassword,
-                    isError: isPasswordMismatch,
-                    onChanged: (val) {
-                      setState(() {
-                        confirmPassword = val;
-                      });
-                    },
-                    suffixWidget: GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          showConfirmPassword = !showConfirmPassword;
-                        });
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Image.asset(
-                          showConfirmPassword
-                              ? "assets/images/eye.png"
-                              : "assets/images/closed_eye.png",
-                          height: 20,
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 8),
-
-                  if (password.isNotEmpty)
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          "Strength: $strengthText",
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: strengthColor,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        PasswordStrengthBar(score: strengthScore),
-                        const SizedBox(height: 10),
-                      ],
-                    ),
-
-                  Row(
+          // Wrap the entire scrollable body in the entrance animation so every
+          // element slides and fades together.
+          child: FadeTransition(
+            opacity: _fadeAnim,
+            child: SlideTransition(
+              position: _slideAnim,
+              child: MobileFormShell(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 26),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      _requirement("At least 8 characters", hasMinLength),
-                      const SizedBox(width: 10),
-                      _requirement("Must have number", hasNumber),
-                    ],
-                  ),
+                      const SizedBox(height: 18),
 
-                  const SizedBox(height: 6),
-
-                  Row(
-                    children: [
-                      _requirement("One uppercase letter", hasUpper),
-                      const SizedBox(width: 10),
-                      _requirement("One special character", hasSpecial),
-                    ],
-                  ),
-
-                  const SizedBox(height: 18),
-
-                  /// SIGN UP
-                  SizedBox(
-                    width: double.infinity,
-                    height: 52,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: isPasswordValid && phone.length == 10
-                            ? AppColors.primaryBlue
-                            : AppColors.primaryBlue.withValues(alpha: 0.4),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
+                      Image.asset(
+                        "assets/images/applogocrop.webp",
+                        width: (MediaQuery.of(context).size.width * 0.30)
+                            .clamp(0.0, 150.0)
+                            .toDouble(),
                       ),
-                      onPressed: isPasswordValid && phone.length == 10
-                          ? () async {
-                              await widget.onContinueClick(phone, password);
-                            }
-                          : null,
-                      child: const Text(
-                        "Sign Up",
+
+                      const SizedBox(height: 6),
+
+                      Text(
+                        "Continue with Mobile Number",
                         style: TextStyle(
-                          fontSize: 16,
+                          fontSize: 20,
                           fontWeight: FontWeight.bold,
-                          color: Colors.white,
+                          color: AppColors.primaryBlue,
                         ),
+                        textAlign: TextAlign.center,
                       ),
-                    ),
-                  ),
 
-                  const SizedBox(height: 8),
+                      const SizedBox(height: 6),
 
-                  Text(
-                    "We will send you a verification code via SMS",
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 12, color: AppColors.hint),
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  /// RETURN
-                  Row(
-                    children: [
-                      Expanded(child: Divider(color: AppColors.stroke)),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        child: Text(
-                          "Or Return to",
-                          style: TextStyle(fontSize: 13, color: AppColors.hint),
-                        ),
+                      Text(
+                        "Verify your mobile number to create an account",
+                        style: TextStyle(fontSize: 13, color: AppColors.hint),
+                        textAlign: TextAlign.center,
                       ),
-                      Expanded(child: Divider(color: AppColors.stroke)),
-                    ],
-                  ),
 
-                  const SizedBox(height: 12),
+                      const SizedBox(height: 14),
 
-                  SizedBox(
-                    width: 220,
-                    height: 56,
-                    child: OutlinedButton(
-                      style: OutlinedButton.styleFrom(
-                        side: BorderSide(color: AppColors.stroke),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                      ),
-                      onPressed: widget.onBackClick,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Image.asset(
-                            "assets/images/out.png",
-                            width: 28,
-                            height: 28,
+                      // PHONE
+                      RoundedInputField(
+                        value: phone,
+                        hintText: "Phone Number",
+                        icon: Icons.phone,
+                        prefix: Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: Text(
+                            "+63 ",
+                            style: TextStyle(
+                              color: AppColors.primaryBlue,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 15,
+                            ),
                           ),
+                        ),
+                        onChanged: (val) {
+                          if (val.length <= 10) {
+                            setState(() => phone = val);
+                          }
+                        },
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      // USERNAME
+                      RoundedInputField(
+                        value: username,
+                        hintText: "Username",
+                        icon: Icons.person,
+                        onChanged: _onUsernameChanged,
+                      ),
+
+                      const SizedBox(height: 14),
+
+                      // PASSWORD
+                      RoundedInputField(
+                        value: password,
+                        hintText: "Password",
+                        icon: Icons.lock,
+                        obscureText: !showPassword,
+                        onChanged: _onPasswordChanged,
+                        suffixWidget: GestureDetector(
+                          onTap: () =>
+                              setState(() => showPassword = !showPassword),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Image.asset(
+                              showPassword
+                                  ? "assets/images/eye.webp"
+                                  : "assets/images/closed_eye.webp",
+                              height: 20,
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 14),
+
+                      // CONFIRM PASSWORD
+                      RoundedInputField(
+                        value: confirmPassword,
+                        hintText: "Confirm Password",
+                        icon: Icons.lock,
+                        obscureText: !showConfirmPassword,
+                        isError: isPasswordMismatch,
+                        onChanged: _onConfirmChanged,
+                        suffixWidget: GestureDetector(
+                          onTap: () => setState(
+                            () => showConfirmPassword = !showConfirmPassword,
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Image.asset(
+                              showConfirmPassword
+                                  ? "assets/images/eye.webp"
+                                  : "assets/images/closed_eye.webp",
+                              height: 20,
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 8),
+
+                      if (password.isNotEmpty)
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "Strength: $strengthText",
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: strengthColor,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            PasswordStrengthBar(score: strengthScore),
+                            const SizedBox(height: 10),
+                          ],
+                        ),
+
+                      Row(
+                        children: [
+                          _requirement("At least 8 characters", hasMinLength),
                           const SizedBox(width: 10),
-                          Text(
+                          _requirement("Must have number", hasNumber),
+                        ],
+                      ),
+
+                      const SizedBox(height: 6),
+
+                      Row(
+                        children: [
+                          _requirement("One uppercase letter", hasUpper),
+                          const SizedBox(width: 10),
+                          _requirement("One special character", hasSpecial),
+                        ],
+                      ),
+
+                      const SizedBox(height: 18),
+
+                      // SIGN UP BUTTON
+                      SizedBox(
+                        width: double.infinity,
+                        height: 52,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: canSubmit
+                                ? AppColors.primaryBlue
+                                : AppColors.primaryBlue.withValues(alpha: 0.4),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                          onPressed: canSubmit ? _submit : null,
+                          child: const Text(
                             "Sign Up",
                             style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.primaryBlue,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 8),
+
+                      Text(
+                        "We will send you a verification code via SMS",
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 12, color: AppColors.hint),
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      Row(
+                        children: [
+                          Expanded(child: Divider(color: AppColors.stroke)),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            child: Text(
+                              "Or Return to",
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: AppColors.hint,
+                              ),
+                            ),
+                          ),
+                          Expanded(child: Divider(color: AppColors.stroke)),
+                        ],
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      SizedBox(
+                        width: 220,
+                        height: 56,
+                        child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide(color: AppColors.stroke),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                          onPressed: widget.onBackClick,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Image.asset(
+                                "assets/images/out.webp",
+                                width: 28,
+                                height: 28,
+                              ),
+                              const SizedBox(width: 10),
+                              Text(
+                                "Sign Up",
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.primaryBlue,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            "Already have an account? ",
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: AppColors.hint,
+                            ),
+                          ),
+                          GestureDetector(
+                            onTap: widget.onLoginClick,
+                            child: Text(
+                              "Log In",
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.primaryBlue,
+                              ),
                             ),
                           ),
                         ],
                       ),
-                    ),
-                  ),
 
-                  const SizedBox(height: 16),
-
-                  /// LOGIN
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        "Already have an account? ",
-                        style: TextStyle(fontSize: 13, color: AppColors.hint),
-                      ),
-                      GestureDetector(
-                        onTap: widget.onLoginClick,
-                        child: Text(
-                          "Log In",
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.primaryBlue,
-                          ),
-                        ),
-                      ),
+                      const SizedBox(height: 20),
                     ],
                   ),
-
-                  const SizedBox(height: 20),
-                ],
+                ),
               ),
             ),
           ),
@@ -554,10 +544,9 @@ class _PhoneSignupScreenState extends State<PhoneSignupScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Logo mark
         Row(
           children: [
-            Image.asset("assets/images/applogo.png", height: 30),
+            Image.asset("assets/images/applogo.webp", height: 30),
             const SizedBox(width: 10),
             Text(
               "GovPulse",
@@ -676,7 +665,6 @@ class _PhoneSignupScreenState extends State<PhoneSignupScreen>
 
         const SizedBox(height: 18),
 
-        // Strength meter
         if (password.isNotEmpty) ...[
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -703,7 +691,6 @@ class _PhoneSignupScreenState extends State<PhoneSignupScreen>
           const SizedBox(height: 18),
         ],
 
-        // Requirements
         Row(
           children: [
             _requirement("At least 8 characters", hasMinLength),
@@ -722,7 +709,6 @@ class _PhoneSignupScreenState extends State<PhoneSignupScreen>
 
         const SizedBox(height: 26),
 
-        // Submit
         SizedBox(
           width: double.infinity,
           height: 50,
@@ -745,7 +731,7 @@ class _PhoneSignupScreenState extends State<PhoneSignupScreen>
                     Colors.white.withValues(alpha: 0.08),
                   ),
                 ),
-            onPressed: canSubmit ? () => _submit() : null,
+            onPressed: canSubmit ? _submit : null,
             child: const Text(
               "Sign up",
               style: TextStyle(
@@ -783,7 +769,6 @@ class _PhoneSignupScreenState extends State<PhoneSignupScreen>
 
         const SizedBox(height: 18),
 
-        // Back to sign up
         Center(
           child: SizedBox(
             width: 220,

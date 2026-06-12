@@ -239,7 +239,7 @@ class HomeContactStrip extends StatelessWidget {
           runSpacing: 4,
           children: [
             Image.asset(
-              'assets/images/applogocrop.png',
+              'assets/images/applogocrop.webp',
               height: 15,
               errorBuilder: (_, _, _) => const Icon(
                 Icons.account_balance_rounded,

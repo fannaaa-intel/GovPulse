@@ -86,7 +86,7 @@ class HomeHeroSection extends StatelessWidget {
         ? ((bandWidth - _kColGap) * _kCommunityFlex).clamp(0.0, bandWidth)
         : bandWidth;
 
-    // bghome.png is 3324 × 960 ≈ aspect 3.46
+    // bghome.webp is 3324 × 960 ≈ aspect 3.46
 
     const double heroAspect = 3.46;
 
@@ -110,7 +110,7 @@ class HomeHeroSection extends StatelessWidget {
                 children: [
                   // Background image
                   Image.asset(
-                    'assets/images/bghome.png',
+                    'assets/images/bghome.webp',
                     fit: BoxFit.cover,
                     alignment: const Alignment(0, 0.3),
                     errorBuilder: (_, _, _) => Container(

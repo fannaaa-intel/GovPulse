@@ -79,7 +79,7 @@ class _EmergencyScreenState extends State<EmergencyScreen>
   static const List<_Category> _categories = [
     _Category(
       label: 'Police',
-      iconPath: 'assets/images/emergency/police.png',
+      iconPath: 'assets/images/emergency/police.webp',
       color: AppColors.primaryBlue,
       hotlines: [
         _Hotline(
@@ -96,7 +96,7 @@ class _EmergencyScreenState extends State<EmergencyScreen>
     ),
     _Category(
       label: 'Fire Station',
-      iconPath: 'assets/images/emergency/fire.png',
+      iconPath: 'assets/images/emergency/fire.webp',
       color: AppColors.red,
       hotlines: [
         _Hotline(
@@ -108,7 +108,7 @@ class _EmergencyScreenState extends State<EmergencyScreen>
     ),
     _Category(
       label: 'Hospital',
-      iconPath: 'assets/images/emergency/medical.png',
+      iconPath: 'assets/images/emergency/medical.webp',
       color: AppColors.green,
       hotlines: [
         _Hotline(
@@ -140,7 +140,7 @@ class _EmergencyScreenState extends State<EmergencyScreen>
     ),
     _Category(
       label: 'MDRRMO',
-      iconPath: 'assets/images/emergency/leader.png',
+      iconPath: 'assets/images/emergency/leader.webp',
       color: AppColors.orange,
       hotlines: [
         _Hotline(
@@ -167,7 +167,7 @@ class _EmergencyScreenState extends State<EmergencyScreen>
     ),
     _Category(
       label: 'National',
-      iconPath: 'assets/images/emergency/philippines.png',
+      iconPath: 'assets/images/emergency/philippines.webp',
       color: AppColors.primaryBlue,
       hotlines: [
         _Hotline(name: 'Philippine Red Cross', number: '143'),
@@ -434,7 +434,7 @@ class _EmergencyScreenState extends State<EmergencyScreen>
         mainAxisSize: MainAxisSize.min,
         children: [
           Image.asset(
-            'assets/images/newslogo.png',
+            'assets/images/newslogo.webp',
             height: w * .075,
             fit: BoxFit.contain,
             alignment: Alignment.centerLeft,
