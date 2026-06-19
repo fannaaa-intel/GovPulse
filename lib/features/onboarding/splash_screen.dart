@@ -155,6 +155,19 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
   }
 
   Future<void> _start() async {
+    // Warm up the intro screen's assets (logo + onboarding GIFs) while the
+    // splash animation plays, so they're decoded before intro appears and
+    // don't "pop"/resize a moment after the screen shows.
+    if (mounted) {
+      precacheImage(
+        const AssetImage('assets/images/applogocrop.webp'),
+        context,
+      );
+      precacheImage(const AssetImage('assets/images/onboard1.gif'), context);
+      precacheImage(const AssetImage('assets/images/onboard2.gif'), context);
+      precacheImage(const AssetImage('assets/images/onboard3.gif'), context);
+    }
+
     // Fire the check immediately, in parallel — don't block on it.
     final internetCheck = hasRealInternet();
 
