@@ -333,6 +333,7 @@ class _IntroScreenState extends State<IntroScreen>
                         data["image"]!,
                         fit: BoxFit.contain,
                         filterQuality: FilterQuality.high,
+                        gaplessPlayback: true,
                       ),
                     ),
                   ),

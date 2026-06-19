@@ -180,15 +180,26 @@ class _HomePageState extends ConsumerState<HomePage>
 
   // ── Navigation helpers ────────────────────────────────────────────────────
 
-  void _goToNewsFeed() {
-    final barangay = ref.read(userProfileProvider).valueOrNull?.barangay;
+  void _goToNewsFeed() async {
+    // Ensure the profile is loaded before navigating, so the feed filters by
+    // the user's barangay on first open — not just city-wide / LGU broadcasts.
+    // On a fresh app launch the profile may still be loading when the user
+    // taps; reading valueOrNull then would give null → wrong (city-wide) feed.
+    var profile = ref.read(userProfileProvider).valueOrNull;
+    if (profile == null) {
+      try {
+        profile = await ref.read(userProfileProvider.future);
+      } catch (_) {}
+    }
+    if (!mounted) return;
     Navigator.pushNamed(
       context,
       '/newsfeed',
       arguments: {
         'username': widget.username,
-        'isVerified': _verifStatus == VerifStatus.verified,
-        'userBarangay': barangay, // ← ADD
+        'isVerified':
+            (profile?.verifStatus ?? _verifStatus) == VerifStatus.verified,
+        'userBarangay': profile?.barangay,
       },
     );
   }
