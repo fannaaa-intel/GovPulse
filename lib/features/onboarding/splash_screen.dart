@@ -32,16 +32,13 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
 
   bool _showLoader = false;
   bool _goOffline = false;
+  bool _navigated = false; // ensures we only navigate away from splash once
 
   late final TextPainter _textPainter;
 
   @override
   void initState() {
     super.initState();
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _start();
-    });
 
     _controller = AnimationController(
       vsync: this,
@@ -93,6 +90,9 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
   }
 
   Future<void> _navigateNext() async {
+    if (_navigated) return; // guard against any duplicate navigation
+    _navigated = true;
+
     bool goToIntro = false;
 
     if (!kIsWeb) {

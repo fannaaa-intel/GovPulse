@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/widgets/modal/media_picker_sheet.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'package:video_thumbnail/video_thumbnail.dart';
@@ -1339,67 +1340,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
 
     FocusManager.instance.primaryFocus?.unfocus();
 
-    final choice = await showModalBottomSheet<String>(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 12),
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: const Color(0xFFD1D5DB),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 16),
-            ListTile(
-              leading: Image.asset(
-                'assets/images/report/gallery.webp',
-                width: 28,
-                height: 28,
-                errorBuilder: (_, _, _) => Icon(
-                  Icons.photo_library_rounded,
-                  color: AppColors.primaryBlue,
-                ),
-              ),
-              title: const Text('Choose from Gallery'),
-              onTap: () => Navigator.pop(ctx, 'gallery'),
-            ),
-            ListTile(
-              leading: Image.asset(
-                'assets/images/report/video.webp',
-                width: 28,
-                height: 28,
-                errorBuilder: (_, _, _) =>
-                    Icon(Icons.videocam_rounded, color: AppColors.primaryBlue),
-              ),
-              title: const Text('Choose Video from Gallery'),
-              onTap: () => Navigator.pop(ctx, 'video'),
-            ),
-            ListTile(
-              leading: Image.asset(
-                'assets/images/report/cameraicon.webp',
-                width: 28,
-                height: 28,
-                errorBuilder: (_, _, _) => Icon(
-                  Icons.camera_alt_rounded,
-                  color: AppColors.primaryBlue,
-                ),
-              ),
-              title: const Text('Take a Photo'),
-              onTap: () => Navigator.pop(ctx, 'camera'),
-            ),
-            const SizedBox(height: 12),
-          ],
-        ),
-      ),
-    );
+    final choice = await showMediaPickerSheet(context);
 
     if (choice == null) return;
 

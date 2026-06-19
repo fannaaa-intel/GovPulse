@@ -1048,20 +1048,26 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
             width: size,
             height: size,
             decoration: BoxDecoration(
-              // Matches the unselected grid cell style in ReportIssueScreen exactly
-              color: const Color(0xFFF9FAFB),
-              borderRadius: BorderRadius.circular(w * 0.03),
-              border: Border.all(color: const Color(0xFFE5E7EB)),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  color.withValues(alpha: 0.18),
+                  color.withValues(alpha: 0.08),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(w * 0.038),
+              border: Border.all(color: color.withValues(alpha: 0.22)),
             ),
             child: Padding(
               padding: EdgeInsets.all(w * 0.025),
-              // No ColorFiltered — icons display with their natural PNG colors
-              // exactly as they appear in the category selection grid
+              // Icons display with their natural colors, on a soft tint of the
+              // category color so each card reads vibrant but stays legible.
               child: Image.asset(
                 asset,
                 fit: BoxFit.contain,
                 errorBuilder: (_, _, _) => Icon(
-                  Icons.category_outlined,
+                  Icons.category_rounded,
                   size: size * 0.48,
                   color: color,
                 ),
@@ -1104,12 +1110,16 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
             width: size,
             height: size,
             decoration: BoxDecoration(
-              color: const Color(0xFFF9FAFB),
-              borderRadius: BorderRadius.circular(w * 0.03),
-              border: Border.all(
-                color: color.withValues(alpha: 0.25),
-                width: 1.2,
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  color.withValues(alpha: 0.18),
+                  color.withValues(alpha: 0.08),
+                ],
               ),
+              borderRadius: BorderRadius.circular(w * 0.038),
+              border: Border.all(color: color.withValues(alpha: 0.22)),
             ),
             child: Icon(icon, size: size * 0.48, color: color),
           ),
@@ -1173,7 +1183,7 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
     ({Color bg, Color border, Color dot, Color text, String label}) s,
   ) {
     return Container(
-      padding: EdgeInsets.symmetric(horizontal: w * 0.022, vertical: w * 0.01),
+      padding: EdgeInsets.symmetric(horizontal: w * 0.025, vertical: w * 0.012),
       decoration: BoxDecoration(
         color: s.bg,
         borderRadius: BorderRadius.circular(w * 0.05),
@@ -1183,16 +1193,16 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: w * 0.013,
-            height: w * 0.013,
+            width: w * 0.016,
+            height: w * 0.016,
             decoration: BoxDecoration(color: s.dot, shape: BoxShape.circle),
           ),
-          SizedBox(width: w * 0.01),
+          SizedBox(width: w * 0.012),
           Text(
             s.label,
             style: TextStyle(
               fontSize: w * 0.026,
-              fontWeight: FontWeight.w600,
+              fontWeight: FontWeight.w700,
               color: s.text,
             ),
           ),
@@ -1217,13 +1227,14 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
 
   BoxDecoration _cardDecoration(double w) => BoxDecoration(
     color: Colors.white,
-    borderRadius: BorderRadius.circular(w * 0.035),
-    border: Border.all(color: AppColors.stroke),
+    borderRadius: BorderRadius.circular(w * 0.05),
+    border: Border.all(color: const Color(0xFFEEF1F5)),
     boxShadow: [
       BoxShadow(
-        color: Colors.black.withValues(alpha: 0.04),
-        blurRadius: 8,
-        offset: const Offset(0, 2),
+        color: const Color(0xFF1F2937).withValues(alpha: 0.07),
+        blurRadius: 20,
+        offset: const Offset(0, 9),
+        spreadRadius: -8,
       ),
     ],
   );
