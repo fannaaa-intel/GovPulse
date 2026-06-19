@@ -2,12 +2,28 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+/// Roles whose real identity (name + photo) is shown in the public feed.
+/// Anything not in this set is treated as a citizen and anonymised on the
+/// guest feed.
+bool isOfficialAuthorRole(String? role) {
+  switch ((role ?? '').trim().toLowerCase()) {
+    case 'admin':
+    case 'staff':
+    case 'lgu':
+    case 'official':
+    case 'government':
+    case 'moderator':
+      return true;
+    default:
+      return false;
+  }
+}
+
 class CommunityPostsProvider extends ChangeNotifier {
   CommunityPostsProvider._();
   static final CommunityPostsProvider instance = CommunityPostsProvider._();
 
   static const String _bucket = 'community-posts';
-  static const String _photoBucket = 'verification-assets';
 
   final SupabaseClient _supabase = Supabase.instance.client;
 
@@ -16,6 +32,38 @@ class CommunityPostsProvider extends ChangeNotifier {
   String? _error;
   bool _fetched = false;
   bool _initialLoadDone = false;
+  bool _guestMode = false;
+  String? _barangay;
+
+  void setGuestMode(bool isGuest) {
+    if (_guestMode == isGuest) return;
+    _guestMode = isGuest;
+    _fetched = false;
+    _initialLoadDone = false;
+    _posts = [];
+    notifyListeners();
+  }
+
+  void setBarangay(String? barangay) {
+    if (_barangay == barangay) return;
+    _barangay = barangay;
+    _fetched = false;
+    _posts = [];
+    notifyListeners();
+  }
+
+  void resetForAuthenticatedUser() {
+    if (!_guestMode && _fetched) return;
+    _guestMode = false;
+    _fetched = false;
+    _initialLoadDone = false;
+    _posts = [];
+    _optimisticComments.clear();
+    _pendingEditIds.clear();
+    unsubscribeRealtime();
+    notifyListeners();
+  }
+
   RealtimeChannel? _realtimeChannel;
   final Map<String, List<Map<String, dynamic>>> _optimisticComments = {};
   final Set<String> _pendingEditIds = {};
@@ -274,6 +322,7 @@ class CommunityPostsProvider extends ChangeNotifier {
 
   // ── Realtime ─────────────────────────────────────────────────────────
   void subscribeRealtime() {
+    if (_guestMode) return; // guests can't read comment/like tables
     if (_realtimeChannel != null) return;
     _realtimeChannel = _supabase
         .channel('community_feed_changes')
@@ -299,11 +348,12 @@ class CommunityPostsProvider extends ChangeNotifier {
 
   Future<void> _silentRefresh() async {
     try {
-      final rows = await _supabase
+      var query = _supabase
           .from('community_feed')
           .select()
-          .eq('status', 'approved')
-          .order('created_at', ascending: false);
+          .eq('status', 'approved');
+
+      final rows = await query.order('created_at', ascending: false);
 
       final postIds = rows.map((r) => r['id'] as String).toList();
       final commentsByPost = postIds.isEmpty
@@ -415,20 +465,47 @@ class CommunityPostsProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final rows = await _supabase
-          .from('community_feed')
-          .select()
-          .eq('status', 'approved')
-          .order('created_at', ascending: false);
+      if (_guestMode) {
+        // Guests read through SECURITY DEFINER RPCs: approved posts only, with
+        // citizen authors masked server-side (comments included, also masked).
+        final res = await _supabase.rpc('guest_community_feed');
+        final rows = (res as List).cast<Map<String, dynamic>>();
 
-      final postIds = rows.map((r) => r['id'] as String).toList();
-      final commentsByPost = postIds.isEmpty
-          ? <String, List<Map<String, dynamic>>>{}
-          : await _fetchCommentsForPosts(postIds);
+        Map<String, List<Map<String, dynamic>>> guestComments = {};
+        try {
+          guestComments = await _fetchGuestComments();
+        } catch (e) {
+          if (kDebugMode) debugPrint('guest comments fetch failed: $e');
+        }
 
-      _posts = rows
-          .map((r) => _mapPostRow(r, commentsByPost[r['id']] ?? []))
-          .toList();
+        _posts = rows.map((r) {
+          final pid = r['id'] as String;
+          final loaded = guestComments[pid] ?? const <Map<String, dynamic>>[];
+          final m = _mapPostRow(r, loaded);
+          // If comments loaded, the count is computed from them (matches the
+          // visible list). Otherwise fall back to the server-provided count.
+          if (loaded.isEmpty) {
+            m['commentCount'] = (r['comments_count'] as int?) ?? 0;
+          }
+          return m;
+        }).toList();
+      } else {
+        var query = _supabase
+            .from('community_feed')
+            .select()
+            .eq('status', 'approved');
+
+        final rows = await query.order('created_at', ascending: false);
+
+        final postIds = rows.map((r) => r['id'] as String).toList();
+        final commentsByPost = postIds.isEmpty
+            ? <String, List<Map<String, dynamic>>>{}
+            : await _fetchCommentsForPosts(postIds);
+
+        _posts = rows
+            .map((r) => _mapPostRow(r, commentsByPost[r['id']] ?? []))
+            .toList();
+      }
 
       _fetched = true;
       _error = null;
@@ -439,7 +516,7 @@ class CommunityPostsProvider extends ChangeNotifier {
     } finally {
       _isLoading = false;
       notifyListeners();
-      subscribeRealtime();
+      if (!_guestMode) subscribeRealtime();
     }
   }
 
@@ -493,6 +570,71 @@ class CommunityPostsProvider extends ChangeNotifier {
     return byPost;
   }
 
+  // ── Guest comments (masked server-side via RPC) ──────────────────────
+  // Returns top-level comments (with nested `replies`) grouped by post id.
+  // Author identities are already masked by the RPC: citizens come back as
+  // "Citizen" with no photo; officials keep their real name + photo path.
+  Future<Map<String, List<Map<String, dynamic>>>> _fetchGuestComments() async {
+    final res = await _supabase.rpc('guest_community_comments');
+    final rows = (res as List).cast<Map<String, dynamic>>();
+
+    final byId = <String, Map<String, dynamic>>{};
+    for (final r in rows) {
+      final mapped = _mapGuestCommentRow(r)
+        ..['replies'] = <Map<String, dynamic>>[];
+      byId[mapped['id'] as String] = mapped;
+    }
+
+    final byPost = <String, List<Map<String, dynamic>>>{};
+    for (final r in rows) {
+      final mapped = byId[r['id'] as String]!;
+      final parentId = r['parent_comment_id'] as String?;
+      final postId = r['post_id'] as String;
+      if (parentId == null) {
+        byPost.putIfAbsent(postId, () => []).add(mapped);
+      } else {
+        final parent = byId[parentId];
+        if (parent != null) {
+          (parent['replies'] as List<Map<String, dynamic>>).add(mapped);
+        } else {
+          // Parent missing (e.g. on an unapproved post) — show as top-level.
+          byPost.putIfAbsent(postId, () => []).add(mapped);
+        }
+      }
+    }
+    return byPost;
+  }
+
+  Map<String, dynamic> _mapGuestCommentRow(Map<String, dynamic> row) {
+    final photoPath = row['author_photo_path'] as String?;
+    String? photoUrl;
+    if (photoPath != null && photoPath.isNotEmpty) {
+      try {
+        photoUrl = _supabase.storage
+            .from('profile-photos')
+            .getPublicUrl(photoPath);
+      } catch (_) {}
+    }
+    final role = (row['author_role'] as String?) ?? 'citizen';
+    return {
+      'id': row['id'] as String,
+      'postId': row['post_id'] as String,
+      'parentId': row['parent_comment_id'] as String?,
+      'authorId': null, // hidden from guests
+      'author': (row['author_name'] as String?) ?? 'Citizen',
+      'isOfficial': role == 'admin' || role == 'staff',
+      'authorPhotoUrl': photoUrl,
+      'authorPhotoPath': (photoPath != null && photoPath.isNotEmpty)
+          ? photoPath
+          : null,
+      'mentionedUser': row['mentioned_user_name'] as String?,
+      'mentionedUserId': null,
+      'text': row['body'] as String? ?? '',
+      'likes': (row['likes_count'] as int?) ?? 0,
+      'timestamp': _parseTs(row['created_at']),
+    };
+  }
+
   Future<Map<String, Map<String, String?>>> _resolveUserDetails(
     List<String> userIds,
   ) async {
@@ -522,25 +664,14 @@ class CommunityPostsProvider extends ChangeNotifier {
         .where((e) => e.value['photoPath'] != null)
         .toList();
     if (withPhotos.isNotEmpty) {
-      final urls = await Future.wait(
-        withPhotos.map((e) async {
-          try {
-            return await _supabase.storage
-                .from('verification-assets')
-                .createSignedUrl(e.value['photoPath']!, 3600);
-          } catch (_) {
-            try {
-              return _supabase.storage
-                  .from('verification-assets')
-                  .getPublicUrl(e.value['photoPath']!);
-            } catch (_) {
-              return null;
-            }
-          }
-        }),
-      );
-      for (var i = 0; i < withPhotos.length; i++) {
-        out[withPhotos[i].key]!['photoUrl'] = urls[i];
+      for (final e in withPhotos) {
+        try {
+          out[e.key]!['photoUrl'] = _supabase.storage
+              .from('profile-photos')
+              .getPublicUrl(e.value['photoPath']!);
+        } catch (_) {
+          out[e.key]!['photoUrl'] = null;
+        }
       }
     }
 
@@ -562,7 +693,7 @@ class CommunityPostsProvider extends ChangeNotifier {
     if (authorPhotoPath != null && authorPhotoPath.isNotEmpty) {
       try {
         authorPhotoUrl = _supabase.storage
-            .from(_photoBucket)
+            .from('profile-photos')
             .getPublicUrl(authorPhotoPath);
       } catch (_) {}
     }
@@ -571,15 +702,46 @@ class CommunityPostsProvider extends ChangeNotifier {
       final replies = c['replies'] as List<dynamic>? ?? [];
       totalCommentCount += replies.length;
     }
+
+    // ── Identity protection ──────────────────────────────────────────────
+    // GUEST feed: citizens are anonymised ("Citizen" + default avatar);
+    //   officials (LGU/admin/staff) keep their real name + photo.
+    // LOGGED-IN feed: everyone is shown with their real name + photo.
+    final role = row['author_role'] as String?;
+    final official = isOfficialAuthorRole(role);
+    final rawName = (row['author_name'] as String?)?.trim() ?? '';
+
+    late final String displayName;
+    late final bool blankAvatar;
+    String? displayPhotoUrl;
+    String? displayPhotoPath;
+
+    if (_guestMode && !official) {
+      // Guest screen only: anonymise citizens. The guest RPC already returns
+      // 'Citizen' for the name; here we just force the default avatar.
+      displayName = rawName.isEmpty ? 'Citizen' : rawName;
+      blankAvatar = true;
+    } else {
+      // Officials anywhere, and everyone in the logged-in feed → real identity.
+      displayName = rawName.isEmpty
+          ? (official ? 'LGU Aparri' : 'Resident')
+          : rawName;
+      blankAvatar = false;
+      displayPhotoUrl = authorPhotoUrl;
+      displayPhotoPath = (authorPhotoPath != null && authorPhotoPath.isNotEmpty)
+          ? authorPhotoPath
+          : null;
+    }
+
     return {
       'id': row['id'] as String,
       'authorId': row['author_id'] as String?,
-      'author': (row['author_name'] as String?) ?? 'Unknown',
-      'authorRole': row['author_role'] as String? ?? 'user',
-      'authorPhotoUrl': authorPhotoUrl,
-      'authorPhotoPath': (authorPhotoPath != null && authorPhotoPath.isNotEmpty)
-          ? authorPhotoPath
-          : null,
+      'author': displayName,
+      'authorRole': role ?? 'user',
+      'isOfficial': official,
+      'blankAvatar': blankAvatar,
+      'authorPhotoUrl': displayPhotoUrl,
+      'authorPhotoPath': displayPhotoPath,
       'barangay': row['barangay'] as String? ?? '',
       'tag': row['tag'] as String? ?? '',
       'tagColor': _hexToColor(row['tag_color'] as String? ?? '#22C55E'),

@@ -10,6 +10,8 @@ import '../../../core/widgets/Home/Chat-bubbles/home_chat_bubble.dart';
 import '../../../core/providers/user_profile_provider.dart';
 import '../../../core/widgets/Home/home_enums.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import '../../../core/services/push_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class SettingScreen extends ConsumerStatefulWidget {
   final String username;
@@ -24,13 +26,6 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
 
   // ── Entry animation controller ────────────────────────────────────────────
   late final AnimationController _entryCtrl;
-
-  // ── Toggle state ──────────────────────────────────────────────────────────
-  bool _pushNotifications = true;
-  bool _communityUpdates = true;
-  bool _emergencyAlerts = true;
-  bool _emailNotifications = false;
-  String _language = 'English';
 
   @override
   void initState() {
@@ -109,19 +104,6 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
           text: const Color(0xFFB45309),
         );
     }
-  }
-
-  // ── Coming soon placeholder ───────────────────────────────────────────────
-  void _comingSoon(String feature) {
-    ScaffoldMessenger.of(context).clearSnackBars();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('$feature is coming soon'),
-        backgroundColor: AppColors.primaryBlue,
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 2),
-      ),
-    );
   }
 
   // ── Logout flow ───────────────────────────────────────────────────────────
@@ -237,6 +219,7 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
     );
 
     try {
+      await PushService.I.unregister();
       await Supabase.instance.client.auth.signOut();
 
       // ── Wipe local chat cache + hide floating bubble ──────────────────────
@@ -372,23 +355,17 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
                         ),
                       ),
                       SizedBox(height: width * 0.04),
-                      _animated(3, _buildNotificationsSection(width)),
+                      _animated(3, _buildSupportSection(width)),
                       SizedBox(height: width * 0.04),
-                      _animated(4, _buildPreferencesSection(width)),
+                      _animated(4, _buildLegalSection(width)),
                       SizedBox(height: width * 0.04),
-                      _animated(5, _buildPrivacySection(width)),
-                      SizedBox(height: width * 0.04),
-                      _animated(6, _buildSupportSection(width)),
-                      SizedBox(height: width * 0.04),
-                      _animated(7, _buildLegalSection(width)),
-                      SizedBox(height: width * 0.04),
-                      _animated(8, _buildAboutSection(width, badge)),
+                      _animated(5, _buildAboutSection(width)),
                       SizedBox(height: width * 0.05),
-                      _animated(9, _buildLogoutButton(width)),
+                      _animated(6, _buildLogoutButton(width)),
                       SizedBox(height: width * 0.025),
-                      _animated(10, _buildDeleteAccountButton(width)),
+                      _animated(7, _buildDeleteAccountButton(width)),
                       SizedBox(height: width * 0.04),
-                      _animated(11, _buildFooter(width)),
+                      _animated(8, _buildFooter(width)),
                     ],
                   ),
                 ),
@@ -687,6 +664,7 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
     required double width,
     bool showDivider = true,
     Widget? trailing,
+    bool showChevron = true,
   }) {
     return Column(
       children: [
@@ -750,11 +728,13 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
                     ),
                   ),
                   trailing ??
-                      Icon(
-                        Icons.arrow_forward_ios_rounded,
-                        size: width * 0.035,
-                        color: const Color(0xFF9CA3AF),
-                      ),
+                      (showChevron
+                          ? Icon(
+                              Icons.arrow_forward_ios_rounded,
+                              size: width * 0.035,
+                              color: const Color(0xFF9CA3AF),
+                            )
+                          : const SizedBox.shrink()),
                 ],
               ),
             ),
@@ -769,33 +749,6 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
     );
   }
 
-  // ── Toggle tile ───────────────────────────────────────────────────────────
-  Widget _buildToggleTile({
-    required String imagePath,
-    required Color iconBgColor,
-    required String title,
-    String? subtitle,
-    required bool value,
-    required ValueChanged<bool> onChanged,
-    required double width,
-    bool showDivider = true,
-  }) {
-    return _buildTile(
-      imagePath: imagePath,
-      iconBgColor: iconBgColor,
-      title: title,
-      subtitle: subtitle,
-      width: width,
-      showDivider: showDivider,
-      onTap: () => onChanged(!value),
-      trailing: Switch.adaptive(
-        value: value,
-        onChanged: onChanged,
-        activeTrackColor: AppColors.green,
-      ),
-    );
-  }
-
   // ── Account section ───────────────────────────────────────────────────────
   Widget _buildAccountSection(
     double width,
@@ -803,7 +756,6 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
     String? email,
     bool profileLoading,
   ) {
-    final badge = _statusBadgeFor(verifStatus);
     return _buildSectionCard(
       title: 'ACCOUNT',
       width: width,
@@ -852,212 +804,25 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
           title: 'My Submissions',
           subtitle: 'View your verification & report history',
           width: width,
-          onTap: () => Navigator.pushNamed(
-            context,
-            '/my_submissions',
-            arguments: widget.username,
-          ),
-        ),
-        _buildTile(
-          imagePath: 'assets/images/settings/verification_status.webp',
-          iconBgColor: AppColors.green,
-          title: 'Verification Status',
-          subtitle: badge.label,
-          width: width,
           showDivider: false,
-          onTap: () => _comingSoon('Verification Details'),
-        ),
-      ],
-    );
-  }
+          onTap: () async {
+            if (profileLoading) return;
 
-  // ── Notifications section ─────────────────────────────────────────────────
-  Widget _buildNotificationsSection(double width) {
-    return _buildSectionCard(
-      title: 'NOTIFICATIONS',
-      width: width,
-      children: [
-        _buildToggleTile(
-          imagePath: 'assets/images/settings/notification.webp',
-          iconBgColor: AppColors.primaryBlue,
-          title: 'Push Notifications',
-          subtitle: 'Receive alerts on this device',
-          value: _pushNotifications,
-          onChanged: (v) => setState(() => _pushNotifications = v),
-          width: width,
-        ),
-        _buildToggleTile(
-          imagePath: 'assets/images/settings/updates.webp',
-          iconBgColor: AppColors.green,
-          title: 'Community Updates',
-          subtitle: 'Local news and announcements',
-          value: _communityUpdates,
-          onChanged: (v) => setState(() => _communityUpdates = v),
-          width: width,
-        ),
-        _buildToggleTile(
-          imagePath: 'assets/images/settings/emergency.webp',
-          iconBgColor: AppColors.red,
-          title: 'Emergency Alerts',
-          subtitle: 'Critical safety notifications',
-          value: _emergencyAlerts,
-          onChanged: (v) => setState(() => _emergencyAlerts = v),
-          width: width,
-        ),
-        _buildToggleTile(
-          imagePath: 'assets/images/settings/email.webp',
-          iconBgColor: AppColors.orange,
-          title: 'Email Notifications',
-          value: _emailNotifications,
-          onChanged: (v) => setState(() => _emailNotifications = v),
-          width: width,
-          showDivider: false,
-        ),
-      ],
-    );
-  }
+            final approved = await showVerificationRequiredDialog(
+              context,
+              isVerified: verifStatus == 'approved',
+              message:
+                  'Only verified citizens can view their submission history. Please complete the identity verification process first.',
+            );
 
-  // ── Preferences section ───────────────────────────────────────────────────
-  Widget _buildPreferencesSection(double width) {
-    return _buildSectionCard(
-      title: 'PREFERENCES',
-      width: width,
-      children: [
-        _buildTile(
-          imagePath: 'assets/images/settings/language.webp',
-          iconBgColor: AppColors.primaryBlue,
-          title: 'Language',
-          width: width,
-          onTap: () => _showLanguagePicker(width),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                _language,
-                style: TextStyle(
-                  fontSize: width * 0.034,
-                  color: AppColors.hint,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              SizedBox(width: width * 0.015),
-              Icon(
-                Icons.arrow_forward_ios_rounded,
-                size: width * 0.035,
-                color: const Color(0xFF9CA3AF),
-              ),
-            ],
-          ),
-        ),
-        _buildTile(
-          imagePath: 'assets/images/settings/location.webp',
-          iconBgColor: AppColors.green,
-          title: 'Location',
-          subtitle: 'Aparri, Cagayan',
-          width: width,
-          showDivider: false,
-          onTap: () => _comingSoon('Location Settings'),
-        ),
-      ],
-    );
-  }
+            if (!approved || !mounted) return;
 
-  void _showLanguagePicker(double width) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(width * 0.05)),
-      ),
-      builder: (ctx) {
-        final langs = ['English', 'Filipino', 'Ilocano'];
-        return SafeArea(
-          child: Padding(
-            padding: EdgeInsets.symmetric(vertical: width * 0.03),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: width * 0.12,
-                  height: width * 0.012,
-                  decoration: BoxDecoration(
-                    color: AppColors.stroke,
-                    borderRadius: BorderRadius.circular(width * 0.01),
-                  ),
-                ),
-                SizedBox(height: width * 0.04),
-                Text(
-                  'Choose Language',
-                  style: TextStyle(
-                    fontSize: width * 0.045,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.primaryBlue,
-                  ),
-                ),
-                SizedBox(height: width * 0.03),
-                ...langs.map(
-                  (l) => ListTile(
-                    title: Text(
-                      l,
-                      style: TextStyle(
-                        fontSize: width * 0.038,
-                        fontWeight: _language == l
-                            ? FontWeight.w700
-                            : FontWeight.w500,
-                        color: _language == l
-                            ? AppColors.primaryBlue
-                            : const Color(0xFF374151),
-                      ),
-                    ),
-                    trailing: _language == l
-                        ? const Icon(
-                            Icons.check_circle_rounded,
-                            color: AppColors.green,
-                          )
-                        : null,
-                    onTap: () {
-                      setState(() => _language = l);
-                      Navigator.pop(ctx);
-                    },
-                  ),
-                ),
-                SizedBox(height: width * 0.02),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  // ── Privacy & Security section ────────────────────────────────────────────
-  Widget _buildPrivacySection(double width) {
-    return _buildSectionCard(
-      title: 'PRIVACY & SECURITY',
-      width: width,
-      children: [
-        _buildTile(
-          imagePath: 'assets/images/settings/twofactorauth.webp',
-          iconBgColor: AppColors.primaryBlue,
-          title: 'Two-Factor Authentication',
-          subtitle: 'Add an extra layer of security',
-          width: width,
-          onTap: () => _comingSoon('Two-Factor Authentication'),
-        ),
-        _buildTile(
-          imagePath: 'assets/images/settings/loginact.webp',
-          iconBgColor: AppColors.primaryBlue,
-          title: 'Login Activity',
-          width: width,
-          onTap: () => _comingSoon('Login Activity'),
-        ),
-        _buildTile(
-          imagePath: 'assets/images/settings/block_user.webp',
-          iconBgColor: AppColors.red,
-          title: 'Blocked Users',
-          width: width,
-          showDivider: false,
-          onTap: () => _comingSoon('Blocked Users'),
+            Navigator.pushNamed(
+              context,
+              '/my_submissions',
+              arguments: widget.username,
+            );
+          },
         ),
       ],
     );
@@ -1070,34 +835,17 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
       width: width,
       children: [
         _buildTile(
-          imagePath: 'assets/images/settings/helpcenter.webp',
-          iconBgColor: AppColors.primaryBlue,
-          title: 'Help Center',
-          subtitle: 'FAQs and troubleshooting',
-          width: width,
-          onTap: () => _comingSoon('Help Center'),
-        ),
-        _buildTile(
           imagePath: 'assets/images/settings/contact.webp',
           iconBgColor: AppColors.green,
           title: 'Contact Support',
-          width: width,
-          onTap: () => _comingSoon('Contact Support'),
-        ),
-        _buildTile(
-          imagePath: 'assets/images/settings/bug.webp',
-          iconBgColor: AppColors.orange,
-          title: 'Report a Bug',
-          width: width,
-          onTap: () => _comingSoon('Report a Bug'),
-        ),
-        _buildTile(
-          imagePath: 'assets/images/settings/feedback.webp',
-          iconBgColor: AppColors.primaryBlue,
-          title: 'Send Feedback',
+          subtitle: 'Get help from the Aparri LGU',
           width: width,
           showDivider: false,
-          onTap: () => _comingSoon('Send Feedback'),
+          onTap: () => Navigator.pushNamed(
+            context,
+            '/contact_support',
+            arguments: widget.username,
+          ),
         ),
       ],
     );
@@ -1114,7 +862,7 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
           iconBgColor: AppColors.primaryBlue,
           title: 'Terms of Service',
           width: width,
-          onTap: () => _comingSoon('Terms of Service'),
+          onTap: () => Navigator.pushNamed(context, '/terms_of_service'),
         ),
         _buildTile(
           imagePath: 'assets/images/settings/privacy.webp',
@@ -1122,17 +870,14 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
           title: 'Privacy Policy',
           width: width,
           showDivider: false,
-          onTap: () => _comingSoon('Privacy Policy'),
+          onTap: () => Navigator.pushNamed(context, '/privacy_policy'),
         ),
       ],
     );
   }
 
   // ── About section ─────────────────────────────────────────────────────────
-  Widget _buildAboutSection(
-    double width,
-    ({String label, Color bg, Color border, Color dot, Color text}) badge,
-  ) {
+  Widget _buildAboutSection(double width) {
     return _buildSectionCard(
       title: 'ABOUT',
       width: width,
@@ -1142,7 +887,25 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
           iconBgColor: AppColors.primaryBlue,
           title: 'About GovPulse',
           width: width,
-          onTap: () => _comingSoon('About'),
+          onTap: () =>
+              Navigator.pushNamed(context, '/about'), // ← was _comingSoon
+        ),
+        _buildTile(
+          imagePath: 'assets/images/settings/location.webp',
+          iconBgColor: AppColors.green,
+          title: 'Location',
+          subtitle: 'Aparri, Cagayan',
+          width: width,
+          showChevron: false,
+          onTap: () {
+            final query = Uri.encodeComponent('Aparri, Cagayan, Philippines');
+            launchUrl(
+              Uri.parse(
+                'https://www.google.com/maps/search/?api=1&query=$query',
+              ),
+              mode: LaunchMode.externalApplication,
+            );
+          },
         ),
         _buildTile(
           imagePath: 'assets/images/settings/app.webp',

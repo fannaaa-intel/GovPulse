@@ -101,7 +101,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
       setState(() {
         _myPhotoPath = path;
         _myPhotoUrl = _supabase.storage
-            .from('verification-assets')
+            .from('profile-photos')
             .getPublicUrl(path);
         _myDisplayName = full.isNotEmpty ? full : null;
       });
@@ -698,6 +698,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
               width * 0.105,
               post['authorPhotoUrl'] as String?,
               photoPath: post['authorPhotoPath'] as String?,
+              blank: post['blankAvatar'] == true,
             ),
             SizedBox(width: width * 0.025),
             Expanded(

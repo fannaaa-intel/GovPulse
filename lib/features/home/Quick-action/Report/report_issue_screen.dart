@@ -9,6 +9,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'location_picker_screen.dart';
+import 'dart:async';
 import '../../../../core/widgets/Home/Newsfeed/rate_limit_dialogs.dart';
 
 // ── Aparri bounding box — must match location_picker_screen.dart ──────────
@@ -410,17 +411,74 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
         return;
       }
 
-      final pos = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 10),
-        ),
-      );
+      Position? pos;
 
-      if (!mounted) return;
+      // ── High accuracy with manual timeout ────────────────────────────────
+      try {
+        pos = await Geolocator.getCurrentPosition(
+          locationSettings: AndroidSettings(
+            accuracy: LocationAccuracy.high,
+            forceLocationManager: false,
+          ),
+        ).timeout(const Duration(seconds: 20));
+      } catch (e) {
+        debugPrint('Auto GPS high-accuracy failed: $e');
+      }
+
+      // ── Fallback: medium accuracy (WiFi + cell towers, works indoors) ────
+      if (pos == null) {
+        try {
+          pos = await Geolocator.getCurrentPosition(
+            locationSettings: AndroidSettings(
+              accuracy: LocationAccuracy.medium,
+              forceLocationManager: false,
+            ),
+          ).timeout(const Duration(seconds: 12));
+        } catch (e) {
+          debugPrint('Auto GPS medium-accuracy failed: $e');
+        }
+      }
+
+      // ── Fallback: low accuracy (cell towers only) ────────────────────────
+      if (pos == null) {
+        try {
+          pos = await Geolocator.getCurrentPosition(
+            locationSettings: AndroidSettings(
+              accuracy: LocationAccuracy.low,
+              forceLocationManager: false,
+            ),
+          ).timeout(const Duration(seconds: 8));
+        } catch (e) {
+          debugPrint('Auto GPS low-accuracy failed: $e');
+        }
+      }
+
+      // ── Fallback: last known position ────────────────────────────────────
+      if (pos == null) {
+        try {
+          pos = await Geolocator.getLastKnownPosition();
+          debugPrint('Auto GPS: using last known → $pos');
+        } catch (e) {
+          debugPrint('Auto GPS last known failed: $e');
+        }
+      }
+
+      if (pos == null) {
+        if (mounted) {
+          setState(() {
+            _isFetchingLocation = false;
+            _pickedLatLng = null;
+            _pickedBarangay = null;
+            _useCurrentLocation = false;
+          });
+        }
+        return;
+      }
 
       final lat = pos.latitude;
       final lng = pos.longitude;
+
+      if (!mounted) return;
 
       if (!_withinAparri(lat, lng)) {
         setState(() {

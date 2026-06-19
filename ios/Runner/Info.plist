@@ -7,6 +7,7 @@
 		<array>
 			<string>tel</string>
 			<string>telprompt</string>
+			<string>mailto</string>
 		</array>
 		<key>NSLocationWhenInUseUsageDescription</key>
 		<string>We need your location to report the issue accurately.</string>
@@ -43,7 +44,7 @@
 		<key>LSRequiresIPhoneOS</key>
 		<true/>
 		<key>GMSApiKey</key>
-<string>$(MAPS_API_KEY)</string>
+		<string>$(MAPS_API_KEY)</string>
 		<key>UIApplicationSceneManifest</key>
 		<dict>
 

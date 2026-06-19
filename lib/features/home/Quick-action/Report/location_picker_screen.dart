@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'dart:async';
 import 'package:geolocator/geolocator.dart';
+
 import '../../../../core/theme/app_colors.dart';
 
 // ── Aparri bounding box (expanded to cover all 42 official barangays) ─────
@@ -193,10 +195,21 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
     super.dispose();
   }
 
-  // ── GPS fetch ──────────────────────────────────────────────────────────────
   Future<void> _fetchCurrentLocation() async {
     setState(() => _isLoadingGPS = true);
     try {
+      final serviceOn = await Geolocator.isLocationServiceEnabled();
+      if (!serviceOn) {
+        if (mounted) {
+          setState(() {
+            _useCurrentLocation = false;
+            _isLoadingGPS = false;
+          });
+          _showServicesOffDialog();
+        }
+        return;
+      }
+
       LocationPermission perm = await Geolocator.checkPermission();
       if (perm == LocationPermission.denied) {
         perm = await Geolocator.requestPermission();
@@ -213,14 +226,93 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
         return;
       }
 
-      final pos = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 10),
-        ),
-      );
+      Position? pos;
+
+      // ── Try high accuracy (FusedLocationProvider, your own timeout) ───────
+      try {
+        pos =
+            await Geolocator.getCurrentPosition(
+              locationSettings: AndroidSettings(
+                accuracy: LocationAccuracy.high,
+                forceLocationManager: false, // uses FusedLocationProvider
+              ),
+            ).timeout(
+              const Duration(seconds: 20),
+              onTimeout: () {
+                debugPrint('GPS: high-accuracy timed out');
+                throw TimeoutException('high-accuracy timeout');
+              },
+            );
+      } catch (e) {
+        debugPrint('GPS: high-accuracy failed → $e');
+      }
+
+      // ── Fallback 1: medium accuracy (WiFi + cell towers, works indoors) ───
+      if (pos == null) {
+        try {
+          pos =
+              await Geolocator.getCurrentPosition(
+                locationSettings: AndroidSettings(
+                  accuracy: LocationAccuracy.medium,
+                  forceLocationManager: false,
+                ),
+              ).timeout(
+                const Duration(seconds: 12),
+                onTimeout: () {
+                  debugPrint('GPS: medium-accuracy timed out');
+                  throw TimeoutException('medium-accuracy timeout');
+                },
+              );
+        } catch (e) {
+          debugPrint('GPS: medium-accuracy failed → $e');
+        }
+      }
+
+      // ── Fallback 2: low accuracy (cell towers only, fastest) ──────────────
+      if (pos == null) {
+        try {
+          pos =
+              await Geolocator.getCurrentPosition(
+                locationSettings: AndroidSettings(
+                  accuracy: LocationAccuracy.low,
+                  forceLocationManager: false,
+                ),
+              ).timeout(
+                const Duration(seconds: 8),
+                onTimeout: () {
+                  debugPrint('GPS: low-accuracy timed out');
+                  throw TimeoutException('low-accuracy timeout');
+                },
+              );
+        } catch (e) {
+          debugPrint('GPS: low-accuracy failed → $e');
+        }
+      }
+
+      // ── Fallback 3: last known cached position ────────────────────────────
+      if (pos == null) {
+        try {
+          pos = await Geolocator.getLastKnownPosition();
+          debugPrint('GPS: using last known → $pos');
+        } catch (e) {
+          debugPrint('GPS: last known failed → $e');
+        }
+      }
+
+      if (pos == null) {
+        debugPrint('All GPS attempts failed — pos is null');
+        if (mounted) {
+          setState(() {
+            _useCurrentLocation = false;
+            _isLoadingGPS = false;
+          });
+          _showLocationErrorDialog();
+        }
+        return;
+      }
 
       final latLng = LatLng(pos.latitude, pos.longitude);
+      debugPrint('Got position: $latLng');
 
       if (!_isWithinAparri(latLng)) {
         if (mounted) {
@@ -233,16 +325,19 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
         return;
       }
 
+      // ── Success ───────────────────────────────────────────────────────────
       if (mounted) {
         final nearest = findNearestBarangay(latLng);
         setState(() {
           _markerPosition = latLng;
           _selectedBarangay = nearest;
+          _useCurrentLocation = true; // ← only set true on actual success
           _isLoadingGPS = false;
         });
         _mapController?.animateCamera(CameraUpdate.newLatLngZoom(latLng, 16));
       }
     } catch (e) {
+      debugPrint('Unexpected GPS error: $e');
       if (mounted) {
         setState(() {
           _useCurrentLocation = false;
@@ -251,6 +346,102 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
         _showLocationErrorDialog();
       }
     }
+  }
+
+  void _showServicesOffDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.10),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.location_disabled_rounded,
+                  color: Colors.orange,
+                  size: 32,
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Location is Off',
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF1F2937),
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Your device location (GPS) is turned off. Please turn it on to use your current location.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Color(0xFF6B7280),
+                  height: 1.55,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(color: AppColors.primaryBlue),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      child: Text(
+                        'Cancel',
+                        style: TextStyle(
+                          color: AppColors.primaryBlue,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        Geolocator.openLocationSettings();
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primaryBlue,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      child: const Text(
+                        'Open Settings',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   // ── Confirm ────────────────────────────────────────────────────────────────
@@ -692,24 +883,25 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
                                         Switch(
                                           value: _useCurrentLocation,
                                           onChanged: (v) async {
-                                            setState(() {
-                                              _useCurrentLocation = v;
-                                              if (!v) {
+                                            if (!v) {
+                                              // Turning OFF — reset immediately
+                                              setState(() {
+                                                _useCurrentLocation = false;
                                                 _markerPosition =
                                                     _selectedBarangay != null
                                                     ? barangayCoords[_selectedBarangay]
                                                     : null;
-                                                if (_markerPosition != null) {
-                                                  _mapController?.animateCamera(
-                                                    CameraUpdate.newLatLngZoom(
-                                                      _markerPosition!,
-                                                      15,
-                                                    ),
-                                                  );
-                                                }
+                                              });
+                                              if (_markerPosition != null) {
+                                                _mapController?.animateCamera(
+                                                  CameraUpdate.newLatLngZoom(
+                                                    _markerPosition!,
+                                                    15,
+                                                  ),
+                                                );
                                               }
-                                            });
-                                            if (v) {
+                                            } else {
+                                              // Turning ON — let GPS fetch decide if it succeeds
                                               await _fetchCurrentLocation();
                                             }
                                           },

@@ -64,7 +64,6 @@ Future<void> _initServices() async {
       PushService.I.registerForUser(); // ← PUSH
     } else if (data.event == AuthChangeEvent.signedOut) {
       ChatService.onUserSignedOut();
-      PushService.I.unregister(); // ← PUSH
     }
   });
 }

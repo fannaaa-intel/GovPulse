@@ -47,6 +47,11 @@ import '../../features/home/settings/change-password/change_password_new_screen.
 import '../providers/user_profile_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../features/home/settings/my-submission/my_submissions_screen.dart';
+import '../../features/home/settings/contact-support/contact_support_screen.dart';
+import '../providers/community_posts_provider.dart';
+import '../../features/home/settings/terms-of-service/terms_of_service_screen.dart';
+import '../../features/home/settings/privacy-policy/privacy_policy_screen.dart';
+import '../../features/home/settings/about/about_govpulse_screen.dart';
 
 /// Required by [MaterialApp.navigatorObservers] for home route tracking.
 final RouteObserver<ModalRoute<void>> homeRouteObserver =
@@ -147,7 +152,7 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
                 await ChatService.onUserAuthenticated(uid);
               }
               if (!ctx.mounted) return;
-
+              CommunityPostsProvider.instance.resetForAuthenticatedUser();
               ProviderScope.containerOf(ctx).invalidate(userProfileProvider);
 
               Navigator.pushReplacement(
@@ -213,7 +218,7 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
       );
 
     case '/guest':
-      return _webFade(const GuestScreen());
+      return _instantInFadeOut(const GuestScreen());
 
     case '/email_verification_success':
       final email = settings.arguments as String;
@@ -322,14 +327,29 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
       final args = settings.arguments;
       String username = '';
       bool isVerified = false;
+      String? userBarangay;
+      bool isGuest = false;
       if (args is Map<String, dynamic>) {
         username = args['username'] as String? ?? '';
         isVerified = args['isVerified'] as bool? ?? false;
+        userBarangay = args['userBarangay'] as String?;
+        isGuest = args['isGuest'] as bool? ?? false;
       } else if (args is String) {
         username = args;
       }
-      return _instant(
-        NewsFeedScreen(username: username, isVerified: isVerified),
+      return PageRouteBuilder(
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: const Duration(milliseconds: 280),
+        pageBuilder: (_, _, _) => NetworkWrapper(
+          child: NewsFeedScreen(
+            username: username,
+            isVerified: isVerified,
+            userBarangay: userBarangay,
+            isGuest: isGuest,
+          ),
+        ),
+        transitionsBuilder: (_, anim, _, child) =>
+            FadeTransition(opacity: anim, child: child),
       );
 
     case '/settings':
@@ -595,6 +615,45 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
         reverseTransitionDuration: const Duration(milliseconds: 280),
         pageBuilder: (_, _, _) =>
             NetworkWrapper(child: MySubmissionsScreen(username: username)),
+        transitionsBuilder: (_, anim, _, child) =>
+            FadeTransition(opacity: anim, child: child),
+      );
+
+    case '/contact_support':
+      final username = settings.arguments as String? ?? '';
+      return PageRouteBuilder(
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: const Duration(milliseconds: 280),
+        pageBuilder: (_, _, _) =>
+            NetworkWrapper(child: ContactSupportScreen(username: username)),
+        transitionsBuilder: (_, anim, _, child) =>
+            FadeTransition(opacity: anim, child: child),
+      );
+
+    case '/terms_of_service':
+      return PageRouteBuilder(
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: const Duration(milliseconds: 280),
+        pageBuilder: (_, _, _) =>
+            NetworkWrapper(child: const TermsOfServiceScreen()),
+        transitionsBuilder: (_, anim, _, child) =>
+            FadeTransition(opacity: anim, child: child),
+      );
+
+    case '/privacy_policy':
+      return PageRouteBuilder(
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: const Duration(milliseconds: 280),
+        pageBuilder: (_, _, _) => const PrivacyPolicyScreen(),
+        transitionsBuilder: (_, anim, _, child) =>
+            FadeTransition(opacity: anim, child: child),
+      );
+
+    case '/about':
+      return PageRouteBuilder(
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: const Duration(milliseconds: 280),
+        pageBuilder: (_, _, _) => const AboutGovPulseScreen(),
         transitionsBuilder: (_, anim, _, child) =>
             FadeTransition(opacity: anim, child: child),
       );

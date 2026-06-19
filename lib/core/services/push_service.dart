@@ -123,14 +123,15 @@ class PushService {
   /// unreliable — the session is already gone).
   Future<void> unregister() async {
     try {
+      final uid = _db.auth.currentUser?.id; // captured while still logged in
       final token = _cachedToken ?? await _fm.getToken();
-      if (token != null) {
-        // security-definer RPC — works even now that we're signed out (anon).
-        await _db.rpc('unregister_device_token', params: {'p_token': token});
+      if (token != null && uid != null) {
+        await _db.rpc(
+          'unregister_device_token',
+          params: {'p_token': token, 'p_user_id': uid},
+        );
       }
       _cachedToken = null;
-      // Optional: also leave the broadcast topic on logout.
-      // await _fm.unsubscribeFromTopic(_broadcastTopic);
     } catch (e) {
       debugPrint('PushService.unregister error: $e');
     }

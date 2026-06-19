@@ -8,6 +8,7 @@ class UserProfile {
   final String? facePhotoUrl;
   final String? facePhotoPath;
   final String? email;
+  final String? barangay;
 
   const UserProfile({
     this.verifStatus = VerifStatus.none,
@@ -15,6 +16,7 @@ class UserProfile {
     this.facePhotoUrl,
     this.facePhotoPath,
     this.email,
+    this.barangay,
   });
 }
 
@@ -51,11 +53,12 @@ class UserProfileNotifier extends AsyncNotifier<UserProfile> {
     String? facePath = verifRow?['face_photo_path'] as String?;
     String? fullName;
     String? photoUrl;
+    String? barangay;
 
     if (status == 'approved') {
       final cd = await supabase
           .from('citizen_details')
-          .select('first_name, last_name, profile_photo_path')
+          .select('first_name, last_name, profile_photo_path, barangay')
           .eq('user_id', user.id)
           .maybeSingle();
 
@@ -65,12 +68,15 @@ class UserProfileNotifier extends AsyncNotifier<UserProfile> {
         fullName = '${first.trim()} ${last.trim()}'.trim();
         if (fullName.trim().isEmpty) fullName = null;
         final photo = cd['profile_photo_path'] as String? ?? '';
-        if (photo.isNotEmpty) facePath = photo;
+        barangay = cd['barangay'] as String?;
+        facePath = photo.isNotEmpty ? photo : null;
+      } else {
+        facePath = null;
       }
 
       if (facePath != null && facePath.isNotEmpty) {
         photoUrl = supabase.storage
-            .from('verification-assets')
+            .from('profile-photos')
             .getPublicUrl(facePath);
       }
     } else {
@@ -94,6 +100,7 @@ class UserProfileNotifier extends AsyncNotifier<UserProfile> {
       facePhotoUrl: photoUrl,
       facePhotoPath: facePath,
       email: email,
+      barangay: barangay,
     );
   }
 

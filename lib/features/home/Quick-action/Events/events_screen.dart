@@ -260,6 +260,22 @@ class _EventsScreenState extends State<EventsScreen>
         .toList();
   }
 
+  List<EventItem> get _recentEvents {
+    final todayDate = DateTime.now();
+    final d = DateTime(todayDate.year, todayDate.month, todayDate.day);
+    return _filteredEvents
+        .where(
+          (e) =>
+              !e.isFeatured &&
+              DateTime(
+                e.eventDate.year,
+                e.eventDate.month,
+                e.eventDate.day,
+              ).isBefore(d),
+        )
+        .toList();
+  }
+
   // ── Build ──────────────────────────────────────────────────────────────────
 
   @override
@@ -356,6 +372,12 @@ class _EventsScreenState extends State<EventsScreen>
   }
 
   Widget _buildEventSections(double w) {
+    final hasAnySection =
+        _featuredEvents.isNotEmpty ||
+        _todayEvents.isNotEmpty ||
+        _upcomingEvents.isNotEmpty ||
+        _recentEvents.isNotEmpty;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -371,7 +393,11 @@ class _EventsScreenState extends State<EventsScreen>
           _buildSectionLabel('Upcoming Events', w),
           _buildEventGrid(_upcomingEvents, w),
         ],
-        if (_filteredEvents.isEmpty) Center(child: _buildEmpty(w)),
+        if (_recentEvents.isNotEmpty) ...[
+          _buildSectionLabel('Recent Events', w),
+          _buildEventGrid(_recentEvents, w),
+        ],
+        if (!hasAnySection) Center(child: _buildEmpty(w)),
       ],
     );
   }
