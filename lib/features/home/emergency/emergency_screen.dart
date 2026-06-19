@@ -36,15 +36,42 @@ class _Hotline {
 
 class _Category {
   final String label;
-  final String iconPath;
+  final IconData icon;
   final Color color;
   final List<_Hotline> hotlines;
   const _Category({
     required this.label,
-    required this.iconPath,
+    required this.icon,
     required this.color,
     required this.hotlines,
   });
+}
+
+/// Vivid, friendly category icon: a gradient rounded-square chip with a crisp
+/// white vector icon and a soft colored glow. Replaces the old flat, tinted
+/// .webp silhouettes that looked dull.
+Widget _catIconChip(IconData icon, Color color, double box) {
+  return Container(
+    width: box,
+    height: box,
+    decoration: BoxDecoration(
+      gradient: LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [color, Color.lerp(color, Colors.black, 0.20) ?? color],
+      ),
+      borderRadius: BorderRadius.circular(box * 0.30),
+      boxShadow: [
+        BoxShadow(
+          color: color.withValues(alpha: 0.38),
+          blurRadius: 14,
+          offset: const Offset(0, 5),
+          spreadRadius: -3,
+        ),
+      ],
+    ),
+    child: Icon(icon, color: Colors.white, size: box * 0.52),
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -79,7 +106,7 @@ class _EmergencyScreenState extends State<EmergencyScreen>
   static const List<_Category> _categories = [
     _Category(
       label: 'Police',
-      iconPath: 'assets/images/emergency/police.webp',
+      icon: Icons.local_police_rounded,
       color: AppColors.primaryBlue,
       hotlines: [
         _Hotline(
@@ -96,7 +123,7 @@ class _EmergencyScreenState extends State<EmergencyScreen>
     ),
     _Category(
       label: 'Fire Station',
-      iconPath: 'assets/images/emergency/fire.webp',
+      icon: Icons.local_fire_department_rounded,
       color: AppColors.red,
       hotlines: [
         _Hotline(
@@ -108,7 +135,7 @@ class _EmergencyScreenState extends State<EmergencyScreen>
     ),
     _Category(
       label: 'Hospital',
-      iconPath: 'assets/images/emergency/medical.webp',
+      icon: Icons.local_hospital_rounded,
       color: AppColors.green,
       hotlines: [
         _Hotline(
@@ -140,7 +167,7 @@ class _EmergencyScreenState extends State<EmergencyScreen>
     ),
     _Category(
       label: 'MDRRMO',
-      iconPath: 'assets/images/emergency/leader.webp',
+      icon: Icons.crisis_alert_rounded,
       color: AppColors.orange,
       hotlines: [
         _Hotline(
@@ -167,7 +194,7 @@ class _EmergencyScreenState extends State<EmergencyScreen>
     ),
     _Category(
       label: 'National',
-      iconPath: 'assets/images/emergency/philippines.webp',
+      icon: Icons.flag_rounded,
       color: AppColors.primaryBlue,
       hotlines: [
         _Hotline(name: 'Philippine Red Cross', number: '143'),
@@ -1144,33 +1171,8 @@ class _CatCardState extends State<_CatCard>
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  // ── Uniform PNG icon ──────────────────────────────────
-                  Container(
-                    width: box,
-                    height: box,
-                    decoration: BoxDecoration(
-                      color: cat.color.withValues(alpha: .10),
-                      borderRadius: BorderRadius.circular(w * .030),
-                      border: Border.all(
-                        color: cat.color.withValues(alpha: .22),
-                        width: 1.2,
-                      ),
-                    ),
-                    child: Center(
-                      child: ColorFiltered(
-                        colorFilter: ColorFilter.mode(
-                          cat.color,
-                          BlendMode.srcIn,
-                        ),
-                        child: Image.asset(
-                          cat.iconPath,
-                          width: box * .58,
-                          height: box * .58,
-                          fit: BoxFit.contain,
-                        ),
-                      ),
-                    ),
-                  ),
+                  // ── Vivid category icon ───────────────────────────────
+                  _catIconChip(cat.icon, cat.color, box),
                   // ── Count badge ───────────────────────────────────────
                   Container(
                     width: w * .080,
@@ -1312,30 +1314,8 @@ class _CatCardWideState extends State<_CatCardWide>
           ),
           child: Row(
             children: [
-              // ── Uniform PNG icon ────────────────────────────────────────
-              Container(
-                width: box,
-                height: box,
-                decoration: BoxDecoration(
-                  color: cat.color.withValues(alpha: .10),
-                  borderRadius: BorderRadius.circular(w * .032),
-                  border: Border.all(
-                    color: cat.color.withValues(alpha: .22),
-                    width: 1.2,
-                  ),
-                ),
-                child: Center(
-                  child: ColorFiltered(
-                    colorFilter: ColorFilter.mode(cat.color, BlendMode.srcIn),
-                    child: Image.asset(
-                      cat.iconPath,
-                      width: box * .58,
-                      height: box * .58,
-                      fit: BoxFit.contain,
-                    ),
-                  ),
-                ),
-              ),
+              // ── Vivid category icon ─────────────────────────────────────
+              _catIconChip(cat.icon, cat.color, box),
               SizedBox(width: w * .038),
               Expanded(
                 child: Column(
@@ -1444,32 +1424,7 @@ class _CategoryModal extends StatelessWidget {
               ),
               child: Row(
                 children: [
-                  Container(
-                    width: box,
-                    height: box,
-                    decoration: BoxDecoration(
-                      color: cat.color.withValues(alpha: .12),
-                      borderRadius: BorderRadius.circular(w * .032),
-                      border: Border.all(
-                        color: cat.color.withValues(alpha: .25),
-                        width: 1.5,
-                      ),
-                    ),
-                    child: Center(
-                      child: ColorFiltered(
-                        colorFilter: ColorFilter.mode(
-                          cat.color,
-                          BlendMode.srcIn,
-                        ),
-                        child: Image.asset(
-                          cat.iconPath,
-                          width: box * .58,
-                          height: box * .58,
-                          fit: BoxFit.contain,
-                        ),
-                      ),
-                    ),
-                  ),
+                  _catIconChip(cat.icon, cat.color, box),
                   SizedBox(width: w * .034),
                   Expanded(
                     child: Column(

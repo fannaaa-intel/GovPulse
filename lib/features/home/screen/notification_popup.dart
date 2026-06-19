@@ -37,13 +37,29 @@ class AppNotification {
   factory AppNotification.fromRow(Map<String, dynamic> row) {
     return AppNotification(
       id: row['id'] as String?,
-      icon: IconData(row['icon_code'] as int, fontFamily: 'MaterialIcons'),
+      icon: _iconForType(row['type'] as String? ?? 'general'),
       title: row['title'] as String,
       subtitle: row['subtitle'] as String,
       time: DateTime.parse(row['created_at'] as String),
       color: Color((row['color_value'] as int)),
       type: row['type'] as String? ?? 'general',
     );
+  }
+
+  /// Maps a notification `type` to a constant icon. Using const icons (instead
+  /// of building IconData from a stored code) is what lets Flutter tree-shake
+  /// the icon font, so the release build works without --no-tree-shake-icons.
+  static IconData _iconForType(String type) {
+    switch (type) {
+      case 'post_like':
+        return Icons.favorite_rounded;
+      case 'post_comment':
+        return Icons.mode_comment_rounded;
+      case 'comment_reply':
+        return Icons.reply_rounded;
+      default:
+        return Icons.notifications_rounded;
+    }
   }
 }
 
