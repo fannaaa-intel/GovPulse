@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import '../../../../core/widgets/modal/media_picker_sheet.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -444,15 +445,11 @@ class _FeedbackScreenState extends State<FeedbackScreen>
     await Future.delayed(const Duration(milliseconds: 50));
     if (!mounted) return;
 
-    final source = await showModalBottomSheet<ImageSource>(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => _photoSourceSheet(ctx),
-    );
-    if (source == null || !mounted) return;
+    final choice = await showMediaPickerSheet(context, allowVideo: false);
+    if (choice == null || !mounted) return;
+    final source = choice == 'camera'
+        ? ImageSource.camera
+        : ImageSource.gallery;
 
     try {
       final file = await ImagePicker().pickImage(
@@ -475,41 +472,6 @@ class _FeedbackScreenState extends State<FeedbackScreen>
       }
     }
   }
-
-  Widget _photoSourceSheet(BuildContext ctx) => SafeArea(
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const SizedBox(height: 10),
-        Container(
-          width: 40,
-          height: 4,
-          decoration: BoxDecoration(
-            color: _kGrayBorder,
-            borderRadius: BorderRadius.circular(2),
-          ),
-        ),
-        const SizedBox(height: 16),
-        ListTile(
-          leading: const Icon(
-            Icons.camera_alt_rounded,
-            color: AppColors.primaryBlue,
-          ),
-          title: const Text('Take a photo'),
-          onTap: () => Navigator.pop(ctx, ImageSource.camera),
-        ),
-        ListTile(
-          leading: const Icon(
-            Icons.photo_library_rounded,
-            color: AppColors.primaryBlue,
-          ),
-          title: const Text('Choose from gallery'),
-          onTap: () => Navigator.pop(ctx, ImageSource.gallery),
-        ),
-        const SizedBox(height: 10),
-      ],
-    ),
-  );
 
   // ── Submit ────────────────────────────────────────────────────────────────────
   Future<void> _submit() async {

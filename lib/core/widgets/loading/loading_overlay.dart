@@ -1742,8 +1742,16 @@ class MySubmissionsBodySkeleton extends StatelessWidget {
       padding: EdgeInsets.all(w * 0.035),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(w * 0.035),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        borderRadius: BorderRadius.circular(w * 0.05),
+        border: Border.all(color: const Color(0xFFEEF1F5)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF1F2937).withValues(alpha: 0.07),
+            blurRadius: 20,
+            offset: const Offset(0, 9),
+            spreadRadius: -8,
+          ),
+        ],
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1751,7 +1759,7 @@ class MySubmissionsBodySkeleton extends StatelessWidget {
           Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _Shimmer(width: w * 0.12, height: w * 0.12, radius: w * 0.03),
+              _Shimmer(width: w * 0.12, height: w * 0.12, radius: w * 0.038),
               SizedBox(height: w * 0.012),
               _Shimmer(width: w * 0.13, height: w * 0.022, radius: w * 0.006),
             ],
