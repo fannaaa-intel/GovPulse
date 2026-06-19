@@ -7,11 +7,13 @@ import 'package:cached_network_image/cached_network_image.dart';
 class HomeCommunitySection extends StatefulWidget {
   final double width;
   final VoidCallback onViewAll;
+  final String? barangay;
 
   const HomeCommunitySection({
     super.key,
     required this.width,
     required this.onViewAll,
+    this.barangay,
     // kept for backward compat
     ScrollController? scrollController,
     int currentDot = 0,
@@ -34,10 +36,19 @@ class _HomeCommunitySectionState extends State<HomeCommunitySection> {
     _scrollController.addListener(_onScroll);
     CommunityPostsProvider.instance.addListener(_onProviderChanged);
 
-    // Fetch on first load — no-op if already loaded
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      CommunityPostsProvider.instance.setBarangay(widget.barangay);
       CommunityPostsProvider.instance.fetchPosts();
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant HomeCommunitySection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.barangay != widget.barangay) {
+      CommunityPostsProvider.instance.setBarangay(widget.barangay);
+      CommunityPostsProvider.instance.fetchPosts(force: true);
+    }
   }
 
   @override
@@ -355,7 +366,11 @@ class _HomeCommunitySectionState extends State<HomeCommunitySection> {
                             ),
                             SizedBox(width: width * 0.004),
                             Text(
-                              post['barangay'] as String? ?? '',
+                              () {
+                                final b =
+                                    (post['barangay'] as String?)?.trim() ?? '';
+                                return b.isEmpty ? 'LGU Aparri' : b;
+                              }(),
                               style: TextStyle(
                                 color: Colors.white,
                                 fontSize: width * 0.018,

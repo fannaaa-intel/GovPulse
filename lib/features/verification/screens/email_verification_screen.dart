@@ -156,18 +156,6 @@ class VerificationScreenState extends State<VerificationScreen>
     try {
       final supabase = Supabase.instance.client;
 
-      final canVerify = await supabase.rpc(
-        'can_verify_otp',
-        params: {'p_identifier': widget.email},
-      );
-      if (canVerify['allowed'] != true) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(canVerify['message'] as String)));
-        return;
-      }
-
       final response = await http.post(
         Uri.parse("$baseUrl/verify-email-otp"),
         headers: {
@@ -191,17 +179,8 @@ class VerificationScreenState extends State<VerificationScreen>
         } catch (_) {
           // Session will be established on next app launch via refresh
         }
-
-        await supabase.rpc(
-          'clear_otp_failures',
-          params: {'p_identifier': widget.email},
-        );
         widget.onVerifiedSuccess();
       } else {
-        await supabase.rpc(
-          'record_otp_failure',
-          params: {'p_identifier': widget.email},
-        );
         triggerErrorAnimation();
       }
     } catch (e) {

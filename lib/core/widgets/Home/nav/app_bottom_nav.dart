@@ -8,6 +8,7 @@ class AppBottomNav extends StatelessWidget {
   final int currentIndex;
   final String username;
   final bool isVerified;
+  final String? userBarangay;
 
   const AppBottomNav({
     super.key,
@@ -15,6 +16,7 @@ class AppBottomNav extends StatelessWidget {
     required this.currentIndex,
     required this.username,
     required this.isVerified,
+    this.userBarangay,
   });
 
   void _handleTap(BuildContext context, int index) {
@@ -50,7 +52,11 @@ class AppBottomNav extends StatelessWidget {
         Navigator.pushNamed(
           context,
           '/newsfeed',
-          arguments: {'username': username, 'isVerified': isVerified},
+          arguments: {
+            'username': username,
+            'isVerified': isVerified,
+            'userBarangay': userBarangay,
+          },
         );
         break;
 

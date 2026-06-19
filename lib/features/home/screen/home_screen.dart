@@ -36,6 +36,7 @@ import '../../../core/widgets/loading/loading_overlay.dart';
 import '../Quick-action/Events/events_screen.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/services/push_service.dart';
 import '../../../core/providers/user_profile_provider.dart';
 
 class HomePage extends ConsumerStatefulWidget {
@@ -180,12 +181,14 @@ class _HomePageState extends ConsumerState<HomePage>
   // ── Navigation helpers ────────────────────────────────────────────────────
 
   void _goToNewsFeed() {
+    final barangay = ref.read(userProfileProvider).valueOrNull?.barangay;
     Navigator.pushNamed(
       context,
       '/newsfeed',
       arguments: {
         'username': widget.username,
         'isVerified': _verifStatus == VerifStatus.verified,
+        'userBarangay': barangay, // ← ADD
       },
     );
   }
@@ -465,6 +468,7 @@ class _HomePageState extends ConsumerState<HomePage>
     );
 
     try {
+      await PushService.I.unregister();
       await Supabase.instance.client.auth.signOut();
       await ChatService.I.clearOnLogout();
       HomeChatBubble.hideGlobal();
@@ -583,6 +587,7 @@ class _HomePageState extends ConsumerState<HomePage>
                     facePhotoPath,
                     fullName,
                     profileLoading,
+                    profile?.barangay,
                   ),
                 )
               : _buildWebBody(
@@ -594,6 +599,7 @@ class _HomePageState extends ConsumerState<HomePage>
                   facePhotoPath: facePhotoPath,
                   fullName: fullName,
                   profileLoading: profileLoading,
+                  barangay: profile?.barangay,
                 ),
         ),
         bottomNavigationBar: useMobile
@@ -616,6 +622,7 @@ class _HomePageState extends ConsumerState<HomePage>
     String? facePhotoPath,
     String? fullName,
     bool profileLoading,
+    String? barangay,
   ) {
     final double headerHeight = (width * 0.52).clamp(200.0, 300.0);
     final double cardPull = (width * 0.05).clamp(14.0, 28.0);
@@ -657,6 +664,7 @@ class _HomePageState extends ConsumerState<HomePage>
                     HomeCommunitySection(
                       width: contentW,
                       onViewAll: _goToNewsFeed,
+                      barangay: barangay,
                     ),
                   ),
                   SizedBox(height: sectionGap),
@@ -725,6 +733,7 @@ class _HomePageState extends ConsumerState<HomePage>
     required String? facePhotoPath,
     required String? fullName,
     required bool profileLoading,
+    required String? barangay,
   }) {
     final sidePad = width >= _kTwoColumnBreakpoint
         ? _kSidePadDesktop
@@ -779,9 +788,9 @@ class _HomePageState extends ConsumerState<HomePage>
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       if (width >= _kTwoColumnBreakpoint)
-                        _buildTwoColumn()
+                        _buildTwoColumn(barangay)
                       else
-                        _buildSingleColumn(),
+                        _buildSingleColumn(barangay),
                     ],
                   ),
                 ),
@@ -795,7 +804,7 @@ class _HomePageState extends ConsumerState<HomePage>
     );
   }
 
-  Widget _buildTwoColumn() {
+  Widget _buildTwoColumn(String? barangay) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final totalW = constraints.maxWidth;
@@ -808,7 +817,11 @@ class _HomePageState extends ConsumerState<HomePage>
           gap: _kColGap,
           left: (h) => _animated(
             1,
-            HomeCommunitySectionWeb(onViewAll: _goToNewsFeed, height: h),
+            HomeCommunitySectionWeb(
+              onViewAll: _goToNewsFeed,
+              height: h,
+              barangay: barangay,
+            ),
           ),
           right: (h) => _animated(
             2,
@@ -822,11 +835,14 @@ class _HomePageState extends ConsumerState<HomePage>
     );
   }
 
-  Widget _buildSingleColumn() {
+  Widget _buildSingleColumn(String? barangay) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _animated(1, HomeCommunitySectionWeb(onViewAll: _goToNewsFeed)),
+        _animated(
+          1,
+          HomeCommunitySectionWeb(onViewAll: _goToNewsFeed, barangay: barangay),
+        ),
         const SizedBox(height: 20),
         _animated(
           2,

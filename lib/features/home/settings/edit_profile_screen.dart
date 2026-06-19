@@ -152,15 +152,16 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
           }
 
           _facePhotoPath = verifRow?['face_photo_path'] as String?;
+
           final photoPath =
               (cd['profile_photo_path'] as String?)?.isNotEmpty == true
               ? cd['profile_photo_path'] as String
-              : verifRow?['face_photo_path'] as String?;
+              : null;
 
           if (photoPath != null && photoPath.isNotEmpty) {
             _currentPhotoPath = photoPath;
             _currentPhotoUrl = supabase.storage
-                .from('verification-assets')
+                .from('profile-photos')
                 .getPublicUrl(photoPath);
           }
         }
@@ -246,7 +247,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
         }
 
         await supabase.storage
-            .from('verification-assets')
+            .from('profile-photos')
             .uploadBinary(
               filePath,
               _pickedBytes!,
@@ -272,7 +273,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
           final isFaceScan = _currentPhotoPath == _facePhotoPath;
           if (!isFaceScan) {
             try {
-              await supabase.storage.from('verification-assets').remove([
+              await supabase.storage.from('profile-photos').remove([
                 _currentPhotoPath!,
               ]);
             } catch (_) {}
@@ -1104,6 +1105,20 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
   }
 
   // ── Locked display field ──────────────────────────────────────────────────
+  /// Single source of truth for the trailing padlock so it renders at an
+  /// identical size everywhere (the SizedBox + BoxFit pins it regardless of
+  /// whether it sits in a Row or inside an InputDecoration suffix).
+  Widget _lockBadge(double width) => SizedBox(
+    width: width * 0.04,
+    height: width * 0.04,
+    child: Image.asset(
+      'assets/images/settings/password.webp',
+      fit: BoxFit.contain,
+      color: const Color(0xFFD1D5DB),
+      colorBlendMode: BlendMode.srcIn,
+    ),
+  );
+
   Widget _buildLockedDisplayField({
     required String label,
     required String value,
@@ -1174,13 +1189,8 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
                   ],
                 ),
               ),
-              Image.asset(
-                'assets/images/settings/password.webp',
-                width: width * 0.038,
-                height: width * 0.038,
-                color: const Color(0xFFD1D5DB),
-                colorBlendMode: BlendMode.srcIn,
-              ),
+              SizedBox(width: width * 0.02),
+              _lockBadge(width),
             ],
           ),
         ),
@@ -1296,16 +1306,14 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
                     hintText: hint,
                     suffixIcon: !enabled
                         ? Padding(
-                            padding: EdgeInsets.all(width * 0.03),
-                            child: Image.asset(
-                              'assets/images/settings/password.webp',
-                              width: width * 0.038,
-                              height: width * 0.038,
-                              color: const Color(0xFFD1D5DB),
-                              colorBlendMode: BlendMode.srcIn,
-                            ),
+                            padding: EdgeInsets.only(left: width * 0.02),
+                            child: _lockBadge(width),
                           )
                         : null,
+                    suffixIconConstraints: BoxConstraints(
+                      minWidth: width * 0.04,
+                      minHeight: width * 0.04,
+                    ),
                     labelStyle: TextStyle(
                       fontSize: width * 0.032,
                       color: AppColors.hint,

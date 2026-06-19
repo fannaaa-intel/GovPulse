@@ -74,7 +74,29 @@ Widget buildAvatar(double size, String? photoUrl, {String? photoPath}) {
 }
 
 /// Post-author avatar (green border, citizen photo or institution fallback).
-Widget buildAuthorAvatar(double size, String? photoUrl, {String? photoPath}) {
+Widget buildAuthorAvatar(
+  double size,
+  String? photoUrl, {
+  String? photoPath,
+  bool blank = false,
+}) {
+  // Masked citizen (guest view): neutral grey FB-style silhouette, no green ring.
+  if (blank) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        color: Color(0xFFE4E6EB),
+      ),
+      alignment: Alignment.center,
+      child: Icon(
+        Icons.person,
+        size: size * 0.7,
+        color: const Color(0xFFB0B3B8),
+      ),
+    );
+  }
   if (photoUrl != null && photoUrl.isNotEmpty) {
     return Container(
       width: size,

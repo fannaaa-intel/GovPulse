@@ -8,10 +8,13 @@ import 'package:cached_network_image/cached_network_image.dart';
 class HomeCommunitySectionWeb extends StatefulWidget {
   final VoidCallback onViewAll;
   final double? height;
+  final String? barangay;
+
   const HomeCommunitySectionWeb({
     super.key,
     required this.onViewAll,
     this.height,
+    this.barangay,
   });
 
   @override
@@ -25,11 +28,21 @@ class _HomeCommunitySectionWebState extends State<HomeCommunitySectionWeb> {
     super.initState();
     CommunityPostsProvider.instance.addListener(_onChange);
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      CommunityPostsProvider.instance.setBarangay(widget.barangay);
       CommunityPostsProvider.instance.fetchPosts();
     });
   }
 
   final ScrollController _scrollController = ScrollController();
+
+  @override
+  void didUpdateWidget(covariant HomeCommunitySectionWeb oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.barangay != widget.barangay) {
+      CommunityPostsProvider.instance.setBarangay(widget.barangay);
+      CommunityPostsProvider.instance.fetchPosts(force: true);
+    }
+  }
 
   @override
   void dispose() {
@@ -541,10 +554,8 @@ class _PostRowState extends State<_PostRow> {
     final hasImage = urls.isNotEmpty;
     final title = post['title'] as String? ?? '';
     final body = post['body'] as String? ?? post['content'] as String? ?? '';
-    final source =
-        post['barangay'] as String? ??
-        post['author'] as String? ??
-        'Local Government';
+    final rawBarangay = (post['barangay'] as String?)?.trim() ?? '';
+    final source = rawBarangay.isNotEmpty ? rawBarangay : 'LGU Aparri';
     final badge = _badgeFor(post);
     final likes = post['likes'] as String? ?? '0';
     final commentCount =

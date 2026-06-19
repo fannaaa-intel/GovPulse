@@ -42,14 +42,14 @@ Future<bool> showVerificationRequiredDialog(
     barrierDismissible: true,
     barrierLabel: '',
     barrierColor: Colors.black54,
-    transitionDuration: const Duration(milliseconds: 320),
+    transitionDuration: const Duration(milliseconds: 180),
     transitionBuilder: (ctx, anim, _, child) {
       final curve = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
       return FadeTransition(
         opacity: curve,
         child: SlideTransition(
           position: Tween<Offset>(
-            begin: const Offset(0, 0.08),
+            begin: const Offset(0, 0.06),
             end: Offset.zero,
           ).animate(curve),
           child: child,

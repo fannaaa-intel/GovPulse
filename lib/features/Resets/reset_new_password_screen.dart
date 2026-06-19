@@ -370,8 +370,13 @@ class _ResetNewPasswordScreenState extends State<ResetNewPasswordScreen>
                               ? null
                               : updatePassword,
                           child: isLoading
-                              ? const CircularProgressIndicator(
-                                  color: Colors.white,
+                              ? const SizedBox(
+                                  height: 22,
+                                  width: 22,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.4,
+                                    color: Colors.white,
+                                  ),
                                 )
                               : const Text(
                                   "Reset Password",

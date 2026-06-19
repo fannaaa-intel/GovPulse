@@ -189,26 +189,9 @@ class _ResetPasswordEmailVerifyScreenState
   Future<void> verifyOtp() async {
     setState(() => isVerifying = true);
 
-    final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
-    final supabase = Supabase.instance.client;
 
     try {
-      final canVerify = await supabase.rpc(
-        'can_verify_otp',
-        params: {'p_identifier': widget.email},
-      );
-
-      if (!mounted) return;
-
-      if (canVerify['allowed'] != true) {
-        messenger.showSnackBar(
-          SnackBar(content: Text(canVerify['message'] as String)),
-        );
-        setState(() => isVerifying = false);
-        return;
-      }
-
       final response = await http.post(
         Uri.parse(
           "https://vxvflhjbafqwehuxnmeq.supabase.co/functions/v1/reset-verify-otp",
@@ -224,12 +207,6 @@ class _ResetPasswordEmailVerifyScreenState
       if (!mounted) return;
 
       if (response.statusCode == 200 && data["success"] == true) {
-        await supabase.rpc(
-          'clear_otp_failures',
-          params: {'p_identifier': widget.email},
-        );
-        if (!mounted) return;
-
         final session = data["session"];
         navigator.push(
           kIsWeb
@@ -251,10 +228,6 @@ class _ResetPasswordEmailVerifyScreenState
                 ),
         );
       } else {
-        await supabase.rpc(
-          'record_otp_failure',
-          params: {'p_identifier': widget.email},
-        );
         if (!mounted) return;
         triggerErrorAnimation();
       }
@@ -406,28 +379,8 @@ class _ResetPasswordEmailVerifyScreenState
                           onPressed: (code.length == 6 && !isVerifying)
                               ? () async {
                                   setState(() => isVerifying = true);
-                                  final messenger = ScaffoldMessenger.of(
-                                    context,
-                                  );
                                   final navigator = Navigator.of(context);
-                                  final supabase = Supabase.instance.client;
                                   try {
-                                    final canVerify = await supabase.rpc(
-                                      'can_verify_otp',
-                                      params: {'p_identifier': widget.email},
-                                    );
-                                    if (!mounted) return;
-                                    if (canVerify['allowed'] != true) {
-                                      messenger.showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            canVerify['message'] as String,
-                                          ),
-                                        ),
-                                      );
-                                      setState(() => isVerifying = false);
-                                      return;
-                                    }
                                     final response = await http.post(
                                       Uri.parse(
                                         "https://vxvflhjbafqwehuxnmeq.supabase.co/functions/v1/reset-verify-otp",
@@ -445,11 +398,6 @@ class _ResetPasswordEmailVerifyScreenState
                                     if (!mounted) return;
                                     if (response.statusCode == 200 &&
                                         data["success"] == true) {
-                                      await supabase.rpc(
-                                        'clear_otp_failures',
-                                        params: {'p_identifier': widget.email},
-                                      );
-                                      if (!mounted) return;
                                       final session = data["session"];
                                       navigator.push(
                                         PageRouteBuilder(
@@ -466,10 +414,6 @@ class _ResetPasswordEmailVerifyScreenState
                                         ),
                                       );
                                     } else {
-                                      await supabase.rpc(
-                                        'record_otp_failure',
-                                        params: {'p_identifier': widget.email},
-                                      );
                                       if (!mounted) return;
                                       triggerErrorAnimation();
                                     }

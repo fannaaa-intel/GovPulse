@@ -607,6 +607,10 @@ class _SettingsSkeletonScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final w = MediaQuery.of(context).size.width;
 
+    // Section row counts must mirror the real settings layout:
+    // ACCOUNT(3) / SUPPORT(1) / LEGAL(2) / ABOUT(3)
+    const sectionRows = [3, 1, 2, 3];
+
     return SafeArea(
       child: Column(
         children: [
@@ -683,14 +687,14 @@ class _SettingsSkeletonScreen extends StatelessWidget {
                     ),
                   ),
                   ...List.generate(
-                    4,
+                    sectionRows.length,
                     (i) => Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         SizedBox(height: w * 0.04),
                         _Shimmer(width: w * 0.25, height: w * 0.030),
                         SizedBox(height: w * 0.02),
-                        _sectionCard(w, [4, 4, 2, 3][i]),
+                        _sectionCard(w, sectionRows[i]),
                       ],
                     ),
                   ),

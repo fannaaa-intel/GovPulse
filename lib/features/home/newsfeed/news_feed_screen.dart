@@ -27,11 +27,15 @@ enum PostFilter {
 class NewsFeedScreen extends StatefulWidget {
   final String username;
   final bool isVerified;
+  final String? userBarangay;
+  final bool isGuest;
 
   const NewsFeedScreen({
     super.key,
     this.username = '',
     this.isVerified = false,
+    this.userBarangay,
+    this.isGuest = false,
   });
 
   @override
@@ -50,6 +54,7 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
   PostFilter _currentFilter = PostFilter.latest;
   final Set<String> _likedComments = {};
   final Set<String> _likedPosts = {};
+  final Set<String> _expandedPosts = {};
 
   @override
   void initState() {
@@ -58,17 +63,24 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
       vsync: this,
       duration: const Duration(milliseconds: 900),
     );
+    CommunityPostsProvider.instance.setGuestMode(widget.isGuest);
+    CommunityPostsProvider.instance.addListener(_onPostsChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Future.delayed(const Duration(milliseconds: 80), () {
         if (mounted) _entryCtrl.forward();
       });
-    });
-    CommunityPostsProvider.instance.addListener(_onPostsChanged);
-    // ← Move refresh inside addPostFrameCallback so it runs AFTER build
-    WidgetsBinding.instance.addPostFrameCallback((_) {
       CommunityPostsProvider.instance.refresh();
       _loadMyInteractions();
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Decode the header logo before the first paint so it doesn't pop in a
+    // frame or two after the rest of the app bar. (Running this inside a
+    // post-frame callback, as before, was the cause of the visible delay.)
+    precacheImage(const AssetImage('assets/images/newslogo.webp'), context);
   }
 
   @override
@@ -107,7 +119,24 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
   }
 
   List<Map<String, dynamic>> get _filteredPosts {
-    final posts = CommunityPostsProvider.instance.sortedPosts;
+    var posts = CommunityPostsProvider.instance.sortedPosts;
+
+    // Barangay targeting (logged-in users only — guests see everything):
+    //   • city-wide / LGU broadcasts (empty barangay) → always shown
+    //   • user has a barangay  → also show posts for that barangay
+    //   • user has NO barangay yet (e.g. signed up but not verified) →
+    //     city-wide / LGU broadcasts only, never other barangays' posts
+    if (!widget.isGuest) {
+      final ub = widget.userBarangay?.trim().toLowerCase() ?? '';
+      posts = posts.where((p) {
+        final pb = (p['barangay'] as String?)?.trim().toLowerCase() ?? '';
+        if (pb.isEmpty) return true; // city-wide / LGU broadcast
+        if (ub.isEmpty) return false; // no barangay yet → city-wide only
+        return pb == ub; // otherwise must match the user's barangay
+      }).toList();
+    }
+
+    // ── Date filter (existing) ───────────────────────────────────────────
     if (_currentFilter == PostFilter.latest) return posts;
     final cutoff = DateTime.now().subtract(_currentFilter.duration!);
     return posts.where((p) {
@@ -139,6 +168,7 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
   }
 
   void _goToHome() {
+    if (!mounted) return;
     Navigator.pushAndRemoveUntil(
       context,
       PageRouteBuilder(
@@ -151,10 +181,80 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
     );
   }
 
+  void _showGuestSignupNudge() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      isScrollControlled: true, // ← add this
+      useRootNavigator: true, // ← add this
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => SafeArea(
+        // ← wrap with SafeArea
+        top: false, // ← only pad bottom
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.lock_outline_rounded,
+                size: 40,
+                color: AppColors.primaryBlue,
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Create an account',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Sign up to like, comment, and report issues.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Color(0xFF6B7280)),
+              ),
+              const SizedBox(height: 18),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primaryBlue,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    elevation: 0,
+                  ),
+                  onPressed: () {
+                    Navigator.pop(context);
+                    Navigator.pushNamed(context, '/signup');
+                  },
+                  child: const Text(
+                    'Create Account',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _toggleLike(String commentId) async {
+    if (widget.isGuest) {
+      _showGuestSignupNudge();
+      return;
+    }
     if (!_isVerified) {
       showVerificationRequiredDialog(
         context,
+        isVerified: _isVerified,
         message:
             'Only verified citizens can like. Please complete identity verification first.',
       );
@@ -219,9 +319,14 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
   }
 
   Future<void> _togglePostLike(String postId) async {
+    if (widget.isGuest) {
+      _showGuestSignupNudge();
+      return;
+    }
     if (!_isVerified) {
       showVerificationRequiredDialog(
         context,
+        isVerified: _isVerified,
         message:
             'Only verified citizens can like posts. Please complete identity verification first.',
       );
@@ -385,9 +490,14 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
   }
 
   void _openCommentsSheet(Map<String, dynamic> post, {String? initialReplyTo}) {
+    if (widget.isGuest) {
+      _showGuestSignupNudge();
+      return;
+    }
     if (!_isVerified) {
       showVerificationRequiredDialog(
         context,
+        isVerified: _isVerified,
         message:
             'Only verified citizens can view and post comments. Please complete identity verification first.',
       );
@@ -418,7 +528,15 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) _goToHome();
+        if (didPop) return;
+        if (!mounted) return;
+        if (widget.isGuest) {
+          Navigator.of(context).pop(); // go back to /guest
+        } else {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _goToHome();
+          });
+        }
       },
       child: Scaffold(
         extendBody: true,
@@ -462,12 +580,15 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
             ],
           ),
         ),
-        bottomNavigationBar: AppBottomNav(
-          width: width,
-          currentIndex: _navIndex,
-          username: widget.username,
-          isVerified: _isVerified,
-        ),
+        bottomNavigationBar: widget.isGuest
+            ? null
+            : AppBottomNav(
+                width: width,
+                currentIndex: _navIndex,
+                username: widget.username,
+                isVerified: _isVerified,
+                userBarangay: widget.userBarangay,
+              ),
       ),
     );
   }
@@ -494,6 +615,35 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (widget.isGuest)
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () {
+                if (mounted) Navigator.of(context).pop();
+              },
+              child: Padding(
+                padding: EdgeInsets.only(bottom: width * 0.02),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.arrow_back_ios_new_rounded,
+                      size: width * 0.045,
+                      color: AppColors.primaryBlue,
+                    ),
+                    SizedBox(width: width * 0.015),
+                    Text(
+                      'Back',
+                      style: TextStyle(
+                        fontSize: width * 0.038,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.primaryBlue,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           Image.asset(
             'assets/images/newslogo.webp',
             height: width * 0.075,
@@ -660,6 +810,21 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
     );
   }
 
+  /// On the guest feed, comment authors are anonymised the same way post
+  /// authors are: "Citizen" + default avatar, with any @mention masked too.
+  /// Officials (if the comment carries that flag) keep their real identity.
+  Map<String, dynamic> _maskCommentForGuest(Map<String, dynamic> c) {
+    if (!widget.isGuest) return c;
+    if (c['isOfficial'] == true) return c;
+    return {
+      ...c,
+      'author': 'Citizen',
+      'authorPhotoUrl': null,
+      'authorPhotoPath': null,
+      if (c['mentionedUser'] != null) 'mentionedUser': 'Citizen',
+    };
+  }
+
   Widget _buildPostCard(double width, Map<String, dynamic> post) {
     final comments = post['comments'] as List<dynamic>;
     final commentCount = post['commentCount'] as int? ?? comments.length;
@@ -714,7 +879,7 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
               ),
             ),
             SizedBox(height: width * 0.012),
-            _buildPostBody(width, post['body'] as String),
+            _buildPostBody(width, post['body'] as String, post['id'] as String),
             SizedBox(height: width * 0.025),
             buildImageGrid(
               width,
@@ -741,7 +906,8 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
                 padding: EdgeInsets.symmetric(vertical: width * 0.025),
                 child: Container(height: 1, color: const Color(0xFFE5E7EB)),
               ),
-              ...previewComments.map((comment) {
+              ...previewComments.map((rawComment) {
+                final comment = _maskCommentForGuest(rawComment);
                 final isReply = comment['parentId'] != null;
                 if (isReply) {
                   return buildReplyItem(
@@ -808,6 +974,11 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
   Widget _buildPostHeader(double width, Map<String, dynamic> post) {
     final ts = post['timestamp'] as DateTime?;
     final timeAgo = ts != null ? formatTimeAgo(ts) : '';
+
+    // Identity is already resolved in the provider: citizens are anonymised
+    // ("Citizen" + default avatar) and officials keep their real name + photo.
+    final bool blankAvatar = post['blankAvatar'] == true;
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -815,6 +986,7 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
           width * 0.105,
           post['authorPhotoUrl'] as String?,
           photoPath: post['authorPhotoPath'] as String?,
+          blank: blankAvatar,
         ),
         SizedBox(width: width * 0.025),
         Expanded(
@@ -836,7 +1008,10 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   Text(
-                    '${post['barangay']} · $timeAgo',
+                    () {
+                      final b = (post['barangay'] as String?)?.trim() ?? '';
+                      return b.isEmpty ? timeAgo : '$b · $timeAgo';
+                    }(),
                     style: TextStyle(
                       fontSize: width * 0.028,
                       color: const Color(0xFF6B7280),
@@ -877,45 +1052,64 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
             ],
           ),
         ),
-        GestureDetector(
-          onTap: () {},
-          child: Padding(
-            padding: EdgeInsets.only(left: width * 0.02, top: width * 0.005),
-            child: Icon(
-              Icons.more_horiz_rounded,
-              size: width * 0.055,
-              color: const Color(0xFF9CA3AF),
-            ),
-          ),
-        ),
       ],
     );
   }
 
-  Widget _buildPostBody(double width, String body) {
-    return Text.rich(
-      TextSpan(
-        children: [
-          TextSpan(
-            text: body,
-            style: TextStyle(
-              fontSize: width * 0.034,
-              color: const Color(0xFF374151),
-              height: 1.45,
+  Widget _buildPostBody(double width, String body, String postId) {
+    final isExpanded = _expandedPosts.contains(postId);
+    final textStyle = TextStyle(
+      fontSize: width * 0.034,
+      color: const Color(0xFF374151),
+      height: 1.45,
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Measure whether the body actually needs more than 2 lines.
+        final tp = TextPainter(
+          text: TextSpan(text: body, style: textStyle),
+          maxLines: 2,
+          textDirection: TextDirection.ltr,
+        )..layout(maxWidth: constraints.maxWidth);
+        final isOverflowing = tp.didExceedMaxLines;
+
+        // Short post — no toggle needed at all.
+        if (!isOverflowing) {
+          return Text(body, style: textStyle);
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              body,
+              style: textStyle,
+              maxLines: isExpanded ? null : 2,
+              overflow: isExpanded ? TextOverflow.clip : TextOverflow.ellipsis,
             ),
-          ),
-          TextSpan(
-            text: '  See more...',
-            style: TextStyle(
-              fontSize: width * 0.034,
-              color: const Color(0xFF9CA3AF),
-              fontWeight: FontWeight.w600,
+            SizedBox(height: width * 0.008),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => setState(() {
+                if (isExpanded) {
+                  _expandedPosts.remove(postId);
+                } else {
+                  _expandedPosts.add(postId);
+                }
+              }),
+              child: Text(
+                isExpanded ? 'See less' : 'See more',
+                style: TextStyle(
+                  fontSize: width * 0.034,
+                  color: AppColors.primaryBlue,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
-          ),
-        ],
-      ),
-      maxLines: 2,
-      overflow: TextOverflow.ellipsis,
+          ],
+        );
+      },
     );
   }
 
