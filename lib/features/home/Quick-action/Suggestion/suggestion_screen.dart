@@ -1251,15 +1251,10 @@ class _SuggestionScreenState extends State<SuggestionScreen>
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Image.asset(
-                    'assets/images/report/camera.webp',
-                    width: width * 0.10,
-                    height: width * 0.10,
-                    errorBuilder: (_, _, _) => Icon(
-                      Icons.camera_alt_rounded,
-                      size: width * 0.10,
-                      color: AppColors.primaryBlue,
-                    ),
+                  Icon(
+                    Icons.add_a_photo_rounded,
+                    size: width * 0.095,
+                    color: AppColors.primaryBlue,
                   ),
                   SizedBox(height: width * 0.02),
                   Text(

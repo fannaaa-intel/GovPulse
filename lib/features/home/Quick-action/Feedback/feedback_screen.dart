@@ -1698,7 +1698,7 @@ class _FeedbackScreenState extends State<FeedbackScreen>
                 children: [
                   Icon(
                     Icons.add_a_photo_rounded,
-                    size: width * 0.09,
+                    size: width * 0.095,
                     color: AppColors.primaryBlue,
                   ),
                   SizedBox(height: width * 0.02),
