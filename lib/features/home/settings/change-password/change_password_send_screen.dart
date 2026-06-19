@@ -445,71 +445,128 @@ class _ChangePasswordSendScreenState extends State<ChangePasswordSendScreen>
   }
 
   Widget _buildLockBanner(double w) {
+    const amber = Color(0xFFF59E0B);
+    const amberDark = Color(0xFFB45309);
+    const amberText = Color(0xFF92400E);
+    // Fills up as the unlock date approaches (elapsed days / 30).
+    final progress = ((30 - _daysRemaining) / 30.0).clamp(0.0, 1.0);
+
     return Container(
       width: double.infinity,
-      padding: EdgeInsets.symmetric(horizontal: w * 0.04, vertical: w * 0.04),
+      padding: EdgeInsets.all(w * 0.045),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFF7ED),
-        borderRadius: BorderRadius.circular(w * 0.03),
-        border: Border.all(color: AppColors.orange.withValues(alpha: 0.5)),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFFFFBEB), Color(0xFFFFF1D6)],
+        ),
+        borderRadius: BorderRadius.circular(w * 0.05),
+        border: Border.all(color: amber.withValues(alpha: 0.35)),
+        boxShadow: [
+          BoxShadow(
+            color: amber.withValues(alpha: 0.18),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+            spreadRadius: -6,
+          ),
+        ],
       ),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: EdgeInsets.all(w * 0.02),
-            decoration: BoxDecoration(
-              color: AppColors.orange.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(w * 0.02),
-            ),
-            child: Icon(
-              Icons.lock_clock_rounded,
-              size: w * 0.06,
-              color: AppColors.orange,
-            ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ── Vivid icon chip ──────────────────────────────────────
+              Container(
+                width: w * 0.12,
+                height: w * 0.12,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFFFBBF24), Color(0xFFF59E0B)],
+                  ),
+                  borderRadius: BorderRadius.circular(w * 0.036),
+                  boxShadow: [
+                    BoxShadow(
+                      color: amber.withValues(alpha: 0.40),
+                      blurRadius: 12,
+                      offset: const Offset(0, 5),
+                      spreadRadius: -3,
+                    ),
+                  ],
+                ),
+                child: Icon(
+                  Icons.lock_clock_rounded,
+                  color: Colors.white,
+                  size: w * 0.062,
+                ),
+              ),
+              SizedBox(width: w * 0.035),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Password Change Locked',
+                      style: TextStyle(
+                        fontSize: w * 0.040,
+                        fontWeight: FontWeight.w800,
+                        color: amberDark,
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                    SizedBox(height: w * 0.012),
+                    Text(
+                      'For your security, you can change your password again '
+                      'in $_daysRemaining day${_daysRemaining == 1 ? '' : 's'}.',
+                      style: TextStyle(
+                        fontSize: w * 0.032,
+                        color: amberText,
+                        height: 1.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-          SizedBox(width: w * 0.03),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Password Change Locked',
-                  style: TextStyle(
-                    fontSize: w * 0.036,
-                    fontWeight: FontWeight.w700,
-                    color: const Color(0xFFB45309),
-                  ),
-                ),
-                SizedBox(height: w * 0.01),
-                Text(
-                  'You can change your password again in $_daysRemaining day${_daysRemaining == 1 ? '' : 's'}.',
-                  style: TextStyle(
-                    fontSize: w * 0.030,
-                    color: const Color(0xFF92400E),
-                    height: 1.45,
-                  ),
-                ),
-                SizedBox(height: w * 0.02),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(w * 0.01),
+          SizedBox(height: w * 0.04),
+          // ── Progress + days-left pill ──────────────────────────────────
+          Row(
+            children: [
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(w * 0.02),
                   child: LinearProgressIndicator(
-                    value: (_daysRemaining / 30.0).clamp(0.0, 1.0),
-                    minHeight: w * 0.015,
-                    backgroundColor: AppColors.orange.withValues(alpha: 0.2),
-                    valueColor: AlwaysStoppedAnimation<Color>(AppColors.orange),
+                    value: progress,
+                    minHeight: w * 0.022,
+                    backgroundColor: amber.withValues(alpha: 0.18),
+                    valueColor: const AlwaysStoppedAnimation<Color>(amber),
                   ),
                 ),
-                SizedBox(height: w * 0.008),
-                Text(
-                  '$_daysRemaining / 30 days remaining',
+              ),
+              SizedBox(width: w * 0.03),
+              Container(
+                padding: EdgeInsets.symmetric(
+                  horizontal: w * 0.028,
+                  vertical: w * 0.012,
+                ),
+                decoration: BoxDecoration(
+                  color: amber.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(w * 0.05),
+                ),
+                child: Text(
+                  '$_daysRemaining day${_daysRemaining == 1 ? '' : 's'} left',
                   style: TextStyle(
-                    fontSize: w * 0.026,
-                    color: const Color(0xFFB45309),
+                    fontSize: w * 0.028,
+                    fontWeight: FontWeight.w800,
+                    color: amberDark,
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ],
       ),

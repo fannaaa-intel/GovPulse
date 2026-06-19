@@ -1017,87 +1017,148 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
         ? '${unlockDate.month}/${unlockDate.day}/${unlockDate.year}'
         : '';
 
+    const amber = Color(0xFFF59E0B);
+    const amberDark = Color(0xFFB45309);
+    const amberText = Color(0xFF92400E);
+    // Fills up as the unlock date approaches (elapsed days / 30).
+    final progress = ((30 - _daysRemaining) / 30.0).clamp(0.0, 1.0);
+
     return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: width * 0.04,
-        vertical: width * 0.04,
-      ),
+      padding: EdgeInsets.all(width * 0.045),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFF7ED),
-        borderRadius: BorderRadius.circular(width * 0.03),
-        border: Border.all(color: AppColors.orange.withValues(alpha: 0.5)),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFFFFBEB), Color(0xFFFFF1D6)],
+        ),
+        borderRadius: BorderRadius.circular(width * 0.05),
+        border: Border.all(color: amber.withValues(alpha: 0.35)),
+        boxShadow: [
+          BoxShadow(
+            color: amber.withValues(alpha: 0.18),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+            spreadRadius: -6,
+          ),
+        ],
       ),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: EdgeInsets.all(width * 0.02),
-            decoration: BoxDecoration(
-              color: AppColors.orange.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(width * 0.02),
-            ),
-            child: Image.asset(
-              'assets/images/settings/time.webp',
-              width: width * 0.06,
-              height: width * 0.06,
-              color: AppColors.orange,
-              colorBlendMode: BlendMode.srcIn,
-            ),
-          ),
-          SizedBox(width: width * 0.03),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Profile Editing Locked',
-                  style: TextStyle(
-                    fontSize: width * 0.036,
-                    fontWeight: FontWeight.w700,
-                    color: const Color(0xFFB45309),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ── Vivid icon chip ──────────────────────────────────────
+              Container(
+                width: width * 0.12,
+                height: width * 0.12,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFFFBBF24), Color(0xFFF59E0B)],
                   ),
-                ),
-                SizedBox(height: width * 0.01),
-                Text(
-                  'Your profile was recently updated. You can edit again in '
-                  '$_daysRemaining day${_daysRemaining == 1 ? '' : 's'}.',
-                  style: TextStyle(
-                    fontSize: width * 0.030,
-                    color: const Color(0xFF92400E),
-                    height: 1.45,
-                  ),
-                ),
-                if (dateStr.isNotEmpty) ...[
-                  SizedBox(height: width * 0.008),
-                  Text(
-                    'Available from: $dateStr',
-                    style: TextStyle(
-                      fontSize: width * 0.028,
-                      color: const Color(0xFFB45309),
-                      fontWeight: FontWeight.w600,
+                  borderRadius: BorderRadius.circular(width * 0.036),
+                  boxShadow: [
+                    BoxShadow(
+                      color: amber.withValues(alpha: 0.40),
+                      blurRadius: 12,
+                      offset: const Offset(0, 5),
+                      spreadRadius: -3,
                     ),
-                  ),
-                ],
-                SizedBox(height: width * 0.02),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(width * 0.01),
+                  ],
+                ),
+                child: Icon(
+                  Icons.lock_clock_rounded,
+                  color: Colors.white,
+                  size: width * 0.062,
+                ),
+              ),
+              SizedBox(width: width * 0.035),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Profile Editing Locked',
+                      style: TextStyle(
+                        fontSize: width * 0.040,
+                        fontWeight: FontWeight.w800,
+                        color: amberDark,
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                    SizedBox(height: width * 0.012),
+                    Text(
+                      'Your profile was recently updated. You can edit again '
+                      'in $_daysRemaining day${_daysRemaining == 1 ? '' : 's'}.',
+                      style: TextStyle(
+                        fontSize: width * 0.032,
+                        color: amberText,
+                        height: 1.5,
+                      ),
+                    ),
+                    if (dateStr.isNotEmpty) ...[
+                      SizedBox(height: width * 0.012),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.event_available_rounded,
+                            size: width * 0.038,
+                            color: amberDark,
+                          ),
+                          SizedBox(width: width * 0.015),
+                          Text(
+                            'Available from $dateStr',
+                            style: TextStyle(
+                              fontSize: width * 0.030,
+                              color: amberDark,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: width * 0.04),
+          // ── Progress + days-left pill ──────────────────────────────────
+          Row(
+            children: [
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(width * 0.02),
                   child: LinearProgressIndicator(
-                    value: (_daysRemaining / 30.0).clamp(0.0, 1.0),
-                    minHeight: width * 0.015,
-                    backgroundColor: AppColors.orange.withValues(alpha: 0.2),
-                    valueColor: AlwaysStoppedAnimation<Color>(AppColors.orange),
+                    value: progress,
+                    minHeight: width * 0.022,
+                    backgroundColor: amber.withValues(alpha: 0.18),
+                    valueColor: const AlwaysStoppedAnimation<Color>(amber),
                   ),
                 ),
-                SizedBox(height: width * 0.008),
-                Text(
-                  '$_daysRemaining / 30 days remaining',
+              ),
+              SizedBox(width: width * 0.03),
+              Container(
+                padding: EdgeInsets.symmetric(
+                  horizontal: width * 0.028,
+                  vertical: width * 0.012,
+                ),
+                decoration: BoxDecoration(
+                  color: amber.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(width * 0.05),
+                ),
+                child: Text(
+                  '$_daysRemaining day${_daysRemaining == 1 ? '' : 's'} left',
                   style: TextStyle(
-                    fontSize: width * 0.026,
-                    color: const Color(0xFFB45309),
+                    fontSize: width * 0.028,
+                    fontWeight: FontWeight.w800,
+                    color: amberDark,
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ],
       ),
