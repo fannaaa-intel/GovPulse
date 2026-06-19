@@ -3,10 +3,13 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/services/connectivity_service.dart';
 import '../../core/network/network_wrapper.dart';
 import '../../core/network/no_internet_screen.dart';
 import '../../core/router/app_router.dart';
+import '../../core/providers/community_posts_provider.dart';
+import '../home/screen/home_screen.dart';
 
 /// ===============================
 /// SPLASH SCREEN
@@ -102,6 +105,39 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
     }
 
     if (!mounted) return;
+
+    // ── Session persistence ───────────────────────────────────────────────
+    // Supabase restores a saved session automatically on app start. If a user
+    // is still logged in (and this isn't the very first launch), skip login
+    // and land them on Home instantly. Logging out clears the session, so
+    // after sign-out this check is null and we fall through to /login.
+    final user = Supabase.instance.client.auth.currentUser;
+    if (!goToIntro && user != null) {
+      String username = '';
+      try {
+        final row = await Supabase.instance.client
+            .from('profiles')
+            .select('username')
+            .eq('id', user.id)
+            .maybeSingle();
+        username = (row?['username'] as String?) ?? '';
+      } catch (_) {}
+
+      if (!mounted) return;
+
+      // Make sure the community feed is in authenticated (non-guest) mode.
+      CommunityPostsProvider.instance.resetForAuthenticatedUser();
+
+      Navigator.of(context).pushReplacement(
+        PageRouteBuilder(
+          transitionDuration: Duration.zero,
+          reverseTransitionDuration: Duration.zero,
+          pageBuilder: (_, _, _) =>
+              NetworkWrapper(child: HomePage(username: username)),
+        ),
+      );
+      return;
+    }
 
     final routeName = goToIntro ? '/intro' : '/login';
 
