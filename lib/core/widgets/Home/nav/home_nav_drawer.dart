@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../theme/app_colors.dart';
 import '../home_enums.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import '../../modal/verification_required_dialog.dart';
 
 class HomeNavDrawer extends StatelessWidget {
   final int currentIndex;
@@ -149,6 +150,15 @@ class HomeNavDrawer extends StatelessWidget {
                       iconPath: item.iconPath,
                       active: currentIndex == item.index,
                       onTap: () {
+                        // My Reports is restricted to verified citizens.
+                        if (item.index == 1 && !isVerified) {
+                          showVerificationRequiredDialog(
+                            context,
+                            message:
+                                'Only verified citizens can access My Reports.',
+                          );
+                          return;
+                        }
                         if (Navigator.of(context).canPop()) {
                           Navigator.of(context).pop();
                         }
