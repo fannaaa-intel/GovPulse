@@ -105,185 +105,208 @@ class _IntroScreenState extends State<IntroScreen>
         child: Center(
           child: ConstrainedBox(
             constraints: BoxConstraints(maxWidth: contentMax),
-            child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: isTablet ? 40 : 28),
-              child: Column(
-                children: [
-                  SizedBox(height: topGap),
-
-                  // ── Logo ────────────────────────────────────────────────
-                  Image.asset(
-                    "assets/images/applogocrop.webp",
-                    width: logoWidth,
-                    filterQuality: FilterQuality.high,
-                  ),
-
-                  SizedBox(height: logoGap),
-
-                  // ── PageView ─────────────────────────────────────────────
-                  Expanded(
-                    child: PageView.builder(
-                      controller: _controller,
-                      itemCount: pages.length,
-                      physics: const BouncingScrollPhysics(),
-                      onPageChanged: (i) => setState(() => _currentPage = i),
-                      itemBuilder: (context, index) => _buildPage(
-                        index,
-                        titleSize: titleSize,
-                        descSize: descSize,
+            child: LayoutBuilder(
+              builder: (context, c) {
+                final double pageH = (c.maxHeight * 0.55).clamp(260.0, 480.0);
+                return SingleChildScrollView(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(minHeight: c.maxHeight),
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: isTablet ? 40 : 28,
                       ),
-                    ),
-                  ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          SizedBox(height: topGap),
 
-                  SizedBox(height: dotsGap),
+                          // ── Logo ────────────────────────────────────────────────
+                          Image.asset(
+                            "assets/images/applogocrop.webp",
+                            width: logoWidth,
+                            filterQuality: FilterQuality.high,
+                          ),
 
-                  // ── Dots ─────────────────────────────────────────────────
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: List.generate(
-                      pages.length,
-                      (i) => AnimatedContainer(
-                        duration: const Duration(milliseconds: 300),
-                        margin: const EdgeInsets.symmetric(horizontal: 5),
-                        height: 8,
-                        width: _currentPage == i ? 24 : 8,
-                        decoration: BoxDecoration(
-                          color: _currentPage == i
-                              ? const Color(0xFF1A237E)
-                              : Colors.grey.shade400,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                      ),
-                    ),
-                  ),
+                          SizedBox(height: logoGap),
 
-                  SizedBox(height: dotsGap),
-
-                  // ── Navigation row ───────────────────────────────────────
-                  Padding(
-                    padding: EdgeInsets.only(bottom: bottomGap),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        // Skip / Back
-                        TextButton(
-                          onPressed: () {
-                            if (_currentPage == 0) {
-                              widget.onLoginClick();
-                            } else {
-                              _controller.previousPage(
-                                duration: const Duration(milliseconds: 500),
-                                curve: Curves.easeOutBack,
-                              );
-                            }
-                          },
-                          child: Text(
-                            _currentPage == 0 ? "Skip" : "Back",
-                            style: TextStyle(
-                              fontSize: skipLabelSz,
-                              fontWeight: FontWeight.w500,
-                              color: const Color(0xFF1A237E),
+                          // ── PageView ─────────────────────────────────────────────
+                          SizedBox(
+                            height: pageH,
+                            child: PageView.builder(
+                              controller: _controller,
+                              itemCount: pages.length,
+                              physics: const BouncingScrollPhysics(),
+                              onPageChanged: (i) =>
+                                  setState(() => _currentPage = i),
+                              itemBuilder: (context, index) => _buildPage(
+                                index,
+                                titleSize: titleSize,
+                                descSize: descSize,
+                              ),
                             ),
                           ),
-                        ),
 
-                        // Next / Get Started
-                        SizedBox(
-                          width: btnWidth,
-                          height: btnRowH,
-                          child: AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 450),
-                            switchInCurve: Curves.easeOutCubic,
-                            switchOutCurve: Curves.easeInCubic,
-                            layoutBuilder: (cur, prev) => Stack(
-                              alignment: Alignment.centerRight,
-                              children: [...prev, ?cur],
-                            ),
-                            transitionBuilder: (child, anim) {
-                              final isGet =
-                                  child.key == const ValueKey("getStarted");
-                              final slide = Tween<Offset>(
-                                begin: isGet
-                                    ? const Offset(0.15, 0)
-                                    : const Offset(-0.15, 0),
-                                end: Offset.zero,
-                              ).animate(anim);
-                              return FadeTransition(
-                                opacity: anim,
-                                child: SlideTransition(
-                                  position: slide,
-                                  child: child,
+                          SizedBox(height: dotsGap),
+
+                          // ── Dots ─────────────────────────────────────────────────
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: List.generate(
+                              pages.length,
+                              (i) => AnimatedContainer(
+                                duration: const Duration(milliseconds: 300),
+                                margin: const EdgeInsets.symmetric(
+                                  horizontal: 5,
                                 ),
-                              );
-                            },
-                            child: _currentPage == pages.length - 1
-                                ? ElevatedButton(
-                                    key: const ValueKey("getStarted"),
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: const Color(0xFF1A237E),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(28),
-                                      ),
-                                      padding: EdgeInsets.symmetric(
-                                        horizontal: isTablet ? 32 : 28,
-                                        vertical: 14,
-                                      ),
-                                      elevation: 6,
-                                    ),
-                                    onPressed: widget.onSignUpClick,
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Text(
-                                          "Get Started",
-                                          style: TextStyle(
-                                            fontSize: btnLabelSz,
-                                            fontWeight: FontWeight.w600,
-                                            color: Colors.white,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        const Icon(
-                                          Icons.arrow_forward,
-                                          color: Colors.white,
-                                        ),
-                                      ],
-                                    ),
-                                  )
-                                : GestureDetector(
-                                    key: const ValueKey("arrow"),
-                                    onTap: () {
-                                      _animateArrow();
-                                      _controller.nextPage(
+                                height: 8,
+                                width: _currentPage == i ? 24 : 8,
+                                decoration: BoxDecoration(
+                                  color: _currentPage == i
+                                      ? const Color(0xFF1A237E)
+                                      : Colors.grey.shade400,
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                              ),
+                            ),
+                          ),
+
+                          SizedBox(height: dotsGap),
+
+                          // ── Navigation row ───────────────────────────────────────
+                          Padding(
+                            padding: EdgeInsets.only(bottom: bottomGap),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                // Skip / Back
+                                TextButton(
+                                  onPressed: () {
+                                    if (_currentPage == 0) {
+                                      widget.onLoginClick();
+                                    } else {
+                                      _controller.previousPage(
                                         duration: const Duration(
                                           milliseconds: 500,
                                         ),
                                         curve: Curves.easeOutBack,
                                       );
-                                    },
-                                    child: Container(
-                                      height: arrowSize,
-                                      width: arrowSize,
-                                      decoration: const BoxDecoration(
-                                        color: Color(0xFF1A237E),
-                                        shape: BoxShape.circle,
-                                      ),
-                                      child: ScaleTransition(
-                                        scale: _arrowScale,
-                                        child: const Icon(
-                                          Icons.arrow_forward,
-                                          color: Colors.white,
-                                        ),
-                                      ),
+                                    }
+                                  },
+                                  child: Text(
+                                    _currentPage == 0 ? "Skip" : "Back",
+                                    style: TextStyle(
+                                      fontSize: skipLabelSz,
+                                      fontWeight: FontWeight.w500,
+                                      color: const Color(0xFF1A237E),
                                     ),
                                   ),
+                                ),
+
+                                // Next / Get Started
+                                SizedBox(
+                                  width: btnWidth,
+                                  height: btnRowH,
+                                  child: AnimatedSwitcher(
+                                    duration: const Duration(milliseconds: 450),
+                                    switchInCurve: Curves.easeOutCubic,
+                                    switchOutCurve: Curves.easeInCubic,
+                                    layoutBuilder: (cur, prev) => Stack(
+                                      alignment: Alignment.centerRight,
+                                      children: [...prev, ?cur],
+                                    ),
+                                    transitionBuilder: (child, anim) {
+                                      final isGet =
+                                          child.key ==
+                                          const ValueKey("getStarted");
+                                      final slide = Tween<Offset>(
+                                        begin: isGet
+                                            ? const Offset(0.15, 0)
+                                            : const Offset(-0.15, 0),
+                                        end: Offset.zero,
+                                      ).animate(anim);
+                                      return FadeTransition(
+                                        opacity: anim,
+                                        child: SlideTransition(
+                                          position: slide,
+                                          child: child,
+                                        ),
+                                      );
+                                    },
+                                    child: _currentPage == pages.length - 1
+                                        ? ElevatedButton(
+                                            key: const ValueKey("getStarted"),
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: const Color(
+                                                0xFF1A237E,
+                                              ),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(28),
+                                              ),
+                                              padding: EdgeInsets.symmetric(
+                                                horizontal: isTablet ? 32 : 28,
+                                                vertical: 14,
+                                              ),
+                                              elevation: 6,
+                                            ),
+                                            onPressed: widget.onSignUpClick,
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Text(
+                                                  "Get Started",
+                                                  style: TextStyle(
+                                                    fontSize: btnLabelSz,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: Colors.white,
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 8),
+                                                const Icon(
+                                                  Icons.arrow_forward,
+                                                  color: Colors.white,
+                                                ),
+                                              ],
+                                            ),
+                                          )
+                                        : GestureDetector(
+                                            key: const ValueKey("arrow"),
+                                            onTap: () {
+                                              _animateArrow();
+                                              _controller.nextPage(
+                                                duration: const Duration(
+                                                  milliseconds: 500,
+                                                ),
+                                                curve: Curves.easeOutBack,
+                                              );
+                                            },
+                                            child: Container(
+                                              height: arrowSize,
+                                              width: arrowSize,
+                                              decoration: const BoxDecoration(
+                                                color: Color(0xFF1A237E),
+                                                shape: BoxShape.circle,
+                                              ),
+                                              child: ScaleTransition(
+                                                scale: _arrowScale,
+                                                child: const Icon(
+                                                  Icons.arrow_forward,
+                                                  color: Colors.white,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
-                ],
-              ),
+                );
+              },
             ),
           ),
         ),
