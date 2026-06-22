@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import '../../../core/widgets/responsive_page.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/theme/app_colors.dart';
@@ -312,35 +313,38 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
       isLoading: _saving,
       child: Scaffold(
         backgroundColor: const Color(0xFFF3F4F6),
-        body: SafeArea(
-          child: Column(
-            children: [
-              _buildHeader(width),
-              Expanded(
-                child: LoadingOverlay.bodyOrSkeleton(
-                  isLoading: _loading,
-                  layout: SkeletonLayout.editProfile,
-                  child: FadeTransition(
-                    opacity: _fadeAnim,
-                    child: SlideTransition(
-                      position: _slideAnim,
-                      child: SingleChildScrollView(
-                        physics: const BouncingScrollPhysics(),
-                        padding: EdgeInsets.fromLTRB(
-                          width * 0.04,
-                          width * 0.02,
-                          width * 0.04,
-                          width * 0.08,
+        body: ResponsivePageBody(
+          maxWidth: 600,
+          child: SafeArea(
+            child: Column(
+              children: [
+                _buildHeader(width),
+                Expanded(
+                  child: LoadingOverlay.bodyOrSkeleton(
+                    isLoading: _loading,
+                    layout: SkeletonLayout.editProfile,
+                    child: FadeTransition(
+                      opacity: _fadeAnim,
+                      child: SlideTransition(
+                        position: _slideAnim,
+                        child: SingleChildScrollView(
+                          physics: const BouncingScrollPhysics(),
+                          padding: EdgeInsets.fromLTRB(
+                            width * 0.04,
+                            width * 0.02,
+                            width * 0.04,
+                            width * 0.08,
+                          ),
+                          child: _isVerified
+                              ? _buildForm(width)
+                              : _buildNotVerifiedState(width),
                         ),
-                        child: _isVerified
-                            ? _buildForm(width)
-                            : _buildNotVerifiedState(width),
                       ),
                     ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

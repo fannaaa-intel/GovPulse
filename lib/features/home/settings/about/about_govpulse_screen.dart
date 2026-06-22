@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/widgets/responsive_page.dart';
 import '../../../../core/theme/app_colors.dart';
 
 class AboutGovPulseScreen extends StatefulWidget {
@@ -51,147 +52,149 @@ class _AboutGovPulseScreenState extends State<AboutGovPulseScreen>
     final w = MediaQuery.of(context).size.width;
     return Scaffold(
       backgroundColor: const Color(0xFFF3F4F6),
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Header is pinned — NOT part of the slide-up animation.
-            _buildHeader(w),
-            Expanded(
-              child: FadeTransition(
-                opacity: _fadeAnim,
-                child: SlideTransition(
-                  position: _slideAnim,
-                  child: SingleChildScrollView(
-                    physics: const BouncingScrollPhysics(),
-                    padding: EdgeInsets.fromLTRB(
-                      w * 0.04,
-                      w * 0.035,
-                      w * 0.04,
-                      w * 0.08,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildHeroCard(w),
-                        SizedBox(height: w * 0.05),
-                        _sectionLabel(w, 'WHAT IS GOVPULSE'),
-                        SizedBox(height: w * 0.02),
-                        _buildCard(w, [
-                          _buildBodyTile(
-                            w,
-                            icon: Icons.account_balance_outlined,
-                            color: AppColors.primaryBlue,
-                            title: 'Our Mission',
-                            body:
-                                'GovPulse is the official civic engagement platform of the Local Government Unit of Aparri, Cagayan. It bridges the gap between citizens and their local government — making public services more accessible, transparent, and responsive.',
-                          ),
-                          _buildBodyTile(
-                            w,
-                            icon: Icons.groups_outlined,
-                            color: AppColors.primaryBlue,
-                            title: 'Who It\'s For',
-                            body:
-                                'Built for every verified resident of Aparri, GovPulse gives citizens a direct line to their LGU — whether to report issues, track the status of concerns, join the community conversation, or stay informed about local events.',
-                            showDivider: false,
-                          ),
-                        ]),
-                        SizedBox(height: w * 0.05),
-                        _sectionLabel(w, 'FEATURES'),
-                        SizedBox(height: w * 0.02),
-                        _buildCard(w, [
-                          _buildBodyTile(
-                            w,
-                            icon: Icons.report_outlined,
-                            color: AppColors.primaryBlue,
-                            title: 'Report Issues',
-                            body:
-                                'Submit civic concerns with photos, location, and descriptions. Track the status of your reports in real time and receive updates from LGU staff.',
-                          ),
-                          _buildBodyTile(
-                            w,
-                            icon: Icons.forum_outlined,
-                            color: AppColors.green,
-                            title: 'Community Newsfeed',
-                            body:
-                                'Stay connected with your barangay through a scoped community feed. Share updates, read posts from neighbors, and engage with local announcements.',
-                          ),
-                          _buildBodyTile(
-                            w,
-                            icon: Icons.smart_toy_outlined,
-                            color: AppColors.primaryBlue,
-                            title: 'Kuya Gov AI Assistant',
-                            body:
-                                'Get instant answers about LGU services, requirements, and procedures through Kuya Gov — an AI-powered chat assistant available 24/7.',
-                          ),
-                          _buildBodyTile(
-                            w,
-                            icon: Icons.support_agent_rounded,
-                            color: AppColors.green,
-                            title: 'Live Agent Support',
-                            body:
-                                'Escalate concerns to a real LGU staff member when needed. Live agent sessions connect you directly to the right department for personalized assistance.',
-                          ),
-                          _buildBodyTile(
-                            w,
-                            icon: Icons.event_outlined,
-                            color: AppColors.orange,
-                            title: 'Events & Announcements',
-                            body:
-                                'Never miss a local event, emergency alert, or official LGU announcement. Featured events and news are surfaced directly on your home feed.',
-                          ),
-                          _buildBodyTile(
-                            w,
-                            icon: Icons.verified_outlined,
-                            color: AppColors.primaryBlue,
-                            title: 'Citizen Verification',
-                            body:
-                                'A secure identity verification flow ensures that GovPulse remains a trusted space for genuine residents of Aparri to engage with their local government.',
-                            showDivider: false,
-                          ),
-                        ]),
-                        SizedBox(height: w * 0.05),
-                        _sectionLabel(w, 'APP INFO'),
-                        SizedBox(height: w * 0.02),
-                        _buildCard(w, [
-                          _buildInfoTile(
-                            w,
-                            icon: Icons.tag_rounded,
-                            color: AppColors.primaryBlue,
-                            title: 'Version',
-                            value: 'v$_appVersion (Build $_buildNumber)',
-                          ),
-                          _buildInfoTile(
-                            w,
-                            icon: Icons.calendar_today_outlined,
-                            color: AppColors.primaryBlue,
-                            title: 'Release Date',
-                            value: _releaseDate,
-                          ),
-                          _buildInfoTile(
-                            w,
-                            icon: Icons.location_on_outlined,
-                            color: AppColors.green,
-                            title: 'Serving',
-                            value: 'Aparri, Cagayan, Philippines',
-                          ),
-                          _buildInfoTile(
-                            w,
-                            icon: Icons.code_rounded,
-                            color: AppColors.primaryBlue,
-                            title: 'Platform',
-                            value: 'Flutter · iOS · Android · Web',
-                            showDivider: false,
-                          ),
-                        ]),
-                        SizedBox(height: w * 0.05),
-                        _buildFooterCard(w),
-                      ],
+      body: ResponsivePageBody(
+        child: SafeArea(
+          child: Column(
+            children: [
+              // Header is pinned — NOT part of the slide-up animation.
+              _buildHeader(w),
+              Expanded(
+                child: FadeTransition(
+                  opacity: _fadeAnim,
+                  child: SlideTransition(
+                    position: _slideAnim,
+                    child: SingleChildScrollView(
+                      physics: const BouncingScrollPhysics(),
+                      padding: EdgeInsets.fromLTRB(
+                        w * 0.04,
+                        w * 0.035,
+                        w * 0.04,
+                        w * 0.08,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildHeroCard(w),
+                          SizedBox(height: w * 0.05),
+                          _sectionLabel(w, 'WHAT IS GOVPULSE'),
+                          SizedBox(height: w * 0.02),
+                          _buildCard(w, [
+                            _buildBodyTile(
+                              w,
+                              icon: Icons.account_balance_outlined,
+                              color: AppColors.primaryBlue,
+                              title: 'Our Mission',
+                              body:
+                                  'GovPulse is the official civic engagement platform of the Local Government Unit of Aparri, Cagayan. It bridges the gap between citizens and their local government — making public services more accessible, transparent, and responsive.',
+                            ),
+                            _buildBodyTile(
+                              w,
+                              icon: Icons.groups_outlined,
+                              color: AppColors.primaryBlue,
+                              title: 'Who It\'s For',
+                              body:
+                                  'Built for every verified resident of Aparri, GovPulse gives citizens a direct line to their LGU — whether to report issues, track the status of concerns, join the community conversation, or stay informed about local events.',
+                              showDivider: false,
+                            ),
+                          ]),
+                          SizedBox(height: w * 0.05),
+                          _sectionLabel(w, 'FEATURES'),
+                          SizedBox(height: w * 0.02),
+                          _buildCard(w, [
+                            _buildBodyTile(
+                              w,
+                              icon: Icons.report_outlined,
+                              color: AppColors.primaryBlue,
+                              title: 'Report Issues',
+                              body:
+                                  'Submit civic concerns with photos, location, and descriptions. Track the status of your reports in real time and receive updates from LGU staff.',
+                            ),
+                            _buildBodyTile(
+                              w,
+                              icon: Icons.forum_outlined,
+                              color: AppColors.green,
+                              title: 'Community Newsfeed',
+                              body:
+                                  'Stay connected with your barangay through a scoped community feed. Share updates, read posts from neighbors, and engage with local announcements.',
+                            ),
+                            _buildBodyTile(
+                              w,
+                              icon: Icons.smart_toy_outlined,
+                              color: AppColors.primaryBlue,
+                              title: 'Kuya Gov AI Assistant',
+                              body:
+                                  'Get instant answers about LGU services, requirements, and procedures through Kuya Gov — an AI-powered chat assistant available 24/7.',
+                            ),
+                            _buildBodyTile(
+                              w,
+                              icon: Icons.support_agent_rounded,
+                              color: AppColors.green,
+                              title: 'Live Agent Support',
+                              body:
+                                  'Escalate concerns to a real LGU staff member when needed. Live agent sessions connect you directly to the right department for personalized assistance.',
+                            ),
+                            _buildBodyTile(
+                              w,
+                              icon: Icons.event_outlined,
+                              color: AppColors.orange,
+                              title: 'Events & Announcements',
+                              body:
+                                  'Never miss a local event, emergency alert, or official LGU announcement. Featured events and news are surfaced directly on your home feed.',
+                            ),
+                            _buildBodyTile(
+                              w,
+                              icon: Icons.verified_outlined,
+                              color: AppColors.primaryBlue,
+                              title: 'Citizen Verification',
+                              body:
+                                  'A secure identity verification flow ensures that GovPulse remains a trusted space for genuine residents of Aparri to engage with their local government.',
+                              showDivider: false,
+                            ),
+                          ]),
+                          SizedBox(height: w * 0.05),
+                          _sectionLabel(w, 'APP INFO'),
+                          SizedBox(height: w * 0.02),
+                          _buildCard(w, [
+                            _buildInfoTile(
+                              w,
+                              icon: Icons.tag_rounded,
+                              color: AppColors.primaryBlue,
+                              title: 'Version',
+                              value: 'v$_appVersion (Build $_buildNumber)',
+                            ),
+                            _buildInfoTile(
+                              w,
+                              icon: Icons.calendar_today_outlined,
+                              color: AppColors.primaryBlue,
+                              title: 'Release Date',
+                              value: _releaseDate,
+                            ),
+                            _buildInfoTile(
+                              w,
+                              icon: Icons.location_on_outlined,
+                              color: AppColors.green,
+                              title: 'Serving',
+                              value: 'Aparri, Cagayan, Philippines',
+                            ),
+                            _buildInfoTile(
+                              w,
+                              icon: Icons.code_rounded,
+                              color: AppColors.primaryBlue,
+                              title: 'Platform',
+                              value: 'Flutter · iOS · Android · Web',
+                              showDivider: false,
+                            ),
+                          ]),
+                          SizedBox(height: w * 0.05),
+                          _buildFooterCard(w),
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

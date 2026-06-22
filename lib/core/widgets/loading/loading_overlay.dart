@@ -434,7 +434,35 @@ class _SkeletonScreen extends StatelessWidget {
       SkeletonLayout.events => const EventsSkeletonScreen(),
       SkeletonLayout.changePassword => const _ChangePasswordSkeletonScreen(),
     };
-    return Material(color: const Color(0xFFF3F4F6), child: body);
+    // Skeletons are designed mobile-first (everything is `w * 0.xx`). On wide
+    // tablet / desktop viewports we clamp to a phone-width column and centre it,
+    // so the shimmer blocks never stretch edge-to-edge. Overriding the
+    // MediaQuery size makes every inner `MediaQuery.of(context).size.width`
+    // read the clamped width, so all proportions stay phone-correct.
+    final mq = MediaQuery.of(context);
+    const double maxContentWidth = 480;
+    final double clampedWidth = mq.size.width > maxContentWidth
+        ? maxContentWidth
+        : mq.size.width;
+
+    final Widget sized = clampedWidth >= mq.size.width
+        ? body
+        : Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Spacer(),
+              SizedBox(
+                width: clampedWidth,
+                child: MediaQuery(
+                  data: mq.copyWith(size: Size(clampedWidth, mq.size.height)),
+                  child: body,
+                ),
+              ),
+              const Spacer(),
+            ],
+          );
+
+    return Material(color: const Color(0xFFF3F4F6), child: sized);
   }
 }
 

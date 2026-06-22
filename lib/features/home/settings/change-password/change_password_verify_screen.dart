@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import '../../../../core/widgets/responsive_page.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -257,76 +258,79 @@ class _ChangePasswordVerifyScreenState extends State<ChangePasswordVerifyScreen>
     return Scaffold(
       backgroundColor: Colors.white,
       resizeToAvoidBottomInset: true,
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildHeader(w),
-            Expanded(
-              child: FadeTransition(
-                opacity: _fadeAnim,
-                child: SlideTransition(
-                  position: _slideAnim,
-                  child: MobileFormShell(
-                    child: SingleChildScrollView(
-                      physics: const BouncingScrollPhysics(),
-                      padding: EdgeInsets.symmetric(horizontal: w * 0.06),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          SizedBox(height: w * 0.08),
-                          _buildAnimatedIcon(w),
-                          SizedBox(height: w * 0.07),
-                          Text(
-                            'Check your email',
-                            style: TextStyle(
-                              fontSize: w * 0.058,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.primaryBlue,
-                              letterSpacing: -0.3,
-                            ),
-                          ),
-                          SizedBox(height: w * 0.025),
-                          RichText(
-                            textAlign: TextAlign.center,
-                            text: TextSpan(
+      body: ResponsivePageBody(
+        maxWidth: 520,
+        child: SafeArea(
+          child: Column(
+            children: [
+              _buildHeader(w),
+              Expanded(
+                child: FadeTransition(
+                  opacity: _fadeAnim,
+                  child: SlideTransition(
+                    position: _slideAnim,
+                    child: MobileFormShell(
+                      child: SingleChildScrollView(
+                        physics: const BouncingScrollPhysics(),
+                        padding: EdgeInsets.symmetric(horizontal: w * 0.06),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            SizedBox(height: w * 0.08),
+                            _buildAnimatedIcon(w),
+                            SizedBox(height: w * 0.07),
+                            Text(
+                              'Check your email',
                               style: TextStyle(
-                                fontSize: w * 0.036,
-                                color: AppColors.hint,
-                                height: 1.5,
+                                fontSize: w * 0.058,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.primaryBlue,
+                                letterSpacing: -0.3,
                               ),
-                              children: [
-                                const TextSpan(
-                                  text: 'We sent a 6-digit code to\n',
-                                ),
-                                TextSpan(
-                                  text: _maskedEmail,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    color: AppColors.primaryBlue,
-                                  ),
-                                ),
-                              ],
                             ),
-                          ),
-                          SizedBox(height: w * 0.08),
-                          _buildOtpBoxes(w),
-                          SizedBox(height: w * 0.05),
-                          _buildResendRow(w),
-                          SizedBox(height: w * 0.08),
-                          _buildVerifyButton(w),
-                          SizedBox(height: w * 0.06),
-                          Divider(color: AppColors.stroke),
-                          SizedBox(height: w * 0.04),
-                          _buildResendLink(w),
-                          SizedBox(height: w * 0.05),
-                        ],
+                            SizedBox(height: w * 0.025),
+                            RichText(
+                              textAlign: TextAlign.center,
+                              text: TextSpan(
+                                style: TextStyle(
+                                  fontSize: w * 0.036,
+                                  color: AppColors.hint,
+                                  height: 1.5,
+                                ),
+                                children: [
+                                  const TextSpan(
+                                    text: 'We sent a 6-digit code to\n',
+                                  ),
+                                  TextSpan(
+                                    text: _maskedEmail,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.primaryBlue,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            SizedBox(height: w * 0.08),
+                            _buildOtpBoxes(w),
+                            SizedBox(height: w * 0.05),
+                            _buildResendRow(w),
+                            SizedBox(height: w * 0.08),
+                            _buildVerifyButton(w),
+                            SizedBox(height: w * 0.06),
+                            Divider(color: AppColors.stroke),
+                            SizedBox(height: w * 0.04),
+                            _buildResendLink(w),
+                            SizedBox(height: w * 0.05),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

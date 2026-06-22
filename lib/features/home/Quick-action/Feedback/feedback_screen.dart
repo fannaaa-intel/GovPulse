@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import '../../../../core/widgets/responsive_page.dart';
 import '../../../../core/widgets/modal/media_picker_sheet.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:image_picker/image_picker.dart';
@@ -928,43 +929,46 @@ class _FeedbackScreenState extends State<FeedbackScreen>
         behavior: HitTestBehavior.translucent,
         child: Scaffold(
           backgroundColor: const Color(0xFFF3F4F6),
-          body: SafeArea(
-            child: Column(
-              children: [
-                _buildHeader(width),
-                Expanded(
-                  child: SingleChildScrollView(
-                    physics: const BouncingScrollPhysics(),
-                    keyboardDismissBehavior:
-                        ScrollViewKeyboardDismissBehavior.onDrag,
-                    padding: EdgeInsets.only(bottom: width * 0.06),
-                    child: Column(
-                      children: [
-                        SizedBox(height: width * 0.04),
-                        _animated(0, _buildOfficeSection(width)),
-                        SizedBox(height: width * 0.04),
-                        _animated(1, _buildServiceSection(width)),
-                        SizedBox(height: width * 0.04),
-                        _animated(2, _buildStarSection(width)),
-                        SizedBox(height: width * 0.04),
-                        _animated(3, _buildAspectSection(width)),
-                        SizedBox(height: width * 0.04),
-                        _animated(4, _buildCommentSection(width)),
-                        SizedBox(height: width * 0.04),
-                        _animated(5, _buildDateSection(width)),
-                        SizedBox(height: width * 0.04),
-                        _animated(6, _buildPhotoSection(width)),
-                        SizedBox(height: width * 0.04),
-                        _animated(7, _buildAnonymousSection(width)),
-                        SizedBox(height: width * 0.035),
-                        _animated(7, _buildDisclaimer(width)),
-                        SizedBox(height: width * 0.045),
-                        _animated(8, _buildSubmitButton(width)),
-                      ],
+          body: ResponsivePageBody(
+            maxWidth: 640,
+            child: SafeArea(
+              child: Column(
+                children: [
+                  _buildHeader(width),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      physics: const BouncingScrollPhysics(),
+                      keyboardDismissBehavior:
+                          ScrollViewKeyboardDismissBehavior.onDrag,
+                      padding: EdgeInsets.only(bottom: width * 0.06),
+                      child: Column(
+                        children: [
+                          SizedBox(height: width * 0.04),
+                          _animated(0, _buildOfficeSection(width)),
+                          SizedBox(height: width * 0.04),
+                          _animated(1, _buildServiceSection(width)),
+                          SizedBox(height: width * 0.04),
+                          _animated(2, _buildStarSection(width)),
+                          SizedBox(height: width * 0.04),
+                          _animated(3, _buildAspectSection(width)),
+                          SizedBox(height: width * 0.04),
+                          _animated(4, _buildCommentSection(width)),
+                          SizedBox(height: width * 0.04),
+                          _animated(5, _buildDateSection(width)),
+                          SizedBox(height: width * 0.04),
+                          _animated(6, _buildPhotoSection(width)),
+                          SizedBox(height: width * 0.04),
+                          _animated(7, _buildAnonymousSection(width)),
+                          SizedBox(height: width * 0.035),
+                          _animated(7, _buildDisclaimer(width)),
+                          SizedBox(height: width * 0.045),
+                          _animated(8, _buildSubmitButton(width)),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

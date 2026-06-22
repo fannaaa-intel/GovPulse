@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import '../../../../core/widgets/responsive_page.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
@@ -107,17 +108,20 @@ class _EventDetailScreenState extends State<EventDetailScreen>
 
     return Scaffold(
       backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildHeader(w),
-            Expanded(
-              child: SlideTransition(
-                position: _slideAnim,
-                child: _buildBody(w),
+      body: ResponsivePageBody(
+        maxWidth: 760,
+        child: SafeArea(
+          child: Column(
+            children: [
+              _buildHeader(w),
+              Expanded(
+                child: SlideTransition(
+                  position: _slideAnim,
+                  child: _buildBody(w),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

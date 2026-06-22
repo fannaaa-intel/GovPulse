@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/widgets/responsive_page.dart';
 import '../../../../core/services/chat_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/Home/Chat-agent/chat_agent_info_bar.dart';
@@ -284,29 +285,32 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
     final width = MediaQuery.of(context).size.width;
     return Scaffold(
       backgroundColor: AppColors.inputBg,
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildHeader(width),
-            ChatAgentInfoBar(width: width),
-            Expanded(child: _buildMessageList(width)),
-            // AFTER
-            if (_svc.showBackToMenu && _svc == ChatService.I)
-              _buildBackToMenu(width),
-            if (_svc.showIntentChips && _svc == ChatService.I)
-              _buildIntentChips(width),
-            if (_svc.showCategoryChips && _svc == ChatService.I)
-              _buildCategoryChips(width),
-            if (_svc.isTerminal)
-              _buildTerminalCard(width)
-            else
-              ChatInputBar(
-                width: width,
-                controller: _inputCtrl,
-                focusNode: _focusNode,
-                onSend: _sendMessage,
-              ),
-          ],
+      body: ResponsivePageBody(
+        maxWidth: 600,
+        child: SafeArea(
+          child: Column(
+            children: [
+              _buildHeader(width),
+              ChatAgentInfoBar(width: width),
+              Expanded(child: _buildMessageList(width)),
+              // AFTER
+              if (_svc.showBackToMenu && _svc == ChatService.I)
+                _buildBackToMenu(width),
+              if (_svc.showIntentChips && _svc == ChatService.I)
+                _buildIntentChips(width),
+              if (_svc.showCategoryChips && _svc == ChatService.I)
+                _buildCategoryChips(width),
+              if (_svc.isTerminal)
+                _buildTerminalCard(width)
+              else
+                ChatInputBar(
+                  width: width,
+                  controller: _inputCtrl,
+                  focusNode: _focusNode,
+                  onSend: _sendMessage,
+                ),
+            ],
+          ),
         ),
       ),
     );

@@ -413,29 +413,43 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
         slivers: [
           _buildSliverAppBar(w),
           SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(w * .04, w * .04, w * .04, w * .12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _fadeSlide(0, _buildHeroCard(w)),
-                  SizedBox(height: w * .045),
-                  _fadeSlide(1, _buildSectionLabel(w, 'Processing timeline')),
-                  SizedBox(height: w * .03),
-                  _fadeSlide(2, _buildTimeline(w)),
-                  SizedBox(height: w * .045),
-                  _fadeSlide(3, _buildSectionLabel(w, 'Report details')),
-                  SizedBox(height: w * .03),
-                  _fadeSlide(4, _buildDetailsCard(w)),
-                  if (_isResolved) ...[
-                    SizedBox(height: w * .04),
-                    _fadeSlide(5, _buildThankYouBanner(w)),
-                  ],
-                  if (_isRejected) ...[
-                    SizedBox(height: w * .04),
-                    _fadeSlide(5, _buildRejectedBanner(w)),
-                  ],
-                ],
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 760),
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    w * .04,
+                    w * .04,
+                    w * .04,
+                    w * .12,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _fadeSlide(0, _buildHeroCard(w)),
+                      SizedBox(height: w * .045),
+                      _fadeSlide(
+                        1,
+                        _buildSectionLabel(w, 'Processing timeline'),
+                      ),
+                      SizedBox(height: w * .03),
+                      _fadeSlide(2, _buildTimeline(w)),
+                      SizedBox(height: w * .045),
+                      _fadeSlide(3, _buildSectionLabel(w, 'Report details')),
+                      SizedBox(height: w * .03),
+                      _fadeSlide(4, _buildDetailsCard(w)),
+                      if (_isResolved) ...[
+                        SizedBox(height: w * .04),
+                        _fadeSlide(5, _buildThankYouBanner(w)),
+                      ],
+                      if (_isRejected) ...[
+                        SizedBox(height: w * .04),
+                        _fadeSlide(5, _buildRejectedBanner(w)),
+                      ],
+                    ],
+                  ),
+                ),
               ),
             ),
           ),
