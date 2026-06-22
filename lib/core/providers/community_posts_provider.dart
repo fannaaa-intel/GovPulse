@@ -126,9 +126,6 @@ class CommunityPostsProvider extends ChangeNotifier {
               if (!alreadyReal && !replies.any((r) => r['id'] == tempId)) {
                 replies.add(oc);
               }
-              if (!alreadyReal && !replies.any((r) => r['id'] == tempId)) {
-                replies.add(oc);
-              }
               merged[i] = {...merged[i], 'replies': replies};
               break;
             }
@@ -353,6 +350,10 @@ class CommunityPostsProvider extends ChangeNotifier {
           .select()
           .eq('status', 'approved');
 
+      if (_barangay != null && _barangay!.isNotEmpty) {
+        query = query.eq('barangay', _barangay!);
+      }
+
       final rows = await query.order('created_at', ascending: false);
 
       final postIds = rows.map((r) => r['id'] as String).toList();
@@ -494,6 +495,10 @@ class CommunityPostsProvider extends ChangeNotifier {
             .from('community_feed')
             .select()
             .eq('status', 'approved');
+
+        if (_barangay != null && _barangay!.isNotEmpty) {
+          query = query.eq('barangay', _barangay!);
+        }
 
         final rows = await query.order('created_at', ascending: false);
 
