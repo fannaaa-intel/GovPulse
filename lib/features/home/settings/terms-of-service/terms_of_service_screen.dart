@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/widgets/responsive_page.dart';
 import '../../../../core/theme/app_colors.dart';
 
 class TermsOfServiceScreen extends StatefulWidget {
@@ -47,147 +48,149 @@ class _TermsOfServiceScreenState extends State<TermsOfServiceScreen>
     final w = MediaQuery.of(context).size.width;
     return Scaffold(
       backgroundColor: const Color(0xFFF3F4F6),
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Header is pinned — NOT part of the slide-up animation.
-            _buildHeader(w),
-            Expanded(
-              child: FadeTransition(
-                opacity: _fadeAnim,
-                child: SlideTransition(
-                  position: _slideAnim,
-                  child: SingleChildScrollView(
-                    physics: const BouncingScrollPhysics(),
-                    padding: EdgeInsets.fromLTRB(
-                      w * 0.04,
-                      w * 0.035,
-                      w * 0.04,
-                      w * 0.08,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildIntroCard(w),
-                        SizedBox(height: w * 0.05),
-                        _sectionLabel(w, 'ACCEPTANCE OF TERMS'),
-                        SizedBox(height: w * 0.02),
-                        _buildCard(w, [
-                          _buildBodyTile(
-                            w,
-                            icon: Icons.handshake_outlined,
-                            color: AppColors.primaryBlue,
-                            title: 'Agreement to Use',
-                            body:
-                                'By accessing or using GovPulse, you agree to be bound by these Terms of Service and all applicable laws. If you do not agree, you are not authorized to use this application.',
-                          ),
-                          _buildBodyTile(
-                            w,
-                            icon: Icons.update_rounded,
-                            color: AppColors.primaryBlue,
-                            title: 'Changes to Terms',
-                            body:
-                                'The Local Government Unit of Aparri, Cagayan reserves the right to modify these terms at any time. Continued use of the application after changes are posted constitutes your acceptance of the revised terms.',
-                            showDivider: false,
-                          ),
-                        ]),
-                        SizedBox(height: w * 0.05),
-                        _sectionLabel(w, 'ELIGIBILITY & ACCOUNTS'),
-                        SizedBox(height: w * 0.02),
-                        _buildCard(w, [
-                          _buildBodyTile(
-                            w,
-                            icon: Icons.person_outline_rounded,
-                            color: AppColors.green,
-                            title: 'Who May Register',
-                            body:
-                                'GovPulse is available to residents of Aparri, Cagayan who are at least 18 years of age and possess a valid government-issued ID for identity verification.',
-                          ),
-                          _buildBodyTile(
-                            w,
-                            icon: Icons.verified_user_outlined,
-                            color: AppColors.green,
-                            title: 'Account Responsibility',
-                            body:
-                                'You are responsible for maintaining the confidentiality of your account credentials and for all activities that occur under your account. Notify the LGU immediately of any unauthorized access.',
-                            showDivider: false,
-                          ),
-                        ]),
-                        SizedBox(height: w * 0.05),
-                        _sectionLabel(w, 'ACCEPTABLE USE'),
-                        SizedBox(height: w * 0.02),
-                        _buildCard(w, [
-                          _buildBodyTile(
-                            w,
-                            icon: Icons.thumb_up_alt_outlined,
-                            color: AppColors.primaryBlue,
-                            title: 'Permitted Activities',
-                            body:
-                                'You may use GovPulse to submit legitimate civic concerns, view community news, engage with LGU services, and interact with other verified citizens in a respectful manner.',
-                          ),
-                          _buildBodyTile(
-                            w,
-                            icon: Icons.block_outlined,
-                            color: AppColors.red,
-                            title: 'Prohibited Activities',
-                            body:
-                                'You must not submit false or misleading reports, impersonate other persons, engage in harassment or hate speech, attempt to gain unauthorized access to LGU systems, or use the application for any unlawful purpose.',
-                            showDivider: false,
-                          ),
-                        ]),
-                        SizedBox(height: w * 0.05),
-                        _sectionLabel(w, 'CONTENT & PRIVACY'),
-                        SizedBox(height: w * 0.02),
-                        _buildCard(w, [
-                          _buildBodyTile(
-                            w,
-                            icon: Icons.photo_library_outlined,
-                            color: AppColors.orange,
-                            title: 'User-Submitted Content',
-                            body:
-                                'By submitting reports, photos, or community posts, you grant the LGU a non-exclusive license to use that content for public service purposes. You retain ownership of your content.',
-                          ),
-                          _buildBodyTile(
-                            w,
-                            icon: Icons.lock_outline_rounded,
-                            color: AppColors.orange,
-                            title: 'Data & Privacy',
-                            body:
-                                'Your personal information is collected and processed in accordance with our Privacy Policy and the Philippine Data Privacy Act of 2012 (Republic Act No. 10173). We do not sell your personal data to third parties.',
-                            showDivider: false,
-                          ),
-                        ]),
-                        SizedBox(height: w * 0.05),
-                        _sectionLabel(w, 'LIABILITY & ENFORCEMENT'),
-                        SizedBox(height: w * 0.02),
-                        _buildCard(w, [
-                          _buildBodyTile(
-                            w,
-                            icon: Icons.gavel_rounded,
-                            color: AppColors.primaryBlue,
-                            title: 'Limitation of Liability',
-                            body:
-                                'The LGU of Aparri shall not be liable for any indirect, incidental, or consequential damages arising from your use of GovPulse. The application is provided "as is" without warranty of any kind.',
-                          ),
-                          _buildBodyTile(
-                            w,
-                            icon: Icons.warning_amber_rounded,
-                            color: AppColors.red,
-                            title: 'Account Suspension',
-                            body:
-                                'The LGU reserves the right to suspend or terminate accounts that violate these terms, submit fraudulent reports, or engage in conduct detrimental to the civic community.',
-                            showDivider: false,
-                          ),
-                        ]),
-                        SizedBox(height: w * 0.05),
-                        _buildEffectiveNote(w),
-                      ],
+      body: ResponsivePageBody(
+        child: SafeArea(
+          child: Column(
+            children: [
+              // Header is pinned — NOT part of the slide-up animation.
+              _buildHeader(w),
+              Expanded(
+                child: FadeTransition(
+                  opacity: _fadeAnim,
+                  child: SlideTransition(
+                    position: _slideAnim,
+                    child: SingleChildScrollView(
+                      physics: const BouncingScrollPhysics(),
+                      padding: EdgeInsets.fromLTRB(
+                        w * 0.04,
+                        w * 0.035,
+                        w * 0.04,
+                        w * 0.08,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildIntroCard(w),
+                          SizedBox(height: w * 0.05),
+                          _sectionLabel(w, 'ACCEPTANCE OF TERMS'),
+                          SizedBox(height: w * 0.02),
+                          _buildCard(w, [
+                            _buildBodyTile(
+                              w,
+                              icon: Icons.handshake_outlined,
+                              color: AppColors.primaryBlue,
+                              title: 'Agreement to Use',
+                              body:
+                                  'By accessing or using GovPulse, you agree to be bound by these Terms of Service and all applicable laws. If you do not agree, you are not authorized to use this application.',
+                            ),
+                            _buildBodyTile(
+                              w,
+                              icon: Icons.update_rounded,
+                              color: AppColors.primaryBlue,
+                              title: 'Changes to Terms',
+                              body:
+                                  'The Local Government Unit of Aparri, Cagayan reserves the right to modify these terms at any time. Continued use of the application after changes are posted constitutes your acceptance of the revised terms.',
+                              showDivider: false,
+                            ),
+                          ]),
+                          SizedBox(height: w * 0.05),
+                          _sectionLabel(w, 'ELIGIBILITY & ACCOUNTS'),
+                          SizedBox(height: w * 0.02),
+                          _buildCard(w, [
+                            _buildBodyTile(
+                              w,
+                              icon: Icons.person_outline_rounded,
+                              color: AppColors.green,
+                              title: 'Who May Register',
+                              body:
+                                  'GovPulse is available to residents of Aparri, Cagayan who are at least 18 years of age and possess a valid government-issued ID for identity verification.',
+                            ),
+                            _buildBodyTile(
+                              w,
+                              icon: Icons.verified_user_outlined,
+                              color: AppColors.green,
+                              title: 'Account Responsibility',
+                              body:
+                                  'You are responsible for maintaining the confidentiality of your account credentials and for all activities that occur under your account. Notify the LGU immediately of any unauthorized access.',
+                              showDivider: false,
+                            ),
+                          ]),
+                          SizedBox(height: w * 0.05),
+                          _sectionLabel(w, 'ACCEPTABLE USE'),
+                          SizedBox(height: w * 0.02),
+                          _buildCard(w, [
+                            _buildBodyTile(
+                              w,
+                              icon: Icons.thumb_up_alt_outlined,
+                              color: AppColors.primaryBlue,
+                              title: 'Permitted Activities',
+                              body:
+                                  'You may use GovPulse to submit legitimate civic concerns, view community news, engage with LGU services, and interact with other verified citizens in a respectful manner.',
+                            ),
+                            _buildBodyTile(
+                              w,
+                              icon: Icons.block_outlined,
+                              color: AppColors.red,
+                              title: 'Prohibited Activities',
+                              body:
+                                  'You must not submit false or misleading reports, impersonate other persons, engage in harassment or hate speech, attempt to gain unauthorized access to LGU systems, or use the application for any unlawful purpose.',
+                              showDivider: false,
+                            ),
+                          ]),
+                          SizedBox(height: w * 0.05),
+                          _sectionLabel(w, 'CONTENT & PRIVACY'),
+                          SizedBox(height: w * 0.02),
+                          _buildCard(w, [
+                            _buildBodyTile(
+                              w,
+                              icon: Icons.photo_library_outlined,
+                              color: AppColors.orange,
+                              title: 'User-Submitted Content',
+                              body:
+                                  'By submitting reports, photos, or community posts, you grant the LGU a non-exclusive license to use that content for public service purposes. You retain ownership of your content.',
+                            ),
+                            _buildBodyTile(
+                              w,
+                              icon: Icons.lock_outline_rounded,
+                              color: AppColors.orange,
+                              title: 'Data & Privacy',
+                              body:
+                                  'Your personal information is collected and processed in accordance with our Privacy Policy and the Philippine Data Privacy Act of 2012 (Republic Act No. 10173). We do not sell your personal data to third parties.',
+                              showDivider: false,
+                            ),
+                          ]),
+                          SizedBox(height: w * 0.05),
+                          _sectionLabel(w, 'LIABILITY & ENFORCEMENT'),
+                          SizedBox(height: w * 0.02),
+                          _buildCard(w, [
+                            _buildBodyTile(
+                              w,
+                              icon: Icons.gavel_rounded,
+                              color: AppColors.primaryBlue,
+                              title: 'Limitation of Liability',
+                              body:
+                                  'The LGU of Aparri shall not be liable for any indirect, incidental, or consequential damages arising from your use of GovPulse. The application is provided "as is" without warranty of any kind.',
+                            ),
+                            _buildBodyTile(
+                              w,
+                              icon: Icons.warning_amber_rounded,
+                              color: AppColors.red,
+                              title: 'Account Suspension',
+                              body:
+                                  'The LGU reserves the right to suspend or terminate accounts that violate these terms, submit fraudulent reports, or engage in conduct detrimental to the civic community.',
+                              showDivider: false,
+                            ),
+                          ]),
+                          SizedBox(height: w * 0.05),
+                          _buildEffectiveNote(w),
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

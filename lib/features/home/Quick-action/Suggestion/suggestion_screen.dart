@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/widgets/responsive_page.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/modal/media_picker_sheet.dart';
 import 'package:image_picker/image_picker.dart';
@@ -450,37 +451,40 @@ class _SuggestionScreenState extends State<SuggestionScreen>
         behavior: HitTestBehavior.translucent,
         child: Scaffold(
           backgroundColor: const Color(0xFFF3F4F6),
-          body: SafeArea(
-            child: Column(
-              children: [
-                _buildHeader(width),
-                Expanded(
-                  child: SingleChildScrollView(
-                    physics: const BouncingScrollPhysics(),
-                    keyboardDismissBehavior:
-                        ScrollViewKeyboardDismissBehavior.onDrag,
-                    padding: EdgeInsets.only(bottom: width * 0.06),
-                    child: Column(
-                      children: [
-                        SizedBox(height: width * 0.04),
-                        _animated(0, _buildCategorySection(width)),
-                        SizedBox(height: width * 0.04),
-                        _animated(1, _buildLocationSection(width)),
-                        SizedBox(height: width * 0.04),
-                        _animated(2, _buildDetailsSection(width)),
-                        SizedBox(height: width * 0.04),
-                        _animated(3, _buildAttachSection(width)),
-                        SizedBox(height: width * 0.04),
-                        _animated(4, _buildAnonymousSection(width)),
-                        SizedBox(height: width * 0.035),
-                        _animated(5, _buildDisclaimer(width)),
-                        SizedBox(height: width * 0.045),
-                        _animated(5, _buildSubmitButton(width)),
-                      ],
+          body: ResponsivePageBody(
+            maxWidth: 640,
+            child: SafeArea(
+              child: Column(
+                children: [
+                  _buildHeader(width),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      physics: const BouncingScrollPhysics(),
+                      keyboardDismissBehavior:
+                          ScrollViewKeyboardDismissBehavior.onDrag,
+                      padding: EdgeInsets.only(bottom: width * 0.06),
+                      child: Column(
+                        children: [
+                          SizedBox(height: width * 0.04),
+                          _animated(0, _buildCategorySection(width)),
+                          SizedBox(height: width * 0.04),
+                          _animated(1, _buildLocationSection(width)),
+                          SizedBox(height: width * 0.04),
+                          _animated(2, _buildDetailsSection(width)),
+                          SizedBox(height: width * 0.04),
+                          _animated(3, _buildAttachSection(width)),
+                          SizedBox(height: width * 0.04),
+                          _animated(4, _buildAnonymousSection(width)),
+                          SizedBox(height: width * 0.035),
+                          _animated(5, _buildDisclaimer(width)),
+                          SizedBox(height: width * 0.045),
+                          _animated(5, _buildSubmitButton(width)),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

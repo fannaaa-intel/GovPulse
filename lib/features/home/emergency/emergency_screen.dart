@@ -8,7 +8,7 @@ import 'package:android_intent_plus/android_intent.dart';
 import 'package:android_intent_plus/flag.dart';
 import '../../../../core/network/network_wrapper.dart';
 
-import '../../../core/widgets/Home/nav/app_bottom_nav.dart';
+import '../../../core/widgets/Home/nav/responsive_nav_scaffold.dart';
 import 'dart:io';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -394,8 +394,11 @@ class _EmergencyScreenState extends State<EmergencyScreen>
   @override
   Widget build(BuildContext context) {
     final w = MediaQuery.of(context).size.width;
-    final scaffold = Scaffold(
-      extendBody: true,
+    final scaffold = ResponsiveNavScaffold(
+      showNav: widget.username.isNotEmpty,
+      currentIndex: 3,
+      username: widget.username,
+      isVerified: widget.isVerified,
       backgroundColor: _C.pageBg,
       body: SafeArea(
         child: Column(
@@ -427,14 +430,6 @@ class _EmergencyScreenState extends State<EmergencyScreen>
           ],
         ),
       ),
-      bottomNavigationBar: widget.username.isEmpty
-          ? null
-          : AppBottomNav(
-              width: w,
-              currentIndex: 3,
-              username: widget.username,
-              isVerified: widget.isVerified,
-            ),
     );
 
     if (widget.username.isEmpty) return scaffold;

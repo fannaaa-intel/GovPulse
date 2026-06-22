@@ -4,7 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/loading/loading_overlay.dart';
 import '../../../core/widgets/modal/verification_required_dialog.dart';
-import '../../../core/widgets/Home/nav/app_bottom_nav.dart';
+import '../../../core/widgets/Home/nav/responsive_nav_scaffold.dart';
 import '../../../core/services/chat_service.dart';
 import '../../../core/widgets/Home/Chat-bubbles/home_chat_bubble.dart';
 import '../../../core/providers/user_profile_provider.dart';
@@ -311,9 +311,15 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
 
     final badge = _statusBadgeFor(verifStatus);
 
-    return Scaffold(
-      extendBody: true,
+    return ResponsiveNavScaffold(
+      currentIndex: 4,
+      username: widget.username,
+      isVerified: verifStatus == 'approved',
       backgroundColor: const Color(0xFFF3F4F6),
+      fullName: fullName,
+      facePhotoUrl: facePhotoUrl,
+      verifStatus: profile?.verifStatus,
+      onLogout: (_) => _confirmLogout(),
       body: SafeArea(
         child: Column(
           children: [
@@ -373,12 +379,6 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
             ),
           ],
         ),
-      ),
-      bottomNavigationBar: AppBottomNav(
-        width: width,
-        currentIndex: 4,
-        username: widget.username,
-        isVerified: verifStatus == 'approved',
       ),
     );
   }

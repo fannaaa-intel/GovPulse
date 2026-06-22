@@ -10,7 +10,7 @@ import '../../../core/widgets/Home/Newsfeed/comment_item.dart';
 import '../../../core/widgets/Home/Newsfeed/comments_sheet.dart';
 import '../../../core/widgets/loading/loading_overlay.dart';
 import '../../../core/widgets/Home/Newsfeed/rate_limit_dialogs.dart';
-import '../../../core/widgets/Home/nav/app_bottom_nav.dart';
+import '../../../core/widgets/Home/nav/responsive_nav_scaffold.dart';
 
 enum PostFilter {
   latest('Latest', null),
@@ -538,8 +538,12 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
           });
         }
       },
-      child: Scaffold(
-        extendBody: true,
+      child: ResponsiveNavScaffold(
+        showNav: !widget.isGuest,
+        currentIndex: _navIndex,
+        username: widget.username,
+        isVerified: _isVerified,
+        userBarangay: widget.userBarangay,
         backgroundColor: const Color(0xFFF3F4F6),
         body: SafeArea(
           child: Column(
@@ -580,15 +584,6 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
             ],
           ),
         ),
-        bottomNavigationBar: widget.isGuest
-            ? null
-            : AppBottomNav(
-                width: width,
-                currentIndex: _navIndex,
-                username: widget.username,
-                isVerified: _isVerified,
-                userBarangay: widget.userBarangay,
-              ),
       ),
     );
   }

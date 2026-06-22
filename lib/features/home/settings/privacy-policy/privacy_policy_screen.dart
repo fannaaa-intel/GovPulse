@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/widgets/responsive_page.dart';
 import '../../../../core/theme/app_colors.dart';
 
 class PrivacyPolicyScreen extends StatefulWidget {
@@ -47,179 +48,181 @@ class _PrivacyPolicyScreenState extends State<PrivacyPolicyScreen>
     final w = MediaQuery.of(context).size.width;
     return Scaffold(
       backgroundColor: const Color(0xFFF3F4F6),
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Header is pinned — NOT part of the slide-up animation.
-            _buildHeader(w),
-            Expanded(
-              child: FadeTransition(
-                opacity: _fadeAnim,
-                child: SlideTransition(
-                  position: _slideAnim,
-                  child: SingleChildScrollView(
-                    physics: const BouncingScrollPhysics(),
-                    padding: EdgeInsets.fromLTRB(
-                      w * 0.04,
-                      w * 0.035,
-                      w * 0.04,
-                      w * 0.08,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildIntroCard(w),
-                        SizedBox(height: w * 0.05),
-                        _sectionLabel(w, 'INFORMATION WE COLLECT'),
-                        SizedBox(height: w * 0.02),
-                        _buildCard(w, [
-                          _buildBodyTile(
-                            w,
-                            icon: Icons.person_outline_rounded,
-                            color: AppColors.primaryBlue,
-                            title: 'Personal Information',
-                            body:
-                                'When you register, we collect your full name, email address, phone number, date of birth, and home address to create and verify your citizen account.',
-                          ),
-                          _buildBodyTile(
-                            w,
-                            icon: Icons.badge_outlined,
-                            color: AppColors.primaryBlue,
-                            title: 'Identity Verification Data',
-                            body:
-                                'To verify your identity, we collect a government-issued ID image and a face scan photo. These are stored securely and used solely for verification purposes.',
-                          ),
-                          _buildBodyTile(
-                            w,
-                            icon: Icons.photo_camera_outlined,
-                            color: AppColors.primaryBlue,
-                            title: 'User-Generated Content',
-                            body:
-                                'Reports, suggestions, feedback, community posts, and any media you upload (photos, files) are collected and stored as part of your civic activity record.',
-                            showDivider: false,
-                          ),
-                        ]),
-                        SizedBox(height: w * 0.05),
-                        _sectionLabel(w, 'HOW WE USE YOUR INFORMATION'),
-                        SizedBox(height: w * 0.02),
-                        _buildCard(w, [
-                          _buildBodyTile(
-                            w,
-                            icon: Icons.account_balance_outlined,
-                            color: AppColors.green,
-                            title: 'Service Delivery',
-                            body:
-                                'Your information is used to operate GovPulse, process your civic submissions, facilitate LGU responses, and provide you with relevant notifications and updates.',
-                          ),
-                          _buildBodyTile(
-                            w,
-                            icon: Icons.insights_rounded,
-                            color: AppColors.green,
-                            title: 'Service Improvement',
-                            body:
-                                'Aggregated and anonymized data may be used to analyze usage patterns, improve application features, and enhance the quality of public services delivered by the LGU.',
-                          ),
-                          _buildBodyTile(
-                            w,
-                            icon: Icons.notifications_none_rounded,
-                            color: AppColors.green,
-                            title: 'Communications',
-                            body:
-                                'We may use your contact details to send you status updates on your reports or suggestions, important announcements from the LGU, or alerts relevant to your barangay.',
-                            showDivider: false,
-                          ),
-                        ]),
-                        SizedBox(height: w * 0.05),
-                        _sectionLabel(w, 'DATA SHARING & DISCLOSURE'),
-                        SizedBox(height: w * 0.02),
-                        _buildCard(w, [
-                          _buildBodyTile(
-                            w,
-                            icon: Icons.share_outlined,
-                            color: AppColors.orange,
-                            title: 'Within the LGU',
-                            body:
-                                'Your submissions may be shared with relevant LGU departments and barangay officials solely for the purpose of processing and responding to your civic concerns.',
-                          ),
-                          _buildBodyTile(
-                            w,
-                            icon: Icons.business_outlined,
-                            color: AppColors.orange,
-                            title: 'Third-Party Services',
-                            body:
-                                'We use trusted third-party providers (such as cloud infrastructure and identity verification services) who process data strictly on our behalf and under confidentiality agreements.',
-                          ),
-                          _buildBodyTile(
-                            w,
-                            icon: Icons.gavel_rounded,
-                            color: AppColors.orange,
-                            title: 'Legal Requirements',
-                            body:
-                                'We may disclose your information if required by Philippine law, court order, or other governmental authority, or where necessary to protect the rights and safety of others.',
-                            showDivider: false,
-                          ),
-                        ]),
-                        SizedBox(height: w * 0.05),
-                        _sectionLabel(w, 'DATA RETENTION & SECURITY'),
-                        SizedBox(height: w * 0.02),
-                        _buildCard(w, [
-                          _buildBodyTile(
-                            w,
-                            icon: Icons.lock_outline_rounded,
-                            color: AppColors.primaryBlue,
-                            title: 'Security Measures',
-                            body:
-                                'We implement industry-standard security measures including encrypted storage, row-level access controls, and secure transmission protocols to protect your personal data.',
-                          ),
-                          _buildBodyTile(
-                            w,
-                            icon: Icons.history_rounded,
-                            color: AppColors.primaryBlue,
-                            title: 'Retention Period',
-                            body:
-                                'Your account data is retained for as long as your account remains active. Upon account deletion, personal data is removed within 30 days, except where retention is required by law.',
-                            showDivider: false,
-                          ),
-                        ]),
-                        SizedBox(height: w * 0.05),
-                        _sectionLabel(w, 'YOUR RIGHTS'),
-                        SizedBox(height: w * 0.02),
-                        _buildCard(w, [
-                          _buildBodyTile(
-                            w,
-                            icon: Icons.visibility_outlined,
-                            color: AppColors.green,
-                            title: 'Right to Access',
-                            body:
-                                'Under the Data Privacy Act of 2012, you have the right to request access to the personal data we hold about you at any time through the Contact Support page.',
-                          ),
-                          _buildBodyTile(
-                            w,
-                            icon: Icons.edit_outlined,
-                            color: AppColors.green,
-                            title: 'Right to Correction',
-                            body:
-                                'You may update your personal information directly through the Edit Profile screen. For data that cannot be self-corrected, contact support to request an amendment.',
-                          ),
-                          _buildBodyTile(
-                            w,
-                            icon: Icons.delete_outline_rounded,
-                            color: AppColors.red,
-                            title: 'Right to Erasure',
-                            body:
-                                'You may request deletion of your account and associated personal data by contacting the LGU. Note that certain records tied to official civic submissions may be retained as required by law.',
-                            showDivider: false,
-                          ),
-                        ]),
-                        SizedBox(height: w * 0.05),
-                        _buildEffectiveNote(w),
-                      ],
+      body: ResponsivePageBody(
+        child: SafeArea(
+          child: Column(
+            children: [
+              // Header is pinned — NOT part of the slide-up animation.
+              _buildHeader(w),
+              Expanded(
+                child: FadeTransition(
+                  opacity: _fadeAnim,
+                  child: SlideTransition(
+                    position: _slideAnim,
+                    child: SingleChildScrollView(
+                      physics: const BouncingScrollPhysics(),
+                      padding: EdgeInsets.fromLTRB(
+                        w * 0.04,
+                        w * 0.035,
+                        w * 0.04,
+                        w * 0.08,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildIntroCard(w),
+                          SizedBox(height: w * 0.05),
+                          _sectionLabel(w, 'INFORMATION WE COLLECT'),
+                          SizedBox(height: w * 0.02),
+                          _buildCard(w, [
+                            _buildBodyTile(
+                              w,
+                              icon: Icons.person_outline_rounded,
+                              color: AppColors.primaryBlue,
+                              title: 'Personal Information',
+                              body:
+                                  'When you register, we collect your full name, email address, phone number, date of birth, and home address to create and verify your citizen account.',
+                            ),
+                            _buildBodyTile(
+                              w,
+                              icon: Icons.badge_outlined,
+                              color: AppColors.primaryBlue,
+                              title: 'Identity Verification Data',
+                              body:
+                                  'To verify your identity, we collect a government-issued ID image and a face scan photo. These are stored securely and used solely for verification purposes.',
+                            ),
+                            _buildBodyTile(
+                              w,
+                              icon: Icons.photo_camera_outlined,
+                              color: AppColors.primaryBlue,
+                              title: 'User-Generated Content',
+                              body:
+                                  'Reports, suggestions, feedback, community posts, and any media you upload (photos, files) are collected and stored as part of your civic activity record.',
+                              showDivider: false,
+                            ),
+                          ]),
+                          SizedBox(height: w * 0.05),
+                          _sectionLabel(w, 'HOW WE USE YOUR INFORMATION'),
+                          SizedBox(height: w * 0.02),
+                          _buildCard(w, [
+                            _buildBodyTile(
+                              w,
+                              icon: Icons.account_balance_outlined,
+                              color: AppColors.green,
+                              title: 'Service Delivery',
+                              body:
+                                  'Your information is used to operate GovPulse, process your civic submissions, facilitate LGU responses, and provide you with relevant notifications and updates.',
+                            ),
+                            _buildBodyTile(
+                              w,
+                              icon: Icons.insights_rounded,
+                              color: AppColors.green,
+                              title: 'Service Improvement',
+                              body:
+                                  'Aggregated and anonymized data may be used to analyze usage patterns, improve application features, and enhance the quality of public services delivered by the LGU.',
+                            ),
+                            _buildBodyTile(
+                              w,
+                              icon: Icons.notifications_none_rounded,
+                              color: AppColors.green,
+                              title: 'Communications',
+                              body:
+                                  'We may use your contact details to send you status updates on your reports or suggestions, important announcements from the LGU, or alerts relevant to your barangay.',
+                              showDivider: false,
+                            ),
+                          ]),
+                          SizedBox(height: w * 0.05),
+                          _sectionLabel(w, 'DATA SHARING & DISCLOSURE'),
+                          SizedBox(height: w * 0.02),
+                          _buildCard(w, [
+                            _buildBodyTile(
+                              w,
+                              icon: Icons.share_outlined,
+                              color: AppColors.orange,
+                              title: 'Within the LGU',
+                              body:
+                                  'Your submissions may be shared with relevant LGU departments and barangay officials solely for the purpose of processing and responding to your civic concerns.',
+                            ),
+                            _buildBodyTile(
+                              w,
+                              icon: Icons.business_outlined,
+                              color: AppColors.orange,
+                              title: 'Third-Party Services',
+                              body:
+                                  'We use trusted third-party providers (such as cloud infrastructure and identity verification services) who process data strictly on our behalf and under confidentiality agreements.',
+                            ),
+                            _buildBodyTile(
+                              w,
+                              icon: Icons.gavel_rounded,
+                              color: AppColors.orange,
+                              title: 'Legal Requirements',
+                              body:
+                                  'We may disclose your information if required by Philippine law, court order, or other governmental authority, or where necessary to protect the rights and safety of others.',
+                              showDivider: false,
+                            ),
+                          ]),
+                          SizedBox(height: w * 0.05),
+                          _sectionLabel(w, 'DATA RETENTION & SECURITY'),
+                          SizedBox(height: w * 0.02),
+                          _buildCard(w, [
+                            _buildBodyTile(
+                              w,
+                              icon: Icons.lock_outline_rounded,
+                              color: AppColors.primaryBlue,
+                              title: 'Security Measures',
+                              body:
+                                  'We implement industry-standard security measures including encrypted storage, row-level access controls, and secure transmission protocols to protect your personal data.',
+                            ),
+                            _buildBodyTile(
+                              w,
+                              icon: Icons.history_rounded,
+                              color: AppColors.primaryBlue,
+                              title: 'Retention Period',
+                              body:
+                                  'Your account data is retained for as long as your account remains active. Upon account deletion, personal data is removed within 30 days, except where retention is required by law.',
+                              showDivider: false,
+                            ),
+                          ]),
+                          SizedBox(height: w * 0.05),
+                          _sectionLabel(w, 'YOUR RIGHTS'),
+                          SizedBox(height: w * 0.02),
+                          _buildCard(w, [
+                            _buildBodyTile(
+                              w,
+                              icon: Icons.visibility_outlined,
+                              color: AppColors.green,
+                              title: 'Right to Access',
+                              body:
+                                  'Under the Data Privacy Act of 2012, you have the right to request access to the personal data we hold about you at any time through the Contact Support page.',
+                            ),
+                            _buildBodyTile(
+                              w,
+                              icon: Icons.edit_outlined,
+                              color: AppColors.green,
+                              title: 'Right to Correction',
+                              body:
+                                  'You may update your personal information directly through the Edit Profile screen. For data that cannot be self-corrected, contact support to request an amendment.',
+                            ),
+                            _buildBodyTile(
+                              w,
+                              icon: Icons.delete_outline_rounded,
+                              color: AppColors.red,
+                              title: 'Right to Erasure',
+                              body:
+                                  'You may request deletion of your account and associated personal data by contacting the LGU. Note that certain records tied to official civic submissions may be retained as required by law.',
+                              showDivider: false,
+                            ),
+                          ]),
+                          SizedBox(height: w * 0.05),
+                          _buildEffectiveNote(w),
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

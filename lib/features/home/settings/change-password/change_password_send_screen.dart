@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import '../../../../core/widgets/responsive_page.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -180,18 +181,21 @@ class _ChangePasswordSendScreenState extends State<ChangePasswordSendScreen>
     if (_isCheckingLock) {
       return Scaffold(
         backgroundColor: Colors.white,
-        body: SafeArea(
-          child: Column(
-            children: [
-              _buildHeader(w),
-              Expanded(
-                child: LoadingOverlay.bodyOrSkeleton(
-                  isLoading: true,
-                  layout: SkeletonLayout.changePassword,
-                  child: const SizedBox.shrink(),
+        body: ResponsivePageBody(
+          maxWidth: 520,
+          child: SafeArea(
+            child: Column(
+              children: [
+                _buildHeader(w),
+                Expanded(
+                  child: LoadingOverlay.bodyOrSkeleton(
+                    isLoading: true,
+                    layout: SkeletonLayout.changePassword,
+                    child: const SizedBox.shrink(),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       );
@@ -200,73 +204,76 @@ class _ChangePasswordSendScreenState extends State<ChangePasswordSendScreen>
     return Scaffold(
       backgroundColor: Colors.white,
       resizeToAvoidBottomInset: true,
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildHeader(w),
-            Expanded(
-              child: FadeTransition(
-                opacity: _fadeAnim,
-                child: SlideTransition(
-                  position: _slideAnim,
-                  child: MobileFormShell(
-                    child: SingleChildScrollView(
-                      physics: const BouncingScrollPhysics(),
-                      padding: EdgeInsets.symmetric(horizontal: w * 0.06),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          SizedBox(height: w * 0.08),
-                          _buildAnimatedIcon(w),
-                          SizedBox(height: w * 0.07),
-                          Text(
-                            'Change Password',
-                            style: TextStyle(
-                              fontSize: w * 0.058,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.primaryBlue,
-                              letterSpacing: -0.3,
-                            ),
-                          ),
-                          SizedBox(height: w * 0.025),
-                          Text(
-                            _isLocked
-                                ? 'You recently changed your password.\nPlease wait before changing it again.'
-                                : 'We\'ll send a 6-digit verification code\nto your registered email address.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: w * 0.036,
-                              color: AppColors.hint,
-                              height: 1.5,
-                            ),
-                          ),
-                          SizedBox(height: w * 0.07),
-                          _buildEmailField(w),
-                          SizedBox(height: w * 0.04),
-                          _isLocked ? _buildLockBanner(w) : _buildInfoChip(w),
-                          SizedBox(height: w * 0.07),
-                          if (_errorText != null)
-                            Padding(
-                              padding: EdgeInsets.only(bottom: w * 0.04),
-                              child: Text(
-                                _errorText!,
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontSize: w * 0.033,
-                                  color: AppColors.red,
-                                ),
+      body: ResponsivePageBody(
+        maxWidth: 520,
+        child: SafeArea(
+          child: Column(
+            children: [
+              _buildHeader(w),
+              Expanded(
+                child: FadeTransition(
+                  opacity: _fadeAnim,
+                  child: SlideTransition(
+                    position: _slideAnim,
+                    child: MobileFormShell(
+                      child: SingleChildScrollView(
+                        physics: const BouncingScrollPhysics(),
+                        padding: EdgeInsets.symmetric(horizontal: w * 0.06),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            SizedBox(height: w * 0.08),
+                            _buildAnimatedIcon(w),
+                            SizedBox(height: w * 0.07),
+                            Text(
+                              'Change Password',
+                              style: TextStyle(
+                                fontSize: w * 0.058,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.primaryBlue,
+                                letterSpacing: -0.3,
                               ),
                             ),
-                          _buildSendButton(w),
-                          SizedBox(height: w * 0.05),
-                        ],
+                            SizedBox(height: w * 0.025),
+                            Text(
+                              _isLocked
+                                  ? 'You recently changed your password.\nPlease wait before changing it again.'
+                                  : 'We\'ll send a 6-digit verification code\nto your registered email address.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: w * 0.036,
+                                color: AppColors.hint,
+                                height: 1.5,
+                              ),
+                            ),
+                            SizedBox(height: w * 0.07),
+                            _buildEmailField(w),
+                            SizedBox(height: w * 0.04),
+                            _isLocked ? _buildLockBanner(w) : _buildInfoChip(w),
+                            SizedBox(height: w * 0.07),
+                            if (_errorText != null)
+                              Padding(
+                                padding: EdgeInsets.only(bottom: w * 0.04),
+                                child: Text(
+                                  _errorText!,
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: w * 0.033,
+                                    color: AppColors.red,
+                                  ),
+                                ),
+                              ),
+                            _buildSendButton(w),
+                            SizedBox(height: w * 0.05),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

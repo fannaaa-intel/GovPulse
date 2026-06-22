@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/widgets/responsive_page.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/services/events_service.dart';
@@ -284,14 +285,17 @@ class _EventsScreenState extends State<EventsScreen>
 
     return Scaffold(
       backgroundColor: const Color(0xFFF3F4F6),
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildHeader(w),
-            Expanded(
-              child: _isLoading ? const EventsBodySkeleton() : _buildBody(w),
-            ),
-          ],
+      body: ResponsivePageBody(
+        maxWidth: 900,
+        child: SafeArea(
+          child: Column(
+            children: [
+              _buildHeader(w),
+              Expanded(
+                child: _isLoading ? const EventsBodySkeleton() : _buildBody(w),
+              ),
+            ],
+          ),
         ),
       ),
     );

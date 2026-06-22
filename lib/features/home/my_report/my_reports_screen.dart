@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/theme/app_colors.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../../../core/widgets/Home/nav/app_bottom_nav.dart';
+import '../../../core/widgets/Home/nav/responsive_nav_scaffold.dart';
 import '../../../../core/widgets/loading/loading_overlay.dart';
 
 class _T {
@@ -341,8 +341,10 @@ class _MyReportsScreenState extends State<MyReportsScreen>
   @override
   Widget build(BuildContext context) {
     final w = MediaQuery.of(context).size.width;
-    return Scaffold(
-      extendBody: true,
+    return ResponsiveNavScaffold(
+      currentIndex: 1,
+      username: widget.username,
+      isVerified: true,
       backgroundColor: const Color(0xFFF3F4F6),
       body: SafeArea(
         child: Column(
@@ -357,12 +359,6 @@ class _MyReportsScreenState extends State<MyReportsScreen>
             ),
           ],
         ),
-      ),
-      bottomNavigationBar: AppBottomNav(
-        width: w,
-        currentIndex: 1,
-        username: widget.username,
-        isVerified: true,
       ),
     );
   }

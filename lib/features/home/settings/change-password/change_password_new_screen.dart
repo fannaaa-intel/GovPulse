@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/widgets/responsive_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/password_validator.dart';
@@ -201,148 +202,152 @@ class _ChangePasswordNewScreenState extends State<ChangePasswordNewScreen>
     return Scaffold(
       backgroundColor: Colors.white,
       resizeToAvoidBottomInset: true,
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildHeader(w),
-            Expanded(
-              child: FadeTransition(
-                opacity: _fadeAnim,
-                child: SlideTransition(
-                  position: _slideAnim,
-                  child: MobileFormShell(
-                    child: SingleChildScrollView(
-                      physics: const BouncingScrollPhysics(),
-                      padding: EdgeInsets.symmetric(horizontal: w * 0.06),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          SizedBox(height: w * 0.07),
-                          Center(child: _buildAnimatedIcon(w)),
-                          SizedBox(height: w * 0.06),
-                          Center(
-                            child: Text(
-                              'Set new password',
-                              style: TextStyle(
-                                fontSize: w * 0.058,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.primaryBlue,
-                                letterSpacing: -0.3,
-                              ),
-                            ),
-                          ),
-                          SizedBox(height: w * 0.018),
-                          Center(
-                            child: Text(
-                              'Choose a strong password to\nkeep your account secure.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: w * 0.036,
-                                color: AppColors.hint,
-                                height: 1.5,
-                              ),
-                            ),
-                          ),
-                          SizedBox(height: w * 0.07),
-
-                          RoundedInputField(
-                            controller: _passwordCtrl,
-                            value: _passwordCtrl.text,
-                            hintText: 'New password',
-                            icon: Icons.lock_outline,
-                            obscureText: !_showPassword,
-                            onChanged: (val) => _validatePassword(val),
-                            suffixWidget: GestureDetector(
-                              onTap: () => setState(
-                                () => _showPassword = !_showPassword,
-                              ),
-                              child: Padding(
-                                padding: EdgeInsets.all(w * 0.03),
-                                child: Image.asset(
-                                  _showPassword
-                                      ? 'assets/images/eye.webp'
-                                      : 'assets/images/closed_eye.webp',
-                                  height: w * 0.05,
-                                ),
-                              ),
-                            ),
-                          ),
-                          SizedBox(height: w * 0.038),
-
-                          RoundedInputField(
-                            controller: _confirmCtrl,
-                            value: _confirmCtrl.text,
-                            hintText: 'Confirm new password',
-                            icon: Icons.lock_outline,
-                            obscureText: !_showConfirm,
-                            isError: _isMismatch,
-                            onChanged: (_) => setState(() {}),
-                            suffixWidget: GestureDetector(
-                              onTap: () =>
-                                  setState(() => _showConfirm = !_showConfirm),
-                              child: Padding(
-                                padding: EdgeInsets.all(w * 0.03),
-                                child: Image.asset(
-                                  _showConfirm
-                                      ? 'assets/images/eye.webp'
-                                      : 'assets/images/closed_eye.webp',
-                                  height: w * 0.05,
-                                ),
-                              ),
-                            ),
-                          ),
-
-                          // Mismatch — no icon
-                          if (_isMismatch)
-                            Padding(
-                              padding: EdgeInsets.only(
-                                top: w * 0.02,
-                                left: w * 0.02,
-                              ),
+      body: ResponsivePageBody(
+        maxWidth: 520,
+        child: SafeArea(
+          child: Column(
+            children: [
+              _buildHeader(w),
+              Expanded(
+                child: FadeTransition(
+                  opacity: _fadeAnim,
+                  child: SlideTransition(
+                    position: _slideAnim,
+                    child: MobileFormShell(
+                      child: SingleChildScrollView(
+                        physics: const BouncingScrollPhysics(),
+                        padding: EdgeInsets.symmetric(horizontal: w * 0.06),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            SizedBox(height: w * 0.07),
+                            Center(child: _buildAnimatedIcon(w)),
+                            SizedBox(height: w * 0.06),
+                            Center(
                               child: Text(
-                                'Passwords do not match',
+                                'Set new password',
                                 style: TextStyle(
-                                  fontSize: w * 0.032,
-                                  color: AppColors.red,
+                                  fontSize: w * 0.058,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.primaryBlue,
+                                  letterSpacing: -0.3,
                                 ),
                               ),
                             ),
+                            SizedBox(height: w * 0.018),
+                            Center(
+                              child: Text(
+                                'Choose a strong password to\nkeep your account secure.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: w * 0.036,
+                                  color: AppColors.hint,
+                                  height: 1.5,
+                                ),
+                              ),
+                            ),
+                            SizedBox(height: w * 0.07),
 
-                          SizedBox(height: w * 0.04),
+                            RoundedInputField(
+                              controller: _passwordCtrl,
+                              value: _passwordCtrl.text,
+                              hintText: 'New password',
+                              icon: Icons.lock_outline,
+                              obscureText: !_showPassword,
+                              onChanged: (val) => _validatePassword(val),
+                              suffixWidget: GestureDetector(
+                                onTap: () => setState(
+                                  () => _showPassword = !_showPassword,
+                                ),
+                                child: Padding(
+                                  padding: EdgeInsets.all(w * 0.03),
+                                  child: Image.asset(
+                                    _showPassword
+                                        ? 'assets/images/eye.webp'
+                                        : 'assets/images/closed_eye.webp',
+                                    height: w * 0.05,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            SizedBox(height: w * 0.038),
 
-                          if (_passwordCtrl.text.isNotEmpty)
-                            _buildStrengthBar(w),
-                          SizedBox(height: w * 0.035),
-                          _buildRequirements(w),
-                          SizedBox(height: w * 0.06),
-
-                          // API error — centered, no outline, no icon
-                          if (_apiError != null)
-                            Padding(
-                              padding: EdgeInsets.only(bottom: w * 0.04),
-                              child: Center(
-                                child: Text(
-                                  _apiError!,
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontSize: w * 0.034,
-                                    color: AppColors.red,
-                                    height: 1.4,
+                            RoundedInputField(
+                              controller: _confirmCtrl,
+                              value: _confirmCtrl.text,
+                              hintText: 'Confirm new password',
+                              icon: Icons.lock_outline,
+                              obscureText: !_showConfirm,
+                              isError: _isMismatch,
+                              onChanged: (_) => setState(() {}),
+                              suffixWidget: GestureDetector(
+                                onTap: () => setState(
+                                  () => _showConfirm = !_showConfirm,
+                                ),
+                                child: Padding(
+                                  padding: EdgeInsets.all(w * 0.03),
+                                  child: Image.asset(
+                                    _showConfirm
+                                        ? 'assets/images/eye.webp'
+                                        : 'assets/images/closed_eye.webp',
+                                    height: w * 0.05,
                                   ),
                                 ),
                               ),
                             ),
 
-                          _buildUpdateButton(w),
-                          SizedBox(height: w * 0.05),
-                        ],
+                            // Mismatch — no icon
+                            if (_isMismatch)
+                              Padding(
+                                padding: EdgeInsets.only(
+                                  top: w * 0.02,
+                                  left: w * 0.02,
+                                ),
+                                child: Text(
+                                  'Passwords do not match',
+                                  style: TextStyle(
+                                    fontSize: w * 0.032,
+                                    color: AppColors.red,
+                                  ),
+                                ),
+                              ),
+
+                            SizedBox(height: w * 0.04),
+
+                            if (_passwordCtrl.text.isNotEmpty)
+                              _buildStrengthBar(w),
+                            SizedBox(height: w * 0.035),
+                            _buildRequirements(w),
+                            SizedBox(height: w * 0.06),
+
+                            // API error — centered, no outline, no icon
+                            if (_apiError != null)
+                              Padding(
+                                padding: EdgeInsets.only(bottom: w * 0.04),
+                                child: Center(
+                                  child: Text(
+                                    _apiError!,
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontSize: w * 0.034,
+                                      color: AppColors.red,
+                                      height: 1.4,
+                                    ),
+                                  ),
+                                ),
+                              ),
+
+                            _buildUpdateButton(w),
+                            SizedBox(height: w * 0.05),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

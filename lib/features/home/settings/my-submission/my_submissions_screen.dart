@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/widgets/responsive_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/loading/loading_overlay.dart';
@@ -423,34 +424,37 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
     final w = MediaQuery.of(context).size.width;
     return Scaffold(
       backgroundColor: const Color(0xFFF3F4F6),
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildHeader(w),
-            Expanded(
-              child: FadeTransition(
-                opacity: _fadeAnim,
-                child: SlideTransition(
-                  position: _slideAnim,
-                  child: Column(
-                    children: [
-                      _buildTabBar(w),
-                      // Filter chips — Reports tab only
-                      if (_tab == 0 && !_loading && !_hasError)
-                        _buildFilterChips(w),
-                      Expanded(
-                        child: _loading
-                            ? const MySubmissionsBodySkeleton()
-                            : _hasError
-                            ? _buildError(w)
-                            : _buildContent(w),
-                      ),
-                    ],
+      body: ResponsivePageBody(
+        maxWidth: 760,
+        child: SafeArea(
+          child: Column(
+            children: [
+              _buildHeader(w),
+              Expanded(
+                child: FadeTransition(
+                  opacity: _fadeAnim,
+                  child: SlideTransition(
+                    position: _slideAnim,
+                    child: Column(
+                      children: [
+                        _buildTabBar(w),
+                        // Filter chips — Reports tab only
+                        if (_tab == 0 && !_loading && !_hasError)
+                          _buildFilterChips(w),
+                        Expanded(
+                          child: _loading
+                              ? const MySubmissionsBodySkeleton()
+                              : _hasError
+                              ? _buildError(w)
+                              : _buildContent(w),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

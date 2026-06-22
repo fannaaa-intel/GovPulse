@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/widgets/responsive_page.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/theme/app_colors.dart';
 
@@ -107,80 +108,82 @@ class _ContactSupportScreenState extends State<ContactSupportScreen>
     final w = MediaQuery.of(context).size.width;
     return Scaffold(
       backgroundColor: const Color(0xFFF3F4F6),
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Header is pinned — NOT part of the slide-up animation.
-            _buildHeader(w),
-            Expanded(
-              child: FadeTransition(
-                opacity: _fadeAnim,
-                child: SlideTransition(
-                  position: _slideAnim,
-                  child: SingleChildScrollView(
-                    physics: const BouncingScrollPhysics(),
-                    padding: EdgeInsets.fromLTRB(
-                      w * 0.04,
-                      w * 0.035,
-                      w * 0.04,
-                      w * 0.08,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildIntroCard(w),
-                        SizedBox(height: w * 0.05),
-                        _sectionLabel(w, 'GET IN TOUCH'),
-                        SizedBox(height: w * 0.02),
-                        _buildCard(w, [
-                          _contactTile(
-                            w,
-                            icon: Icons.facebook_rounded,
-                            color: AppColors.primaryBlue,
-                            title: 'Message on Facebook',
-                            value: 'Official Aparri LGU page',
-                            onTap: _openFacebook,
-                          ),
-                          _contactTile(
-                            w,
-                            icon: Icons.call_outlined,
-                            color: AppColors.green,
-                            title: 'Call Us',
-                            value: _supportPhoneDisplay,
-                            onTap: _callSupport,
-                            showDivider: false,
-                          ),
-                        ]),
-                        SizedBox(height: w * 0.05),
-                        _sectionLabel(w, 'OFFICE'),
-                        SizedBox(height: w * 0.02),
-                        _buildCard(w, [
-                          _contactTile(
-                            w,
-                            icon: Icons.location_on_outlined,
-                            color: AppColors.orange,
-                            title: _officeName,
-                            value: _officeAddress,
-                            onTap: _openMaps,
-                          ),
-                          _infoTile(
-                            w,
-                            icon: Icons.schedule_rounded,
-                            color: AppColors.primaryBlue,
-                            title: 'Office Hours',
-                            value: _officeHours,
-                            showDivider: false,
-                          ),
-                        ]),
-                        SizedBox(height: w * 0.05),
-                        _buildResponseNote(w),
-                      ],
+      body: ResponsivePageBody(
+        child: SafeArea(
+          child: Column(
+            children: [
+              // Header is pinned — NOT part of the slide-up animation.
+              _buildHeader(w),
+              Expanded(
+                child: FadeTransition(
+                  opacity: _fadeAnim,
+                  child: SlideTransition(
+                    position: _slideAnim,
+                    child: SingleChildScrollView(
+                      physics: const BouncingScrollPhysics(),
+                      padding: EdgeInsets.fromLTRB(
+                        w * 0.04,
+                        w * 0.035,
+                        w * 0.04,
+                        w * 0.08,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildIntroCard(w),
+                          SizedBox(height: w * 0.05),
+                          _sectionLabel(w, 'GET IN TOUCH'),
+                          SizedBox(height: w * 0.02),
+                          _buildCard(w, [
+                            _contactTile(
+                              w,
+                              icon: Icons.facebook_rounded,
+                              color: AppColors.primaryBlue,
+                              title: 'Message on Facebook',
+                              value: 'Official Aparri LGU page',
+                              onTap: _openFacebook,
+                            ),
+                            _contactTile(
+                              w,
+                              icon: Icons.call_outlined,
+                              color: AppColors.green,
+                              title: 'Call Us',
+                              value: _supportPhoneDisplay,
+                              onTap: _callSupport,
+                              showDivider: false,
+                            ),
+                          ]),
+                          SizedBox(height: w * 0.05),
+                          _sectionLabel(w, 'OFFICE'),
+                          SizedBox(height: w * 0.02),
+                          _buildCard(w, [
+                            _contactTile(
+                              w,
+                              icon: Icons.location_on_outlined,
+                              color: AppColors.orange,
+                              title: _officeName,
+                              value: _officeAddress,
+                              onTap: _openMaps,
+                            ),
+                            _infoTile(
+                              w,
+                              icon: Icons.schedule_rounded,
+                              color: AppColors.primaryBlue,
+                              title: 'Office Hours',
+                              value: _officeHours,
+                              showDivider: false,
+                            ),
+                          ]),
+                          SizedBox(height: w * 0.05),
+                          _buildResponseNote(w),
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
