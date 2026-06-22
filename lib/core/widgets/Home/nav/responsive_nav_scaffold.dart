@@ -115,7 +115,12 @@ class ResponsiveNavScaffold extends ConsumerWidget {
   });
 
   // ── Navigation (mirrors AppBottomNav._handleTap exactly) ───────────────────
-  void _navigate(BuildContext context, int index) {
+  void _navigate(
+    BuildContext context,
+    int index, {
+    String? effectiveBarangay,
+    bool? effectiveIsVerified,
+  }) {
     if (index == currentIndex) return;
 
     switch (index) {
@@ -133,7 +138,7 @@ class ResponsiveNavScaffold extends ConsumerWidget {
         );
         break;
       case 1:
-        if (!isVerified) {
+        if (!(effectiveIsVerified ?? isVerified)) {
           showVerificationRequiredDialog(
             context,
             message: 'Only verified citizens can access My Reports.',
@@ -148,8 +153,8 @@ class ResponsiveNavScaffold extends ConsumerWidget {
           '/newsfeed',
           arguments: {
             'username': username,
-            'isVerified': isVerified,
-            'userBarangay': userBarangay,
+            'isVerified': effectiveIsVerified ?? isVerified,
+            'userBarangay': effectiveBarangay,
           },
         );
         break;
@@ -157,7 +162,10 @@ class ResponsiveNavScaffold extends ConsumerWidget {
         Navigator.pushNamed(
           context,
           '/emergency',
-          arguments: {'username': username, 'isVerified': isVerified},
+          arguments: {
+            'username': username,
+            'isVerified': effectiveIsVerified ?? isVerified,
+          },
         );
         break;
       case 4:
@@ -444,6 +452,13 @@ class ResponsiveNavScaffold extends ConsumerWidget {
       VerifStatus.pending => 'pending',
       VerifStatus.none => 'none',
     };
+    // Barangay: prefer the value the screen passed in, fall back to the
+    // profile provider so screens that don't receive userBarangay (Emergency,
+    // Settings) still forward the correct barangay when the user taps NewsFeed.
+    final effBarangay = userBarangay ?? profile?.barangay;
+    // isVerified: same pattern — prefer the screen prop, fall back to the
+    // profile provider so Emergency/Settings don't incorrectly block My Reports.
+    final effIsVerified = effVerif == VerifStatus.verified;
 
     switch (band) {
       // ── Phone: identical to the previous AppBottomNav behaviour ───────────
@@ -456,8 +471,8 @@ class ResponsiveNavScaffold extends ConsumerWidget {
             width: width,
             currentIndex: currentIndex,
             username: username,
-            isVerified: isVerified,
-            userBarangay: userBarangay,
+            isVerified: effIsVerified,
+            userBarangay: effBarangay,
           ),
         );
 
@@ -469,7 +484,12 @@ class ResponsiveNavScaffold extends ConsumerWidget {
           appBar: _drawerAppBar(context, width),
           drawer: HomeNavDrawer(
             currentIndex: currentIndex,
-            onTap: (i) => _navigate(context, i),
+            onTap: (i) => _navigate(
+              context,
+              i,
+              effectiveBarangay: effBarangay,
+              effectiveIsVerified: effIsVerified,
+            ),
             username: username,
             fullName: effFullName,
             facePhotoUrl: effFacePhotoUrl,
@@ -488,7 +508,12 @@ class ResponsiveNavScaffold extends ConsumerWidget {
             children: [
               HomeTopNav(
                 currentIndex: currentIndex,
-                onTap: (i) => _navigate(context, i),
+                onTap: (i) => _navigate(
+                  context,
+                  i,
+                  effectiveBarangay: effBarangay,
+                  effectiveIsVerified: effIsVerified,
+                ),
                 notificationCount: NotificationService.count,
                 onNotificationTap: () => _showNotifications(context, width),
                 onLogoutTap: () => _handleLogout(context),
