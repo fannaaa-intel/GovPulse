@@ -100,7 +100,7 @@ class _VerificationIdentityScreenState
       children: [
         Image.asset(
           "assets/images/applogocrop.webp",
-          height: MediaQuery.of(context).size.height * 0.10,
+          height: (MediaQuery.of(context).size.height * 0.10).clamp(40.0, 80.0),
         ),
         const SizedBox(height: 6),
         const Text(

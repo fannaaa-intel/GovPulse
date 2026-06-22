@@ -286,7 +286,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
         );
       },
       pageBuilder: (ctx, anim, secondAnim) {
-        final width = MediaQuery.of(ctx).size.width;
+        final width = MediaQuery.of(ctx).size.width.clamp(0.0, 480.0);
         return Center(
           child: Material(
             color: Colors.transparent,
@@ -522,7 +522,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
       context: context,
       barrierDismissible: false,
       builder: (ctx) {
-        final width = MediaQuery.of(ctx).size.width;
+        final width = MediaQuery.of(ctx).size.width.clamp(0.0, 480.0);
         return Dialog(
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
@@ -672,7 +672,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
 
   @override
   Widget build(BuildContext context) {
-    final width = MediaQuery.of(context).size.width;
+    final width = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
@@ -1705,7 +1705,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
       builder: (ctx) => StatefulBuilder(
         builder: (context, setModalState) {
           final isEn = _consentInEnglish;
-          final width = MediaQuery.of(context).size.width;
+          final width = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
 
           final title = isEn
               ? 'Anonymous Report Consent'

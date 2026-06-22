@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import '../../../core/theme/app_colors.dart';
+import '../../core/theme/app_colors.dart';
+import '../../core/widgets/mobile_form_shell.dart';
 
 class VerificationScreen extends StatefulWidget {
   final String username;
@@ -366,7 +367,7 @@ class _VerificationScreenState extends State<VerificationScreen>
           opacity: _fadeAnim,
           child: SlideTransition(
             position: _slideAnim,
-            child: SingleChildScrollView(child: _buildContent()),
+            child: MobileFormShell(child: _buildContent()),
           ),
         ),
       ),

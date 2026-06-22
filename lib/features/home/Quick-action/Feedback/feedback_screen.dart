@@ -240,7 +240,7 @@ class _FeedbackScreenState extends State<FeedbackScreen>
         );
       },
       pageBuilder: (ctx, anim, secondAnim) {
-        final width = MediaQuery.of(ctx).size.width;
+        final width = MediaQuery.of(ctx).size.width.clamp(0.0, 480.0);
         return Center(
           child: Material(
             color: Colors.transparent,
@@ -672,7 +672,7 @@ class _FeedbackScreenState extends State<FeedbackScreen>
       builder: (ctx) => StatefulBuilder(
         builder: (context, setModalState) {
           final isEn = _consentInEnglish;
-          final width = MediaQuery.of(context).size.width;
+          final width = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
 
           final title = isEn
               ? 'Anonymous Feedback Consent'
@@ -914,7 +914,7 @@ class _FeedbackScreenState extends State<FeedbackScreen>
   // ── BUILD ─────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final width = MediaQuery.of(context).size.width;
+    final width = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
 
     return PopScope(
       canPop: false,

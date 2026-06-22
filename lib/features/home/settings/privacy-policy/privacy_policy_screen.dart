@@ -45,7 +45,7 @@ class _PrivacyPolicyScreenState extends State<PrivacyPolicyScreen>
   // ── Build ──────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width;
+    final w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
     return Scaffold(
       backgroundColor: const Color(0xFFF3F4F6),
       body: ResponsivePageBody(

@@ -131,7 +131,7 @@ class _VerificationScanScreenState extends State<VerificationScanScreen>
     _shutterController.dispose();
     _scanLineController.dispose();
 
-    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
     super.dispose();

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/widgets/mobile_form_shell.dart';
 
 class VerificationPhotoInstructionScreen extends StatefulWidget {
   final String username;
@@ -65,7 +66,7 @@ class _VerificationPhotoInstructionScreenState
         child: SlideTransition(
           position: _slideAnim,
           child: SafeArea(
-            child: SingleChildScrollView(
+            child: MobileFormShell(
               child: Column(
                 children: [
                   const SizedBox(height: 10),
@@ -74,7 +75,10 @@ class _VerificationPhotoInstructionScreenState
                   Center(
                     child: Image.asset(
                       "assets/images/applogocrop.webp",
-                      height: MediaQuery.of(context).size.height * 0.12,
+                      height: (MediaQuery.of(context).size.height * 0.12).clamp(
+                        44.0,
+                        88.0,
+                      ),
                     ),
                   ),
 

@@ -393,7 +393,7 @@ class _EmergencyScreenState extends State<EmergencyScreen>
   // ─────────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width;
+    final w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
     final scaffold = ResponsiveNavScaffold(
       showNav: widget.username.isNotEmpty,
       currentIndex: 3,
@@ -401,33 +401,38 @@ class _EmergencyScreenState extends State<EmergencyScreen>
       isVerified: widget.isVerified,
       backgroundColor: _C.pageBg,
       body: SafeArea(
-        child: Column(
-          children: [
-            _topBar(w),
-            Expanded(
-              child: SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                padding: EdgeInsets.fromLTRB(
-                  w * .04,
-                  w * .04,
-                  w * .04,
-                  w * .08,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 480),
+            child: Column(
+              children: [
+                _topBar(w),
+                Expanded(
+                  child: SingleChildScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    padding: EdgeInsets.fromLTRB(
+                      w * .04,
+                      w * .04,
+                      w * .04,
+                      w * .08,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _hero911Card(w), // ← original sizes
+                        SizedBox(height: w * .055),
+                        _sectionLabel(w, 'Emergency Services'), // ← original
+                        SizedBox(height: w * .032),
+                        _categoryGrid(w), // ← bigger sizes only here
+                        SizedBox(height: w * .04),
+                        _disclaimer(w), // ← original sizes
+                      ],
+                    ),
+                  ),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _hero911Card(w), // ← original sizes
-                    SizedBox(height: w * .055),
-                    _sectionLabel(w, 'Emergency Services'), // ← original
-                    SizedBox(height: w * .032),
-                    _categoryGrid(w), // ← bigger sizes only here
-                    SizedBox(height: w * .04),
-                    _disclaimer(w), // ← original sizes
-                  ],
-                ),
-              ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -1122,7 +1127,7 @@ class _CatCardState extends State<_CatCard>
 
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width;
+    final w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
     final cat = widget.cat;
     final box = widget.iconBoxSize; // uniform for all cards
 
@@ -1269,7 +1274,7 @@ class _CatCardWideState extends State<_CatCardWide>
 
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width;
+    final w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
     final cat = widget.cat;
     final box = widget.iconBoxSize;
 
@@ -1373,7 +1378,7 @@ class _CategoryModal extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width;
+    final w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
     final cat = category;
     final box = w * .14;
 
@@ -1560,7 +1565,7 @@ class _HotlineRowState extends State<_HotlineRow>
 
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width;
+    final w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
     final h = widget.hotline;
     final col = widget.accentColor;
 

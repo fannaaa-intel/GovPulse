@@ -340,24 +340,29 @@ class _MyReportsScreenState extends State<MyReportsScreen>
 
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width;
+    final w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
     return ResponsiveNavScaffold(
       currentIndex: 1,
       username: widget.username,
       isVerified: true,
       backgroundColor: const Color(0xFFF3F4F6),
       body: SafeArea(
-        child: Column(
-          children: [
-            _buildTopBar(w),
-            Expanded(
-              child: LoadingOverlay.bodyOrSkeleton(
-                isLoading: _isLoading,
-                layout: SkeletonLayout.myReports,
-                child: _buildBody(w),
-              ),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 480),
+            child: Column(
+              children: [
+                _buildTopBar(w),
+                Expanded(
+                  child: LoadingOverlay.bodyOrSkeleton(
+                    isLoading: _isLoading,
+                    layout: SkeletonLayout.myReports,
+                    child: _buildBody(w),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
