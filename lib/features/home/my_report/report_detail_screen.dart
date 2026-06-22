@@ -404,7 +404,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
 
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width;
+    final w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF3F4F6),
@@ -472,17 +472,17 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
         child: Padding(
           padding: const EdgeInsets.all(8),
           child: Container(
-            width: MediaQuery.of(context).size.width * 0.09,
-            height: MediaQuery.of(context).size.width * 0.09,
+            width: MediaQuery.of(context).size.width.clamp(0.0, 480.0) * 0.09,
+            height: MediaQuery.of(context).size.width.clamp(0.0, 480.0) * 0.09,
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(
-                MediaQuery.of(context).size.width * 0.025,
+                MediaQuery.of(context).size.width.clamp(0.0, 480.0) * 0.025,
               ),
             ),
             child: Icon(
               Icons.arrow_back_ios_new_rounded,
-              size: MediaQuery.of(context).size.width * 0.045,
+              size: MediaQuery.of(context).size.width.clamp(0.0, 480.0) * 0.045,
               color: Colors.white,
             ),
           ),

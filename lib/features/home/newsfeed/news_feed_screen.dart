@@ -381,7 +381,7 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
   }
 
   void _openFilterSheet() {
-    final width = MediaQuery.of(context).size.width;
+    final width = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.white,
@@ -521,7 +521,7 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
 
   @override
   Widget build(BuildContext context) {
-    final width = MediaQuery.of(context).size.width;
+    final width = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
     final provider = CommunityPostsProvider.instance;
     final visiblePosts = _filteredPosts;
 
@@ -546,42 +546,48 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
         userBarangay: widget.userBarangay,
         backgroundColor: const Color(0xFFF3F4F6),
         body: SafeArea(
-          child: Column(
-            children: [
-              _buildTopBar(width),
-              Expanded(
-                child: LoadingOverlay.bodyOrSkeleton(
-                  isLoading: !provider.initialLoadDone && provider.isLoading,
-                  layout: SkeletonLayout.newsFeed,
-                  child: provider.error != null
-                      ? _buildErrorState(width, provider)
-                      : visiblePosts.isEmpty
-                      ? _animated(1, _buildEmptyState(width))
-                      : RefreshIndicator(
-                          onRefresh: () async {
-                            await CommunityPostsProvider.instance.refresh();
-                            await _loadMyInteractions();
-                          },
-                          child: ListView.separated(
-                            physics: const BouncingScrollPhysics(),
-                            padding: EdgeInsets.fromLTRB(
-                              width * 0.04,
-                              width * 0.035,
-                              width * 0.04,
-                              width * 0.04,
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: Column(
+                children: [
+                  _buildTopBar(width),
+                  Expanded(
+                    child: LoadingOverlay.bodyOrSkeleton(
+                      isLoading:
+                          !provider.initialLoadDone && provider.isLoading,
+                      layout: SkeletonLayout.newsFeed,
+                      child: provider.error != null
+                          ? _buildErrorState(width, provider)
+                          : visiblePosts.isEmpty
+                          ? _animated(1, _buildEmptyState(width))
+                          : RefreshIndicator(
+                              onRefresh: () async {
+                                await CommunityPostsProvider.instance.refresh();
+                                await _loadMyInteractions();
+                              },
+                              child: ListView.separated(
+                                physics: const BouncingScrollPhysics(),
+                                padding: EdgeInsets.fromLTRB(
+                                  width * 0.04,
+                                  width * 0.035,
+                                  width * 0.04,
+                                  width * 0.04,
+                                ),
+                                itemCount: visiblePosts.length,
+                                separatorBuilder: (_, _) =>
+                                    SizedBox(height: width * 0.035),
+                                itemBuilder: (_, i) => _animated(
+                                  i + 1,
+                                  _buildPostCard(width, visiblePosts[i]),
+                                ),
+                              ),
                             ),
-                            itemCount: visiblePosts.length,
-                            separatorBuilder: (_, _) =>
-                                SizedBox(height: width * 0.035),
-                            itemBuilder: (_, i) => _animated(
-                              i + 1,
-                              _buildPostCard(width, visiblePosts[i]),
-                            ),
-                          ),
-                        ),
-                ),
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:dotted_border/dotted_border.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../../core/widgets/mobile_form_shell.dart';
 
 const Map<String, Map<String, String>> idImages = {
   "PhilSys ID": {
@@ -107,64 +108,67 @@ class _VerificationUploadIdScreenState extends State<VerificationUploadIdScreen>
         child: SlideTransition(
           position: _slideAnim,
           child: SafeArea(
-            child: Column(
-              children: [
-                const SizedBox(height: 10),
+            child: MobileFormShell(
+              child: Column(
+                children: [
+                  const SizedBox(height: 10),
 
-                /// LOGO
-                Center(
-                  child: Image.asset(
-                    "assets/images/applogocrop.webp",
-                    height: MediaQuery.of(context).size.height * 0.12,
+                  /// LOGO
+                  Center(
+                    child: Image.asset(
+                      "assets/images/applogocrop.webp",
+                      height: (MediaQuery.of(context).size.height * 0.12).clamp(
+                        44.0,
+                        88.0,
+                      ),
+                    ),
                   ),
-                ),
 
-                const SizedBox(height: 16),
+                  const SizedBox(height: 16),
 
-                /// TITLE
-                const Text(
-                  "Aparri Citizenship Verification",
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: Color.fromARGB(255, 0, 106, 255),
+                  /// TITLE
+                  const Text(
+                    "Aparri Citizenship Verification",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: Color.fromARGB(255, 0, 106, 255),
+                    ),
                   ),
-                ),
 
-                const SizedBox(height: 25),
+                  const SizedBox(height: 25),
 
-                /// STEP INDICATOR
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _step("1", "Upload ID", true),
-                      Expanded(child: _line()),
-                      _step("2", "Additional\nInformation", false),
-                      Expanded(child: _line()),
-                      _step("3", "Identity\nVerification", false),
-                    ],
+                  /// STEP INDICATOR
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _step("1", "Upload ID", true),
+                        Expanded(child: _line()),
+                        _step("2", "Additional\nInformation", false),
+                        Expanded(child: _line()),
+                        _step("3", "Identity\nVerification", false),
+                      ],
+                    ),
                   ),
-                ),
 
-                const SizedBox(height: 24),
+                  const SizedBox(height: 24),
 
-                /// HEADER
-                Text(
-                  "Upload Your ${widget.selectedId}",
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
+                  /// HEADER
+                  Text(
+                    "Upload Your ${widget.selectedId}",
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
 
-                const SizedBox(height: 12),
-                const Divider(thickness: 1),
+                  const SizedBox(height: 12),
+                  const Divider(thickness: 1),
 
-                Expanded(
-                  child: Padding(
+                  Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Column(
                       children: [
@@ -292,13 +296,13 @@ class _VerificationUploadIdScreenState extends State<VerificationUploadIdScreen>
                           ),
                         ),
 
-                        const Spacer(),
+                        const SizedBox(height: 24),
                         const SizedBox(height: 20),
                       ],
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

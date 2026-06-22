@@ -6,8 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../../../core/theme/app_colors.dart';
-import '../../../features/home/screen/home_screen.dart';
+import '../../core/theme/app_colors.dart';
+import '../home/screen/home_screen.dart';
 import '../home/screen/notification_popup.dart';
 
 class VerificationFaceScanScreen extends StatefulWidget {
@@ -109,6 +109,7 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
   void initState() {
     super.initState();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     _initAnimations();
     _initCamera();
   }
@@ -443,6 +444,7 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
       SystemUiMode.manual,
       overlays: [SystemUiOverlay.top, SystemUiOverlay.bottom],
     );
+    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     super.dispose();
   }
 

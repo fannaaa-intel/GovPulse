@@ -108,7 +108,7 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
 
   // ── Logout flow ───────────────────────────────────────────────────────────
   Future<void> _confirmLogout() async {
-    final width = MediaQuery.of(context).size.width;
+    final width = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
 
     final shouldLogout = await showDialog<bool>(
       context: context,
@@ -246,7 +246,7 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
 
   // ── Delete account ────────────────────────────────────────────────────────
   Future<void> _confirmDeleteAccount() async {
-    final width = MediaQuery.of(context).size.width;
+    final width = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
 
     await showDialog(
       context: context,
@@ -293,7 +293,7 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
   // ── Build ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final width = MediaQuery.of(context).size.width;
+    final width = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
 
     // ── Read from provider ────────────────────────────────────────────────
     final profileAsync = ref.watch(userProfileProvider);
@@ -321,63 +321,68 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
       verifStatus: profile?.verifStatus,
       onLogout: (_) => _confirmLogout(),
       body: SafeArea(
-        child: Column(
-          children: [
-            _buildHeader(width),
-            Expanded(
-              child: LoadingOverlay.bodyOrSkeleton(
-                isLoading: profileLoading,
-                layout: SkeletonLayout.settings,
-                child: SingleChildScrollView(
-                  physics: const BouncingScrollPhysics(),
-                  padding: EdgeInsets.fromLTRB(
-                    width * 0.04,
-                    width * 0.02,
-                    width * 0.04,
-                    width * 0.06,
-                  ),
-                  child: Column(
-                    children: [
-                      _animated(
-                        1,
-                        _buildProfileCard(
-                          width,
-                          fullName,
-                          email,
-                          facePhotoUrl,
-                          facePhotoPath,
-                          profileLoading,
-                          badge,
-                        ),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 480),
+            child: Column(
+              children: [
+                _buildHeader(width),
+                Expanded(
+                  child: LoadingOverlay.bodyOrSkeleton(
+                    isLoading: profileLoading,
+                    layout: SkeletonLayout.settings,
+                    child: SingleChildScrollView(
+                      physics: const BouncingScrollPhysics(),
+                      padding: EdgeInsets.fromLTRB(
+                        width * 0.04,
+                        width * 0.02,
+                        width * 0.04,
+                        width * 0.06,
                       ),
-                      SizedBox(height: width * 0.04),
-                      _animated(
-                        2,
-                        _buildAccountSection(
-                          width,
-                          verifStatus,
-                          email,
-                          profileLoading,
-                        ),
+                      child: Column(
+                        children: [
+                          _animated(
+                            1,
+                            _buildProfileCard(
+                              width,
+                              fullName,
+                              email,
+                              facePhotoUrl,
+                              facePhotoPath,
+                              profileLoading,
+                              badge,
+                            ),
+                          ),
+                          SizedBox(height: width * 0.04),
+                          _animated(
+                            2,
+                            _buildAccountSection(
+                              width,
+                              verifStatus,
+                              email,
+                              profileLoading,
+                            ),
+                          ),
+                          SizedBox(height: width * 0.04),
+                          _animated(3, _buildSupportSection(width)),
+                          SizedBox(height: width * 0.04),
+                          _animated(4, _buildLegalSection(width)),
+                          SizedBox(height: width * 0.04),
+                          _animated(5, _buildAboutSection(width)),
+                          SizedBox(height: width * 0.05),
+                          _animated(6, _buildLogoutButton(width)),
+                          SizedBox(height: width * 0.025),
+                          _animated(7, _buildDeleteAccountButton(width)),
+                          SizedBox(height: width * 0.04),
+                          _animated(8, _buildFooter(width)),
+                        ],
                       ),
-                      SizedBox(height: width * 0.04),
-                      _animated(3, _buildSupportSection(width)),
-                      SizedBox(height: width * 0.04),
-                      _animated(4, _buildLegalSection(width)),
-                      SizedBox(height: width * 0.04),
-                      _animated(5, _buildAboutSection(width)),
-                      SizedBox(height: width * 0.05),
-                      _animated(6, _buildLogoutButton(width)),
-                      SizedBox(height: width * 0.025),
-                      _animated(7, _buildDeleteAccountButton(width)),
-                      SizedBox(height: width * 0.04),
-                      _animated(8, _buildFooter(width)),
-                    ],
+                    ),
                   ),
                 ),
-              ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

@@ -712,7 +712,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
   // ── Build ──────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final width = MediaQuery.of(context).size.width;
+    final width = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
     final bottomPad = MediaQuery.of(context).padding.bottom;
 
     final keyboardPad = MediaQuery.of(context).viewInsets.bottom;

@@ -307,7 +307,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
   // ── Build ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final width = MediaQuery.of(context).size.width;
+    final width = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
 
     return LoadingOverlay(
       isLoading: _saving,

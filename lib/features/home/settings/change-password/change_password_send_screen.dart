@@ -177,7 +177,7 @@ class _ChangePasswordSendScreenState extends State<ChangePasswordSendScreen>
 
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width;
+    final w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
     if (_isCheckingLock) {
       return Scaffold(
         backgroundColor: Colors.white,

@@ -104,7 +104,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
 
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width;
+    final w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
 
     return Scaffold(
       backgroundColor: Colors.white,
