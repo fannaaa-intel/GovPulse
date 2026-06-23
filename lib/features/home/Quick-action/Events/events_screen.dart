@@ -348,7 +348,7 @@ class _EventsScreenState extends State<EventsScreen>
           if (_showMoreFilters) _animated(3, _buildMoreFilterChips(w)),
 
           if (_isLoading || _isRefreshing)
-            _EventsCardsSkeleton(w: w)
+            const EventsSectionsSkeleton()
           else if (_cardsAnimating)
             FadeTransition(
               opacity: Tween<double>(begin: 0, end: 1).animate(
@@ -1231,127 +1231,6 @@ class _ShimmerBoxState extends State<_ShimmerBox>
           child: Container(color: const Color(0xFFE5E7EB)),
         );
       },
-    );
-  }
-}
-
-class _EventsCardsSkeleton extends StatefulWidget {
-  final double w;
-  const _EventsCardsSkeleton({required this.w});
-
-  @override
-  State<_EventsCardsSkeleton> createState() => _EventsCardsSkeletonState();
-}
-
-class _EventsCardsSkeletonState extends State<_EventsCardsSkeleton>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _shimmer;
-
-  @override
-  void initState() {
-    super.initState();
-    _shimmer = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1200),
-    )..repeat(reverse: true);
-  }
-
-  @override
-  void dispose() {
-    _shimmer.dispose();
-    super.dispose();
-  }
-
-  Widget _box(double w, double h, {double radius = 8}) => AnimatedBuilder(
-    animation: _shimmer,
-    builder: (_, _) => Container(
-      width: w,
-      height: h,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(radius),
-        color: Color.lerp(
-          const Color(0xFFE5E7EB),
-          const Color(0xFFF3F4F6),
-          _shimmer.value,
-        ),
-      ),
-    ),
-  );
-
-  @override
-  Widget build(BuildContext context) {
-    final w = widget.w;
-    final cardW = w * 0.42;
-    final cardH = cardW * 1.42;
-    final imageH = cardW * 0.62;
-
-    Widget cardSkeleton() => Padding(
-      padding: EdgeInsets.only(right: w * 0.03),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _box(cardW, imageH, radius: w * 0.03),
-          SizedBox(height: w * 0.015),
-          _box(cardW * 0.75, w * 0.030),
-          SizedBox(height: w * 0.010),
-          _box(cardW * 0.55, w * 0.025),
-          SizedBox(height: w * 0.008),
-          _box(cardW * 0.45, w * 0.025),
-        ],
-      ),
-    );
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(height: w * 0.045),
-        // Featured label
-        Padding(
-          padding: EdgeInsets.symmetric(horizontal: w * 0.04),
-          child: _box(w * 0.38, w * 0.042, radius: 6),
-        ),
-        SizedBox(height: w * 0.02),
-        // Featured card
-        Padding(
-          padding: EdgeInsets.symmetric(horizontal: w * 0.04),
-          child: _box(double.infinity, w * 0.42, radius: w * 0.035),
-        ),
-        SizedBox(height: w * 0.045),
-        // Today label
-        Padding(
-          padding: EdgeInsets.symmetric(horizontal: w * 0.04),
-          child: _box(w * 0.30, w * 0.042, radius: 6),
-        ),
-        SizedBox(height: w * 0.02),
-        SizedBox(
-          height: cardH,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            physics: const NeverScrollableScrollPhysics(),
-            padding: EdgeInsets.symmetric(horizontal: w * 0.04),
-            itemCount: 3,
-            itemBuilder: (_, _) => cardSkeleton(),
-          ),
-        ),
-        SizedBox(height: w * 0.045),
-        // Upcoming label
-        Padding(
-          padding: EdgeInsets.symmetric(horizontal: w * 0.04),
-          child: _box(w * 0.34, w * 0.042, radius: 6),
-        ),
-        SizedBox(height: w * 0.02),
-        SizedBox(
-          height: cardH,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            physics: const NeverScrollableScrollPhysics(),
-            padding: EdgeInsets.symmetric(horizontal: w * 0.04),
-            itemCount: 3,
-            itemBuilder: (_, _) => cardSkeleton(),
-          ),
-        ),
-        SizedBox(height: w * 0.04),
-      ],
     );
   }
 }

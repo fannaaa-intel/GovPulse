@@ -1364,7 +1364,7 @@ class EventsSkeletonScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width;
+    final double w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
 
     return SafeArea(
       child: Column(
@@ -1390,16 +1390,20 @@ class EventsSkeletonScreen extends StatelessWidget {
   }
 }
 
-// ── Events BODY skeleton ──────────────────────────────────────────────────────
-class EventsBodySkeleton extends StatelessWidget {
-  const EventsBodySkeleton({super.key});
+// ── Events sections skeleton (Featured / Today / Upcoming) ────────────────
+// Shared by [EventsBodySkeleton] (initial load) and the EventsScreen pull-to-
+// refresh state so both render the *same* skeleton. Sizing mirrors the real
+// event cards and is clamped to 480 so it stays proportional on phones,
+// landscape and tablets instead of ballooning on wide viewports.
+class EventsSectionsSkeleton extends StatelessWidget {
+  const EventsSectionsSkeleton({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width;
-    final cardW = w * 0.42;
-    final cardH = cardW * 1.42;
-    final imageH = cardW * 0.62;
+    final double w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+    final double cardW = w * 0.42;
+    final double cardH = cardW * 1.42;
+    final double imageH = cardW * 0.62;
 
     Widget eventCardList() => SizedBox(
       height: cardH,
@@ -1472,6 +1476,102 @@ class EventsBodySkeleton extends StatelessWidget {
       ),
     );
 
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(height: w * 0.045),
+        // Featured label
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: w * 0.04),
+          child: _Shimmer(width: w * 0.38, height: w * 0.042, radius: 6),
+        ),
+        SizedBox(height: w * 0.02),
+        // Featured card
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: w * 0.04),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(w * 0.035),
+              border: Border.all(color: const Color(0xFFE5E7EB)),
+            ),
+            padding: EdgeInsets.all(w * 0.035),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _Shimmer(width: w * 0.32, height: w * 0.38, radius: w * 0.025),
+                SizedBox(width: w * 0.035),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _Shimmer(
+                        width: double.infinity,
+                        height: w * 0.038,
+                        radius: 4,
+                      ),
+                      SizedBox(height: w * 0.010),
+                      _Shimmer(width: w * 0.30, height: w * 0.038, radius: 4),
+                      SizedBox(height: w * 0.018),
+                      _Shimmer(width: w * 0.42, height: w * 0.026, radius: 4),
+                      SizedBox(height: w * 0.010),
+                      _Shimmer(width: w * 0.36, height: w * 0.026, radius: 4),
+                      SizedBox(height: w * 0.010),
+                      _Shimmer(width: w * 0.30, height: w * 0.026, radius: 4),
+                      SizedBox(height: w * 0.018),
+                      _Shimmer(
+                        width: double.infinity,
+                        height: w * 0.022,
+                        radius: 4,
+                      ),
+                      SizedBox(height: w * 0.006),
+                      _Shimmer(width: w * 0.38, height: w * 0.022, radius: 4),
+                      SizedBox(height: w * 0.022),
+                      _Shimmer(
+                        width: double.infinity,
+                        height: w * 0.075,
+                        radius: w * 0.022,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        SizedBox(height: w * 0.045),
+        // Today label
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: w * 0.04),
+          child: _Shimmer(width: w * 0.30, height: w * 0.042, radius: 6),
+        ),
+        SizedBox(height: w * 0.02),
+        eventCardList(),
+        SizedBox(height: w * 0.045),
+        // Upcoming label
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: w * 0.04),
+          child: _Shimmer(width: w * 0.34, height: w * 0.042, radius: 6),
+        ),
+        SizedBox(height: w * 0.02),
+        eventCardList(),
+        SizedBox(height: w * 0.04),
+      ],
+    );
+  }
+}
+
+// ── Events BODY skeleton ──────────────────────────────────────────────────────
+// Full events screen body skeleton: hero banner + search + filter chips +
+// the shared [EventsSectionsSkeleton]. Width is clamped to 480 to match the
+// real EventsScreen layout across devices and orientations.
+class EventsBodySkeleton extends StatelessWidget {
+  const EventsBodySkeleton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final double w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+
     return SingleChildScrollView(
       physics: const NeverScrollableScrollPhysics(),
       padding: EdgeInsets.only(bottom: w * 0.06),
@@ -1479,6 +1579,7 @@ class EventsBodySkeleton extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(height: w * 0.04),
+          // Hero banner
           Padding(
             padding: EdgeInsets.symmetric(horizontal: w * 0.04),
             child: _Shimmer(
@@ -1488,6 +1589,7 @@ class EventsBodySkeleton extends StatelessWidget {
             ),
           ),
           SizedBox(height: w * 0.035),
+          // Search bar
           Padding(
             padding: EdgeInsets.symmetric(horizontal: w * 0.04),
             child: _Shimmer(
@@ -1497,6 +1599,7 @@ class EventsBodySkeleton extends StatelessWidget {
             ),
           ),
           SizedBox(height: w * 0.025),
+          // Filter chips
           SizedBox(
             height: w * 0.088,
             child: ListView.builder(
@@ -1514,83 +1617,8 @@ class EventsBodySkeleton extends StatelessWidget {
               ),
             ),
           ),
-          SizedBox(height: w * 0.045),
-          Padding(
-            padding: EdgeInsets.symmetric(horizontal: w * 0.04),
-            child: _Shimmer(width: w * 0.38, height: w * 0.042, radius: 6),
-          ),
-          SizedBox(height: w * 0.02),
-          Padding(
-            padding: EdgeInsets.symmetric(horizontal: w * 0.04),
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(w * 0.035),
-                border: Border.all(color: const Color(0xFFE5E7EB)),
-              ),
-              padding: EdgeInsets.all(w * 0.035),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _Shimmer(
-                    width: w * 0.32,
-                    height: w * 0.38,
-                    radius: w * 0.025,
-                  ),
-                  SizedBox(width: w * 0.035),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _Shimmer(
-                          width: double.infinity,
-                          height: w * 0.038,
-                          radius: 4,
-                        ),
-                        SizedBox(height: w * 0.010),
-                        _Shimmer(width: w * 0.30, height: w * 0.038, radius: 4),
-                        SizedBox(height: w * 0.018),
-                        _Shimmer(width: w * 0.42, height: w * 0.026, radius: 4),
-                        SizedBox(height: w * 0.010),
-                        _Shimmer(width: w * 0.36, height: w * 0.026, radius: 4),
-                        SizedBox(height: w * 0.010),
-                        _Shimmer(width: w * 0.30, height: w * 0.026, radius: 4),
-                        SizedBox(height: w * 0.018),
-                        _Shimmer(
-                          width: double.infinity,
-                          height: w * 0.022,
-                          radius: 4,
-                        ),
-                        SizedBox(height: w * 0.006),
-                        _Shimmer(width: w * 0.38, height: w * 0.022, radius: 4),
-                        SizedBox(height: w * 0.022),
-                        _Shimmer(
-                          width: double.infinity,
-                          height: w * 0.075,
-                          radius: w * 0.022,
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          SizedBox(height: w * 0.045),
-          Padding(
-            padding: EdgeInsets.symmetric(horizontal: w * 0.04),
-            child: _Shimmer(width: w * 0.30, height: w * 0.042, radius: 6),
-          ),
-          SizedBox(height: w * 0.02),
-          eventCardList(),
-          SizedBox(height: w * 0.045),
-          Padding(
-            padding: EdgeInsets.symmetric(horizontal: w * 0.04),
-            child: _Shimmer(width: w * 0.34, height: w * 0.042, radius: 6),
-          ),
-          SizedBox(height: w * 0.02),
-          eventCardList(),
-          SizedBox(height: w * 0.04),
+          // Featured / Today / Upcoming sections
+          const EventsSectionsSkeleton(),
         ],
       ),
     );
@@ -1673,7 +1701,9 @@ class MySubmissionsBodySkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width;
+    // Clamp to 480 like MySubmissionsScreen so the skeleton stays proportional
+    // on landscape / tablet viewports instead of stretching.
+    final double w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
 
     Widget card() => Container(
       margin: EdgeInsets.only(bottom: w * 0.03),
