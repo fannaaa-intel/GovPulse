@@ -1,15 +1,13 @@
+import 'dart:convert';
 import 'package:flutter_facebook_auth/flutter_facebook_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:http/http.dart' as http;
 
 class FacebookSignInService {
   static final _client = Supabase.instance.client;
 
-  /// Signs the user in via Facebook and links the credential to Supabase.
-  ///
-  /// Returns the Supabase [User] on success, or throws a human-readable
-  /// [String] on failure (cancelled, denied, network error, etc.).
   static Future<User> signIn() async {
-    // ── 1. Trigger the native Facebook login dialog ──────────────────────
+    // ── 1. Trigger native Facebook login ─────────────────────────────────
     final loginResult = await FacebookAuth.instance.login(
       permissions: ['email', 'public_profile'],
     );
@@ -31,38 +29,56 @@ class FacebookSignInService {
       throw 'Could not retrieve Facebook access token.';
     }
 
-    // ── 2. Exchange the Facebook token with Supabase ─────────────────────
+    // ── 2. Exchange Facebook access token for Supabase session ───────────
+    // Supabase supports Facebook via its token endpoint
     try {
-      final response = await _client.auth.signInWithIdToken(
-        provider: OAuthProvider.facebook,
-        idToken: accessToken,
+      const supabaseUrl = 'https://vxvflhjbafqwehuxnmeq.supabase.co';
+      const supabaseKey = 'sb_publishable_ZBDaQPQdFyC5kOHGbce9Ig_zdtIi6Mo';
+
+      final response = await http.post(
+        Uri.parse('$supabaseUrl/auth/v1/token?grant_type=facebook'),
+        headers: {'Content-Type': 'application/json', 'apikey': supabaseKey},
+        body: jsonEncode({'access_token': accessToken}),
       );
 
-      final user = response.user;
-      if (user == null) throw 'Supabase sign-in returned no user.';
+      if (response.statusCode != 200) {
+        final error = jsonDecode(response.body);
+        throw error['error_description'] ??
+            error['msg'] ??
+            'Facebook sign-in failed.';
+      }
+
+      final data = jsonDecode(response.body);
+      final accessTokenRes = data['access_token'] as String?;
+      final refreshToken = data['refresh_token'] as String?;
+
+      if (accessTokenRes == null || refreshToken == null) {
+        throw 'Invalid response from server.';
+      }
+
+      // Set the session in Supabase client
+      final sessionResponse = await _client.auth.setSession(refreshToken);
+      final user = sessionResponse.user;
+      if (user == null) throw 'Could not establish session.';
 
       return user;
     } on AuthException catch (e) {
       throw e.message;
     } catch (e) {
-      throw 'Something went wrong connecting to the server. Please try again.';
+      final msg = e.toString().replaceFirst('Exception: ', '');
+      if (msg == 'Facebook sign-in was cancelled.') throw msg;
+      throw 'Something went wrong. Please try again.';
     }
   }
 
-  /// Returns the Facebook display name + email from the Graph API,
-  /// useful for pre-filling the username picker screen.
   static Future<Map<String, dynamic>> getUserData() async {
     try {
-      final data = await FacebookAuth.instance.getUserData(
-        fields: 'name,email',
-      );
-      return data;
+      return await FacebookAuth.instance.getUserData(fields: 'name,email');
     } catch (_) {
       return {};
     }
   }
 
-  /// Signs out from both Facebook and Supabase.
   static Future<void> signOut() async {
     await FacebookAuth.instance.logOut();
     await _client.auth.signOut();
