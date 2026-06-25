@@ -3,7 +3,6 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/widgets/inputs/rounded_input_field.dart';
-import '../../core/widgets/buttons/social_button.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/web/web.dart';
 import '../../core/widgets/mobile_form_shell.dart';
@@ -450,87 +449,21 @@ class _LoginScreenState extends State<LoginScreen>
             ],
           ),
           const SizedBox(height: 18),
-          // Web guest button
           SizedBox(
             width: double.infinity,
-            height: 48,
-            child: OutlinedButton.icon(
-              style: ButtonStyle(
-                backgroundColor: WidgetStateProperty.all(Colors.transparent),
-                overlayColor: WidgetStateProperty.all(Colors.transparent),
-                side: WidgetStateProperty.resolveWith((states) {
-                  final active =
-                      states.contains(WidgetState.hovered) ||
-                      states.contains(WidgetState.pressed);
-                  return BorderSide(
-                    color: active
-                        ? AppColors.primaryBlue
-                        : const Color(0xFFCBD2DE),
-                    width: active ? 1.4 : 1.2,
-                  );
-                }),
-                foregroundColor: WidgetStateProperty.resolveWith((states) {
-                  final active =
-                      states.contains(WidgetState.hovered) ||
-                      states.contains(WidgetState.pressed);
-                  return active
-                      ? AppColors.primaryBlue
-                      : const Color(0xFF374151);
-                }),
-                shape: WidgetStateProperty.all(
-                  RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                elevation: WidgetStateProperty.all(0),
-              ),
-              onPressed: widget.onGuestClick ?? () {},
-              icon: const Icon(Icons.person_outline_rounded, size: 18),
-              label: const Text(
-                "Continue as guest",
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-              ),
+            child: WebOutlinedButton(
+              icon: Icons.facebook,
+              label: "Continue with Facebook",
+              onTap: _signInWithFacebook,
             ),
           ),
           const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
-            child: OutlinedButton.icon(
-              style: ButtonStyle(
-                backgroundColor: WidgetStateProperty.all(Colors.transparent),
-                overlayColor: WidgetStateProperty.all(Colors.transparent),
-                side: WidgetStateProperty.resolveWith((states) {
-                  final active =
-                      states.contains(WidgetState.hovered) ||
-                      states.contains(WidgetState.pressed);
-                  return BorderSide(
-                    color: active
-                        ? const Color(0xFF1877F2)
-                        : const Color(0xFFCBD2DE),
-                    width: active ? 1.4 : 1.2,
-                  );
-                }),
-                foregroundColor: WidgetStateProperty.resolveWith((states) {
-                  final active =
-                      states.contains(WidgetState.hovered) ||
-                      states.contains(WidgetState.pressed);
-                  return active
-                      ? const Color(0xFF1877F2)
-                      : const Color(0xFF374151);
-                }),
-                shape: WidgetStateProperty.all(
-                  RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                elevation: WidgetStateProperty.all(0),
-              ),
-              onPressed: _signInWithFacebook,
-              icon: const Icon(Icons.facebook, size: 18),
-              label: const Text(
-                "Continue with Facebook",
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-              ),
+            child: WebOutlinedButton(
+              icon: Icons.person_outline_rounded,
+              label: "Continue as guest",
+              onTap: widget.onGuestClick ?? () {},
             ),
           ),
         ] else ...[
@@ -639,32 +572,66 @@ class _LoginScreenState extends State<LoginScreen>
             ],
           ),
           const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: const Color(0xFF374151),
+                side: const BorderSide(color: Color(0xFFCBD2DE), width: 1.2),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              onPressed: _signInWithFacebook,
+              icon: const Icon(
+                Icons.facebook,
+                size: 20,
+                color: Color(0xFF1877F2),
+              ),
+              label: const Text(
+                "Continue with Facebook",
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: TextButton.icon(
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.hint,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              onPressed: widget.onGuestClick ?? () {},
+              icon: const Icon(Icons.person_outline_rounded, size: 20),
+              label: const Text(
+                "Continue as guest",
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
           Row(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Expanded(
-                child: SocialButton(
-                  icon: Icons.person_outline_rounded,
-                  isIconData: true,
-                  label: "As Guest",
-                  onTap: widget.onGuestClick ?? () {},
-                ),
+              Text(
+                "Don't have an account? ",
+                style: TextStyle(fontSize: 13, color: AppColors.hint),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: SocialButton(
-                  icon: Icons.facebook,
-                  isIconData: true,
-                  label: "Facebook",
-                  onTap: _signInWithFacebook,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: SocialButton(
-                  icon: Icons.app_registration_rounded,
-                  isIconData: true,
-                  label: "Sign Up",
-                  onTap: widget.onSignUpClick,
+              GestureDetector(
+                onTap: widget.onSignUpClick,
+                child: Text(
+                  "Sign up",
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.primaryBlue,
+                  ),
                 ),
               ),
             ],

@@ -181,6 +181,28 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
               if (!ctx.mounted) return;
               Navigator.pushNamed(ctx, '/guest');
             },
+            onFacebookClick: () async {
+              final user = Supabase.instance.client.auth.currentUser;
+              if (user == null || !ctx.mounted) return;
+              final row = await Supabase.instance.client
+                  .from('profiles')
+                  .select('username')
+                  .eq('id', user.id)
+                  .maybeSingle();
+              final username = (row?['username'] as String?) ?? '';
+              if (!ctx.mounted) return;
+              CommunityPostsProvider.instance.resetForAuthenticatedUser();
+              ProviderScope.containerOf(ctx).invalidate(userProfileProvider);
+              Navigator.of(ctx).pushAndRemoveUntil(
+                PageRouteBuilder(
+                  transitionDuration: Duration.zero,
+                  reverseTransitionDuration: Duration.zero,
+                  pageBuilder: (_, _, _) =>
+                      NetworkWrapper(child: HomePage(username: username)),
+                ),
+                (route) => false,
+              );
+            },
           ),
         ),
       );
@@ -196,11 +218,29 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
               if (!ctx.mounted) return;
               Navigator.pushNamed(ctx, '/guest');
             },
-            onFacebookClick: () => Navigator.pushNamedAndRemoveUntil(
-              ctx,
-              '/home',
-              (route) => false,
-            ),
+            onFacebookClick: () async {
+              final user = Supabase.instance.client.auth.currentUser;
+              if (user == null || !ctx.mounted) return;
+              // Get username from profiles table (just set by picker screen)
+              final row = await Supabase.instance.client
+                  .from('profiles')
+                  .select('username')
+                  .eq('id', user.id)
+                  .maybeSingle();
+              final username = (row?['username'] as String?) ?? '';
+              if (!ctx.mounted) return;
+              CommunityPostsProvider.instance.resetForAuthenticatedUser();
+              ProviderScope.containerOf(ctx).invalidate(userProfileProvider);
+              Navigator.of(ctx).pushAndRemoveUntil(
+                PageRouteBuilder(
+                  transitionDuration: Duration.zero,
+                  reverseTransitionDuration: Duration.zero,
+                  pageBuilder: (_, _, _) =>
+                      NetworkWrapper(child: HomePage(username: username)),
+                ),
+                (route) => false,
+              );
+            },
           ),
         ),
       );

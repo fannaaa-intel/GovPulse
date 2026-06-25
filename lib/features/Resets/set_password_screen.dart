@@ -114,8 +114,14 @@ class _SetPasswordScreenState extends State<SetPasswordScreen>
     });
 
     try {
+      // NOTE: On an OAuth-only (Facebook) account, updateUser(password:)
+      // sets the password BUT does NOT add an 'email' provider to
+      // auth.identities (known Supabase limitation — see settings_screen).
+      // So we ALSO stamp a `has_password` flag in user_metadata, which the
+      // Settings screen reads to flip the tile. user_metadata comes back on
+      // the same response and survives getUser()/refresh.
       await Supabase.instance.client.auth.updateUser(
-        UserAttributes(password: password),
+        UserAttributes(password: password, data: {'has_password': true}),
       );
       if (!mounted) return;
       await Future.delayed(const Duration(milliseconds: 300));
@@ -139,241 +145,285 @@ class _SetPasswordScreenState extends State<SetPasswordScreen>
 
   @override
   Widget build(BuildContext context) {
+    final w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
     return NetworkWrapper(
       child: Scaffold(
         backgroundColor: const Color(0xFFF3F4F6),
-        appBar: AppBar(
-          backgroundColor: Colors.white,
-          elevation: 0,
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-            color: AppColors.primaryBlue,
-            onPressed: () => Navigator.pop(context),
-          ),
-          title: Text(
-            'Set Password',
-            style: TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.w600,
-              color: AppColors.primaryBlue,
-            ),
-          ),
-          centerTitle: true,
-        ),
-        // ── Content slides up, AppBar stays fixed ──────────────────────────
-        body: FadeTransition(
-          opacity: _fadeAnim,
-          child: SlideTransition(
-            position: _slideAnim,
-            child: ResponsivePageBody(
-              maxWidth: 560,
-              child: GestureDetector(
-                onTap: () => FocusScope.of(context).unfocus(),
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 24,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // ── Facebook badge ───────────────────────────────────
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFE7F0FF),
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: const Color(0xFFBFD4FA)),
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 32,
-                              height: 32,
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF1877F2),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              alignment: Alignment.center,
-                              child: const Text(
-                                'f',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 19,
-                                  fontWeight: FontWeight.bold,
-                                  height: 1,
+        body: SafeArea(
+          child: Column(
+            children: [
+              // ── Header — identical to My Submissions / Change Password ──────
+              _buildHeader(w),
+              // ── Content slides up, header stays fixed ──────────────────────
+              Expanded(
+                child: FadeTransition(
+                  opacity: _fadeAnim,
+                  child: SlideTransition(
+                    position: _slideAnim,
+                    child: ResponsivePageBody(
+                      maxWidth: 560,
+                      child: GestureDetector(
+                        onTap: () => FocusScope.of(context).unfocus(),
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 24,
+                            vertical: 24,
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // ── Facebook badge ───────────────────────────────────
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFE7F0FF),
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(
+                                    color: const Color(0xFFBFD4FA),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 32,
+                                      height: 32,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF1877F2),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      alignment: Alignment.center,
+                                      child: const Icon(
+                                        Icons.facebook,
+                                        color: Colors.white,
+                                        size: 20,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        'You\'re signed in via Facebook. Setting a password lets you also log in with your email.',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color: AppColors.primaryBlue,
+                                          height: 1.4,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                'You\'re signed in via Facebook. Setting a password lets you also log in with your email.',
+
+                              const SizedBox(height: 28),
+
+                              // ── New password ─────────────────────────────────────
+                              Text(
+                                'New password',
                                 style: TextStyle(
                                   fontSize: 13,
-                                  color: AppColors.primaryBlue,
-                                  height: 1.4,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.hint,
                                 ),
                               ),
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      const SizedBox(height: 28),
-
-                      // ── New password ─────────────────────────────────────
-                      Text(
-                        'New password',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.hint,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      RoundedInputField(
-                        controller: _passwordController,
-                        value: password,
-                        hintText: 'Password',
-                        icon: Icons.lock,
-                        obscureText: !showPassword,
-                        onChanged: _onPasswordChanged,
-                        suffixWidget: GestureDetector(
-                          onTap: () =>
-                              setState(() => showPassword = !showPassword),
-                          child: Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Icon(
-                              showPassword
-                                  ? Icons.visibility_outlined
-                                  : Icons.visibility_off_outlined,
-                              size: 20,
-                              color: AppColors.primaryBlue,
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      const SizedBox(height: 14),
-
-                      // ── Confirm password ─────────────────────────────────
-                      RoundedInputField(
-                        controller: _confirmController,
-                        value: confirmPassword,
-                        hintText: 'Confirm Password',
-                        icon: Icons.lock,
-                        obscureText: !showConfirm,
-                        isError: isPasswordMismatch,
-                        onChanged: (val) =>
-                            setState(() => confirmPassword = val),
-                        suffixWidget: GestureDetector(
-                          onTap: () =>
-                              setState(() => showConfirm = !showConfirm),
-                          child: Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Icon(
-                              showConfirm
-                                  ? Icons.visibility_outlined
-                                  : Icons.visibility_off_outlined,
-                              size: 20,
-                              color: AppColors.primaryBlue,
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      const SizedBox(height: 10),
-
-                      // ── Strength bar ─────────────────────────────────────
-                      if (password.isNotEmpty) ...[
-                        Text(
-                          'Strength: $strengthText',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: strengthColor,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        PasswordStrengthBar(score: strengthScore),
-                        const SizedBox(height: 10),
-                      ],
-
-                      // ── Requirements ─────────────────────────────────────
-                      Row(
-                        children: [
-                          _req('Atleast 8 characters', hasMinLength),
-                          const SizedBox(width: 12),
-                          _req('Must have number', hasNumber),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          _req('One uppercase letter', hasUpper),
-                          const SizedBox(width: 12),
-                          _req('One special character', hasSpecial),
-                        ],
-                      ),
-
-                      const SizedBox(height: 24),
-
-                      // ── Error ────────────────────────────────────────────
-                      if (errorText != null)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: Text(
-                            errorText!,
-                            style: const TextStyle(
-                              color: Colors.red,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ),
-                      // ── Submit ───────────────────────────────────────────
-                      SizedBox(
-                        width: double.infinity,
-                        height: 52,
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: canSubmit
-                                ? AppColors.primaryBlue
-                                : AppColors.primaryBlue.withValues(alpha: 0.4),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                          ),
-                          onPressed: canSubmit ? _submit : null,
-                          child: isLoading
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    color: Colors.white,
-                                    strokeWidth: 2.5,
+                              const SizedBox(height: 8),
+                              RoundedInputField(
+                                controller: _passwordController,
+                                value: password,
+                                hintText: 'Password',
+                                icon: Icons.lock,
+                                obscureText: !showPassword,
+                                onChanged: _onPasswordChanged,
+                                suffixWidget: GestureDetector(
+                                  onTap: () => setState(
+                                    () => showPassword = !showPassword,
                                   ),
-                                )
-                              : const Text(
-                                  'Set Password',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(12),
+                                    child: Icon(
+                                      showPassword
+                                          ? Icons.visibility_outlined
+                                          : Icons.visibility_off_outlined,
+                                      size: 20,
+                                      color: AppColors.primaryBlue,
+                                    ),
                                   ),
                                 ),
+                              ),
+
+                              const SizedBox(height: 14),
+
+                              // ── Confirm password ─────────────────────────────────
+                              RoundedInputField(
+                                controller: _confirmController,
+                                value: confirmPassword,
+                                hintText: 'Confirm Password',
+                                icon: Icons.lock,
+                                obscureText: !showConfirm,
+                                isError: isPasswordMismatch,
+                                onChanged: (val) =>
+                                    setState(() => confirmPassword = val),
+                                suffixWidget: GestureDetector(
+                                  onTap: () => setState(
+                                    () => showConfirm = !showConfirm,
+                                  ),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(12),
+                                    child: Icon(
+                                      showConfirm
+                                          ? Icons.visibility_outlined
+                                          : Icons.visibility_off_outlined,
+                                      size: 20,
+                                      color: AppColors.primaryBlue,
+                                    ),
+                                  ),
+                                ),
+                              ),
+
+                              const SizedBox(height: 10),
+
+                              // ── Strength bar ─────────────────────────────────────
+                              if (password.isNotEmpty) ...[
+                                Text(
+                                  'Strength: $strengthText',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: strengthColor,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                PasswordStrengthBar(score: strengthScore),
+                                const SizedBox(height: 10),
+                              ],
+
+                              // ── Requirements ─────────────────────────────────────
+                              Row(
+                                children: [
+                                  _req('Atleast 8 characters', hasMinLength),
+                                  const SizedBox(width: 12),
+                                  _req('Must have number', hasNumber),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Row(
+                                children: [
+                                  _req('One uppercase letter', hasUpper),
+                                  const SizedBox(width: 12),
+                                  _req('One special character', hasSpecial),
+                                ],
+                              ),
+
+                              const SizedBox(height: 24),
+
+                              // ── Error ────────────────────────────────────────────
+                              if (errorText != null)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 12),
+                                  child: Text(
+                                    errorText!,
+                                    style: const TextStyle(
+                                      color: Colors.red,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                              // ── Submit ───────────────────────────────────────────
+                              SizedBox(
+                                width: double.infinity,
+                                height: 52,
+                                child: ElevatedButton(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: canSubmit
+                                        ? AppColors.primaryBlue
+                                        : AppColors.primaryBlue.withValues(
+                                            alpha: 0.4,
+                                          ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                  ),
+                                  onPressed: canSubmit ? _submit : null,
+                                  child: isLoading
+                                      ? const SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child: CircularProgressIndicator(
+                                            color: Colors.white,
+                                            strokeWidth: 2.5,
+                                          ),
+                                        )
+                                      : const Text(
+                                          'Set Password',
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                ),
+                              ),
+
+                              const SizedBox(height: 24),
+                            ],
+                          ),
                         ),
                       ),
-
-                      const SizedBox(height: 24),
-                    ],
+                    ),
                   ),
                 ),
               ),
-            ),
+            ],
           ),
         ),
+      ),
+    );
+  }
+
+  // ── Header — identical to My Submissions / Change Password screens ────────
+  Widget _buildHeader(double w) {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.fromLTRB(w * 0.04, w * 0.04, w * 0.04, w * 0.035),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          GestureDetector(
+            onTap: () => Navigator.pop(context),
+            child: Container(
+              width: w * 0.09,
+              height: w * 0.09,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF3F4F6),
+                borderRadius: BorderRadius.circular(w * 0.025),
+                border: Border.all(color: AppColors.stroke),
+              ),
+              child: Icon(
+                Icons.arrow_back_ios_rounded,
+                size: w * 0.04,
+                color: AppColors.primaryBlue,
+              ),
+            ),
+          ),
+          SizedBox(width: w * 0.035),
+          Text(
+            'Set Password',
+            style: TextStyle(
+              fontSize: w * 0.052,
+              fontWeight: FontWeight.w700,
+              color: AppColors.primaryBlue,
+              letterSpacing: -0.3,
+            ),
+          ),
+        ],
       ),
     );
   }

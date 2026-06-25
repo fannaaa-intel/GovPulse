@@ -291,14 +291,24 @@ class _FacebookUsernameScreenState extends State<FacebookUsernameScreen>
 
                       const SizedBox(height: 14),
 
-                      GestureDetector(
-                        onTap: isSubmitting ? null : widget.onCancel,
-                        child: Text(
-                          'Cancel',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: AppColors.hint,
-                            decoration: TextDecoration.underline,
+                      SizedBox(
+                        width: double.infinity,
+                        height: 48,
+                        child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide(color: AppColors.stroke),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                          onPressed: isSubmitting ? null : widget.onCancel,
+                          child: Text(
+                            'Cancel',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w500,
+                              color: AppColors.hint,
+                            ),
                           ),
                         ),
                       ),
@@ -508,15 +518,23 @@ class _FacebookUsernameScreenState extends State<FacebookUsernameScreen>
 
         const SizedBox(height: 16),
 
-        Center(
-          child: GestureDetector(
-            onTap: isSubmitting ? null : widget.onCancel,
+        SizedBox(
+          width: double.infinity,
+          height: 48,
+          child: OutlinedButton(
+            style: OutlinedButton.styleFrom(
+              side: BorderSide(color: AppColors.stroke),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            onPressed: isSubmitting ? null : widget.onCancel,
             child: Text(
               'Cancel',
               style: TextStyle(
-                fontSize: 13,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
                 color: AppColors.hint,
-                decoration: TextDecoration.underline,
               ),
             ),
           ),
@@ -548,15 +566,7 @@ class _FacebookUsernameScreenState extends State<FacebookUsernameScreen>
               borderRadius: BorderRadius.circular(6),
             ),
             alignment: Alignment.center,
-            child: const Text(
-              'f',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 17,
-                fontWeight: FontWeight.bold,
-                height: 1,
-              ),
-            ),
+            child: const Icon(Icons.facebook, color: Colors.white, size: 18),
           ),
           const SizedBox(width: 10),
           Text(
