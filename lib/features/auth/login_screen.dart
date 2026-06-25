@@ -1,25 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/widgets/inputs/rounded_input_field.dart';
 import '../../core/widgets/buttons/social_button.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/web/web.dart';
-
 import '../../core/widgets/mobile_form_shell.dart';
+import '../../core/network/network_wrapper.dart';
+import '../../core/services/facebook_signin_service.dart';
+import '../auth/facebook_username_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   final Future<void> Function(String, String) onLoginClick;
   final VoidCallback onSignUpClick;
   final VoidCallback? onGuestClick;
-  final VoidCallback? onPhoneClick;
+  final VoidCallback? onFacebookClick;
 
   const LoginScreen({
     super.key,
     required this.onLoginClick,
     required this.onSignUpClick,
     this.onGuestClick,
-    this.onPhoneClick,
+    this.onFacebookClick,
   });
 
   @override
@@ -489,6 +492,47 @@ class _LoginScreenState extends State<LoginScreen>
               ),
             ),
           ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              style: ButtonStyle(
+                backgroundColor: WidgetStateProperty.all(Colors.transparent),
+                overlayColor: WidgetStateProperty.all(Colors.transparent),
+                side: WidgetStateProperty.resolveWith((states) {
+                  final active =
+                      states.contains(WidgetState.hovered) ||
+                      states.contains(WidgetState.pressed);
+                  return BorderSide(
+                    color: active
+                        ? const Color(0xFF1877F2)
+                        : const Color(0xFFCBD2DE),
+                    width: active ? 1.4 : 1.2,
+                  );
+                }),
+                foregroundColor: WidgetStateProperty.resolveWith((states) {
+                  final active =
+                      states.contains(WidgetState.hovered) ||
+                      states.contains(WidgetState.pressed);
+                  return active
+                      ? const Color(0xFF1877F2)
+                      : const Color(0xFF374151);
+                }),
+                shape: WidgetStateProperty.all(
+                  RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                elevation: WidgetStateProperty.all(0),
+              ),
+              onPressed: _signInWithFacebook,
+              icon: const Icon(Icons.facebook, size: 18),
+              label: const Text(
+                "Continue with Facebook",
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+              ),
+            ),
+          ),
         ] else ...[
           // ── Mobile fields (unchanged) ──────────────────────────────────
           RoundedInputField(
@@ -508,12 +552,12 @@ class _LoginScreenState extends State<LoginScreen>
               onTap: () => setState(() => showPassword = !showPassword),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Image.asset(
+                child: Icon(
                   showPassword
-                      ? "assets/images/eye.webp"
-                      : "assets/images/closed_eye.webp",
-                  width: 22,
-                  height: 22,
+                      ? Icons.visibility_outlined
+                      : Icons.visibility_off_outlined,
+                  size: 22,
+                  color: AppColors.primaryBlue,
                 ),
               ),
             ),
@@ -599,15 +643,26 @@ class _LoginScreenState extends State<LoginScreen>
             children: [
               Expanded(
                 child: SocialButton(
-                  iconPath: "assets/images/guest.webp",
+                  icon: Icons.person_outline_rounded,
+                  isIconData: true,
                   label: "As Guest",
                   onTap: widget.onGuestClick ?? () {},
                 ),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 10),
               Expanded(
                 child: SocialButton(
-                  iconPath: "assets/images/out.webp",
+                  icon: Icons.facebook,
+                  isIconData: true,
+                  label: "Facebook",
+                  onTap: _signInWithFacebook,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: SocialButton(
+                  icon: Icons.app_registration_rounded,
+                  isIconData: true,
                   label: "Sign Up",
                   onTap: widget.onSignUpClick,
                 ),
@@ -617,6 +672,70 @@ class _LoginScreenState extends State<LoginScreen>
         ],
       ],
     );
+  }
+
+  Future<void> _signInWithFacebook() async {
+    try {
+      final user = await FacebookSignInService.signIn();
+
+      if (!mounted) return;
+
+      // Check if this user already has a username set
+      final profile = await Supabase.instance.client
+          .from('profiles')
+          .select('username')
+          .eq('id', user.id)
+          .maybeSingle();
+
+      final hasUsername =
+          profile != null &&
+          (profile['username'] as String?)?.isNotEmpty == true;
+
+      if (!mounted) return;
+
+      if (hasUsername) {
+        // Existing Facebook user — go straight into the app
+        widget.onFacebookClick?.call();
+      } else {
+        // New Facebook user — pick a username first
+        final fbData = await FacebookSignInService.getUserData();
+        final fbName = fbData['name'] as String? ?? '';
+
+        if (!mounted) return;
+
+        Navigator.push(
+          context,
+          PageRouteBuilder(
+            transitionDuration: Duration.zero,
+            reverseTransitionDuration: Duration.zero,
+            pageBuilder: (_, _, _) => NetworkWrapper(
+              child: FacebookUsernameScreen(
+                facebookName: fbName,
+                onComplete: (username) async {
+                  await Supabase.instance.client
+                      .from('profiles')
+                      .update({'username': username})
+                      .eq('id', user.id);
+                  if (!mounted) return;
+                  widget.onFacebookClick?.call();
+                },
+                onCancel: () async {
+                  await FacebookSignInService.signOut();
+                  if (!mounted) return;
+                  Navigator.pop(context);
+                },
+              ),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      final msg = e.toString().replaceFirst('Exception: ', '');
+      if (msg != 'Facebook sign-in was cancelled.') {
+        setState(() => errorMessage = msg);
+      }
+    }
   }
 
   Future<void> _handleLogin() async {

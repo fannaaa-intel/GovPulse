@@ -49,13 +49,32 @@ class VerificationIdentityScreen extends StatefulWidget {
       _VerificationIdentityScreenState();
 }
 
-class _VerificationIdentityScreenState
-    extends State<VerificationIdentityScreen> {
+class _VerificationIdentityScreenState extends State<VerificationIdentityScreen>
+    with SingleTickerProviderStateMixin {
   bool _confirmPressed = false;
+
+  late final AnimationController _entryCtrl;
+  late final Animation<double> _entryFade;
+  late final Animation<Offset> _entrySlide;
 
   @override
   void initState() {
     super.initState();
+
+    _entryCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 420),
+    );
+    _entryFade = CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOut);
+    _entrySlide = Tween<Offset>(
+      begin: const Offset(0, 0.06),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOutCubic));
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _entryCtrl.forward();
+    });
+
     Future.delayed(const Duration(milliseconds: 600), () {
       if (!mounted) return;
       SystemChrome.setEnabledSystemUIMode(
@@ -63,6 +82,12 @@ class _VerificationIdentityScreenState
         overlays: [SystemUiOverlay.top, SystemUiOverlay.bottom],
       );
     });
+  }
+
+  @override
+  void dispose() {
+    _entryCtrl.dispose();
+    super.dispose();
   }
 
   @override
@@ -85,8 +110,22 @@ class _VerificationIdentityScreenState
           children: [
             _buildHeader(context),
             _buildStepper(),
-            Expanded(child: _buildContent()),
-            _buildBottomButton(bottomPadding),
+            Expanded(
+              child: FadeTransition(
+                opacity: _entryFade,
+                child: SlideTransition(
+                  position: _entrySlide,
+                  child: _buildContent(),
+                ),
+              ),
+            ),
+            FadeTransition(
+              opacity: _entryFade,
+              child: SlideTransition(
+                position: _entrySlide,
+                child: _buildBottomButton(bottomPadding),
+              ),
+            ),
           ],
         ),
       ),

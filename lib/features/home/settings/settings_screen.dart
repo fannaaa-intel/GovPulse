@@ -12,6 +12,7 @@ import '../../../core/widgets/Home/home_enums.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../../core/services/push_service.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../Resets/set_password_screen.dart';
 
 class SettingScreen extends ConsumerStatefulWidget {
   final String username;
@@ -801,6 +802,56 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
           onTap: () {
             if (email == null) return;
             Navigator.pushNamed(context, '/change_password', arguments: email);
+          },
+        ),
+
+        // ── Set Password (Facebook users only) ───────────────────────────
+        Builder(
+          builder: (context) {
+            final user = Supabase.instance.client.auth.currentUser;
+            final identities = user?.identities ?? [];
+            final isFacebookUser = identities.any(
+              (i) => i.provider == 'facebook',
+            );
+            final hasPasswordLogin = identities.any(
+              (i) => i.provider == 'email',
+            );
+
+            if (!isFacebookUser) return const SizedBox.shrink();
+
+            return _buildTile(
+              imagePath: 'assets/images/settings/password.webp',
+              iconBgColor: const Color(0xFF1877F2),
+              title: hasPasswordLogin ? 'Update Password' : 'Set Password',
+              subtitle: hasPasswordLogin
+                  ? 'Change your email login password'
+                  : 'Add email & password as a backup login',
+              width: width,
+              onTap: () async {
+                final result = await Navigator.push(
+                  context,
+                  PageRouteBuilder(
+                    transitionDuration: Duration.zero,
+                    reverseTransitionDuration: const Duration(
+                      milliseconds: 220,
+                    ),
+                    pageBuilder: (_, _, _) => const SetPasswordScreen(),
+                  ),
+                );
+                if (result == true && mounted) {
+                  await showSuccessDialog(
+                    // ignore: use_build_context_synchronously
+                    context,
+                    title: 'Password Set!',
+                    message:
+                        'You can now log in with your email and password as a backup to Facebook.',
+                    buttonLabel: 'Got it',
+                    iconData: Icons.lock_rounded,
+                    iconColor: AppColors.primaryBlue,
+                  );
+                }
+              },
+            );
           },
         ),
         _buildTile(

@@ -7,18 +7,12 @@ import '../services/chat_service.dart';
 import '../network/network_wrapper.dart';
 import '../../features/onboarding/splash_screen.dart';
 import '../../features/onboarding/intro_screen.dart';
-import '../../features/onboarding/otp_loading_screen.dart';
 import '../../features/auth/login_screen.dart';
 import '../services/auth_service.dart';
-import '../../features/auth/phone_signup_screen.dart';
 import '../../features/auth/signup_screen.dart';
 import '../../features/guest/screen/guest.dart';
-import '../../features/Resets/reset_password_method_screen.dart';
-import '../../features/Resets/reset_password_via_phone_screen.dart';
 import '../../features/Resets/reset_password_email_screen.dart';
 import '../../features/verification/screens/reset_password_email_verify_screen.dart';
-import '../../features/verification/screens/phone_verification_screen.dart';
-import '../../features/verification/screens/phone_verification_success.dart';
 import '../../features/verification/screens/email_verification_success.dart';
 import '../../features/home/screen/home_screen.dart';
 import '../../features/home/newsfeed/news_feed_screen.dart';
@@ -52,6 +46,7 @@ import '../providers/community_posts_provider.dart';
 import '../../features/home/settings/terms-of-service/terms_of_service_screen.dart';
 import '../../features/home/settings/privacy-policy/privacy_policy_screen.dart';
 import '../../features/home/settings/about/about_govpulse_screen.dart';
+import '../../features/admin/screens/admin_dashboard_screen.dart';
 
 /// Required by [MaterialApp.navigatorObservers] for home route tracking.
 final RouteObserver<ModalRoute<void>> homeRouteObserver =
@@ -132,7 +127,7 @@ Map<String, WidgetBuilder> get appRoutes => {
 Route<dynamic>? onGenerateRoute(RouteSettings settings) {
   switch (settings.name) {
     // ── Auth flow ────────────────────────────────────────────────────────────
-    // /login, /signup, /phone_signup use _instantInFadeOut:
+    // /login, /signup use _instantInFadeOut:
     //  - Entry is instant on all platforms — each screen's own
     //    _entranceController plays the fade + slide-up of its content.
     //  - Reverse (back navigation) fades the whole screen out over 220ms.
@@ -142,10 +137,7 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
         Builder(
           builder: (ctx) => LoginScreen(
             onLoginClick: (username, password) async {
-              final usernameFromDB = await AuthService.login(
-                username,
-                password,
-              );
+              final result = await AuthService.login(username, password);
               // Rebind chat storage to THIS user before Home mounts.
               final uid = Supabase.instance.client.auth.currentUser?.id;
               if (uid != null) {
@@ -155,16 +147,33 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
               CommunityPostsProvider.instance.resetForAuthenticatedUser();
               ProviderScope.containerOf(ctx).invalidate(userProfileProvider);
 
-              Navigator.pushReplacement(
-                ctx,
-                PageRouteBuilder(
-                  transitionDuration: Duration.zero,
-                  reverseTransitionDuration: Duration.zero,
-                  pageBuilder: (_, _, _) =>
-                      NetworkWrapper(child: HomePage(username: usernameFromDB)),
-                  transitionsBuilder: (_, _, _, child) => child,
-                ),
-              );
+              // Role-based routing
+              // 1 = admin  → admin dashboard (web & mobile)
+              // 2 = staff  → home (staff features unlocked inside)
+              // 3 = citizen, null = unverified → home
+              if (result.roleId == 1) {
+                Navigator.pushReplacement(
+                  ctx,
+                  PageRouteBuilder(
+                    transitionDuration: Duration.zero,
+                    reverseTransitionDuration: Duration.zero,
+                    pageBuilder: (_, _, _) => const AdminDashboardScreen(),
+                    transitionsBuilder: (_, _, _, child) => child,
+                  ),
+                );
+              } else {
+                Navigator.pushReplacement(
+                  ctx,
+                  PageRouteBuilder(
+                    transitionDuration: Duration.zero,
+                    reverseTransitionDuration: Duration.zero,
+                    pageBuilder: (_, _, _) => NetworkWrapper(
+                      child: HomePage(username: result.username),
+                    ),
+                    transitionsBuilder: (_, _, _, child) => child,
+                  ),
+                );
+              }
             },
             onSignUpClick: () => Navigator.pushNamed(ctx, '/signup'),
             onGuestClick: () async {
@@ -187,32 +196,11 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
               if (!ctx.mounted) return;
               Navigator.pushNamed(ctx, '/guest');
             },
-            onPhoneClick: () => Navigator.pushNamed(ctx, '/phone_signup'),
-          ),
-        ),
-      );
-
-    case '/phone_signup':
-      return _instantInFadeOut(
-        Builder(
-          builder: (ctx) => PhoneSignupScreen(
-            onContinueClick: (phone, password) async {
-              await Navigator.push(
-                ctx,
-                _webFadeRoute(
-                  OtpLoadingScreen(
-                    type: 'phone',
-                    onSendOtp: () async {
-                      await Future.delayed(const Duration(seconds: 2));
-                    },
-                  ),
-                ),
-              );
-              if (!ctx.mounted) return;
-              Navigator.pushNamed(ctx, '/phone_verify/$phone');
-            },
-            onBackClick: () => Navigator.pop(ctx),
-            onLoginClick: () => Navigator.pushNamed(ctx, '/login'),
+            onFacebookClick: () => Navigator.pushNamedAndRemoveUntil(
+              ctx,
+              '/home',
+              (route) => false,
+            ),
           ),
         ),
       );
@@ -224,10 +212,6 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
       final email = settings.arguments as String;
       return _instantInFadeOut(EmailVerificationSuccess(email: email));
 
-    case '/phone_verification_success':
-      final phone = settings.arguments as String;
-      return _instantInFadeOut(PhoneVerificationSuccess(phone: phone));
-
     // ── Reset password — sub-screens also use _webFadeRoute inline ───────────
 
     case '/reset_password':
@@ -238,45 +222,21 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
         reverseTransitionDuration: const Duration(milliseconds: 220),
         pageBuilder: (_, _, _) => NetworkWrapper(
           child: Builder(
-            builder: (ctx) => ResetPasswordMethodScreen(
-              onEmailTap: () {
+            builder: (ctx) => ResetPasswordEmailScreen(
+              onVerify: () {
                 Navigator.push(
                   ctx,
-                  _instantInFadeOut(
-                    Builder(
-                      builder: (ctx2) => ResetPasswordEmailScreen(
-                        onVerify: () {
-                          Navigator.push(
-                            ctx2,
-                            _webFadeRoute(
-                              ResetPasswordEmailVerifyScreen(
-                                email: '',
-                                onVerifiedSuccess: () {},
-                                onTermsClick: () {},
-                                onConditionsClick: () {},
-                              ),
-                            ),
-                          );
-                        },
-                        onLogin: () => Navigator.pushNamed(ctx2, '/login'),
-                      ),
+                  _webFadeRoute(
+                    ResetPasswordEmailVerifyScreen(
+                      email: '',
+                      onVerifiedSuccess: () {},
+                      onTermsClick: () {},
+                      onConditionsClick: () {},
                     ),
                   ),
                 );
               },
-              onPhoneTap: () {
-                Navigator.push(
-                  ctx,
-                  _instantInFadeOut(
-                    Builder(
-                      builder: (ctx2) => ResetPasswordPhoneScreen(
-                        onVerify: () {},
-                        onLogin: () => Navigator.pushNamed(ctx2, '/login'),
-                      ),
-                    ),
-                  ),
-                );
-              },
+              onLogin: () => Navigator.pushNamed(ctx, '/login'),
             ),
           ),
         ),
@@ -521,8 +481,8 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
     case '/verification_identity':
       final args = settings.arguments as Map<String, dynamic>;
       return PageRouteBuilder(
-        transitionDuration: const Duration(milliseconds: 420),
-        reverseTransitionDuration: const Duration(milliseconds: 300),
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: const Duration(milliseconds: 220),
         pageBuilder: (_, _, _) => NetworkWrapper(
           child: VerificationIdentityScreen(
             username: args['username'] as String,
@@ -543,13 +503,8 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
             backImage: args['backImage'] as Uint8List?,
           ),
         ),
-        transitionsBuilder: (_, anim, _, child) => SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(0, 1),
-            end: Offset.zero,
-          ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
-          child: child,
-        ),
+        transitionsBuilder: (_, anim, _, child) =>
+            FadeTransition(opacity: anim, child: child),
       );
 
     case '/verification_face_scan':
@@ -687,17 +642,6 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
     // ── Dynamic phone verify route ────────────────────────────────────────────
 
     default:
-      if (settings.name != null &&
-          settings.name!.startsWith('/phone_verify/')) {
-        final phone = settings.name!.split('/').last;
-        return _instantInFadeOut(
-          PhoneVerificationScreen(
-            phone: phone,
-            onTermsClick: () {},
-            onConditionsClick: () {},
-          ),
-        );
-      }
       return null;
   }
 }

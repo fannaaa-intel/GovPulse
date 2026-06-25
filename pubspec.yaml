@@ -47,6 +47,7 @@ dependencies:
   flutter_riverpod: ^2.5.1
   firebase_messaging: ^15.1.0 
   supabase: ^2.12.2
+  flutter_facebook_auth: ^7.0.0
   
 dev_dependencies:
   flutter_test:

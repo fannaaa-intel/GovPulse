@@ -136,6 +136,7 @@ Future<void> showSuccessDialog(
   required String message,
   String buttonLabel = 'Done',
   String iconAsset = 'assets/images/verification/verified.webp',
+  IconData? iconData,
   Color? iconColor,
   Color? iconBgColor,
 }) async {
@@ -173,8 +174,29 @@ Future<void> showSuccessDialog(
             // ── Icon with optional tinted circle background ──────────────
             () {
               final size = width * 0.22;
+              final bg =
+                  iconBgColor ??
+                  (iconColor != null
+                      ? iconColor.withValues(alpha: 0.12)
+                      : const Color(0xFFE7F0FF));
+
+              // ── Flutter IconData (no asset needed) ───────────────────
+              if (iconData != null) {
+                return Container(
+                  width: size,
+                  height: size,
+                  decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
+                  child: Center(
+                    child: Icon(
+                      iconData,
+                      size: size * 0.55,
+                      color: iconColor ?? AppColors.primaryBlue,
+                    ),
+                  ),
+                );
+              }
+
               if (iconColor != null) {
-                final bg = iconBgColor ?? iconColor.withValues(alpha: 0.12);
                 return Container(
                   width: size,
                   height: size,

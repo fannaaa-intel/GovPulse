@@ -10,6 +10,8 @@ import '../../core/widgets/web/web.dart';
 import '../../features/verification/screens/email_verification_screen.dart';
 import '../../features/onboarding/otp_loading_screen.dart';
 import '../../core/services/auth_service.dart';
+import '../../core/services/facebook_signin_service.dart';
+import '../../core/network/network_wrapper.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/widgets/mobile_form_shell.dart';
 import 'dart:async';
@@ -17,7 +19,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 // Screens navigated to from here — imported so PageRouteBuilder can reference them.
-import '../auth/phone_signup_screen.dart';
+import '../auth/facebook_username_screen.dart';
 import '../guest/screen/guest.dart';
 
 // Route observer — declare once at app level and pass to MaterialApp's navigatorObservers.
@@ -29,14 +31,14 @@ class SignupScreen extends StatefulWidget {
   final Function(String, String, String) onSignUpClick;
   final VoidCallback onLoginClick;
   final VoidCallback onGuestClick;
-  final VoidCallback onPhoneClick;
+  final VoidCallback onFacebookClick;
 
   const SignupScreen({
     super.key,
     required this.onSignUpClick,
     required this.onLoginClick,
     required this.onGuestClick,
-    required this.onPhoneClick,
+    required this.onFacebookClick,
   });
 
   @override
@@ -99,7 +101,7 @@ class _SignupScreenState extends State<SignupScreen>
     signupRouteObserver.subscribe(this, ModalRoute.of(context)!);
   }
 
-  /// Called when a route above this one (e.g. PhoneSignupScreen) is popped.
+  /// Called when a route above this one is popped.
   /// Resets and replays the entrance animation so content slides up again.
   @override
   void didPopNext() {
@@ -242,31 +244,6 @@ class _SignupScreenState extends State<SignupScreen>
 
   // ── Navigation helpers ────────────────────────────────────────────────────
 
-  /// Instant screen swap — the destination's own entrance animation does the work.
-  void _goToPhone() {
-    Navigator.push(
-      context,
-      PageRouteBuilder(
-        transitionDuration: Duration.zero,
-        reverseTransitionDuration: Duration.zero,
-        pageBuilder: (_, _, _) => PhoneSignupScreen(
-          onContinueClick: (phone, password) async {
-            widget.onPhoneClick();
-          },
-          onBackClick: () {
-            Navigator.pop(context);
-            _entranceController.reset();
-            Future.delayed(const Duration(milliseconds: 80), () {
-              if (mounted) _entranceController.forward();
-            });
-          },
-          onLoginClick: widget.onLoginClick,
-        ),
-      ),
-    );
-  }
-
-  /// Instant screen swap to Guest — destination slides up & fades in itself.
   void _goToGuest() {
     Navigator.push(
       context,
@@ -276,6 +253,54 @@ class _SignupScreenState extends State<SignupScreen>
         pageBuilder: (_, _, _) => const GuestScreen(),
       ),
     );
+  }
+
+  Future<void> _signInWithFacebook() async {
+    try {
+      final user = await FacebookSignInService.signIn();
+
+      if (!mounted) return;
+
+      // Fetch their Facebook display name to pre-fill the username suggestion
+      final fbData = await FacebookSignInService.getUserData();
+      final fbName = fbData['name'] as String? ?? '';
+
+      if (!mounted) return;
+
+      Navigator.push(
+        context,
+        PageRouteBuilder(
+          transitionDuration: Duration.zero,
+          reverseTransitionDuration: Duration.zero,
+          pageBuilder: (_, _, _) => NetworkWrapper(
+            child: FacebookUsernameScreen(
+              facebookName: fbName,
+              onComplete: (username) async {
+                await Supabase.instance.client
+                    .from('profiles')
+                    .update({'username': username})
+                    .eq('id', user.id);
+
+                if (!mounted) return;
+                widget.onFacebookClick();
+              },
+              onCancel: () async {
+                await FacebookSignInService.signOut();
+                if (!mounted) return;
+                Navigator.pop(context);
+              },
+            ),
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      final msg = e.toString().replaceFirst('Exception: ', '');
+      // Only show an error if it wasn't a user-initiated cancel
+      if (msg != 'Facebook sign-in was cancelled.') {
+        setState(() => emailErrorText = msg);
+      }
+    }
   }
 
   Future<void> _submitSignup(BuildContext context) async {
@@ -541,11 +566,12 @@ class _SignupScreenState extends State<SignupScreen>
                               setState(() => showPassword = !showPassword),
                           child: Padding(
                             padding: const EdgeInsets.all(12),
-                            child: Image.asset(
+                            child: Icon(
                               showPassword
-                                  ? "assets/images/eye.webp"
-                                  : "assets/images/closed_eye.webp",
-                              height: 20,
+                                  ? Icons.visibility_outlined
+                                  : Icons.visibility_off_outlined,
+                              size: 20,
+                              color: AppColors.primaryBlue,
                             ),
                           ),
                         ),
@@ -568,11 +594,12 @@ class _SignupScreenState extends State<SignupScreen>
                           ),
                           child: Padding(
                             padding: const EdgeInsets.all(12),
-                            child: Image.asset(
+                            child: Icon(
                               showConfirmPassword
-                                  ? "assets/images/eye.webp"
-                                  : "assets/images/closed_eye.webp",
-                              height: 20,
+                                  ? Icons.visibility_outlined
+                                  : Icons.visibility_off_outlined,
+                              size: 20,
+                              color: AppColors.primaryBlue,
                             ),
                           ),
                         ),
@@ -669,7 +696,8 @@ class _SignupScreenState extends State<SignupScreen>
                         children: [
                           Expanded(
                             child: SocialButton(
-                              iconPath: "assets/images/guest.webp",
+                              icon: Icons.person_outline_rounded,
+                              isIconData: true,
                               label: "As Guest",
                               // ── Instant push; GuestScreen animates itself in ──
                               onTap: _goToGuest,
@@ -678,11 +706,10 @@ class _SignupScreenState extends State<SignupScreen>
                           const SizedBox(width: 16),
                           Expanded(
                             child: SocialButton(
-                              icon: Icons.phone,
+                              icon: Icons.facebook,
                               isIconData: true,
-                              label: "With Phone",
-                              // ── Instant push; PhoneSignupScreen animates itself in ──
-                              onTap: _goToPhone,
+                              label: "With Facebook",
+                              onTap: _signInWithFacebook,
                             ),
                           ),
                         ],
@@ -1062,10 +1089,9 @@ class _SignupScreenState extends State<SignupScreen>
             const SizedBox(width: 14),
             Expanded(
               child: WebOutlinedButton(
-                icon: Icons.phone_outlined,
-                label: "Phone",
-                // ── Instant push; PhoneSignupScreen animates itself in ──
-                onTap: _goToPhone,
+                icon: Icons.facebook,
+                label: "Facebook",
+                onTap: _signInWithFacebook,
               ),
             ),
           ],
