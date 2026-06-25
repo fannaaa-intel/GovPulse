@@ -119,6 +119,11 @@ class _EmergencyScreenState extends State<EmergencyScreen>
           number: '09954316944',
           network: 'Globe',
         ),
+        _Hotline(
+          name: 'Coast Guard Station Aparri (CGS)',
+          number: '09296742140',
+          network: 'Smart',
+        ),
       ],
     ),
     _Category(
@@ -144,12 +149,7 @@ class _EmergencyScreenState extends State<EmergencyScreen>
           network: 'Globe',
         ),
         _Hotline(
-          name: 'Aparri Medicare Community Hospital',
-          number: '09278710503',
-          network: 'Globe',
-        ),
-        _Hotline(
-          name: 'Aparri Christian Hospital, Inc.',
+          name: 'Charles W. Saldy (Aparri Christian Hospital)',
           number: '0788882447',
           network: 'Tel',
         ),
@@ -159,7 +159,7 @@ class _EmergencyScreenState extends State<EmergencyScreen>
           network: 'Smart',
         ),
         _Hotline(
-          name: 'Municipal Health Office (West)',
+          name: 'Super Health Center (West)',
           number: '09951868014',
           network: 'Smart',
         ),
@@ -199,7 +199,10 @@ class _EmergencyScreenState extends State<EmergencyScreen>
       hotlines: [
         _Hotline(name: 'Philippine Red Cross', number: '143'),
         _Hotline(name: 'Philippine Coast Guard', number: '5278481'),
-        _Hotline(name: 'NDRRMC Operations Center', number: '02-91117600'),
+        _Hotline(name: 'NDRRMC Operations Center', number: '911170000'),
+        _Hotline(name: 'NDRRMC Text Hotline', number: '8080'),
+        _Hotline(name: 'PAG-ASA Weather Hotline', number: '16570'),
+        _Hotline(name: 'PHIVOLCS', number: '8426-1468'),
       ],
     ),
   ];

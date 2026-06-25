@@ -35,7 +35,10 @@ class AuthService {
   }
 
   // ── Login ─────────────────────────────────────────────────────────────────
-  static Future<String> login(String username, String password) async {
+  static Future<({String username, int? roleId})> login(
+    String username,
+    String password,
+  ) async {
     final cleanUsername = username.trim();
     final cleanPassword = password.trim();
 
@@ -78,7 +81,17 @@ class AuthService {
         throw 'Login failed. Please try again.';
       }
 
-      return usernameFromDB;
+      // Step 3 — fetch role_id (null = unverified citizen)
+      final userId = authResponse.user!.id;
+      final roleData = await _client
+          .from('user_roles')
+          .select('role_id')
+          .eq('user_id', userId)
+          .maybeSingle();
+
+      final roleId = roleData?['role_id'] as int?;
+
+      return (username: usernameFromDB, roleId: roleId);
     } on AuthException catch (e) {
       switch (e.statusCode) {
         case '400':
