@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
 import '../../core/widgets/inputs/rounded_input_field.dart';
-import '../../core/widgets/buttons/social_button.dart';
 import '../../core/utils/password_validator.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/indicators/password_strength_bar.dart';
@@ -692,27 +691,60 @@ class _SignupScreenState extends State<SignupScreen>
 
                       const SizedBox(height: 12),
 
-                      Row(
-                        children: [
-                          Expanded(
-                            child: SocialButton(
-                              icon: Icons.person_outline_rounded,
-                              isIconData: true,
-                              label: "As Guest",
-                              // ── Instant push; GuestScreen animates itself in ──
-                              onTap: _goToGuest,
+                      SizedBox(
+                        width: double.infinity,
+                        height: 52,
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            backgroundColor: Colors.white,
+                            foregroundColor: const Color(0xFF374151),
+                            side: const BorderSide(
+                              color: Color(0xFFCBD2DE),
+                              width: 1.2,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
                             ),
                           ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: SocialButton(
-                              icon: Icons.facebook,
-                              isIconData: true,
-                              label: "With Facebook",
-                              onTap: _signInWithFacebook,
+                          onPressed: _signInWithFacebook,
+                          icon: const Icon(
+                            Icons.facebook,
+                            size: 20,
+                            color: Color(0xFF1877F2),
+                          ),
+                          label: const Text(
+                            "Continue with Facebook",
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
-                        ],
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 48,
+                        child: TextButton.icon(
+                          style: TextButton.styleFrom(
+                            foregroundColor: AppColors.hint,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                          onPressed: _goToGuest,
+                          icon: const Icon(
+                            Icons.person_outline_rounded,
+                            size: 20,
+                          ),
+                          label: const Text(
+                            "Continue as guest",
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
                       ),
 
                       const SizedBox(height: 10),
@@ -1076,25 +1108,22 @@ class _SignupScreenState extends State<SignupScreen>
 
         const SizedBox(height: 18),
 
-        Row(
-          children: [
-            Expanded(
-              child: WebOutlinedButton(
-                icon: Icons.person_outline_rounded,
-                label: "Guest",
-                // ── Instant push; GuestScreen animates itself in ──
-                onTap: _goToGuest,
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: WebOutlinedButton(
-                icon: Icons.facebook,
-                label: "Facebook",
-                onTap: _signInWithFacebook,
-              ),
-            ),
-          ],
+        SizedBox(
+          width: double.infinity,
+          child: WebOutlinedButton(
+            icon: Icons.facebook,
+            label: "Continue with Facebook",
+            onTap: _signInWithFacebook,
+          ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: WebOutlinedButton(
+            icon: Icons.person_outline_rounded,
+            label: "Continue as guest",
+            onTap: _goToGuest,
+          ),
         ),
 
         const SizedBox(height: 28),

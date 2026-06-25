@@ -25,6 +25,11 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
     with TickerProviderStateMixin {
   static const String _appVersion = '1.0.0';
 
+  // ── Identity flag (reactive) ──────────────────────────────────────────────
+  bool _hasPasswordLogin = false;
+  bool _isFacebookUser = false;
+  bool _isFacebookOnly = false;
+
   // ── Entry animation controller ────────────────────────────────────────────
   late final AnimationController _entryCtrl;
 
@@ -42,12 +47,34 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
         if (mounted) _entryCtrl.forward();
       });
     });
+
+    // ── Seed identity flags ───────────────────────────────────────────────
+    _refreshIdentityFlags();
   }
 
   @override
   void dispose() {
     _entryCtrl.dispose();
     super.dispose();
+  }
+
+  void _refreshIdentityFlags() {
+    final user = Supabase.instance.client.auth.currentUser;
+    final identities = user?.identities ?? [];
+
+    // An OAuth-only (Facebook) account NEVER gets an 'email' provider added to
+    // auth.identities just by calling updateUser(password:) — that's a known
+    // Supabase limitation. So the identities list alone can't tell us the user
+    // set a password. We also honour the `has_password` flag we stamp into
+    // user_metadata in SetPasswordScreen.
+    final hasPasswordMeta = user?.userMetadata?['has_password'] == true;
+
+    setState(() {
+      _hasPasswordLogin =
+          hasPasswordMeta || identities.any((i) => i.provider == 'email');
+      _isFacebookUser = identities.any((i) => i.provider == 'facebook');
+      _isFacebookOnly = _isFacebookUser && !_hasPasswordLogin;
+    });
   }
 
   // ── Staggered right-to-left entry animation helper ────────────────────────
@@ -506,14 +533,27 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
                 ),
                 if (email != null) ...[
                   SizedBox(height: width * 0.005),
-                  Text(
-                    email,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: width * 0.030,
-                      color: AppColors.hint,
-                    ),
+                  Builder(
+                    builder: (context) {
+                      final user = Supabase.instance.client.auth.currentUser;
+                      final identities = user?.identities ?? [];
+                      final hasPasswordMeta =
+                          user?.userMetadata?['has_password'] == true;
+                      final isFacebookOnly =
+                          identities.any((i) => i.provider == 'facebook') &&
+                          !hasPasswordMeta &&
+                          !identities.any((i) => i.provider == 'email');
+                      if (isFacebookOnly) return const SizedBox.shrink();
+                      return Text(
+                        email,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: width * 0.030,
+                          color: AppColors.hint,
+                        ),
+                      );
+                    },
                   ),
                 ],
                 SizedBox(height: width * 0.012),
@@ -794,66 +834,64 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
             }
           },
         ),
-        _buildTile(
-          imagePath: 'assets/images/settings/password.webp',
-          iconBgColor: AppColors.primaryBlue,
-          title: 'Change Password',
-          width: width,
-          onTap: () {
-            if (email == null) return;
-            Navigator.pushNamed(context, '/change_password', arguments: email);
-          },
-        ),
 
-        // ── Set Password (Facebook users only) ───────────────────────────
-        Builder(
-          builder: (context) {
-            final user = Supabase.instance.client.auth.currentUser;
-            final identities = user?.identities ?? [];
-            final isFacebookUser = identities.any(
-              (i) => i.provider == 'facebook',
-            );
-            final hasPasswordLogin = identities.any(
-              (i) => i.provider == 'email',
-            );
+        if (!_isFacebookOnly)
+          _buildTile(
+            imagePath: 'assets/images/settings/password.webp',
+            iconBgColor: AppColors.primaryBlue,
+            title: 'Change Password',
+            width: width,
+            onTap: () {
+              if (email == null) return;
+              Navigator.pushNamed(
+                context,
+                '/change_password',
+                arguments: email,
+              );
+            },
+          ),
 
-            if (!isFacebookUser) return const SizedBox.shrink();
-
-            return _buildTile(
-              imagePath: 'assets/images/settings/password.webp',
-              iconBgColor: const Color(0xFF1877F2),
-              title: hasPasswordLogin ? 'Update Password' : 'Set Password',
-              subtitle: hasPasswordLogin
-                  ? 'Change your email login password'
-                  : 'Add email & password as a backup login',
-              width: width,
-              onTap: () async {
-                final result = await Navigator.push(
+        if (_isFacebookUser && !_hasPasswordLogin)
+          _buildTile(
+            imagePath: 'assets/images/settings/password.webp',
+            iconBgColor: const Color(0xFF1877F2),
+            title: _hasPasswordLogin ? 'Update Password' : 'Set Password',
+            subtitle: _hasPasswordLogin
+                ? 'Change your email login password'
+                : 'Add email & password as a backup login',
+            width: width,
+            onTap: () async {
+              final result = await Navigator.push(
+                context,
+                PageRouteBuilder(
+                  transitionDuration: Duration.zero,
+                  reverseTransitionDuration: const Duration(milliseconds: 220),
+                  pageBuilder: (_, _, _) => const SetPasswordScreen(),
+                  // Match the app-wide _instantInFadeOut behaviour: instant in,
+                  // fade out on the way back to Settings.
+                  transitionsBuilder: (_, anim, _, child) =>
+                      FadeTransition(opacity: anim, child: child),
+                ),
+              );
+              if (result == true && mounted) {
+                await Supabase.instance.client.auth.getUser();
+                if (!mounted) return;
+                _refreshIdentityFlags();
+                ref.read(userProfileProvider.notifier).refresh();
+                await showSuccessDialog(
+                  // ignore: use_build_context_synchronously
                   context,
-                  PageRouteBuilder(
-                    transitionDuration: Duration.zero,
-                    reverseTransitionDuration: const Duration(
-                      milliseconds: 220,
-                    ),
-                    pageBuilder: (_, _, _) => const SetPasswordScreen(),
-                  ),
+                  title: 'Password Set!',
+                  message:
+                      'You can now log in with your email and password as a backup to Facebook.',
+                  buttonLabel: 'Got it',
+                  iconData: Icons.lock_rounded,
+                  iconColor: AppColors.primaryBlue,
                 );
-                if (result == true && mounted) {
-                  await showSuccessDialog(
-                    // ignore: use_build_context_synchronously
-                    context,
-                    title: 'Password Set!',
-                    message:
-                        'You can now log in with your email and password as a backup to Facebook.',
-                    buttonLabel: 'Got it',
-                    iconData: Icons.lock_rounded,
-                    iconColor: AppColors.primaryBlue,
-                  );
-                }
-              },
-            );
-          },
-        ),
+              }
+            },
+          ),
+
         _buildTile(
           imagePath: 'assets/images/settings/submission.webp',
           iconBgColor: AppColors.primaryBlue,
@@ -943,8 +981,7 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
           iconBgColor: AppColors.primaryBlue,
           title: 'About GovPulse',
           width: width,
-          onTap: () =>
-              Navigator.pushNamed(context, '/about'), // ← was _comingSoon
+          onTap: () => Navigator.pushNamed(context, '/about'),
         ),
         _buildTile(
           imagePath: 'assets/images/settings/location.webp',
