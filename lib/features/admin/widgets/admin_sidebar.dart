@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../screens/admin_dashboard_screen.dart';
 import '../../../core/theme/app_colors.dart';
+import '../theme/admin_ui.dart';
 
 class AdminSidebar extends StatelessWidget {
   final List<AdminNavItem> items;
@@ -24,7 +25,7 @@ class AdminSidebar extends StatelessWidget {
       width: collapsed ? 68 : 240,
       decoration: const BoxDecoration(
         color: Colors.white,
-        border: Border(right: BorderSide(color: Color(0xFFE8ECF4), width: 1)),
+        border: Border(right: BorderSide(color: AdminUi.border, width: 1)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

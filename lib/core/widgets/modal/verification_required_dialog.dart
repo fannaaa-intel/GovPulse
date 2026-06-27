@@ -281,3 +281,21 @@ Future<void> showSuccessDialog(
     ),
   );
 }
+
+/// Reusable error dialog — same look as [showSuccessDialog], with a red
+/// error icon. Use this everywhere for surfacing errors (no SnackBars).
+Future<void> showErrorDialog(
+  BuildContext context, {
+  String title = 'Something went wrong',
+  required String message,
+  String buttonLabel = 'OK',
+}) {
+  return showSuccessDialog(
+    context,
+    title: title,
+    message: message,
+    buttonLabel: buttonLabel,
+    iconData: Icons.error_outline_rounded,
+    iconColor: AppColors.red,
+  );
+}

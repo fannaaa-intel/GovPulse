@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../theme/admin_ui.dart';
 
 class AdminTopBar extends StatelessWidget {
   final String title;
@@ -21,7 +22,7 @@ class AdminTopBar extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 20),
       decoration: const BoxDecoration(
         color: Colors.white,
-        border: Border(bottom: BorderSide(color: Color(0xFFE8ECF4), width: 1)),
+        border: Border(bottom: BorderSide(color: AdminUi.border, width: 1)),
       ),
       child: Row(
         children: [
@@ -53,7 +54,7 @@ class AdminTopBar extends StatelessWidget {
             decoration: BoxDecoration(
               color: const Color(0xFFF4F6FB),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFE8ECF4)),
+              border: Border.all(color: AdminUi.border),
             ),
             child: Row(
               children: [

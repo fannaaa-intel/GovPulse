@@ -8,6 +8,7 @@ import '../../core/widgets/web/web.dart';
 import '../../core/widgets/mobile_form_shell.dart';
 import '../../core/network/network_wrapper.dart';
 import '../../core/services/facebook_signin_service.dart';
+import '../../core/widgets/modal/verification_required_dialog.dart';
 import '../auth/facebook_username_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -699,8 +700,13 @@ class _LoginScreenState extends State<LoginScreen>
     } catch (e) {
       if (!mounted) return;
       final msg = e.toString().replaceFirst('Exception: ', '');
+      // Surface via the shared dialog (not a SnackBar / inline text).
       if (msg != 'Facebook sign-in was cancelled.') {
-        setState(() => errorMessage = msg);
+        await showErrorDialog(
+          context,
+          title: 'Facebook sign-in failed',
+          message: msg,
+        );
       }
     }
   }
