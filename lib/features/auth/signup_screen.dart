@@ -10,6 +10,7 @@ import '../../features/verification/screens/email_verification_screen.dart';
 import '../../features/onboarding/otp_loading_screen.dart';
 import '../../core/services/auth_service.dart';
 import '../../core/services/facebook_signin_service.dart';
+import '../../core/widgets/modal/verification_required_dialog.dart';
 import '../../core/network/network_wrapper.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/widgets/mobile_form_shell.dart';
@@ -295,9 +296,13 @@ class _SignupScreenState extends State<SignupScreen>
     } catch (e) {
       if (!mounted) return;
       final msg = e.toString().replaceFirst('Exception: ', '');
-      // Only show an error if it wasn't a user-initiated cancel
+      // Surface via the shared dialog (not a SnackBar / inline text).
       if (msg != 'Facebook sign-in was cancelled.') {
-        setState(() => emailErrorText = msg);
+        await showErrorDialog(
+          context,
+          title: 'Facebook sign-in failed',
+          message: msg,
+        );
       }
     }
   }

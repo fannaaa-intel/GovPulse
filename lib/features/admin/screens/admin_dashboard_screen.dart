@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../widgets/admin_sidebar.dart';
 import '../widgets/admin_topbar.dart';
 import '../pages/admin_overview_page.dart';
+import '../pages/admin_reports_page.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -28,9 +29,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   ];
 
   Widget _buildPage() {
-    // We'll wire up all pages as we build them,
-    // for now all point to overview
-    return AdminOverviewPage(selectedIndex: _selectedIndex);
+    switch (_selectedIndex) {
+      case 0:
+        return AdminOverviewPage(
+          selectedIndex: _selectedIndex,
+          onNavigate: (i) => setState(() => _selectedIndex = i),
+        );
+      case 1:
+        return const AdminReportsPage();
+      default:
+        return _ComingSoon(label: navItems[_selectedIndex].label);
+    }
   }
 
   @override
@@ -139,4 +148,42 @@ class AdminNavItem {
   final IconData icon;
   final String label;
   const AdminNavItem({required this.icon, required this.label});
+}
+
+class _ComingSoon extends StatelessWidget {
+  final String label;
+  const _ComingSoon({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.construction_rounded,
+            size: 40,
+            color: Colors.black.withValues(alpha: 0.18),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'This section is coming soon.',
+            style: TextStyle(
+              fontSize: 13,
+              color: Colors.black.withValues(alpha: 0.45),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
