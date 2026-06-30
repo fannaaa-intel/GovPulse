@@ -1,10 +1,13 @@
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../core/theme/app_colors.dart';
-import '../theme/admin_ui.dart';
-import '../providers/admin_dashboard_provider.dart';
 
-class AdminOverviewPage extends ConsumerWidget {
+import '../../../core/theme/app_colors.dart';
+import '../providers/admin_dashboard_provider.dart';
+import '../providers/admin_reports_provider.dart' show ReportStatus;
+import '../theme/admin_ui.dart';
+
+class AdminOverviewPage extends ConsumerStatefulWidget {
   final int selectedIndex;
 
   /// Lets the dashboard jump the shell to another section (e.g. Reports = 1).
@@ -18,10 +21,16 @@ class AdminOverviewPage extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // No MediaQuery here — this page is embedded inside the sidebar + topbar
-    // shell, so all layout decisions are driven by LayoutBuilder against the
-    // content area's own constraints.
+  ConsumerState<AdminOverviewPage> createState() => _AdminOverviewPageState();
+}
+
+class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
+  // Trend window in days. Drives client-side bucketing of report dates, so the
+  // toggle is instant and needs no refetch.
+  int _rangeDays = 30;
+
+  @override
+  Widget build(BuildContext context) {
     final async = ref.watch(adminDashboardProvider);
 
     return RefreshIndicator(
@@ -31,26 +40,23 @@ class AdminOverviewPage extends ConsumerWidget {
         padding: const EdgeInsets.all(24),
         child: Center(
           child: ConstrainedBox(
-            // Keep content from stretching edge-to-edge on very wide monitors,
-            // which made the page feel sparse.
             constraints: const BoxConstraints(maxWidth: 1400),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Welcome back, Admin — here\'s what\'s happening in Aparri today.',
-                  style: TextStyle(fontSize: 13, color: AppColors.hint),
-                ),
+                _buildHeader(),
                 const SizedBox(height: 20),
                 if (async.hasError) ...[
-                  _buildErrorBanner(ref),
-                  const SizedBox(height: 20),
+                  _buildErrorBanner(),
+                  const SizedBox(height: 16),
                 ],
-                _buildHealthStrip(),
-                const SizedBox(height: 20),
-                _buildStatsGrid(async),
-                const SizedBox(height: 20),
-                _buildBottomSection(async),
+                _buildKpiRow(async),
+                const SizedBox(height: 16),
+                _buildChartsRow(async),
+                const SizedBox(height: 16),
+                _buildQualityRow(async),
+                const SizedBox(height: 16),
+                _buildInsightsRow(async),
               ],
             ),
           ),
@@ -59,7 +65,148 @@ class AdminOverviewPage extends ConsumerWidget {
     );
   }
 
-  Widget _buildErrorBanner(WidgetRef ref) {
+  // ── Header band ────────────────────────────────────────────────────────────
+  Widget _buildHeader() {
+    final now = DateTime.now();
+    return LayoutBuilder(
+      builder: (context, c) {
+        final tight = c.maxWidth < 640;
+        final greeting = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${_dayPart(now)}, Admin',
+              style: const TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.5,
+                color: AdminUi.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              '${_formatDate(now)} · Aparri, Cagayan',
+              style: const TextStyle(fontSize: 13, color: AdminUi.textMuted),
+            ),
+          ],
+        );
+
+        final actions = Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildRangeToggle(),
+            const SizedBox(width: 10),
+            _buildExportButton(),
+          ],
+        );
+
+        if (tight) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [greeting, const SizedBox(height: 14), actions],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: greeting),
+            actions,
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildRangeToggle() {
+    const options = [7, 30, 90];
+    return Container(
+      decoration: BoxDecoration(
+        color: AdminUi.surface,
+        borderRadius: BorderRadius.circular(AdminUi.controlRadius),
+        border: Border.all(color: AdminUi.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final d in options)
+            GestureDetector(
+              onTap: () => setState(() => _rangeDays = d),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: _rangeDays == d
+                      ? AppColors.primaryBlue.withValues(alpha: 0.10)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(AdminUi.controlRadius),
+                ),
+                child: Text(
+                  '${d}d',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: _rangeDays == d
+                        ? FontWeight.w600
+                        : FontWeight.w500,
+                    color: _rangeDays == d
+                        ? AppColors.primaryBlue
+                        : AdminUi.textSecondary,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildExportButton() {
+    return Material(
+      color: AdminUi.surface,
+      borderRadius: BorderRadius.circular(AdminUi.controlRadius),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AdminUi.controlRadius),
+        onTap: () {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Export coming soon'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AdminUi.controlRadius),
+            border: Border.all(color: AdminUi.border),
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.download_rounded,
+                size: 16,
+                color: AdminUi.textSecondary,
+              ),
+              SizedBox(width: 6),
+              Text(
+                'Export',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: AdminUi.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorBanner() {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
@@ -88,245 +235,368 @@ class AdminOverviewPage extends ConsumerWidget {
     );
   }
 
-  // ── 1. System health strip ────────────────────────────────────────────────
-  // Static placeholder: there is no service-health table / ping endpoint wired
-  // yet, so statuses are illustrative.
-  Widget _buildHealthStrip() {
-    const services = <_ServiceStatus>[
-      _ServiceStatus('API', _Health.operational),
-      _ServiceStatus('NLP pipeline', _Health.operational),
-      _ServiceStatus('Database', _Health.operational),
-      _ServiceStatus('Push notifications', _Health.warning),
-      _ServiceStatus('Connectivity', _Health.operational),
-      _ServiceStatus('Auth service', _Health.operational),
-    ];
-
-    return _Card(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const _SectionLabel('SYSTEM HEALTH'),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: services.map((s) => _buildHealthPill(s)).toList(),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHealthPill(_ServiceStatus service) {
-    final color = service.health.color;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(service.health.icon, size: 13, color: color),
-          const SizedBox(width: 6),
-          Text(
-            service.label,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-              color: color,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── 2. Stat cards grid ─────────────────────────────────────────────────────
-  Widget _buildStatsGrid(AsyncValue<AdminDashboardData> async) {
+  // ── 1. KPI row ───────────────────────────────────────────────────────────
+  Widget _buildKpiRow(AsyncValue<AdminDashboardData> async) {
     final data = async.valueOrNull;
     final loading = async.isLoading && data == null;
 
     final cards = <Widget>[
-      // Real: count of citizen reports → tap through to the Reports table.
-      _buildStatCard(
-        style: const _StatStyle(
-          label: 'Total reports',
-          icon: Icons.flag_rounded,
-          color: AppColors.primaryBlue,
-          valueIsAccent: false,
-        ),
+      _KpiCard(
+        label: 'Total reports',
+        icon: Icons.flag_rounded,
+        accent: AppColors.primaryBlue,
         loading: loading,
-        value: data != null ? '${data.totalReports}' : null,
-        sub: data != null ? '+${data.reportsThisWeek} this week' : 'Loading…',
-        onTap: onNavigate == null ? null : () => onNavigate!(1),
+        value: data == null ? null : '${data.totalReports}',
+        delta: null,
+        caption: 'All citizen reports',
+        onTap: widget.onNavigate == null ? null : () => widget.onNavigate!(1),
       ),
-      // Placeholder: no NLP/urgency table yet.
-      _buildStatCard(
-        style: const _StatStyle(
-          label: 'AI flagged urgent',
-          icon: Icons.error_outline_rounded,
-          color: AppColors.red,
-          valueIsAccent: true,
-        ),
-        loading: false,
-        value: null,
-        sub: 'NLP pipeline pending',
-      ),
-      // Placeholder: no sentiment table yet.
-      _buildStatCard(
-        style: const _StatStyle(
-          label: 'Avg sentiment',
-          icon: Icons.sentiment_satisfied_alt_rounded,
-          color: AppColors.green,
-          valueIsAccent: true,
-        ),
-        loading: false,
-        value: null,
-        sub: 'Sentiment service pending',
-      ),
-      // Real: count of pending verification submissions.
-      _buildStatCard(
-        style: const _StatStyle(
-          label: 'Pending verification',
-          icon: Icons.how_to_reg_rounded,
-          color: AppColors.orange,
-          valueIsAccent: true,
-        ),
+      _KpiCard(
+        label: 'New this week',
+        icon: Icons.trending_up_rounded,
+        accent: AppColors.primaryBlue,
         loading: loading,
-        value: data != null ? '${data.pendingVerification}' : null,
-        sub: 'Awaiting ID review',
+        value: data == null ? null : '${data.reportsThisWeek}',
+        delta: data?.reportsWeekDeltaPct,
+        deltaSuffix: '%',
+        caption: 'vs last week',
+      ),
+      _KpiCard(
+        label: 'Pending verification',
+        icon: Icons.how_to_reg_rounded,
+        accent: AppColors.orange,
+        loading: loading,
+        value: data == null ? null : '${data.pendingVerification}',
+        delta: null,
+        caption: 'Awaiting ID review',
+        onTap: widget.onNavigate == null ? null : () => widget.onNavigate!(7),
+      ),
+      _KpiCard(
+        label: 'Resolution rate',
+        icon: Icons.task_alt_rounded,
+        accent: AppColors.green,
+        loading: loading,
+        value: data == null ? null : '${(data.resolutionRate * 100).round()}%',
+        delta: data?.resolutionRateDeltaPts,
+        deltaSuffix: 'pts',
+        caption: 'vs last week',
       ),
     ];
 
     return LayoutBuilder(
-      builder: (context, constraints) {
-        final crossAxisCount = constraints.maxWidth > 700
-            ? 4
-            : constraints.maxWidth > 400
-            ? 2
-            : 1;
-        // Derive the aspect ratio from the real column width so every card
-        // targets a fixed height instead of growing taller as the screen
-        // widens (which made the cards huge on desktop).
-        const spacing = 14.0;
-        final cardWidth =
-            (constraints.maxWidth - spacing * (crossAxisCount - 1)) /
-            crossAxisCount;
-        final targetHeight = crossAxisCount == 1 ? 104.0 : 150.0;
-        final aspect = (cardWidth / targetHeight).clamp(0.8, 6.0);
-        return GridView.count(
-          crossAxisCount: crossAxisCount,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          crossAxisSpacing: spacing,
-          mainAxisSpacing: spacing,
-          childAspectRatio: aspect,
-          children: cards,
-        );
+      builder: (context, c) {
+        final cols = c.maxWidth > 900 ? 4 : (c.maxWidth > 520 ? 2 : 1);
+        return _kpiGrid(cards, cols);
       },
     );
   }
 
-  Widget _buildStatCard({
-    required _StatStyle style,
-    required bool loading,
-    required String? value,
-    required String sub,
-    VoidCallback? onTap,
-  }) {
-    // A null value means "not wired / not loaded" → show an em dash in muted
-    // colour so it never reads as a real (red/green) figure.
-    final hasValue = value != null;
-    final valueColor = !hasValue
-        ? AppColors.hint
-        : style.valueIsAccent
-        ? style.color
-        : Colors.black87;
+  // ── 2. Charts row: trend + status donut ──────────────────────────────────
+  Widget _buildChartsRow(AsyncValue<AdminDashboardData> async) {
+    return LayoutBuilder(
+      builder: (context, c) {
+        final wide = c.maxWidth >= 860;
+        final trend = _buildTrendCard(async);
+        final donut = _buildStatusCard(async);
+        if (wide) {
+          return IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(flex: 62, child: trend),
+                const SizedBox(width: 16),
+                Expanded(flex: 38, child: donut),
+              ],
+            ),
+          );
+        }
+        return Column(children: [trend, const SizedBox(height: 16), donut]);
+      },
+    );
+  }
 
+  Widget _buildTrendCard(AsyncValue<AdminDashboardData> async) {
+    final data = async.valueOrNull;
+    final loading = async.isLoading && data == null;
     return _Card(
-      padding: const EdgeInsets.all(16),
-      onTap: onTap,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Text(
-                  style.label,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.hint,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: style.color.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(style.icon, size: 16, color: style.color),
+              const _CardTitle('Reports over time'),
+              const Spacer(),
+              Text(
+                'last $_rangeDays days',
+                style: const TextStyle(fontSize: 11, color: AdminUi.textMuted),
               ),
             ],
           ),
-          if (loading)
-            const _Skeleton(width: 56, height: 26)
-          else
-            Text(
-              hasValue ? value : '—',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.5,
-                color: valueColor,
-              ),
-            ),
-          Text(
-            sub,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 11, color: AppColors.hint),
+          const SizedBox(height: 18),
+          SizedBox(
+            height: 200,
+            child: loading
+                ? const Center(
+                    child: SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                : (data == null
+                      ? const _EmptyHint('Trend unavailable.')
+                      : _TrendChart(dates: data.reportDates, days: _rangeDays)),
           ),
         ],
       ),
     );
   }
 
-  // ── 3. Two-column bottom section ───────────────────────────────────────────
-  Widget _buildBottomSection(AsyncValue<AdminDashboardData> async) {
+  Widget _buildStatusCard(AsyncValue<AdminDashboardData> async) {
+    final data = async.valueOrNull;
+    final loading = async.isLoading && data == null;
+    return _Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _CardTitle('Status breakdown'),
+          const SizedBox(height: 18),
+          if (loading)
+            const SizedBox(
+              height: 140,
+              child: Center(
+                child: SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            )
+          else if (data == null || data.totalReports == 0)
+            const _EmptyHint('No reports yet.')
+          else
+            _StatusDonut(counts: data.statusCounts, total: data.totalReports),
+        ],
+      ),
+    );
+  }
+
+  // ── 3. Quality row: satisfaction + top categories ─────────────────────────
+  Widget _buildQualityRow(AsyncValue<AdminDashboardData> async) {
     return LayoutBuilder(
-      builder: (context, constraints) {
-        if (constraints.maxWidth >= 700) {
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(flex: 55, child: _buildActivityFeed(async)),
-              const SizedBox(width: 20),
-              Expanded(flex: 45, child: _buildAIInsights(async)),
-            ],
+      builder: (context, c) {
+        final wide = c.maxWidth >= 860;
+        final sat = _buildSatisfactionCard(async);
+        final cats = _buildCategoriesCard(async);
+        if (wide) {
+          return IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(child: sat),
+                const SizedBox(width: 16),
+                Expanded(child: cats),
+              ],
+            ),
           );
         }
-        return Column(
-          children: [
-            _buildActivityFeed(async),
-            const SizedBox(height: 20),
-            _buildAIInsights(async),
-          ],
-        );
+        return Column(children: [sat, const SizedBox(height: 16), cats]);
       },
     );
   }
 
-  Widget _buildActivityFeed(AsyncValue<AdminDashboardData> async) {
+  Widget _buildSatisfactionCard(AsyncValue<AdminDashboardData> async) {
+    final data = async.valueOrNull;
+    final loading = async.isLoading && data == null;
+    final s = data?.satisfaction;
+
+    Widget body;
+    if (loading) {
+      body = Column(
+        children: List.generate(3, (_) => const _CategorySkeletonRow()),
+      );
+    } else if (s == null || s.responses == 0) {
+      body = const _EmptyHint('No citizen ratings yet.');
+    } else {
+      body = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                s.overall == null ? '—' : s.overall!.toStringAsFixed(1),
+                style: const TextStyle(
+                  fontSize: 32,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -1,
+                  color: AdminUi.textPrimary,
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.only(bottom: 5, left: 2),
+                child: Text(
+                  '/ 5',
+                  style: TextStyle(fontSize: 13, color: AdminUi.textMuted),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: _stars(s.overall ?? 0),
+              ),
+            ],
+          ),
+          const SizedBox(height: 2),
+          Text(
+            '${s.responses} response${s.responses == 1 ? '' : 's'}',
+            style: const TextStyle(fontSize: 11, color: AdminUi.textMuted),
+          ),
+          const SizedBox(height: 16),
+          const _SectionLabel('SERVICE QUALITY DIMENSIONS'),
+          const SizedBox(height: 12),
+          _aspectBar('Staff attitude', s.staff),
+          _aspectBar('Wait time', s.wait),
+          _aspectBar('Process clarity', s.clarity),
+          _aspectBar('Facility', s.facility),
+        ],
+      );
+    }
+
+    return _Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _CardTitle('Citizen satisfaction'),
+          const SizedBox(height: 16),
+          body,
+        ],
+      ),
+    );
+  }
+
+  Widget _aspectBar(String label, double? value) {
+    final v = (value ?? 0) / 5.0;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 110,
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 12,
+                color: AdminUi.textSecondary,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: Container(
+                height: 8,
+                color: AdminUi.subtle,
+                child: FractionallySizedBox(
+                  alignment: Alignment.centerLeft,
+                  widthFactor: v.clamp(0.0, 1.0),
+                  child: Container(color: AppColors.primaryBlue),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          SizedBox(
+            width: 30,
+            child: Text(
+              value == null ? '—' : value.toStringAsFixed(1),
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AdminUi.textSecondary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCategoriesCard(AsyncValue<AdminDashboardData> async) {
+    final data = async.valueOrNull;
+    final loading = async.isLoading && data == null;
+
+    Widget body;
+    if (loading) {
+      body = Column(
+        children: List.generate(4, (_) => const _CategorySkeletonRow()),
+      );
+    } else if (data == null) {
+      body = const _EmptyHint('Categories unavailable.');
+    } else if (data.topCategories.isEmpty) {
+      body = const _EmptyHint('No reports yet.');
+    } else {
+      const palette = <Color>[
+        AppColors.red,
+        AppColors.orange,
+        AppColors.primaryBlue,
+        AppColors.green,
+      ];
+      final cats = data.topCategories;
+      body = Column(
+        children: [
+          for (int i = 0; i < cats.length; i++)
+            _CategoryBar(
+              stat: cats[i],
+              color: cats[i].isAggregate
+                  ? AppColors.grey
+                  : palette[i % palette.length],
+            ),
+        ],
+      );
+    }
+
+    return _Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _CardTitle('Top reported categories'),
+          const SizedBox(height: 16),
+          body,
+        ],
+      ),
+    );
+  }
+
+  // ── 4. Insights row: recent activity + AI/NLP (awaiting pipeline) ─────────
+  Widget _buildInsightsRow(AsyncValue<AdminDashboardData> async) {
+    return LayoutBuilder(
+      builder: (context, c) {
+        final wide = c.maxWidth >= 860;
+        final activity = _buildActivityCard(async);
+        final nlp = const _NlpInsightsCard();
+        if (wide) {
+          return IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(flex: 55, child: activity),
+                const SizedBox(width: 16),
+                Expanded(flex: 45, child: nlp),
+              ],
+            ),
+          );
+        }
+        return Column(children: [activity, const SizedBox(height: 16), nlp]);
+      },
+    );
+  }
+
+  Widget _buildActivityCard(AsyncValue<AdminDashboardData> async) {
     final data = async.valueOrNull;
     final loading = async.isLoading && data == null;
 
@@ -344,7 +614,11 @@ class AdminOverviewPage extends ConsumerWidget {
       body = Column(
         children: [
           for (int i = 0; i < items.length; i++)
-            _buildActivityRow(items[i], isLast: i == items.length - 1),
+            _ActivityRow(
+              item: items[i],
+              isLast: i == items.length - 1,
+              onTap: _activityTap(items[i]),
+            ),
         ],
       );
     }
@@ -353,13 +627,16 @@ class AdminOverviewPage extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Recent activity',
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-              color: Colors.black87,
-            ),
+          Row(
+            children: [
+              const _CardTitle('Recent activity'),
+              const Spacer(),
+              if (widget.onNavigate != null)
+                _LinkButton(
+                  label: 'View all',
+                  onTap: () => widget.onNavigate!(1),
+                ),
+            ],
           ),
           const SizedBox(height: 16),
           body,
@@ -368,20 +645,572 @@ class AdminOverviewPage extends ConsumerWidget {
     );
   }
 
-  Widget _buildActivityRow(ActivityItem a, {required bool isLast}) {
-    final color = _activityColor(a.kind);
+  VoidCallback? _activityTap(ActivityItem a) {
     final isReport =
         a.kind == ActivityKind.reportNew ||
         a.kind == ActivityKind.reportReviewing ||
         a.kind == ActivityKind.reportResolved ||
         a.kind == ActivityKind.reportRejected;
-    // Report rows jump to the Reports table; verification rows have no detail
-    // view to open, so they stay non-interactive.
-    final onTap = (isReport && onNavigate != null)
-        ? () => onNavigate!(1)
+    return (isReport && widget.onNavigate != null)
+        ? () => widget.onNavigate!(1)
         : null;
-    // Transparent Material so the InkWell hover/splash (web) paints above the
-    // surrounding card rather than behind it.
+  }
+
+  // ── small helpers ──────────────────────────────────────────────────────────
+  Widget _stars(double rating) {
+    final full = rating.round().clamp(0, 5);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (int i = 1; i <= 5; i++)
+          Icon(
+            i <= full ? Icons.star_rounded : Icons.star_outline_rounded,
+            size: 16,
+            color: i <= full ? AppColors.orange : AdminUi.borderStrong,
+          ),
+      ],
+    );
+  }
+
+  /// Lays out cards in rows of [cols], letting each card size to its own
+  /// content. IntrinsicHeight equalises card heights within a row, so a delta
+  /// chip or a longer caption never gets clipped — the fixed-aspect grid this
+  /// replaced clipped tall content on narrow (single-column) layouts.
+  Widget _kpiGrid(List<Widget> cards, int cols) {
+    const gap = 14.0;
+    final rows = <Widget>[];
+    for (var i = 0; i < cards.length; i += cols) {
+      final end = (i + cols) > cards.length ? cards.length : i + cols;
+      final slice = cards.sublist(i, end);
+      final children = <Widget>[];
+      for (var j = 0; j < cols; j++) {
+        children.add(
+          Expanded(child: j < slice.length ? slice[j] : const SizedBox()),
+        );
+        if (j < cols - 1) children.add(const SizedBox(width: gap));
+      }
+      rows.add(
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: children,
+          ),
+        ),
+      );
+      if (end < cards.length) rows.add(const SizedBox(height: gap));
+    }
+    return Column(children: rows);
+  }
+
+  static String _dayPart(DateTime t) {
+    final h = t.hour;
+    if (h < 12) return 'Good morning';
+    if (h < 18) return 'Good afternoon';
+    return 'Good evening';
+  }
+
+  static String _formatDate(DateTime t) {
+    const days = [
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday',
+    ];
+    const months = [
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
+    ];
+    return '${days[t.weekday - 1]}, ${t.day} ${months[t.month - 1]} ${t.year}';
+  }
+}
+
+// ── Charts ─────────────────────────────────────────────────────────────────
+
+class _TrendChart extends StatelessWidget {
+  final List<DateTime> dates;
+  final int days;
+  const _TrendChart({required this.dates, required this.days});
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final start = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    ).subtract(Duration(days: days - 1));
+
+    // Daily buckets across the window (zero-filled).
+    final buckets = List<int>.filled(days, 0);
+    for (final d in dates) {
+      final day = DateTime(d.year, d.month, d.day);
+      final idx = day.difference(start).inDays;
+      if (idx >= 0 && idx < days) buckets[idx]++;
+    }
+
+    final spots = <FlSpot>[
+      for (int i = 0; i < days; i++)
+        FlSpot(i.toDouble(), buckets[i].toDouble()),
+    ];
+    final maxVal = buckets.fold<int>(0, (a, b) => a > b ? a : b);
+    final maxY = (maxVal <= 4 ? 4.0 : (maxVal * 1.25).ceilToDouble());
+    final yInterval = (maxY / 4).ceilToDouble().clamp(1.0, double.infinity);
+    final xInterval = (days / 5).ceilToDouble();
+
+    return LineChart(
+      LineChartData(
+        minX: 0,
+        maxX: (days - 1).toDouble(),
+        minY: 0,
+        maxY: maxY,
+        gridData: FlGridData(
+          show: true,
+          drawVerticalLine: false,
+          horizontalInterval: yInterval,
+          getDrawingHorizontalLine: (v) =>
+              const FlLine(color: AdminUi.border, strokeWidth: 1),
+        ),
+        borderData: FlBorderData(show: false),
+        titlesData: FlTitlesData(
+          topTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          rightTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 30,
+              interval: yInterval,
+              getTitlesWidget: (value, meta) {
+                if (value % yInterval != 0) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: Text(
+                    value.toInt().toString(),
+                    style: const TextStyle(
+                      fontSize: 10,
+                      color: AdminUi.textMuted,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 24,
+              interval: xInterval,
+              getTitlesWidget: (value, meta) {
+                final i = value.round();
+                if (i < 0 || i >= days) return const SizedBox.shrink();
+                final d = start.add(Duration(days: i));
+                return Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    _short(d),
+                    style: const TextStyle(
+                      fontSize: 10,
+                      color: AdminUi.textMuted,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+        lineTouchData: LineTouchData(enabled: true),
+        lineBarsData: [
+          LineChartBarData(
+            spots: spots,
+            isCurved: true,
+            curveSmoothness: 0.25,
+            color: AppColors.primaryBlue,
+            barWidth: 2.5,
+            isStrokeCapRound: true,
+            dotData: const FlDotData(show: false),
+            belowBarData: BarAreaData(
+              show: true,
+              color: AppColors.primaryBlue.withValues(alpha: 0.10),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _short(DateTime d) {
+    const m = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${d.day} ${m[d.month - 1]}';
+  }
+}
+
+class _StatusDonut extends StatelessWidget {
+  final Map<ReportStatus, int> counts;
+  final int total;
+  const _StatusDonut({required this.counts, required this.total});
+
+  @override
+  Widget build(BuildContext context) {
+    final segments = <_Seg>[
+      _Seg('Resolved', counts[ReportStatus.resolved] ?? 0, AppColors.green),
+      _Seg(
+        'In progress',
+        counts[ReportStatus.inProgress] ?? 0,
+        AppColors.primaryBlue,
+      ),
+      _Seg(
+        'Under review',
+        counts[ReportStatus.underReview] ?? 0,
+        AppColors.orange,
+      ),
+      _Seg('Pending', counts[ReportStatus.pending] ?? 0, AppColors.grey),
+      _Seg('Rejected', counts[ReportStatus.rejected] ?? 0, AppColors.red),
+    ];
+    final visible = segments.where((s) => s.value > 0).toList();
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        SizedBox(
+          width: 120,
+          height: 120,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              PieChart(
+                PieChartData(
+                  sectionsSpace: 2,
+                  centerSpaceRadius: 36,
+                  startDegreeOffset: -90,
+                  sections: [
+                    for (final s in visible)
+                      PieChartSectionData(
+                        value: s.value.toDouble(),
+                        color: s.color,
+                        radius: 16,
+                        showTitle: false,
+                      ),
+                  ],
+                ),
+              ),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '$total',
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      color: AdminUi.textPrimary,
+                    ),
+                  ),
+                  const Text(
+                    'total',
+                    style: TextStyle(fontSize: 10, color: AdminUi.textMuted),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 18),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final s in segments)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 9,
+                        height: 9,
+                        decoration: BoxDecoration(
+                          color: s.color,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          s.label,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AdminUi.textSecondary,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        total == 0
+                            ? '0%'
+                            : '${(s.value / total * 100).round()}%',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: AdminUi.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _Seg {
+  final String label;
+  final int value;
+  final Color color;
+  const _Seg(this.label, this.value, this.color);
+}
+
+// ── KPI card ─────────────────────────────────────────────────────────────────
+
+class _KpiCard extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color accent;
+  final bool loading;
+  final String? value;
+  final double? delta;
+  final String deltaSuffix;
+  final String caption;
+  final VoidCallback? onTap;
+
+  const _KpiCard({
+    required this.label,
+    required this.icon,
+    required this.accent,
+    required this.loading,
+    required this.value,
+    required this.delta,
+    this.deltaSuffix = '',
+    required this.caption,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _Card(
+      padding: const EdgeInsets.all(16),
+      onTap: onTap,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AdminUi.textSecondary,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, size: 16, color: accent),
+              ),
+            ],
+          ),
+          if (loading)
+            const _Skeleton(width: 56, height: 26)
+          else
+            Text(
+              value ?? '—',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.5,
+                color: value == null ? AdminUi.textMuted : AdminUi.textPrimary,
+              ),
+            ),
+          Row(
+            children: [
+              if (delta != null) ...[
+                _DeltaChip(delta: delta!, suffix: deltaSuffix),
+                const SizedBox(width: 6),
+              ],
+              Flexible(
+                child: Text(
+                  caption,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AdminUi.textMuted,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DeltaChip extends StatelessWidget {
+  final double delta;
+  final String suffix;
+  const _DeltaChip({required this.delta, required this.suffix});
+
+  @override
+  Widget build(BuildContext context) {
+    final up = delta >= 0;
+    final color = up ? AppColors.green : AppColors.red;
+    final rounded = delta.abs() >= 10
+        ? delta.abs().round().toString()
+        : delta.abs().toStringAsFixed(1);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            up ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded,
+            size: 11,
+            color: color,
+          ),
+          const SizedBox(width: 2),
+          Text(
+            '$rounded$suffix',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Category bar ─────────────────────────────────────────────────────────────
+
+class _CategoryBar extends StatelessWidget {
+  final CategoryStat stat;
+  final Color color;
+  const _CategoryBar({required this.stat, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    final pct = '${(stat.share * 100).round()}%';
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 130,
+            child: Text(
+              stat.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                color: AdminUi.textSecondary,
+                fontStyle: stat.isAggregate
+                    ? FontStyle.italic
+                    : FontStyle.normal,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: Container(
+                height: 8,
+                color: AdminUi.subtle,
+                child: FractionallySizedBox(
+                  alignment: Alignment.centerLeft,
+                  widthFactor: stat.share.clamp(0.0, 1.0),
+                  child: Container(color: color),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          SizedBox(
+            width: 36,
+            child: Text(
+              pct,
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AdminUi.textSecondary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Activity row ─────────────────────────────────────────────────────────────
+
+class _ActivityRow extends StatelessWidget {
+  final ActivityItem item;
+  final bool isLast;
+  final VoidCallback? onTap;
+  const _ActivityRow({required this.item, required this.isLast, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _activityColor(item.kind);
     return Material(
       type: MaterialType.transparency,
       child: InkWell(
@@ -403,7 +1232,7 @@ class AdminOverviewPage extends ConsumerWidget {
                   color: color.withValues(alpha: 0.12),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(_activityIcon(a.kind), size: 16, color: color),
+                child: Icon(_activityIcon(item.kind), size: 16, color: color),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -411,20 +1240,20 @@ class AdminOverviewPage extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      a.title,
+                      item.title,
                       style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w500,
-                        color: Colors.black87,
+                        color: AdminUi.textPrimary,
                       ),
                     ),
                     Text(
-                      a.subtitle,
+                      item.subtitle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontSize: 12,
-                        color: AppColors.hint,
+                        color: AdminUi.textMuted,
                       ),
                     ),
                   ],
@@ -432,7 +1261,7 @@ class AdminOverviewPage extends ConsumerWidget {
               ),
               const SizedBox(width: 8),
               Text(
-                _relativeTime(a.timestamp),
+                _relativeTime(item.timestamp),
                 style: const TextStyle(fontSize: 11, color: AppColors.grey),
               ),
             ],
@@ -442,212 +1271,6 @@ class AdminOverviewPage extends ConsumerWidget {
     );
   }
 
-  // ── AI insights panel ──────────────────────────────────────────────────────
-  Widget _buildAIInsights(AsyncValue<AdminDashboardData> async) {
-    // Sentiment trend + predictive alert are illustrative — no sentiment data
-    // source is wired yet. Top categories below ARE real.
-    const sentiment = <_SentimentDay>[
-      _SentimentDay('Mon', 0.55, AppColors.green),
-      _SentimentDay('Tue', 0.70, AppColors.green),
-      _SentimentDay('Wed', 0.60, AppColors.green),
-      _SentimentDay('Thu', 0.40, AppColors.orange),
-      _SentimentDay('Fri', 0.45, AppColors.orange),
-      _SentimentDay('Sat', 0.75, AppColors.green),
-      _SentimentDay('Today', 0.80, AppColors.green),
-    ];
-
-    return _Card(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'AI insights',
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-              color: Colors.black87,
-            ),
-          ),
-          const SizedBox(height: 16),
-          const _SectionLabel('TOP REPORTED CATEGORIES'),
-          const SizedBox(height: 12),
-          _buildCategories(async),
-          const SizedBox(height: 12),
-          const _SectionLabel('7-DAY SENTIMENT TREND  ·  SAMPLE'),
-          const SizedBox(height: 12),
-          _buildSparkline(sentiment),
-          const SizedBox(height: 16),
-          _buildPredictiveAlert(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCategories(AsyncValue<AdminDashboardData> async) {
-    final data = async.valueOrNull;
-    if (async.isLoading && data == null) {
-      return Column(
-        children: List.generate(3, (_) => const _CategorySkeletonRow()),
-      );
-    }
-    if (data == null) {
-      return const _EmptyHint('Categories unavailable.');
-    }
-    if (data.topCategories.isEmpty) {
-      return const _EmptyHint('No reports yet.');
-    }
-    const palette = <Color>[
-      AppColors.red,
-      AppColors.orange,
-      AppColors.primaryBlue,
-    ];
-    final cats = data.topCategories;
-    return Column(
-      children: [
-        for (int i = 0; i < cats.length; i++)
-          _buildCategoryBar(cats[i], palette[i % palette.length]),
-      ],
-    );
-  }
-
-  Widget _buildCategoryBar(CategoryStat c, Color color) {
-    final pct = '${(c.share * 100).round()}%';
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 96,
-            child: Text(
-              c.label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 12, color: Colors.black87),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: Container(
-                height: 8,
-                color: AppColors.stroke,
-                child: FractionallySizedBox(
-                  alignment: Alignment.centerLeft,
-                  widthFactor: c.share.clamp(0.0, 1.0),
-                  child: Container(color: color),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          SizedBox(
-            width: 36,
-            child: Text(
-              pct,
-              textAlign: TextAlign.right,
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: AppColors.hint,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSparkline(List<_SentimentDay> days) {
-    const chartHeight = 70.0;
-    return SizedBox(
-      height: chartHeight + 18,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          for (final d in days)
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 3),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    Container(
-                      height: (chartHeight * d.value).clamp(4.0, chartHeight),
-                      decoration: BoxDecoration(
-                        color: d.color.withValues(alpha: 0.85),
-                        borderRadius: const BorderRadius.vertical(
-                          top: Radius.circular(4),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      d.label,
-                      maxLines: 1,
-                      overflow: TextOverflow.clip,
-                      style: const TextStyle(
-                        fontSize: 10,
-                        color: AppColors.hint,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPredictiveAlert() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.orange.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.orange.withValues(alpha: 0.3)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(
-            Icons.trending_up_rounded,
-            size: 16,
-            color: AppColors.orange,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Predictive alert · sample',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.orange,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  'Road issues up 40% vs last week — spike likely incoming.',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.black87.withValues(alpha: 0.7),
-                    height: 1.3,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── Activity kind → visuals ─────────────────────────────────────────────────
   IconData _activityIcon(ActivityKind kind) {
     switch (kind) {
       case ActivityKind.reportNew:
@@ -698,9 +1321,153 @@ class AdminOverviewPage extends ConsumerWidget {
   }
 }
 
+// ── AI & NLP insights (awaiting pipeline) ────────────────────────────────────
+//
+// GovPulse's NLP layer classifies feedback by sentiment, urgency, and category
+// (see the research paper). Those columns don't exist in Supabase yet, so this
+// renders as a clearly-labelled placeholder zone — designed and ready to wire,
+// not faked. When the pipeline writes sentiment/urgency, populate the
+// AdminDashboardData model and swap the placeholders for the real widgets.
+class _NlpInsightsCard extends StatelessWidget {
+  const _NlpInsightsCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return _Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.auto_awesome_rounded,
+                size: 18,
+                color: AppColors.primaryBlue,
+              ),
+              const SizedBox(width: 8),
+              const _CardTitle('AI & NLP insights'),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppColors.primaryBlue.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text(
+                  'NLP pipeline',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.primaryBlue,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Sentiment, urgency, and forecast from citizen feedback',
+            style: TextStyle(fontSize: 12, color: AdminUi.textMuted),
+          ),
+          const SizedBox(height: 16),
+          const _NlpSlot(
+            icon: Icons.sentiment_satisfied_alt_rounded,
+            label: 'Citizen sentiment',
+            hint: 'Positive · neutral · negative split',
+          ),
+          const SizedBox(height: 10),
+          const _NlpSlot(
+            icon: Icons.priority_high_rounded,
+            label: 'Urgency triage',
+            hint: 'High · medium · low classification',
+          ),
+          const SizedBox(height: 10),
+          const _NlpSlot(
+            icon: Icons.insights_rounded,
+            label: 'Predictive outlook',
+            hint: 'Forecasted service-quality trend',
+          ),
+          const SizedBox(height: 14),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: AdminUi.subtle,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AdminUi.border),
+            ),
+            child: const Row(
+              children: [
+                Icon(
+                  Icons.schedule_rounded,
+                  size: 14,
+                  color: AdminUi.textMuted,
+                ),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Awaiting NLP pipeline — these activate once feedback is classified.',
+                    style: TextStyle(fontSize: 11, color: AdminUi.textMuted),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NlpSlot extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String hint;
+  const _NlpSlot({required this.icon, required this.label, required this.hint});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: AdminUi.subtle,
+            borderRadius: BorderRadius.circular(9),
+          ),
+          child: Icon(icon, size: 17, color: AdminUi.textMuted),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: AdminUi.textSecondary,
+                ),
+              ),
+              Text(
+                hint,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 11, color: AdminUi.textMuted),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 // ── Shared presentational helpers ─────────────────────────────────────────────
 
-/// A white rounded card matching the sidebar / topbar stroke + radius.
+/// A white rounded card with a hairline border + subtle elevation.
 /// Optionally tappable (Material surface + InkWell) so hover works on web.
 class _Card extends StatelessWidget {
   final Widget child;
@@ -721,24 +1488,73 @@ class _Card extends StatelessWidget {
       return Container(
         padding: padding,
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: AdminUi.surface,
           borderRadius: radius,
           border: Border.all(color: AdminUi.border),
+          boxShadow: AdminUi.cardShadow,
         ),
         child: child,
       );
     }
 
-    return Material(
-      color: Colors.white,
-      clipBehavior: Clip.antiAlias,
-      shape: const RoundedRectangleBorder(
+    return DecoratedBox(
+      decoration: const BoxDecoration(
         borderRadius: radius,
-        side: BorderSide(color: AdminUi.border),
+        boxShadow: AdminUi.cardShadow,
       ),
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(padding: padding, child: child),
+      child: Material(
+        color: AdminUi.surface,
+        clipBehavior: Clip.antiAlias,
+        shape: const RoundedRectangleBorder(
+          borderRadius: radius,
+          side: BorderSide(color: AdminUi.border),
+        ),
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(padding: padding, child: child),
+        ),
+      ),
+    );
+  }
+}
+
+class _CardTitle extends StatelessWidget {
+  final String text;
+  const _CardTitle(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: const TextStyle(
+        fontSize: 15,
+        fontWeight: FontWeight.w600,
+        color: AdminUi.textPrimary,
+      ),
+    );
+  }
+}
+
+class _LinkButton extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+  const _LinkButton({required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(6),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        child: Text(
+          label,
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: AppColors.primaryBlue,
+          ),
+        ),
       ),
     );
   }
@@ -756,7 +1572,7 @@ class _SectionLabel extends StatelessWidget {
         fontSize: 11,
         fontWeight: FontWeight.w600,
         letterSpacing: 0.5,
-        color: AppColors.hint,
+        color: AdminUi.textMuted,
       ),
     );
   }
@@ -772,7 +1588,7 @@ class _EmptyHint extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Text(
         text,
-        style: const TextStyle(fontSize: 13, color: AppColors.hint),
+        style: const TextStyle(fontSize: 13, color: AdminUi.textMuted),
       ),
     );
   }
@@ -839,63 +1655,11 @@ class _CategorySkeletonRow extends StatelessWidget {
       padding: EdgeInsets.only(bottom: 12),
       child: Row(
         children: [
-          SizedBox(width: 96, child: _Skeleton(width: 70, height: 11)),
+          SizedBox(width: 110, child: _Skeleton(width: 80, height: 11)),
           SizedBox(width: 8),
           Expanded(child: _Skeleton(height: 8)),
         ],
       ),
     );
   }
-}
-
-enum _Health { operational, warning, down }
-
-extension _HealthVisuals on _Health {
-  Color get color {
-    switch (this) {
-      case _Health.operational:
-        return AppColors.green;
-      case _Health.warning:
-        return AppColors.orange;
-      case _Health.down:
-        return AppColors.red;
-    }
-  }
-
-  IconData get icon {
-    switch (this) {
-      case _Health.operational:
-        return Icons.check_circle_rounded;
-      case _Health.warning:
-        return Icons.warning_amber_rounded;
-      case _Health.down:
-        return Icons.error_rounded;
-    }
-  }
-}
-
-class _ServiceStatus {
-  final String label;
-  final _Health health;
-  const _ServiceStatus(this.label, this.health);
-}
-
-class _StatStyle {
-  final String label;
-  final IconData icon;
-  final Color color;
-  final bool valueIsAccent;
-  const _StatStyle({
-    required this.label,
-    required this.icon,
-    required this.color,
-    required this.valueIsAccent,
-  });
-}
-
-class _SentimentDay {
-  final String label;
-  final double value; // 0..1
-  final Color color;
-  const _SentimentDay(this.label, this.value, this.color);
 }
