@@ -10,6 +10,7 @@ import '../../core/network/no_internet_screen.dart';
 import '../../core/router/app_router.dart';
 import '../../core/providers/community_posts_provider.dart';
 import '../home/screen/home_screen.dart';
+import '../admin/screens/admin_dashboard_screen.dart';
 
 /// ===============================
 /// SPLASH SCREEN
@@ -114,6 +115,7 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
     final user = Supabase.instance.client.auth.currentUser;
     if (!goToIntro && user != null) {
       String username = '';
+      int? roleId;
       try {
         final row = await Supabase.instance.client
             .from('profiles')
@@ -122,18 +124,32 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
             .maybeSingle();
         username = (row?['username'] as String?) ?? '';
       } catch (_) {}
+      // Resolve role the same way AuthService.login does, so a restored
+      // session routes by role instead of always landing on citizen Home.
+      try {
+        final roleRow = await Supabase.instance.client
+            .from('user_roles')
+            .select('role_id')
+            .eq('user_id', user.id)
+            .maybeSingle();
+        roleId = roleRow?['role_id'] as int?;
+      } catch (_) {}
 
       if (!mounted) return;
 
       // Make sure the community feed is in authenticated (non-guest) mode.
       CommunityPostsProvider.instance.resetForAuthenticatedUser();
 
+      // role_id == 1 → admin dashboard; staff/citizen/unverified → Home.
+      final Widget destination = roleId == 1
+          ? const AdminDashboardScreen()
+          : NetworkWrapper(child: HomePage(username: username));
+
       Navigator.of(context).pushReplacement(
         PageRouteBuilder(
           transitionDuration: Duration.zero,
           reverseTransitionDuration: Duration.zero,
-          pageBuilder: (_, _, _) =>
-              NetworkWrapper(child: HomePage(username: username)),
+          pageBuilder: (_, _, _) => destination,
         ),
       );
       return;
