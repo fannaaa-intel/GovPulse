@@ -1,0 +1,1634 @@
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/theme/app_colors.dart';
+import '../theme/admin_ui.dart';
+import '../providers/admin_verification_provider.dart';
+import '../widgets/admin_skeleton.dart';
+import '../../home/screen/notification_popup.dart';
+
+class AdminVerificationPage extends ConsumerStatefulWidget {
+  const AdminVerificationPage({super.key});
+
+  @override
+  ConsumerState<AdminVerificationPage> createState() =>
+      _AdminVerificationPageState();
+}
+
+class _AdminVerificationPageState
+    extends ConsumerState<AdminVerificationPage> {
+  final _searchCtrl = TextEditingController();
+  Timer? _debounce;
+
+  // Status is filtered on the client (the provider fetches the whole queue),
+  // so switching tabs is instant and the header counts stay accurate.
+  VerificationStatus? _statusFilter;
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged(String value) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 350), () {
+      ref.read(adminVerificationProvider.notifier).setQuery(value);
+    });
+  }
+
+  Future<void> _openDetail(AdminVerification v) async {
+    await showDialog(
+      context: context,
+      barrierColor: Colors.black54,
+      builder: (_) => _VerificationDetailDialog(verification: v),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final async = ref.watch(adminVerificationProvider);
+    final filters = ref.read(adminVerificationProvider.notifier).filters;
+    final pad = MediaQuery.of(context).size.width < 600 ? 16.0 : 24.0;
+
+    // Counts drive the stat cards; derived from whatever the search matched.
+    final all = async.valueOrNull ?? const <AdminVerification>[];
+    final loading = async.isLoading && async.valueOrNull == null;
+
+    final visible = _statusFilter == null
+        ? all
+        : all.where((v) => v.status == _statusFilter).toList();
+
+    return RefreshIndicator(
+      onRefresh: () => ref.read(adminVerificationProvider.notifier).refresh(),
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.fromLTRB(pad, pad, pad, pad + 24),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 1400),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildHeader(),
+                const SizedBox(height: 20),
+                _buildStatRow(all, loading),
+                const SizedBox(height: 16),
+                _buildToolbar(filters),
+                const SizedBox(height: 16),
+                _buildResults(async, visible),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Header ─────────────────────────────────────────────────────────────────
+  Widget _buildHeader() {
+    return LayoutBuilder(
+      builder: (context, c) {
+        final title = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: const [
+            Text(
+              'ID verification',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.5,
+                color: AdminUi.textPrimary,
+              ),
+            ),
+            SizedBox(height: 2),
+            Text(
+              'Review resident identity submissions and approve access',
+              style: TextStyle(fontSize: 13, color: AdminUi.textMuted),
+            ),
+          ],
+        );
+
+        final refreshBtn = _GhostButton(
+          icon: Icons.refresh_rounded,
+          label: 'Refresh',
+          onTap: () => ref.read(adminVerificationProvider.notifier).refresh(),
+        );
+
+        if (c.maxWidth < 560) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [title, const SizedBox(height: 14), refreshBtn],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [Expanded(child: title), refreshBtn],
+        );
+      },
+    );
+  }
+
+  // ── Stat cards (double as the status filter) ────────────────────────────────
+  Widget _buildStatRow(List<AdminVerification> all, bool loading) {
+    int countOf(VerificationStatus s) =>
+        all.where((v) => v.status == s).length;
+
+    final cards = <Widget>[
+      _StatCard(
+        label: 'All submissions',
+        icon: Icons.inbox_rounded,
+        accent: AppColors.primaryBlue,
+        value: loading ? null : all.length,
+        selected: _statusFilter == null,
+        onTap: () => setState(() => _statusFilter = null),
+      ),
+      _StatCard(
+        label: 'Pending',
+        icon: Icons.hourglass_top_rounded,
+        accent: AppColors.orange,
+        value: loading ? null : countOf(VerificationStatus.pending),
+        selected: _statusFilter == VerificationStatus.pending,
+        onTap: () => setState(() => _statusFilter = VerificationStatus.pending),
+      ),
+      _StatCard(
+        label: 'Approved',
+        icon: Icons.verified_user_rounded,
+        accent: AppColors.green,
+        value: loading ? null : countOf(VerificationStatus.approved),
+        selected: _statusFilter == VerificationStatus.approved,
+        onTap: () =>
+            setState(() => _statusFilter = VerificationStatus.approved),
+      ),
+      _StatCard(
+        label: 'Rejected',
+        icon: Icons.cancel_rounded,
+        accent: AppColors.red,
+        value: loading ? null : countOf(VerificationStatus.rejected),
+        selected: _statusFilter == VerificationStatus.rejected,
+        onTap: () =>
+            setState(() => _statusFilter = VerificationStatus.rejected),
+      ),
+    ];
+
+    // Four across on laptop/desktop where there's room; 2×2 everywhere smaller
+    // (phone, tablet, and the app's own narrower shell) — never a single column.
+    return LayoutBuilder(
+      builder: (context, c) {
+        final cols = c.maxWidth > 820 ? 4 : 2;
+        return _grid(cards, cols);
+      },
+    );
+  }
+
+  Widget _grid(List<Widget> cards, int cols) {
+    const gap = 12.0;
+    final rows = <Widget>[];
+    for (var i = 0; i < cards.length; i += cols) {
+      final end = (i + cols) > cards.length ? cards.length : i + cols;
+      final slice = cards.sublist(i, end);
+      final children = <Widget>[];
+      for (var j = 0; j < cols; j++) {
+        children.add(
+          Expanded(child: j < slice.length ? slice[j] : const SizedBox()),
+        );
+        if (j < cols - 1) children.add(const SizedBox(width: gap));
+      }
+      rows.add(
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: children,
+          ),
+        ),
+      );
+      if (end < cards.length) rows.add(const SizedBox(height: gap));
+    }
+    return Column(children: rows);
+  }
+
+  // ── Toolbar: search + sort ──────────────────────────────────────────────────
+  Widget _buildToolbar(VerificationFilters filters) {
+    return Wrap(
+      spacing: 12,
+      runSpacing: 12,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        SizedBox(
+          width: 300,
+          child: TextField(
+            controller: _searchCtrl,
+            onChanged: _onSearchChanged,
+            textInputAction: TextInputAction.search,
+            style: const TextStyle(fontSize: 13),
+            decoration: InputDecoration(
+              isDense: true,
+              hintText: 'Search name, ID number, barangay…',
+              hintStyle:
+                  const TextStyle(fontSize: 13, color: AdminUi.textMuted),
+              prefixIcon: const Icon(
+                Icons.search_rounded,
+                size: 18,
+                color: AdminUi.textMuted,
+              ),
+              suffixIcon: _searchCtrl.text.isEmpty
+                  ? null
+                  : IconButton(
+                      icon: const Icon(Icons.close_rounded, size: 16),
+                      onPressed: () {
+                        _searchCtrl.clear();
+                        ref
+                            .read(adminVerificationProvider.notifier)
+                            .setQuery('');
+                        setState(() {});
+                      },
+                    ),
+              contentPadding: const EdgeInsets.symmetric(vertical: 11),
+              filled: true,
+              fillColor: AdminUi.surface,
+              border: _fieldBorder(AdminUi.border),
+              enabledBorder: _fieldBorder(AdminUi.border),
+              focusedBorder: _fieldBorder(AppColors.primaryBlue),
+            ),
+          ),
+        ),
+        _FilterBox(
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<VerificationSort>(
+              value: filters.sort,
+              isDense: true,
+              icon: const Icon(
+                Icons.keyboard_arrow_down_rounded,
+                size: 18,
+                color: AdminUi.textMuted,
+              ),
+              borderRadius: BorderRadius.circular(AdminUi.controlRadius),
+              items: const [
+                DropdownMenuItem(
+                  value: VerificationSort.newest,
+                  child: Text('Newest first', style: _ddStyle),
+                ),
+                DropdownMenuItem(
+                  value: VerificationSort.oldest,
+                  child: Text('Oldest first', style: _ddStyle),
+                ),
+              ],
+              onChanged: (s) {
+                if (s != null) {
+                  ref.read(adminVerificationProvider.notifier).setSort(s);
+                }
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  static OutlineInputBorder _fieldBorder(Color color) => OutlineInputBorder(
+        borderRadius: BorderRadius.circular(AdminUi.controlRadius),
+        borderSide: BorderSide(color: color),
+      );
+
+  // ── Results ─────────────────────────────────────────────────────────────────
+  Widget _buildResults(
+    AsyncValue<List<AdminVerification>> async,
+    List<AdminVerification> visible,
+  ) {
+    return _Card(
+      padding: EdgeInsets.zero,
+      child: async.when(
+        loading: () => const Padding(
+          padding: EdgeInsets.all(16),
+          child: AdminShimmer(
+            child: Column(
+              children: [
+                _RowSkeleton(),
+                _RowSkeleton(),
+                _RowSkeleton(),
+                _RowSkeleton(),
+                _RowSkeleton(),
+              ],
+            ),
+          ),
+        ),
+        error: (e, _) => _ResultsMessage(
+          icon: Icons.cloud_off_rounded,
+          color: AppColors.red,
+          text: 'Couldn\'t load submissions.',
+          action: TextButton(
+            onPressed: () =>
+                ref.read(adminVerificationProvider.notifier).refresh(),
+            child: const Text('Retry'),
+          ),
+        ),
+        data: (_) {
+          if (visible.isEmpty) {
+            return _ResultsMessage(
+              icon: Icons.inbox_rounded,
+              color: AdminUi.textMuted,
+              text: _statusFilter == null
+                  ? 'No submissions match your search.'
+                  : 'No ${verificationStatusLabel(_statusFilter!).toLowerCase()} submissions.',
+            );
+          }
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              final wide = constraints.maxWidth >= 760;
+              if (wide) {
+                return Column(
+                  children: [
+                    const _TableHeader(),
+                    for (final v in visible)
+                      _TableRow(verification: v, onTap: () => _openDetail(v)),
+                  ],
+                );
+              }
+              return Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  children: [
+                    for (final v in visible)
+                      _VerificationCard(
+                        verification: v,
+                        onTap: () => _openDetail(v),
+                      ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ── Status visuals ─────────────────────────────────────────────────────────
+
+Color _statusColor(VerificationStatus s) {
+  switch (s) {
+    case VerificationStatus.pending:
+      return AppColors.orange;
+    case VerificationStatus.approved:
+      return AppColors.green;
+    case VerificationStatus.rejected:
+      return AppColors.red;
+  }
+}
+
+IconData _statusIcon(VerificationStatus s) {
+  switch (s) {
+    case VerificationStatus.pending:
+      return Icons.hourglass_top_rounded;
+    case VerificationStatus.approved:
+      return Icons.check_circle_rounded;
+    case VerificationStatus.rejected:
+      return Icons.cancel_rounded;
+  }
+}
+
+class _StatusPill extends StatelessWidget {
+  final VerificationStatus status;
+  const _StatusPill(this.status);
+
+  @override
+  Widget build(BuildContext context) {
+    final c = _statusColor(status);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: c.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(_statusIcon(status), size: 12, color: c),
+          const SizedBox(width: 5),
+          Text(
+            verificationStatusLabel(status),
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: c,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Circular monogram from the applicant's name — gives each row a face.
+class _Avatar extends StatelessWidget {
+  final String name;
+  final double size;
+  const _Avatar({required this.name, this.size = 34});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: AppColors.primaryBlue.withValues(alpha: 0.10),
+        shape: BoxShape.circle,
+      ),
+      child: Text(
+        _initials(name),
+        style: TextStyle(
+          fontSize: size * 0.36,
+          fontWeight: FontWeight.w700,
+          color: AppColors.primaryBlue,
+        ),
+      ),
+    );
+  }
+
+  static String _initials(String name) {
+    final parts =
+        name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+    if (parts.isEmpty) return '?';
+    if (parts.length == 1) return parts.first.characters.first.toUpperCase();
+    return (parts.first.characters.first + parts.last.characters.first)
+        .toUpperCase();
+  }
+}
+
+// ── Stat card ──────────────────────────────────────────────────────────────
+
+class _StatCard extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color accent;
+  final int? value;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _StatCard({
+    required this.label,
+    required this.icon,
+    required this.accent,
+    required this.value,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const radius = BorderRadius.all(Radius.circular(AdminUi.cardRadius));
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        borderRadius: radius,
+        boxShadow: AdminUi.cardShadow,
+      ),
+      child: Material(
+        color: selected ? accent.withValues(alpha: 0.06) : AdminUi.surface,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: radius,
+          side: BorderSide(
+            color: selected ? accent : AdminUi.border,
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: accent.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(icon, size: 16, color: accent),
+                    ),
+                    const Spacer(),
+                    if (selected)
+                      Icon(Icons.check_circle_rounded, size: 16, color: accent),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                if (value == null)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 5),
+                    child: AdminShimmer(
+                      child: SkeletonBox(width: 40, height: 24, radius: 7),
+                    ),
+                  )
+                else
+                  Text(
+                    '$value',
+                    style: const TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.5,
+                      color: AdminUi.textPrimary,
+                    ),
+                  ),
+                const SizedBox(height: 2),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AdminUi.textSecondary,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Wide table ───────────────────────────────────────────────────────────────
+
+class _TableHeader extends StatelessWidget {
+  const _TableHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 13, 16, 13),
+      decoration: const BoxDecoration(
+        color: AdminUi.subtle,
+        border: Border(bottom: BorderSide(color: AdminUi.border)),
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(AdminUi.cardRadius),
+        ),
+      ),
+      child: Row(
+        children: const [
+          _HCell('APPLICANT', flex: 3),
+          _HCell('ID TYPE', flex: 3),
+          _HCell('BARANGAY', flex: 2),
+          _HCell('STATUS', flex: 2),
+          _HCell('SUBMITTED', flex: 2),
+          SizedBox(width: 40),
+        ],
+      ),
+    );
+  }
+}
+
+class _HCell extends StatelessWidget {
+  final String text;
+  final int flex;
+  const _HCell(this.text, {this.flex = 1});
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      flex: flex,
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.5,
+          color: AdminUi.textMuted,
+        ),
+      ),
+    );
+  }
+}
+
+class _TableRow extends StatelessWidget {
+  final AdminVerification verification;
+  final VoidCallback onTap;
+  const _TableRow({required this.verification, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      type: MaterialType.transparency,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: AdminUi.border)),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              Expanded(
+                flex: 3,
+                child: Row(
+                  children: [
+                    _Avatar(name: verification.fullName),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            verification.fullName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: AdminUi.textPrimary,
+                            ),
+                          ),
+                          Text(
+                            verification.idNumber.isEmpty
+                                ? '—'
+                                : verification.idNumber,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: AdminUi.textMuted,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                flex: 3,
+                child: Text(
+                  verification.selectedIdType.isEmpty
+                      ? '—'
+                      : verification.selectedIdType,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AdminUi.textSecondary,
+                  ),
+                ),
+              ),
+              Expanded(
+                flex: 2,
+                child: Text(
+                  verification.barangay.isEmpty ? '—' : verification.barangay,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AdminUi.textSecondary,
+                  ),
+                ),
+              ),
+              Expanded(
+                flex: 2,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: _StatusPill(verification.status),
+                ),
+              ),
+              Expanded(
+                flex: 2,
+                child: Text(
+                  _shortDate(verification.createdAt),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AdminUi.textMuted,
+                  ),
+                ),
+              ),
+              const SizedBox(
+                width: 40,
+                child: Icon(
+                  Icons.chevron_right_rounded,
+                  size: 18,
+                  color: AdminUi.textMuted,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Narrow card ──────────────────────────────────────────────────────────────
+
+class _VerificationCard extends StatelessWidget {
+  final AdminVerification verification;
+  final VoidCallback onTap;
+  const _VerificationCard({required this.verification, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: AdminUi.surface,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AdminUi.controlRadius),
+          side: const BorderSide(color: AdminUi.border),
+        ),
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    _Avatar(name: verification.fullName, size: 30),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        verification.fullName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: AdminUi.textPrimary,
+                        ),
+                      ),
+                    ),
+                    _StatusPill(verification.status),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  [
+                    if (verification.selectedIdType.isNotEmpty)
+                      verification.selectedIdType,
+                    if (verification.barangay.isNotEmpty) verification.barangay,
+                    _shortDate(verification.createdAt),
+                  ].join('  ·  '),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AdminUi.textMuted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Detail dialog ────────────────────────────────────────────────────────────
+
+class _VerificationDetailDialog extends ConsumerStatefulWidget {
+  final AdminVerification verification;
+  const _VerificationDetailDialog({required this.verification});
+
+  @override
+  ConsumerState<_VerificationDetailDialog> createState() =>
+      _VerificationDetailDialogState();
+}
+
+class _VerificationDetailDialogState
+    extends ConsumerState<_VerificationDetailDialog> {
+  bool _busy = false;
+
+  Future<void> _approve() async {
+    final notesCtrl = TextEditingController();
+    final confirmed = await _confirm(
+      title: 'Approve verification?',
+      message:
+          '${widget.verification.fullName} will be marked as a verified resident.',
+      confirmLabel: 'Approve',
+      confirmColor: AppColors.green,
+      extra: TextField(
+        controller: notesCtrl,
+        maxLines: 3,
+        decoration: InputDecoration(
+          isDense: true,
+          hintText: 'Note (optional, saved with the review)',
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: AdminUi.border),
+          ),
+        ),
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() => _busy = true);
+    try {
+      await ref
+          .read(adminVerificationProvider.notifier)
+          .approve(
+            widget.verification.id,
+            userId: widget.verification.userId,
+            notes: notesCtrl.text,
+          );
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${widget.verification.fullName} approved.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to approve: $e'),
+          backgroundColor: AppColors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  Future<void> _reject() async {
+    final notesCtrl = TextEditingController();
+    final confirmed = await _confirm(
+      title: 'Reject verification?',
+      message:
+          '${widget.verification.fullName} will be notified their submission was rejected.',
+      confirmLabel: 'Reject',
+      confirmColor: AppColors.red,
+      extra: TextField(
+        controller: notesCtrl,
+        maxLines: 3,
+        decoration: InputDecoration(
+          isDense: true,
+          hintText: 'Reason (optional, shown to the applicant)',
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: AdminUi.border),
+          ),
+        ),
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() => _busy = true);
+    try {
+      await ref
+          .read(adminVerificationProvider.notifier)
+          .reject(widget.verification.id, notes: notesCtrl.text);
+
+      // Deliver the reason to the applicant as an in-app notification. Fail-soft:
+      // the rejection is already saved, and adminSend swallows its own errors,
+      // so a notification hiccup never turns into a failed rejection.
+      final reason = notesCtrl.text.trim();
+      await NotificationService.adminSend(
+        targetUserId: widget.verification.userId,
+        title: 'ID verification not approved',
+        subtitle: reason.isEmpty
+            ? 'We were unable to approve your ID verification. Please review '
+                  'your details and submit again.'
+            : reason,
+        icon: Icons.gpp_bad_rounded,
+        color: AppColors.red,
+      );
+
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${widget.verification.fullName} rejected.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to reject: $e'),
+          backgroundColor: AppColors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  Future<bool?> _confirm({
+    required String title,
+    required String message,
+    required String confirmLabel,
+    required Color confirmColor,
+    Widget? extra,
+  }) {
+    return showDialog<bool>(
+      context: context,
+      barrierColor: Colors.black54,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(message),
+            if (extra != null) ...[const SizedBox(height: 12), extra],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: confirmColor,
+              foregroundColor: Colors.white,
+            ),
+            child: Text(confirmLabel),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final v = widget.verification;
+    final width = MediaQuery.of(context).size.width.clamp(0.0, 640.0);
+
+    return Dialog(
+      backgroundColor: AdminUi.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: width, maxHeight: 640),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 12, 14),
+              child: Row(
+                children: [
+                  _Avatar(name: v.fullName, size: 44),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          v.fullName,
+                          style: const TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
+                            color: AdminUi.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        _StatusPill(v.status),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close_rounded),
+                    color: AdminUi.textMuted,
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1, color: AdminUi.border),
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _StatusBanner(
+                      status: v.status,
+                      reviewedAt: v.reviewedAt,
+                      createdAt: v.createdAt,
+                    ),
+                    const SizedBox(height: 20),
+                    _sectionTitle('SUBMITTED DOCUMENTS'),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _DocThumb(
+                            label: 'ID front',
+                            path: v.idFrontPath,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _DocThumb(label: 'ID back', path: v.idBackPath),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _DocThumb(
+                            label: 'Selfie',
+                            path: v.facePhotoPath,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 22),
+                    _sectionTitle('APPLICANT DETAILS'),
+                    const SizedBox(height: 12),
+                    _infoCard([
+                      _InfoTile(
+                        icon: Icons.badge_rounded,
+                        label: 'ID type',
+                        value: v.selectedIdType,
+                      ),
+                      _InfoTile(
+                        icon: Icons.pin_rounded,
+                        label: 'ID number',
+                        value: v.idNumber,
+                      ),
+                      _InfoTile(
+                        icon: Icons.wc_rounded,
+                        label: 'Gender',
+                        value: v.gender ?? '—',
+                      ),
+                      _InfoTile(
+                        icon: Icons.cake_rounded,
+                        label: 'Birthdate',
+                        value: v.birthdate,
+                      ),
+                      _InfoTile(
+                        icon: Icons.public_rounded,
+                        label: 'Birthplace',
+                        value: v.birthplace,
+                      ),
+                      _InfoTile(
+                        icon: Icons.favorite_rounded,
+                        label: 'Civil status',
+                        value: v.civilStatus,
+                      ),
+                      _InfoTile(
+                        icon: Icons.phone_rounded,
+                        label: 'Contact number',
+                        value: v.contactNumber,
+                      ),
+                      _InfoTile(
+                        icon: Icons.location_city_rounded,
+                        label: 'Barangay',
+                        value: v.barangay,
+                      ),
+                      _InfoTile(
+                        icon: Icons.signpost_rounded,
+                        label: 'Street',
+                        value: v.street,
+                      ),
+                      _InfoTile(
+                        icon: Icons.event_rounded,
+                        label: 'Submitted',
+                        value: _shortDate(v.createdAt),
+                      ),
+                    ]),
+                    if (v.status != VerificationStatus.pending) ...[
+                      const SizedBox(height: 22),
+                      _sectionTitle('REVIEW'),
+                      const SizedBox(height: 12),
+                      _infoCard([
+                        _InfoTile(
+                          icon: Icons.event_available_rounded,
+                          label: 'Reviewed',
+                          value: _shortDate(v.reviewedAt),
+                        ),
+                        _InfoTile(
+                          icon: Icons.sticky_note_2_rounded,
+                          label: 'Notes',
+                          value: v.reviewerNotes?.isNotEmpty == true
+                              ? v.reviewerNotes!
+                              : '—',
+                        ),
+                      ]),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            if (v.status == VerificationStatus.pending) ...[
+              const Divider(height: 1, color: AdminUi.border),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _busy ? null : _reject,
+                        icon: const Icon(Icons.close_rounded, size: 18),
+                        label: const Text('Reject'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.red,
+                          side: const BorderSide(color: AppColors.red),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _busy ? null : _approve,
+                        icon: _busy
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.check_rounded, size: 18),
+                        label: const Text('Approve'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.green,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _sectionTitle(String text) => Text(
+        text,
+        style: const TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.5,
+          color: AdminUi.textMuted,
+        ),
+      );
+
+  Widget _infoCard(List<Widget> tiles) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AdminUi.subtle,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AdminUi.border),
+      ),
+      padding: const EdgeInsets.all(4),
+      child: LayoutBuilder(
+        builder: (context, c) {
+          // Two columns when there's room, a single column when the dialog is
+          // narrow (phones) — keeps every value readable.
+          final twoCol = c.maxWidth >= 440;
+          final itemWidth = twoCol ? c.maxWidth / 2 : c.maxWidth;
+          return Wrap(
+            children: [
+              for (final t in tiles) SizedBox(width: itemWidth, child: t),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ── Detail: status banner + info tiles ───────────────────────────────────────
+
+class _StatusBanner extends StatelessWidget {
+  final VerificationStatus status;
+  final DateTime? reviewedAt;
+  final DateTime? createdAt;
+  const _StatusBanner({
+    required this.status,
+    this.reviewedAt,
+    this.createdAt,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = _statusColor(status);
+    final String title;
+    final String subtitle;
+    switch (status) {
+      case VerificationStatus.approved:
+        title = 'Verified citizen';
+        subtitle = reviewedAt == null
+            ? 'Approved'
+            : 'Approved · ${_shortDate(reviewedAt)}';
+        break;
+      case VerificationStatus.pending:
+        title = 'Awaiting review';
+        subtitle = createdAt == null
+            ? 'Submitted for verification'
+            : 'Submitted · ${_shortDate(createdAt)}';
+        break;
+      case VerificationStatus.rejected:
+        title = 'Submission rejected';
+        subtitle = reviewedAt == null
+            ? 'Reviewed'
+            : 'Reviewed · ${_shortDate(reviewedAt)}';
+        break;
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: c.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: c.withValues(alpha: 0.30)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: c.withValues(alpha: 0.16),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(_statusIcon(status), size: 20, color: c),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: c,
+                  ),
+                ),
+                const SizedBox(height: 1),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    color: AdminUi.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InfoTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  const _InfoTile({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final shown = value.trim().isEmpty ? '—' : value;
+    return Padding(
+      padding: const EdgeInsets.all(8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: AdminUi.surface,
+              borderRadius: BorderRadius.circular(9),
+              border: Border.all(color: AdminUi.border),
+            ),
+            child: Icon(icon, size: 17, color: AppColors.primaryBlue),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w500,
+                    color: AdminUi.textMuted,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  shown,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AdminUi.textPrimary,
+                    height: 1.25,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DocThumb extends ConsumerWidget {
+  final String label;
+  final String? path;
+  const _DocThumb({required this.label, required this.path});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: AdminUi.textSecondary,
+          ),
+        ),
+        const SizedBox(height: 6),
+        AspectRatio(
+          aspectRatio: 1,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              decoration: BoxDecoration(
+                color: AdminUi.subtle,
+                border: Border.all(color: AdminUi.border),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: path == null
+                  ? const Icon(
+                      Icons.image_not_supported_rounded,
+                      color: AdminUi.textMuted,
+                      size: 20,
+                    )
+                  : FutureBuilder<String?>(
+                      future: ref
+                          .read(adminVerificationProvider.notifier)
+                          .signedUrl(path),
+                      builder: (context, snap) {
+                        if (snap.connectionState != ConnectionState.done) {
+                          return const Center(
+                            child: SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          );
+                        }
+                        final url = snap.data;
+                        if (url == null) {
+                          return const Icon(
+                            Icons.broken_image_rounded,
+                            color: AdminUi.textMuted,
+                            size: 20,
+                          );
+                        }
+                        return InkWell(
+                          onTap: () => _openFullscreen(context, url),
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              Image.network(
+                                url,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, _, _) => const Icon(
+                                  Icons.broken_image_rounded,
+                                  color: AdminUi.textMuted,
+                                  size: 20,
+                                ),
+                              ),
+                              Positioned(
+                                right: 6,
+                                bottom: 6,
+                                child: Container(
+                                  padding: const EdgeInsets.all(5),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withValues(alpha: 0.45),
+                                    borderRadius: BorderRadius.circular(7),
+                                  ),
+                                  child: const Icon(
+                                    Icons.zoom_in_rounded,
+                                    size: 14,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _openFullscreen(BuildContext context, String url) {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black87,
+      builder: (_) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(24),
+        child: InteractiveViewer(
+          child: Image.network(url, fit: BoxFit.contain),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Shared bits ──────────────────────────────────────────────────────────────
+
+const TextStyle _ddStyle =
+    TextStyle(fontSize: 13, color: AdminUi.textPrimary);
+
+class _GhostButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  const _GhostButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AdminUi.surface,
+      borderRadius: BorderRadius.circular(AdminUi.controlRadius),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AdminUi.controlRadius),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AdminUi.controlRadius),
+            border: Border.all(color: AdminUi.border),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 16, color: AdminUi.textSecondary),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: AdminUi.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FilterBox extends StatelessWidget {
+  final Widget child;
+  const _FilterBox({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+      decoration: BoxDecoration(
+        color: AdminUi.surface,
+        borderRadius: BorderRadius.circular(AdminUi.controlRadius),
+        border: Border.all(color: AdminUi.border),
+      ),
+      child: child,
+    );
+  }
+}
+
+class _Card extends StatelessWidget {
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+  const _Card({required this.child, this.padding = const EdgeInsets.all(20)});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: padding,
+      decoration: BoxDecoration(
+        color: AdminUi.surface,
+        borderRadius: BorderRadius.circular(AdminUi.cardRadius),
+        border: Border.all(color: AdminUi.border),
+        boxShadow: AdminUi.cardShadow,
+      ),
+      child: child,
+    );
+  }
+}
+
+class _ResultsMessage extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String text;
+  final Widget? action;
+  const _ResultsMessage({
+    required this.icon,
+    required this.color,
+    required this.text,
+    this.action,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 48, horizontal: 16),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 28, color: color),
+            const SizedBox(height: 10),
+            Text(
+              text,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 13, color: AdminUi.textMuted),
+            ),
+            if (action != null) ...[const SizedBox(height: 8), action!],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RowSkeleton extends StatelessWidget {
+  const _RowSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        children: [
+          SkeletonCircle(size: 34),
+          SizedBox(width: 12),
+          Expanded(flex: 3, child: _Bar(width: 100)),
+          Expanded(flex: 3, child: _Bar(width: 90)),
+          Expanded(flex: 2, child: _Bar(width: 70)),
+          Expanded(flex: 2, child: _Bar(width: 70)),
+          Expanded(flex: 2, child: _Bar(width: 70)),
+          SizedBox(width: 40),
+        ],
+      ),
+    );
+  }
+}
+
+class _Bar extends StatelessWidget {
+  final double width;
+  const _Bar({required this.width});
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: SkeletonBox(width: width, height: 11),
+    );
+  }
+}
+
+String _shortDate(DateTime? t) {
+  if (t == null) return '—';
+  const months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+  return '${months[t.month - 1]} ${t.day}, ${t.year}';
+}

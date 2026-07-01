@@ -54,6 +54,13 @@ class PushService {
     if (_ready) return;
     _ready = true;
 
+    // Web has no FCM device token / topic support and no local-notifications
+    // plugin. The admin console (which runs on web) instead receives its
+    // notifications from the Supabase `notifications` table + Realtime, so we
+    // simply no-op the whole FCM path here. This is what stops the
+    // "subscribeToTopic() is not supported on the web clients" crash.
+    if (kIsWeb) return;
+
     // Local notifications — used to display pushes while the app is foreground.
     const initSettings = InitializationSettings(
       android: AndroidInitializationSettings('@mipmap/ic_launcher'),
@@ -106,6 +113,7 @@ class PushService {
   /// session was restored). Claims this device's token for the current user,
   /// reassigning it away from whoever held it before on this phone.
   Future<void> registerForUser() async {
+    if (kIsWeb) return; // FCM topics/tokens unsupported on web — see init().
     try {
       await _fm.subscribeToTopic(_broadcastTopic);
       final token = await _fm.getToken();
@@ -122,6 +130,10 @@ class PushService {
   /// Uses the token captured at login (reading it after sign-out is
   /// unreliable — the session is already gone).
   Future<void> unregister() async {
+    if (kIsWeb) {
+      _cachedToken = null;
+      return; // no device token to release on web
+    }
     try {
       final uid = _db.auth.currentUser?.id; // captured while still logged in
       final token = _cachedToken ?? await _fm.getToken();
@@ -141,6 +153,7 @@ class PushService {
   /// reassigns it away from any previous owner (RLS can't do this from the
   /// client, since a user may only touch rows they already own).
   Future<void> _register(String token) async {
+    if (kIsWeb) return;
     if (_db.auth.currentUser == null) return;
     try {
       await _db.rpc(

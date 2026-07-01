@@ -11,6 +11,8 @@ import '../widgets/admin_sidebar.dart';
 import '../widgets/admin_topbar.dart';
 import '../pages/admin_overview_page.dart';
 import '../pages/admin_reports_page.dart';
+import '../pages/admin_verification_page.dart';
+import '../pages/admin_events_page.dart';
 import '../pages/community_updates_page.dart';
 
 class AdminDashboardScreen extends ConsumerStatefulWidget {
@@ -26,15 +28,17 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   final List<AdminNavItem> navItems = const [
-    AdminNavItem(icon: Icons.dashboard_rounded, label: 'Dashboard'),
-    AdminNavItem(icon: Icons.flag_rounded, label: 'Reports'),
-    AdminNavItem(icon: Icons.campaign_rounded, label: 'Announcements'),
-    AdminNavItem(icon: Icons.people_alt_rounded, label: 'Community'),
-    AdminNavItem(icon: Icons.event_rounded, label: 'Events'),
-    AdminNavItem(icon: Icons.lightbulb_rounded, label: 'Suggestions'),
-    AdminNavItem(icon: Icons.emergency_rounded, label: 'Emergency'),
-    AdminNavItem(icon: Icons.manage_accounts_rounded, label: 'Users'),
-    AdminNavItem(icon: Icons.settings_rounded, label: 'Settings'),
+    AdminNavItem(icon: Icons.dashboard_rounded, label: 'Dashboard'), // 0
+    AdminNavItem(icon: Icons.people_alt_rounded, label: 'Community'), // 1
+    AdminNavItem(icon: Icons.campaign_rounded, label: 'Announcements'), // 2
+    AdminNavItem(icon: Icons.event_rounded, label: 'Events'), // 3
+    AdminNavItem(icon: Icons.flag_rounded, label: 'Reports'), // 4
+    AdminNavItem(icon: Icons.lightbulb_rounded, label: 'Suggestions'), // 5
+    AdminNavItem(icon: Icons.reviews_rounded, label: 'Feedback'), // 6
+    AdminNavItem(icon: Icons.verified_user_rounded, label: 'Verification'), // 7
+    AdminNavItem(icon: Icons.emergency_rounded, label: 'Emergency'), // 8
+    AdminNavItem(icon: Icons.manage_accounts_rounded, label: 'Users'), // 9
+    AdminNavItem(icon: Icons.settings_rounded, label: 'Settings'), // 10
   ];
 
   Widget _buildPage() {
@@ -45,9 +49,13 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
           onNavigate: (i) => setState(() => _selectedIndex = i),
         );
       case 1:
-        return const AdminReportsPage();
-      case 3:
         return const CommunityUpdatesPage();
+      case 3:
+        return const AdminEventsPage();
+      case 4:
+        return const AdminReportsPage();
+      case 7:
+        return const AdminVerificationPage();
       default:
         return _ComingSoon(label: navItems[_selectedIndex].label);
     }

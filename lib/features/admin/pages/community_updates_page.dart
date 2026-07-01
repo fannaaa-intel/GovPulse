@@ -10,6 +10,7 @@ import '../../../core/widgets/Home/Newsfeed/news_feed_helpers.dart';
 import '../../../core/widgets/modal/media_picker_sheet.dart';
 import '../providers/community_updates_provider.dart';
 import '../theme/admin_ui.dart';
+import '../widgets/admin_skeleton.dart';
 
 const int _kMaxImages = 6;
 
@@ -933,12 +934,63 @@ class _EmptyState extends StatelessWidget {
 class _Loading extends StatelessWidget {
   const _Loading();
   @override
-  Widget build(BuildContext context) => const Padding(
-    padding: EdgeInsets.only(top: 60),
-    child: Center(
-      child: CircularProgressIndicator(color: AppColors.primaryBlue),
+  Widget build(BuildContext context) => const AdminShimmer(
+    child: Column(
+      children: [
+        _PostSkeleton(),
+        SizedBox(height: 16),
+        _PostSkeleton(),
+        SizedBox(height: 16),
+        _PostSkeleton(),
+      ],
     ),
   );
+}
+
+/// Post-card-shaped placeholder for the community feed (fills the column width,
+/// so it stays responsive between the 720px desktop column and full-width phone).
+class _PostSkeleton extends StatelessWidget {
+  const _PostSkeleton();
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AdminUi.surface,
+        borderRadius: BorderRadius.circular(AdminUi.cardRadius),
+        border: Border.all(color: AdminUi.border),
+      ),
+      padding: const EdgeInsets.all(16),
+      child: const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              SkeletonCircle(size: 42),
+              SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SkeletonBox(width: 150, height: 13),
+                    SizedBox(height: 8),
+                    SkeletonBox(width: 90, height: 11),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 16),
+          SkeletonBox(width: double.infinity, height: 12),
+          SizedBox(height: 9),
+          SkeletonBox(width: double.infinity, height: 12),
+          SizedBox(height: 9),
+          SkeletonBox(width: 220, height: 12),
+          SizedBox(height: 16),
+          SkeletonBox(width: double.infinity, height: 170, radius: 10),
+        ],
+      ),
+    );
+  }
 }
 
 class _ErrorState extends StatelessWidget {
@@ -1758,11 +1810,19 @@ class _CommentsPanelState extends ConsumerState<_CommentsPanel> {
               future: _future,
               builder: (_, snap) {
                 if (snap.connectionState == ConnectionState.waiting) {
-                  return const Padding(
-                    padding: EdgeInsets.all(40),
-                    child: Center(
-                      child: CircularProgressIndicator(
-                        color: AppColors.primaryBlue,
+                  return const AdminShimmer(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
+                      child: Column(
+                        children: [
+                          _CommentSkeletonRow(),
+                          _CommentSkeletonRow(),
+                          _CommentSkeletonRow(),
+                          _CommentSkeletonRow(),
+                        ],
                       ),
                     ),
                   );
@@ -2015,6 +2075,34 @@ class _CommentsPanelState extends ConsumerState<_CommentsPanel> {
     } catch (e) {
       if (mounted) _toast(context, 'Could not delete: $e', error: true);
     }
+  }
+}
+
+class _CommentSkeletonRow extends StatelessWidget {
+  const _CommentSkeletonRow();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.only(bottom: 14),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SkeletonCircle(size: 34),
+          SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SkeletonBox(width: double.infinity, height: 46, radius: 14),
+                SizedBox(height: 6),
+                SkeletonBox(width: 120, height: 10),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

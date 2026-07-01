@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../theme/admin_ui.dart';
+import 'admin_notifications.dart';
 
 class AdminTopBar extends StatelessWidget {
   final String title;
@@ -52,7 +53,7 @@ class AdminTopBar extends StatelessWidget {
           ),
           const Spacer(),
           if (showSearch) ...[_SearchField(), const SizedBox(width: 12)],
-          _NotificationBell(),
+          const AdminNotificationBell(),
           const SizedBox(width: 10),
           _AvatarChip(showName: showName),
         ],
@@ -93,30 +94,6 @@ class _SearchField extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _NotificationBell extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        _IconCircle(icon: Icons.notifications_none_rounded, onTap: () {}),
-        Positioned(
-          top: 7,
-          right: 7,
-          child: Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(
-              color: AppColors.red,
-              shape: BoxShape.circle,
-              border: Border.all(color: AdminUi.surface, width: 1.5),
-            ),
-          ),
-        ),
-      ],
     );
   }
 }
