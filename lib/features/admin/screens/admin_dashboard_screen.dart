@@ -270,20 +270,25 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: const Color(0xFFF4F6FB),
+      drawerScrimColor: Colors.black.withValues(alpha: 0.55),
       drawer: Drawer(
+        width: 244,
         backgroundColor: Colors.white,
-        child: AdminSidebar(
-          items: navItems,
-          selectedIndex: _selectedIndex,
-          collapsed: false,
-          onItemTap: (i) {
-            setState(() => _selectedIndex = i);
-            Navigator.pop(context);
-          },
-          onLogout: () {
-            Navigator.pop(context); // close the drawer first
-            _confirmLogout();
-          },
+        elevation: 8,
+        child: SafeArea(
+          child: AdminSidebar(
+            items: navItems,
+            selectedIndex: _selectedIndex,
+            collapsed: false,
+            onItemTap: (i) {
+              setState(() => _selectedIndex = i);
+              Navigator.pop(context);
+            },
+            onLogout: () {
+              Navigator.pop(context); // close the drawer first
+              _confirmLogout();
+            },
+          ),
         ),
       ),
       body: SafeArea(

@@ -96,13 +96,13 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
 
     bool goToIntro = false;
 
+    // First launch on the app → show the onboarding intro once.
+    // (Web is intentionally skipped.) The "seen" flag is set only when the
+    // user actually finishes the intro (see the /intro route), so an
+    // interrupted first launch still shows it next time.
     if (!kIsWeb) {
       final prefs = await SharedPreferences.getInstance();
-      final seen = prefs.getBool('seenOnboarding') ?? false;
-      if (!seen) {
-        await prefs.setBool('seenOnboarding', true);
-        goToIntro = true;
-      }
+      goToIntro = !(prefs.getBool('seenOnboarding') ?? false);
     }
 
     if (!mounted) return;
