@@ -5,6 +5,7 @@ import '../../../core/widgets/responsive_page.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/constants/aparri_barangays.dart';
 import '../../../core/widgets/loading/loading_overlay.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../../core/widgets/modal/verification_required_dialog.dart';
@@ -587,16 +588,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
           _buildCard(
             width: width,
             children: [
-              _buildField(
-                ctrl: _barangayCtrl,
-                label: 'Barangay',
-                hint: 'Enter your barangay',
-                icon: 'assets/images/report/location.webp',
-                width: width,
-                enabled: !_isLocked,
-                validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? 'Required' : null,
-              ),
+              _buildBarangayField(width),
               _divider(width),
               _buildField(
                 ctrl: _streetCtrl,
@@ -1410,6 +1402,295 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
         if (showDivider) _divider(width),
       ],
     );
+  }
+
+  // ── Barangay picker field ─────────────────────────────────────────────────
+  /// Mirrors the ID-verification form: residents pick from the canonical Aparri
+  /// barangay list instead of free-typing. Wrapped in a [FormField] so it plugs
+  /// into the same validate()/error flow as the text fields, while the picked
+  /// value stays mirrored into [_barangayCtrl] for the save payload.
+  Widget _buildBarangayField(double width) {
+    final enabled = !_isLocked;
+    return FormField<String>(
+      initialValue: _barangayCtrl.text.trim().isEmpty
+          ? null
+          : _barangayCtrl.text.trim(),
+      validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+      builder: (state) {
+        final value = state.value;
+        final hasValue = value != null && value.isNotEmpty;
+        return Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: width * 0.04,
+            vertical: width * 0.015,
+          ),
+          child: InkWell(
+            onTap: enabled ? () => _showBarangayPicker(width, state) : null,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: width * 0.095,
+                      height: width * 0.095,
+                      decoration: BoxDecoration(
+                        color: enabled
+                            ? AppColors.primaryBlue.withValues(alpha: 0.10)
+                            : const Color(0xFFF3F4F6),
+                        borderRadius: BorderRadius.circular(width * 0.022),
+                        border: Border.all(
+                          color: enabled
+                              ? AppColors.primaryBlue.withValues(alpha: 0.25)
+                              : AppColors.stroke,
+                          width: 1.2,
+                        ),
+                      ),
+                      padding: EdgeInsets.all(width * 0.018),
+                      child: ColorFiltered(
+                        colorFilter: ColorFilter.mode(
+                          enabled
+                              ? AppColors.primaryBlue
+                              : const Color(0xFF9CA3AF),
+                          BlendMode.srcIn,
+                        ),
+                        child: Image.asset(
+                          'assets/images/report/location.webp',
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                    ),
+                    SizedBox(width: width * 0.035),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Barangay',
+                            style: TextStyle(
+                              fontSize: width * 0.032,
+                              color: AppColors.hint,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          SizedBox(height: width * 0.008),
+                          Text(
+                            hasValue ? value : 'Select your barangay',
+                            style: TextStyle(
+                              fontSize: width * 0.038,
+                              fontWeight: FontWeight.w500,
+                              color: !enabled
+                                  ? const Color(0xFF9CA3AF)
+                                  : hasValue
+                                  ? const Color(0xFF1F2937)
+                                  : AppColors.hint.withValues(alpha: 0.6),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    SizedBox(width: width * 0.02),
+                    enabled
+                        ? Icon(
+                            Icons.keyboard_arrow_down_rounded,
+                            size: width * 0.05,
+                            color: AppColors.hint,
+                          )
+                        : _lockBadge(width),
+                  ],
+                ),
+                if (state.hasError) ...[
+                  SizedBox(height: width * 0.012),
+                  Padding(
+                    padding: EdgeInsets.only(left: width * 0.13),
+                    child: Text(
+                      state.errorText!,
+                      style: TextStyle(
+                        fontSize: width * 0.028,
+                        color: AppColors.red,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showBarangayPicker(
+    double width,
+    FormFieldState<String> state,
+  ) async {
+    final searchCtrl = TextEditingController();
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(width * 0.05)),
+      ),
+      builder: (ctx) {
+        var results = List<String>.from(kAparriBarangays);
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(ctx).viewInsets.bottom,
+              ),
+              child: DraggableScrollableSheet(
+                expand: false,
+                initialChildSize: 0.7,
+                maxChildSize: 0.9,
+                minChildSize: 0.5,
+                builder: (ctx, scrollCtrl) {
+                  return Column(
+                    children: [
+                      SizedBox(height: width * 0.03),
+                      Container(
+                        width: width * 0.12,
+                        height: width * 0.012,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE5E7EB),
+                          borderRadius: BorderRadius.circular(width * 0.01),
+                        ),
+                      ),
+                      Padding(
+                        padding: EdgeInsets.fromLTRB(
+                          width * 0.05,
+                          width * 0.04,
+                          width * 0.05,
+                          width * 0.02,
+                        ),
+                        child: Row(
+                          children: [
+                            Text(
+                              'Select Barangay',
+                              style: TextStyle(
+                                fontSize: width * 0.046,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFF1F2937),
+                              ),
+                            ),
+                            const Spacer(),
+                            GestureDetector(
+                              onTap: () => Navigator.pop(ctx),
+                              child: Icon(
+                                Icons.close_rounded,
+                                size: width * 0.055,
+                                color: AppColors.hint,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: width * 0.05),
+                        child: TextField(
+                          controller: searchCtrl,
+                          autofocus: false,
+                          style: TextStyle(fontSize: width * 0.036),
+                          onChanged: (q) {
+                            final query = q.trim().toLowerCase();
+                            setSheetState(() {
+                              results = query.isEmpty
+                                  ? List<String>.from(kAparriBarangays)
+                                  : kAparriBarangays
+                                        .where(
+                                          (b) =>
+                                              b.toLowerCase().contains(query),
+                                        )
+                                        .toList();
+                            });
+                          },
+                          decoration: InputDecoration(
+                            isDense: true,
+                            hintText: 'Search barangay…',
+                            hintStyle: TextStyle(
+                              fontSize: width * 0.036,
+                              color: AppColors.hint,
+                            ),
+                            prefixIcon: Icon(
+                              Icons.search_rounded,
+                              size: width * 0.05,
+                              color: AppColors.hint,
+                            ),
+                            filled: true,
+                            fillColor: const Color(0xFFF3F4F6),
+                            contentPadding: EdgeInsets.symmetric(
+                              vertical: width * 0.03,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(width * 0.03),
+                              borderSide: BorderSide.none,
+                            ),
+                          ),
+                        ),
+                      ),
+                      SizedBox(height: width * 0.02),
+                      Expanded(
+                        child: results.isEmpty
+                            ? Center(
+                                child: Text(
+                                  'No barangay found',
+                                  style: TextStyle(
+                                    fontSize: width * 0.036,
+                                    color: AppColors.hint,
+                                  ),
+                                ),
+                              )
+                            : ListView.builder(
+                                controller: scrollCtrl,
+                                padding: EdgeInsets.only(bottom: width * 0.05),
+                                itemCount: results.length,
+                                itemBuilder: (ctx, i) {
+                                  final b = results[i];
+                                  final isSelected = b == state.value;
+                                  return ListTile(
+                                    title: Text(
+                                      b,
+                                      style: TextStyle(
+                                        fontSize: width * 0.038,
+                                        fontWeight: isSelected
+                                            ? FontWeight.w700
+                                            : FontWeight.w500,
+                                        color: isSelected
+                                            ? AppColors.primaryBlue
+                                            : const Color(0xFF1F2937),
+                                      ),
+                                    ),
+                                    trailing: isSelected
+                                        ? Icon(
+                                            Icons.check_rounded,
+                                            color: AppColors.primaryBlue,
+                                            size: width * 0.05,
+                                          )
+                                        : null,
+                                    onTap: () => Navigator.pop(ctx, b),
+                                  );
+                                },
+                              ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    searchCtrl.dispose();
+    if (selected != null) {
+      state.didChange(selected);
+      setState(() {
+        _barangayCtrl.text = selected;
+        _barangay = selected;
+      });
+    }
   }
 
   Widget _divider(double width) => Padding(

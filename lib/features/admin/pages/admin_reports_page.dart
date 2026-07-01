@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_colors.dart';
 import '../theme/admin_ui.dart';
 import '../providers/admin_reports_provider.dart';
+import '../widgets/admin_skeleton.dart';
 
 class AdminReportsPage extends ConsumerStatefulWidget {
   const AdminReportsPage({super.key});
@@ -185,14 +186,16 @@ class _AdminReportsPageState extends ConsumerState<AdminReportsPage> {
       child: async.when(
         loading: () => const Padding(
           padding: EdgeInsets.all(16),
-          child: Column(
-            children: [
-              _RowSkeleton(),
-              _RowSkeleton(),
-              _RowSkeleton(),
-              _RowSkeleton(),
-              _RowSkeleton(),
-            ],
+          child: AdminShimmer(
+            child: Column(
+              children: [
+                _RowSkeleton(),
+                _RowSkeleton(),
+                _RowSkeleton(),
+                _RowSkeleton(),
+                _RowSkeleton(),
+              ],
+            ),
           ),
         ),
         error: (e, _) => _ResultsMessage(
@@ -606,14 +609,7 @@ class _Bar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Align(
       alignment: Alignment.centerLeft,
-      child: Container(
-        width: width,
-        height: 11,
-        decoration: BoxDecoration(
-          color: AppColors.stroke,
-          borderRadius: BorderRadius.circular(6),
-        ),
-      ),
+      child: SkeletonBox(width: width, height: 11),
     );
   }
 }

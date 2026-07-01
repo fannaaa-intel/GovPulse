@@ -404,3 +404,10 @@ entrypoint = "./functions/update-password/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/update-password/*.html" ]
+
+[functions.sync-verification-avatar]
+enabled = true
+# Requires a signed-in caller (the admin approving the submission). The function
+# uses the service role internally and derives all paths from the DB.
+verify_jwt = true
+entrypoint = "./functions/sync-verification-avatar/index.ts"

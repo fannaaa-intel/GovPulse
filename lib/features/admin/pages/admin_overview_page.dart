@@ -6,6 +6,7 @@ import '../../../core/theme/app_colors.dart';
 import '../providers/admin_dashboard_provider.dart';
 import '../providers/admin_reports_provider.dart' show ReportStatus;
 import '../theme/admin_ui.dart';
+import '../widgets/admin_skeleton.dart';
 
 class AdminOverviewPage extends ConsumerStatefulWidget {
   final int selectedIndex;
@@ -250,7 +251,7 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
         value: data == null ? null : '${data.totalReports}',
         delta: null,
         caption: 'All citizen reports',
-        onTap: widget.onNavigate == null ? null : () => widget.onNavigate!(1),
+        onTap: widget.onNavigate == null ? null : () => widget.onNavigate!(4),
       ),
       _KpiCard(
         label: 'New this week',
@@ -337,13 +338,7 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
           SizedBox(
             height: 200,
             child: loading
-                ? const Center(
-                    child: SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  )
+                ? const AdminShimmer(child: _TrendSkeleton())
                 : (data == null
                       ? const _EmptyHint('Trend unavailable.')
                       : _TrendChart(dates: data.reportDates, days: _rangeDays)),
@@ -363,16 +358,7 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
           const _CardTitle('Status breakdown'),
           const SizedBox(height: 18),
           if (loading)
-            const SizedBox(
-              height: 140,
-              child: Center(
-                child: SizedBox(
-                  width: 22,
-                  height: 22,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              ),
-            )
+            const AdminShimmer(child: _DonutSkeleton())
           else if (data == null || data.totalReports == 0)
             const _EmptyHint('No reports yet.')
           else
@@ -413,8 +399,10 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
 
     Widget body;
     if (loading) {
-      body = Column(
-        children: List.generate(3, (_) => const _CategorySkeletonRow()),
+      body = AdminShimmer(
+        child: Column(
+          children: List.generate(3, (_) => const _CategorySkeletonRow()),
+        ),
       );
     } else if (s == null || s.responses == 0) {
       body = const _EmptyHint('No citizen ratings yet.');
@@ -533,8 +521,10 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
 
     Widget body;
     if (loading) {
-      body = Column(
-        children: List.generate(4, (_) => const _CategorySkeletonRow()),
+      body = AdminShimmer(
+        child: Column(
+          children: List.generate(4, (_) => const _CategorySkeletonRow()),
+        ),
       );
     } else if (data == null) {
       body = const _EmptyHint('Categories unavailable.');
@@ -603,8 +593,10 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
 
     Widget body;
     if (loading) {
-      body = Column(
-        children: List.generate(4, (_) => const _ActivitySkeletonRow()),
+      body = AdminShimmer(
+        child: Column(
+          children: List.generate(4, (_) => const _ActivitySkeletonRow()),
+        ),
       );
     } else if (data == null) {
       body = const _EmptyHint('Activity unavailable.');
@@ -635,7 +627,7 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
               if (widget.onNavigate != null)
                 _LinkButton(
                   label: 'View all',
-                  onTap: () => widget.onNavigate!(1),
+                  onTap: () => widget.onNavigate!(4),
                 ),
             ],
           ),
@@ -653,7 +645,7 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
         a.kind == ActivityKind.reportResolved ||
         a.kind == ActivityKind.reportRejected;
     return (isReport && widget.onNavigate != null)
-        ? () => widget.onNavigate!(1)
+        ? () => widget.onNavigate!(4)
         : null;
   }
 
@@ -1059,7 +1051,7 @@ class _KpiCard extends StatelessWidget {
             ],
           ),
           if (loading)
-            const _Skeleton(width: 56, height: 26)
+            const AdminShimmer(child: _Skeleton(width: 56, height: 26))
           else
             Text(
               value ?? '—',
@@ -1606,8 +1598,72 @@ class _Skeleton extends StatelessWidget {
       width: width,
       height: height,
       decoration: BoxDecoration(
-        color: AppColors.stroke,
+        color: kSkeletonBase,
         borderRadius: BorderRadius.circular(6),
+      ),
+    );
+  }
+}
+
+class _TrendSkeleton extends StatelessWidget {
+  const _TrendSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    // A baseline plus a few bars of varied height that read as a chart frame.
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 4),
+      child: LayoutBuilder(
+        builder: (context, c) {
+          const heights = [0.45, 0.7, 0.35, 0.85, 0.55, 0.95, 0.6, 0.75];
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              for (var i = 0; i < heights.length; i++) ...[
+                Expanded(
+                  child: SkeletonBox(
+                    height: (c.maxHeight * heights[i]).clamp(12.0, c.maxHeight),
+                    radius: 6,
+                  ),
+                ),
+                if (i != heights.length - 1) const SizedBox(width: 10),
+              ],
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _DonutSkeleton extends StatelessWidget {
+  const _DonutSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return const SizedBox(
+      height: 140,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          SkeletonCircle(size: 120),
+          SizedBox(width: 18),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SkeletonBox(width: double.infinity, height: 11),
+                SizedBox(height: 12),
+                SkeletonBox(width: double.infinity, height: 11),
+                SizedBox(height: 12),
+                SkeletonBox(width: 120, height: 11),
+                SizedBox(height: 12),
+                SkeletonBox(width: 90, height: 11),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1618,23 +1674,16 @@ class _ActivitySkeletonRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
+    return const Padding(
+      padding: EdgeInsets.only(bottom: 14),
       child: Row(
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: const BoxDecoration(
-              color: AppColors.stroke,
-              shape: BoxShape.circle,
-            ),
-          ),
-          const SizedBox(width: 12),
+          SkeletonCircle(size: 36),
+          SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
+              children: [
                 _Skeleton(width: 140, height: 11),
                 SizedBox(height: 6),
                 _Skeleton(width: 90, height: 10),

@@ -1,51 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../core/theme/app_colors.dart';
-
-// ── Official 41 mainland barangays of Aparri, Cagayan ──
-const List<String> _aparriBarangays = [
-  'Backiling',
-  'Bangag',
-  'Binalan',
-  'Bisagu',
-  'Bukig',
-  'Bulala Norte',
-  'Bulala Sur',
-  'Caagaman',
-  'Centro 1 (Pob.)',
-  'Centro 2 (Pob.)',
-  'Centro 3 (Pob.)',
-  'Centro 4 (Pob.)',
-  'Centro 5 (Pob.)',
-  'Centro 6 (Pob.)',
-  'Centro 7 (Pob.)',
-  'Centro 8 (Pob.)',
-  'Centro 9 (Pob.)',
-  'Centro 10 (Pob.)',
-  'Centro 11 (Pob.)',
-  'Centro 12 (Pob.)',
-  'Centro 13 (Pob.)',
-  'Centro 14 (Pob.)',
-  'Centro 15 (Pob.)',
-  'Dodan',
-  'Gaddang',
-  'Linao',
-  'Mabanguc',
-  'Macanaya (Pescaria)',
-  'Maura',
-  'Minanga',
-  'Navagan',
-  'Paddaya',
-  'Paruddun Norte',
-  'Paruddun Sur',
-  'Plaza',
-  'Punta',
-  'San Antonio',
-  'Sanja',
-  'Tallungan',
-  'Toran',
-  'Zinarag',
-];
+import '../../core/constants/aparri_barangays.dart';
 
 class VerificationReviewScreen extends StatefulWidget {
   final String username;
@@ -754,7 +710,7 @@ class _VerificationReviewScreenState extends State<VerificationReviewScreen> {
         _dropdown(
           "Barangay",
           _barangay,
-          _aparriBarangays,
+          kAparriBarangays,
           (v) => setState(() => _barangay = v),
         ),
         const SizedBox(height: 10),

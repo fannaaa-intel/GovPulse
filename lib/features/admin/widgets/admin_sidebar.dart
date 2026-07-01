@@ -30,31 +30,42 @@ class AdminSidebar extends StatelessWidget {
         color: AdminUi.surface,
         border: Border(right: BorderSide(color: AdminUi.border, width: 1)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildLogo(),
-          const SizedBox(height: 6),
-          Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              itemCount: items.length,
-              itemBuilder: (ctx, i) => _NavTile(
-                item: items[i],
-                selected: i == selectedIndex,
-                collapsed: collapsed,
-                onTap: () => onItemTap(i),
+      // The rail's WIDTH animates (72 ↔ 244) but `collapsed` flips instantly, so
+      // for the frames mid-animation the expanded content (labels, the wordmark,
+      // "Logout") would render while the rail is still narrow → RenderFlex
+      // overflow. Deriving the content state from the live width keeps it
+      // icon-only until there's genuinely room for labels.
+      child: LayoutBuilder(
+        builder: (context, c) {
+          final showCollapsed = collapsed || c.maxWidth < 220;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildLogo(showCollapsed),
+              const SizedBox(height: 6),
+              Expanded(
+                child: ListView.builder(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  itemCount: items.length,
+                  itemBuilder: (ctx, i) => _NavTile(
+                    item: items[i],
+                    selected: i == selectedIndex,
+                    collapsed: showCollapsed,
+                    onTap: () => onItemTap(i),
+                  ),
+                ),
               ),
-            ),
-          ),
-          const Divider(height: 1, color: AdminUi.border),
-          _buildFooter(),
-        ],
+              const Divider(height: 1, color: AdminUi.border),
+              _buildFooter(showCollapsed),
+            ],
+          );
+        },
       ),
     );
   }
 
-  Widget _buildLogo() {
+  Widget _buildLogo(bool collapsed) {
     return Container(
       height: 64,
       padding: EdgeInsets.symmetric(horizontal: collapsed ? 16 : 20),
@@ -96,7 +107,7 @@ class AdminSidebar extends StatelessWidget {
     );
   }
 
-  Widget _buildFooter() {
+  Widget _buildFooter(bool collapsed) {
     return Padding(
       padding: const EdgeInsets.all(12),
       child: Column(

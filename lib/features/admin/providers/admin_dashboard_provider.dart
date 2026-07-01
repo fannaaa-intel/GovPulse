@@ -235,13 +235,38 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
     return List<Map<String, dynamic>>.from(res);
   }
 
+  /// Verification rows for the activity feed. We merge two windows so the feed
+  /// reflects what actually happened *recently*:
+  ///  • the latest submissions (drives "ID verification submitted" rows), and
+  ///  • the latest reviews (drives "User verified"/"rejected" rows — whose event
+  ///    time is `reviewed_at`, which can be far newer than the original
+  ///    `created_at`).
+  /// Without the second window, approving a long-pending submission would keep
+  /// it buried by its old `created_at` and it would never surface here.
   Future<List<Map<String, dynamic>>> _selectRecentVerifications() async {
-    final res = await _db
-        .from('verification_submissions')
-        .select('id, status, first_name, last_name, created_at')
-        .order('created_at', ascending: false)
-        .limit(6);
-    return List<Map<String, dynamic>>.from(res);
+    const cols = 'id, status, first_name, last_name, created_at, reviewed_at';
+    final windows = await Future.wait<List<Map<String, dynamic>>>([
+      _db
+          .from('verification_submissions')
+          .select(cols)
+          .order('created_at', ascending: false)
+          .limit(6)
+          .then(List<Map<String, dynamic>>.from),
+      _db
+          .from('verification_submissions')
+          .select(cols)
+          .not('reviewed_at', 'is', null)
+          .order('reviewed_at', ascending: false)
+          .limit(6)
+          .then(List<Map<String, dynamic>>.from),
+    ]);
+
+    // Dedupe by id (a row can appear in both windows).
+    final byId = <String, Map<String, dynamic>>{};
+    for (final row in [...windows[0], ...windows[1]]) {
+      byId[row['id'] as String] = row;
+    }
+    return byId.values.toList();
   }
 
   /// Citizen service-quality ratings (1..5 overall + four aspects).
@@ -449,7 +474,12 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
     final status = (row['status'] as String?) ?? 'pending';
     final name = '${row['first_name'] ?? ''} ${row['last_name'] ?? ''}'.trim();
     final display = name.isEmpty ? 'Citizen' : name;
-    final ts = _parseTs(row['created_at']);
+    // Reviewed rows are events at `reviewed_at`; a pending row's event is its
+    // submission (`created_at`). Falling back to created_at keeps the row from
+    // ever losing its timestamp.
+    final ts = status == 'pending'
+        ? _parseTs(row['created_at'])
+        : (_parseTs(row['reviewed_at']) ?? _parseTs(row['created_at']));
 
     switch (status) {
       case 'approved':
