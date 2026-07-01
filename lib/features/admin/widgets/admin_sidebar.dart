@@ -9,6 +9,7 @@ class AdminSidebar extends StatelessWidget {
   final int selectedIndex;
   final bool collapsed;
   final void Function(int) onItemTap;
+  final VoidCallback onLogout;
 
   const AdminSidebar({
     super.key,
@@ -16,6 +17,7 @@ class AdminSidebar extends StatelessWidget {
     required this.selectedIndex,
     required this.collapsed,
     required this.onItemTap,
+    required this.onLogout,
   });
 
   @override
@@ -148,7 +150,7 @@ class AdminSidebar extends StatelessWidget {
                 ],
               ),
             ),
-          _LogoutTile(collapsed: collapsed),
+          _LogoutTile(collapsed: collapsed, onLogout: onLogout),
         ],
       ),
     );
@@ -249,7 +251,8 @@ class _NavTile extends StatelessWidget {
 
 class _LogoutTile extends StatelessWidget {
   final bool collapsed;
-  const _LogoutTile({required this.collapsed});
+  final VoidCallback onLogout;
+  const _LogoutTile({required this.collapsed, required this.onLogout});
 
   @override
   Widget build(BuildContext context) {
@@ -259,7 +262,7 @@ class _LogoutTile extends StatelessWidget {
       child: Material(
         type: MaterialType.transparency,
         child: InkWell(
-          onTap: () {},
+          onTap: onLogout,
           borderRadius: BorderRadius.circular(10),
           child: Padding(
             padding: EdgeInsets.symmetric(

@@ -353,7 +353,9 @@ class CommunityPostsProvider extends ChangeNotifier {
           .select()
           .eq('status', 'approved');
 
-      final rows = await query.order('created_at', ascending: false);
+      final rows = await query
+          .order('pinned', ascending: false)
+          .order('created_at', ascending: false);
 
       final postIds = rows.map((r) => r['id'] as String).toList();
       final commentsByPost = postIds.isEmpty
@@ -382,9 +384,9 @@ class CommunityPostsProvider extends ChangeNotifier {
         }
       }
 
-      _posts = rows
-          .map((r) => _mapPostRow(r, commentsByPost[r['id']] ?? []))
-          .toList();
+      _posts = _pinnedFirst(
+        rows.map((r) => _mapPostRow(r, commentsByPost[r['id']] ?? [])).toList(),
+      );
 
       // Re-apply any pending edits so they aren't overwritten by stale DB data
       if (pendingEdits.isNotEmpty) {
@@ -478,33 +480,39 @@ class CommunityPostsProvider extends ChangeNotifier {
           if (kDebugMode) debugPrint('guest comments fetch failed: $e');
         }
 
-        _posts = rows.map((r) {
-          final pid = r['id'] as String;
-          final loaded = guestComments[pid] ?? const <Map<String, dynamic>>[];
-          final m = _mapPostRow(r, loaded);
-          // If comments loaded, the count is computed from them (matches the
-          // visible list). Otherwise fall back to the server-provided count.
-          if (loaded.isEmpty) {
-            m['commentCount'] = (r['comments_count'] as int?) ?? 0;
-          }
-          return m;
-        }).toList();
+        _posts = _pinnedFirst(
+          rows.map((r) {
+            final pid = r['id'] as String;
+            final loaded = guestComments[pid] ?? const <Map<String, dynamic>>[];
+            final m = _mapPostRow(r, loaded);
+            // If comments loaded, the count is computed from them (matches the
+            // visible list). Otherwise fall back to the server-provided count.
+            if (loaded.isEmpty) {
+              m['commentCount'] = (r['comments_count'] as int?) ?? 0;
+            }
+            return m;
+          }).toList(),
+        );
       } else {
         var query = _supabase
             .from('community_feed')
             .select()
             .eq('status', 'approved');
 
-        final rows = await query.order('created_at', ascending: false);
+        final rows = await query
+            .order('pinned', ascending: false)
+            .order('created_at', ascending: false);
 
         final postIds = rows.map((r) => r['id'] as String).toList();
         final commentsByPost = postIds.isEmpty
             ? <String, List<Map<String, dynamic>>>{}
             : await _fetchCommentsForPosts(postIds);
 
-        _posts = rows
-            .map((r) => _mapPostRow(r, commentsByPost[r['id']] ?? []))
-            .toList();
+        _posts = _pinnedFirst(
+          rows
+              .map((r) => _mapPostRow(r, commentsByPost[r['id']] ?? []))
+              .toList(),
+        );
       }
 
       _fetched = true;
@@ -751,9 +759,26 @@ class CommunityPostsProvider extends ChangeNotifier {
       'imageCount': imageUrls.length,
       'imageUrls': imageUrls,
       'timestamp': _parseTs(row['created_at']),
+      'pinned': (row['pinned'] as bool?) ?? false,
       'comments': comments,
       'commentCount': totalCommentCount,
     };
+  }
+
+  /// Floats pinned posts to the top, newest-first within each group.
+  /// Stable so the DB ordering is preserved when pin flags are equal.
+  List<Map<String, dynamic>> _pinnedFirst(List<Map<String, dynamic>> posts) {
+    final sorted = [...posts];
+    sorted.sort((a, b) {
+      final ap = (a['pinned'] as bool?) ?? false;
+      final bp = (b['pinned'] as bool?) ?? false;
+      if (ap != bp) return ap ? -1 : 1;
+      final at = a['timestamp'] as DateTime?;
+      final bt = b['timestamp'] as DateTime?;
+      if (at == null || bt == null) return 0;
+      return bt.compareTo(at);
+    });
+    return sorted;
   }
 
   Map<String, dynamic> _mapCommentRow(
