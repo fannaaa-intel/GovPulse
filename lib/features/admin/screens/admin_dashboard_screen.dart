@@ -207,27 +207,29 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
   Widget _buildDesktopLayout() {
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6FB),
-      body: Row(
-        children: [
-          AdminSidebar(
-            items: navItems,
-            selectedIndex: _selectedIndex,
-            collapsed: false,
-            onItemTap: (i) => setState(() => _selectedIndex = i),
-            onLogout: _confirmLogout,
-          ),
-          Expanded(
-            child: Column(
-              children: [
-                AdminTopBar(
-                  title: navItems[_selectedIndex].label,
-                  showMenuButton: false,
-                ),
-                Expanded(child: _buildPage()),
-              ],
+      body: SafeArea(
+        child: Row(
+          children: [
+            AdminSidebar(
+              items: navItems,
+              selectedIndex: _selectedIndex,
+              collapsed: false,
+              onItemTap: (i) => setState(() => _selectedIndex = i),
+              onLogout: _confirmLogout,
             ),
-          ),
-        ],
+            Expanded(
+              child: Column(
+                children: [
+                  AdminTopBar(
+                    title: navItems[_selectedIndex].label,
+                    showMenuButton: false,
+                  ),
+                  Expanded(child: _buildPage()),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -236,27 +238,29 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
   Widget _buildTabletLayout() {
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6FB),
-      body: Row(
-        children: [
-          AdminSidebar(
-            items: navItems,
-            selectedIndex: _selectedIndex,
-            collapsed: true,
-            onItemTap: (i) => setState(() => _selectedIndex = i),
-            onLogout: _confirmLogout,
-          ),
-          Expanded(
-            child: Column(
-              children: [
-                AdminTopBar(
-                  title: navItems[_selectedIndex].label,
-                  showMenuButton: false,
-                ),
-                Expanded(child: _buildPage()),
-              ],
+      body: SafeArea(
+        child: Row(
+          children: [
+            AdminSidebar(
+              items: navItems,
+              selectedIndex: _selectedIndex,
+              collapsed: true,
+              onItemTap: (i) => setState(() => _selectedIndex = i),
+              onLogout: _confirmLogout,
             ),
-          ),
-        ],
+            Expanded(
+              child: Column(
+                children: [
+                  AdminTopBar(
+                    title: navItems[_selectedIndex].label,
+                    showMenuButton: false,
+                  ),
+                  Expanded(child: _buildPage()),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -282,15 +286,17 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
           },
         ),
       ),
-      body: Column(
-        children: [
-          AdminTopBar(
-            title: navItems[_selectedIndex].label,
-            showMenuButton: true,
-            onMenuTap: () => _scaffoldKey.currentState?.openDrawer(),
-          ),
-          Expanded(child: _buildPage()),
-        ],
+      body: SafeArea(
+        child: Column(
+          children: [
+            AdminTopBar(
+              title: navItems[_selectedIndex].label,
+              showMenuButton: true,
+              onMenuTap: () => _scaffoldKey.currentState?.openDrawer(),
+            ),
+            Expanded(child: _buildPage()),
+          ],
+        ),
       ),
     );
   }
