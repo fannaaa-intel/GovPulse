@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import '../../../features/home/screen/notification_popup.dart';
 import '../../../core/network/network_wrapper.dart';
 import '../../../core/utils/overlay_exit.dart';
+import '../../../core/widgets/app_snackbar.dart';
 import '../../../core/widgets/modal/verification_required_dialog.dart';
 import '../Quick-action/Report/report_issue_screen.dart';
 import '../Quick-action/Chat-with-Agent/chat_agent_screen.dart';
@@ -490,13 +491,7 @@ class _HomePageState extends ConsumerState<HomePage>
     } catch (e) {
       if (!mounted) return;
       Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Logout failed: $e'),
-          backgroundColor: const Color(0xFFEF4444),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      showAppSnackBar(context, 'Logout failed: $e', type: AppSnackType.error);
     }
   }
 

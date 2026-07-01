@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:dotted_border/dotted_border.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../../core/widgets/mobile_form_shell.dart';
+import '../../core/widgets/app_snackbar.dart';
 
 const Map<String, Map<String, String>> idImages = {
   "PhilSys ID": {
@@ -196,12 +197,10 @@ class _VerificationUploadIdScreenState extends State<VerificationUploadIdScreen>
                                       },
                                     );
                                   } else if (status.isDenied) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text(
-                                          "Camera permission is required",
-                                        ),
-                                      ),
+                                    showAppSnackBar(
+                                      context,
+                                      'Camera permission is required',
+                                      type: AppSnackType.error,
                                     );
                                   } else if (status.isPermanentlyDenied) {
                                     openAppSettings();

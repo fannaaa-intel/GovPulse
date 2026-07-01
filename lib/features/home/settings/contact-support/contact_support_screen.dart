@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/widgets/responsive_page.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 
 class ContactSupportScreen extends StatefulWidget {
   final String username;
@@ -65,16 +66,7 @@ class _ContactSupportScreenState extends State<ContactSupportScreen>
   // ── Launch helpers ─────────────────────────────────────────────────────────
   void _snack(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(msg),
-          backgroundColor: AppColors.primaryBlue,
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 2),
-        ),
-      );
+    showAppSnackBar(context, msg, type: AppSnackType.info);
   }
 
   Future<void> _launch(Uri uri, String failMsg) async {

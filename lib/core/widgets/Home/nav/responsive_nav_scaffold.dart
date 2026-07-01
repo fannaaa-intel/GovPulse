@@ -32,6 +32,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../network/network_wrapper.dart';
+import '../../app_snackbar.dart';
 import '../../../providers/user_profile_provider.dart';
 import '../../../services/chat_service.dart';
 import '../../../services/push_service.dart';
@@ -315,13 +316,7 @@ class ResponsiveNavScaffold extends ConsumerWidget {
     } catch (e) {
       if (!context.mounted) return;
       Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Logout failed: $e'),
-          backgroundColor: const Color(0xFFEF4444),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      showAppSnackBar(context, 'Logout failed: $e', type: AppSnackType.error);
     }
   }
 

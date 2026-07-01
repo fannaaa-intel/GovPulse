@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 
 import 'package:permission_handler/permission_handler.dart';
 import 'package:android_intent_plus/android_intent.dart';
@@ -329,29 +330,11 @@ class _EmergencyScreenState extends State<EmergencyScreen>
 
   void _copyNumber(String number) {
     Clipboard.setData(ClipboardData(text: number));
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              const Icon(
-                Icons.check_circle_rounded,
-                color: Colors.white,
-                size: 18,
-              ),
-              const SizedBox(width: 10),
-              Text('$number copied to clipboard'),
-            ],
-          ),
-          backgroundColor: AppColors.green,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          duration: const Duration(seconds: 2),
-        ),
-      );
+    showAppSnackBar(
+      context,
+      '$number copied to clipboard',
+      type: AppSnackType.success,
+    );
   }
 
   void _openCategory(_Category cat) {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 import '../my_report/my_reports_screen.dart';
 import '../Quick-action/Report/location_picker_screen.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -2111,14 +2112,10 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
 
   void _copyReportId() {
     Clipboard.setData(ClipboardData(text: 'RPT-${widget.report.id}'));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Report ID copied to clipboard'),
-        backgroundColor: AppColors.primaryBlue,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        duration: const Duration(seconds: 2),
-      ),
+    showAppSnackBar(
+      context,
+      'Report ID copied to clipboard',
+      type: AppSnackType.info,
     );
   }
 

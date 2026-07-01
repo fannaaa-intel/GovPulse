@@ -5,6 +5,7 @@ import '../../../../core/widgets/responsive_page.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/widgets/mobile_form_shell.dart';
 import 'change_password_new_screen.dart';
 
@@ -145,12 +146,10 @@ class _ChangePasswordVerifyScreenState extends State<ChangePasswordVerifyScreen>
       );
       if (!mounted) return;
       if (canVerify['allowed'] != true) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(canVerify['message'] as String),
-            backgroundColor: AppColors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
+        showAppSnackBar(
+          context,
+          canVerify['message'] as String,
+          type: AppSnackType.error,
         );
         return;
       }

@@ -7,6 +7,7 @@ import '../providers/admin_dashboard_provider.dart';
 import '../providers/admin_reports_provider.dart' show ReportStatus;
 import '../theme/admin_ui.dart';
 import '../widgets/admin_skeleton.dart';
+import '../widgets/admin_snackbar.dart';
 
 class AdminOverviewPage extends ConsumerStatefulWidget {
   final int selectedIndex;
@@ -171,11 +172,10 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
       child: InkWell(
         borderRadius: BorderRadius.circular(AdminUi.controlRadius),
         onTap: () {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Export coming soon'),
-              behavior: SnackBarBehavior.floating,
-            ),
+          showAdminSnackBar(
+            context,
+            'Export coming soon',
+            type: AdminSnackType.info,
           );
         },
         child: Container(
