@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/chat_service.dart';
 import '../network/network_wrapper.dart';
 import '../../features/onboarding/splash_screen.dart';
@@ -315,8 +316,20 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
       return _webFade(
         Builder(
           builder: (ctx) => IntroScreen(
-            onLoginClick: () => Navigator.pushReplacementNamed(ctx, '/login'),
-            onSignUpClick: () => Navigator.pushReplacementNamed(ctx, '/signup'),
+            onLoginClick: () async {
+              // Mark onboarding as seen BEFORE navigating away, so the
+              // splash screen never shows the intro again on next launch.
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setBool('seenOnboarding', true);
+              if (!ctx.mounted) return;
+              Navigator.pushReplacementNamed(ctx, '/login');
+            },
+            onSignUpClick: () async {
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setBool('seenOnboarding', true);
+              if (!ctx.mounted) return;
+              Navigator.pushReplacementNamed(ctx, '/signup');
+            },
           ),
         ),
       );
