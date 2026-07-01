@@ -54,6 +54,7 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
   PostFilter _currentFilter = PostFilter.latest;
   final Set<String> _likedComments = {};
   final Set<String> _likedPosts = {};
+  final Set<String> _commentedPosts = {};
   final Set<String> _expandedPosts = {};
 
   @override
@@ -106,6 +107,16 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
           .from('community_comment_likes')
           .select('comment_id')
           .eq('user_id', userId);
+      // Posts this user has commented on → drives the blue "commented" state.
+      List<dynamic> myComments = const [];
+      try {
+        myComments = await _supabase
+            .from('community_comments')
+            .select('post_id')
+            .eq('author_id', userId);
+      } catch (_) {
+        /* read may be restricted; blue state just won't show */
+      }
       if (!mounted) return;
       setState(() {
         _likedPosts
@@ -114,6 +125,9 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
         _likedComments
           ..clear()
           ..addAll(commentLikes.map((r) => r['comment_id'] as String));
+        _commentedPosts
+          ..clear()
+          ..addAll(myComments.map((r) => r['post_id'] as String));
       });
     } catch (_) {}
   }
@@ -516,7 +530,7 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
         likedPosts: _likedPosts,
         onTogglePostLike: _togglePostLike,
       ),
-    );
+    ).whenComplete(_loadMyInteractions);
   }
 
   @override
@@ -868,6 +882,27 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (post['pinned'] == true) ...[
+              Row(
+                children: [
+                  Icon(
+                    Icons.push_pin_rounded,
+                    size: width * 0.035,
+                    color: const Color(0xFF0D47A1),
+                  ),
+                  SizedBox(width: width * 0.012),
+                  Text(
+                    'Pinned',
+                    style: TextStyle(
+                      fontSize: width * 0.03,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF0D47A1),
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: width * 0.02),
+            ],
             _buildPostHeader(width, post),
             SizedBox(height: width * 0.03),
             Text(
@@ -900,6 +935,7 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
               commentCount.toString(),
               () => _openCommentsSheet(post),
               liked: isPostLiked,
+              commented: _commentedPosts.contains(postId),
               onLikeTap: () => _togglePostLike(postId),
             ),
             if (commentCount > 0) ...[
@@ -1120,8 +1156,12 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
     String comments,
     VoidCallback onCommentsTap, {
     bool liked = false,
+    bool commented = false,
     VoidCallback? onLikeTap,
   }) {
+    const commentActive = Color(0xFF0D47A1); // AppColors.primaryBlue
+    const commentIdle = Color(0xFF6B7280);
+    final commentColor = commented ? commentActive : commentIdle;
     return Row(
       children: [
         GestureDetector(
@@ -1171,12 +1211,14 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
                 'assets/images/comment.webp',
                 width: width * 0.048,
                 height: width * 0.048,
-                color: const Color(0xFF6B7280),
+                color: commentColor,
                 colorBlendMode: BlendMode.srcIn,
                 errorBuilder: (_, _, _) => Icon(
-                  Icons.chat_bubble_outline_rounded,
+                  commented
+                      ? Icons.mode_comment_rounded
+                      : Icons.chat_bubble_outline_rounded,
                   size: width * 0.048,
-                  color: const Color(0xFF6B7280),
+                  color: commentColor,
                 ),
               ),
               SizedBox(width: width * 0.012),
@@ -1185,7 +1227,7 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
                 style: TextStyle(
                   fontSize: width * 0.034,
                   fontWeight: FontWeight.w600,
-                  color: const Color(0xFF374151),
+                  color: commented ? commentActive : const Color(0xFF374151),
                 ),
               ),
             ],

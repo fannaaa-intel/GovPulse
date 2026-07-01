@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 /// A polished bottom sheet for choosing how to attach media.
@@ -12,6 +14,9 @@ Future<String?> showMediaPickerSheet(
     context: context,
     backgroundColor: Colors.transparent,
     isScrollControlled: true,
+    // On wide screens (tablet / web) this keeps the sheet a sensible width and
+    // centered, instead of stretching across the whole window.
+    constraints: const BoxConstraints(maxWidth: 480),
     builder: (ctx) => _MediaPickerSheet(allowVideo: allowVideo),
   );
 }
@@ -23,7 +28,9 @@ class _MediaPickerSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width;
+    // Size relative to the sheet's own width, capped so fonts and padding stay
+    // phone-sized on tablet/web (where the raw screen width would be huge).
+    final w = math.min(MediaQuery.of(context).size.width, 460).toDouble();
 
     return Container(
       width: double.infinity,
