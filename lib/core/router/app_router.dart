@@ -317,8 +317,6 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
         Builder(
           builder: (ctx) => IntroScreen(
             onLoginClick: () async {
-              // Mark onboarding as seen BEFORE navigating away, so the
-              // splash screen never shows the intro again on next launch.
               final prefs = await SharedPreferences.getInstance();
               await prefs.setBool('seenOnboarding', true);
               if (!ctx.mounted) return;
