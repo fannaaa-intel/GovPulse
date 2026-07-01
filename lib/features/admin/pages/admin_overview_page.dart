@@ -32,12 +32,13 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
   @override
   Widget build(BuildContext context) {
     final async = ref.watch(adminDashboardProvider);
+    final pad = MediaQuery.of(context).size.width < 600 ? 16.0 : 24.0;
 
     return RefreshIndicator(
       onRefresh: () => ref.read(adminDashboardProvider.notifier).refresh(),
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(24),
+        padding: EdgeInsets.fromLTRB(pad, pad, pad, pad + 24),
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 1400),
@@ -285,7 +286,7 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
 
     return LayoutBuilder(
       builder: (context, c) {
-        final cols = c.maxWidth > 900 ? 4 : (c.maxWidth > 520 ? 2 : 1);
+        final cols = c.maxWidth > 900 ? 4 : (c.maxWidth >= 340 ? 2 : 1);
         return _kpiGrid(cards, cols);
       },
     );
