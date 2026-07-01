@@ -5,6 +5,7 @@ import '../../../core/theme/app_colors.dart';
 import '../theme/admin_ui.dart';
 import '../providers/admin_reports_provider.dart';
 import '../widgets/admin_skeleton.dart';
+import '../widgets/admin_snackbar.dart';
 
 class AdminReportsPage extends ConsumerStatefulWidget {
   const AdminReportsPage({super.key});
@@ -34,11 +35,10 @@ class _AdminReportsPageState extends ConsumerState<AdminReportsPage> {
   Future<void> _changeStatus(AdminReport r, ReportStatus next) async {
     await ref.read(adminReportsProvider.notifier).updateStatus(r.id, next);
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('${r.shortId} → ${reportStatusLabel(next)}'),
-        behavior: SnackBarBehavior.floating,
-      ),
+    showAdminSnackBar(
+      context,
+      '${r.shortId} → ${reportStatusLabel(next)}',
+      type: AdminSnackType.success,
     );
   }
 

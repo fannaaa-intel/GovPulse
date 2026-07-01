@@ -8,6 +8,7 @@ import '../../../core/services/push_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/Home/Chat-bubbles/home_chat_bubble.dart';
 import '../widgets/admin_sidebar.dart';
+import '../widgets/admin_snackbar.dart';
 import '../widgets/admin_topbar.dart';
 import '../pages/admin_overview_page.dart';
 import '../pages/admin_reports_page.dart';
@@ -186,13 +187,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
     } catch (e) {
       if (!mounted) return;
       Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Logout failed: $e'),
-          backgroundColor: AppColors.red,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      showAdminSnackBar(context, 'Logout failed: $e', type: AdminSnackType.error);
     }
   }
 

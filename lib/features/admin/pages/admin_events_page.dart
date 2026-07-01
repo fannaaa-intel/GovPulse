@@ -13,6 +13,7 @@ import '../../../core/widgets/modal/media_picker_sheet.dart';
 import '../providers/admin_events_provider.dart';
 import '../theme/admin_ui.dart';
 import '../widgets/admin_skeleton.dart';
+import '../widgets/admin_snackbar.dart';
 
 // ── Category presets ──────────────────────────────────────────────────────────
 // The citizen app filters by these categories; each carries a signature colour
@@ -916,22 +917,11 @@ class _EventDetailDialogState extends ConsumerState<_EventDetailDialog> {
       await action();
       if (!mounted) return;
       Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(done),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      showAdminSnackBar(context, done, type: AdminSnackType.success);
     } catch (err) {
       if (!mounted) return;
       setState(() => _busy = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed: $err'),
-          backgroundColor: AppColors.red,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      showAdminSnackBar(context, 'Failed: $err', type: AdminSnackType.error);
     }
   }
 
@@ -1414,12 +1404,10 @@ class _EventFormDialogState extends ConsumerState<_EventFormDialog> {
       });
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Could not add photo: $e'),
-          backgroundColor: AppColors.red,
-          behavior: SnackBarBehavior.floating,
-        ),
+      showAdminSnackBar(
+        context,
+        'Could not add photo: $e',
+        type: AdminSnackType.error,
       );
     }
   }
@@ -1493,11 +1481,10 @@ class _EventFormDialogState extends ConsumerState<_EventFormDialog> {
 
       if (!mounted) return;
       Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(_isEdit ? 'Event updated.' : 'Event published.'),
-          behavior: SnackBarBehavior.floating,
-        ),
+      showAdminSnackBar(
+        context,
+        _isEdit ? 'Event updated.' : 'Event published.',
+        type: AdminSnackType.success,
       );
     } catch (err) {
       if (!mounted) return;

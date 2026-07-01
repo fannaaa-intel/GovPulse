@@ -5,6 +5,7 @@ import '../../../core/theme/app_colors.dart';
 import '../theme/admin_ui.dart';
 import '../providers/admin_verification_provider.dart';
 import '../widgets/admin_skeleton.dart';
+import '../widgets/admin_snackbar.dart';
 import '../../home/screen/notification_popup.dart';
 
 class AdminVerificationPage extends ConsumerStatefulWidget {
@@ -838,21 +839,18 @@ class _VerificationDetailDialogState
           );
       if (!mounted) return;
       Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${widget.verification.fullName} approved.'),
-          behavior: SnackBarBehavior.floating,
-        ),
+      showAdminSnackBar(
+        context,
+        '${widget.verification.fullName} approved.',
+        type: AdminSnackType.success,
       );
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to approve: $e'),
-          backgroundColor: AppColors.red,
-          behavior: SnackBarBehavior.floating,
-        ),
+      showAdminSnackBar(
+        context,
+        'Failed to approve: $e',
+        type: AdminSnackType.error,
       );
     }
   }
@@ -903,21 +901,18 @@ class _VerificationDetailDialogState
 
       if (!mounted) return;
       Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${widget.verification.fullName} rejected.'),
-          behavior: SnackBarBehavior.floating,
-        ),
+      showAdminSnackBar(
+        context,
+        '${widget.verification.fullName} rejected.',
+        type: AdminSnackType.success,
       );
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to reject: $e'),
-          backgroundColor: AppColors.red,
-          behavior: SnackBarBehavior.floating,
-        ),
+      showAdminSnackBar(
+        context,
+        'Failed to reject: $e',
+        type: AdminSnackType.error,
       );
     }
   }

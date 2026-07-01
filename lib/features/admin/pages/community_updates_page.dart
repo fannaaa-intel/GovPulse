@@ -11,6 +11,7 @@ import '../../../core/widgets/modal/media_picker_sheet.dart';
 import '../providers/community_updates_provider.dart';
 import '../theme/admin_ui.dart';
 import '../widgets/admin_skeleton.dart';
+import '../widgets/admin_snackbar.dart';
 
 const int _kMaxImages = 6;
 
@@ -1048,15 +1049,11 @@ class _ErrorState extends StatelessWidget {
 // ── Toast / dialogs ─────────────────────────────────────────────────────────────
 
 void _toast(BuildContext context, String msg, {bool error = false}) {
-  ScaffoldMessenger.of(context)
-    ..hideCurrentSnackBar()
-    ..showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: error ? AppColors.red : AdminUi.textPrimary,
-      ),
-    );
+  showAdminSnackBar(
+    context,
+    msg,
+    type: error ? AdminSnackType.error : AdminSnackType.success,
+  );
 }
 
 Future<bool?> _confirmDelete(BuildContext context) {
