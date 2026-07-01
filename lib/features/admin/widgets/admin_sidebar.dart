@@ -48,7 +48,7 @@ class AdminSidebar extends StatelessWidget {
             ),
           ),
           const Divider(height: 1, color: AdminUi.border),
-          _buildFooter(),
+          _buildFooter(context),
         ],
       ),
     );
@@ -96,9 +96,13 @@ class AdminSidebar extends StatelessWidget {
     );
   }
 
-  Widget _buildFooter() {
+  Widget _buildFooter(BuildContext context) {
+    // Extra breathing room above the system nav bar/home indicator, on top
+    // of whatever SafeArea already reserves, so Logout never sits flush
+    // against the phone's on-screen buttons.
+    final extraBottom = MediaQuery.of(context).padding.bottom > 0 ? 4.0 : 12.0;
     return Padding(
-      padding: const EdgeInsets.all(12),
+      padding: EdgeInsets.fromLTRB(12, 12, 12, 12 + extraBottom),
       child: Column(
         children: [
           if (!collapsed)

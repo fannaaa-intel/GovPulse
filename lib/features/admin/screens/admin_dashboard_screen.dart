@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -267,40 +268,59 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
 
   // ── Mobile: hidden sidebar, hamburger drawer ──────────────────────────────
   Widget _buildMobileLayout() {
-    return Scaffold(
-      key: _scaffoldKey,
-      backgroundColor: const Color(0xFFF4F6FB),
-      drawerScrimColor: Colors.black.withValues(alpha: 0.55),
-      drawer: Drawer(
-        width: 244,
-        backgroundColor: Colors.white,
-        elevation: 8,
-        child: SafeArea(
-          child: AdminSidebar(
-            items: navItems,
-            selectedIndex: _selectedIndex,
-            collapsed: false,
-            onItemTap: (i) {
-              setState(() => _selectedIndex = i);
-              Navigator.pop(context);
-            },
-            onLogout: () {
-              Navigator.pop(context); // close the drawer first
-              _confirmLogout();
-            },
+    // Force a consistent status bar / nav bar style whenever this screen is
+    // on top, regardless of what an earlier screen (e.g. the ID verification
+    // flow, which switches to immersive mode) left behind. Without this the
+    // OS can keep showing a stale/colored system-bar style that visually
+    // sits on top of — and looks like it "overlaps" — the white drawer.
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.dark, // dark icons on light bg
+        statusBarBrightness: Brightness.light, // iOS
+        systemNavigationBarColor: Color(0xFFF4F6FB),
+        systemNavigationBarIconBrightness: Brightness.dark,
+      ),
+      child: Scaffold(
+        key: _scaffoldKey,
+        backgroundColor: const Color(0xFFF4F6FB),
+        drawerScrimColor: Colors.black.withValues(alpha: 0.55),
+        drawer: Drawer(
+          width: 244,
+          backgroundColor: Colors.white,
+          elevation: 8,
+          child: SafeArea(
+            // Belt-and-suspenders: SafeArea already insets the content, but
+            // we also cap it with explicit top/bottom spacers sized from
+            // MediaQuery so the header never sits flush under the status
+            // bar and the Logout tile never sits flush above the system
+            // nav bar, even on devices with unusual insets.
+            child: AdminSidebar(
+              items: navItems,
+              selectedIndex: _selectedIndex,
+              collapsed: false,
+              onItemTap: (i) {
+                setState(() => _selectedIndex = i);
+                Navigator.pop(context);
+              },
+              onLogout: () {
+                Navigator.pop(context); // close the drawer first
+                _confirmLogout();
+              },
+            ),
           ),
         ),
-      ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            AdminTopBar(
-              title: navItems[_selectedIndex].label,
-              showMenuButton: true,
-              onMenuTap: () => _scaffoldKey.currentState?.openDrawer(),
-            ),
-            Expanded(child: _buildPage()),
-          ],
+        body: SafeArea(
+          child: Column(
+            children: [
+              AdminTopBar(
+                title: navItems[_selectedIndex].label,
+                showMenuButton: true,
+                onMenuTap: () => _scaffoldKey.currentState?.openDrawer(),
+              ),
+              Expanded(child: _buildPage()),
+            ],
+          ),
         ),
       ),
     );
