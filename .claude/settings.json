@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(flutter build apk --release --split-per-abi)",
+      "PowerShell(adb install -r build/app/outputs/flutter-apk/app-arm64-v8a-release.apk)",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code} | type=%{content_type} | bytes=%{size_download}\\\\n\" \"https://maps.googleapis.com/maps/api/staticmap?center=18.3566,121.6406&zoom=14&size=400x300&scale=2&markers=color:blue%7C18.3566,121.6406&key=AIzaSyBPB83g_u1ecxDzMjB0yRv8Lqg07oeGwhQ\")",
+      "Bash(curl -s \"https://maps.googleapis.com/maps/api/staticmap?center=18.3566,121.6406&zoom=14&size=400x300&key=AIzaSyBPB83g_u1ecxDzMjB0yRv8Lqg07oeGwhQ\")",
+      "PowerShell(flutter pub get 2>&1)",
+      "Bash(ls \"/c/Users/DELL/AppData/Local/Pub/Cache/hosted/pub.dev/latlong2-0.9.1/lib/\" 2>&1 | head)",
+      "Read(//c/Users/DELL/AppData/Local/Pub/Cache/hosted/pub.dev/latlong2-0.9.1/lib//**)",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code} | type=%{content_type} | bytes=%{size_download}\\\\n\" \"https://api.maptiler.com/maps/streets-v2/14/13728/7342.png?key=0EIlUocqDFgChxbUV0Tu\")",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code} | type=%{content_type} | bytes=%{size_download}\\\\n\" \"https://api.maptiler.com/maps/streets-v2/14/13728/7342@2x.png?key=0EIlUocqDFgChxbUV0Tu\")",
+      "PowerShell(adb devices)",
+      "PowerShell(flutter analyze lib/features/admin/pages/admin_suggestions_page.dart lib/features/admin/providers/admin_suggestions_provider.dart lib/features/admin/screens/admin_dashboard_screen.dart)",
+      "PowerShell(flutter analyze lib/features/admin/providers/admin_reports_provider.dart lib/features/admin/providers/admin_suggestions_provider.dart)"
+    ]
+  }
+}

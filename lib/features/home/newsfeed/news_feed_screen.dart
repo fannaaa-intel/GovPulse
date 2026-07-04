@@ -9,7 +9,7 @@ import '../../../core/widgets/Home/Newsfeed/image_grid.dart';
 import '../../../core/widgets/Home/Newsfeed/comment_item.dart';
 import '../../../core/widgets/Home/Newsfeed/comments_sheet.dart';
 import '../../../core/widgets/loading/loading_overlay.dart';
-import '../../../core/widgets/Home/Newsfeed/rate_limit_dialogs.dart';
+import '../../../core/widgets/app_snackbar.dart';
 import '../../../core/widgets/Home/nav/responsive_nav_scaffold.dart';
 
 enum PostFilter {
@@ -30,12 +30,19 @@ class NewsFeedScreen extends StatefulWidget {
   final String? userBarangay;
   final bool isGuest;
 
+  /// When set (e.g. opened from a like/comment notification), the feed jumps to
+  /// this post once loaded. [initialOpenComments] also opens its comment thread.
+  final String? initialPostId;
+  final bool initialOpenComments;
+
   const NewsFeedScreen({
     super.key,
     this.username = '',
     this.isVerified = false,
     this.userBarangay,
     this.isGuest = false,
+    this.initialPostId,
+    this.initialOpenComments = false,
   });
 
   @override
@@ -56,6 +63,10 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
   final Set<String> _likedPosts = {};
   final Set<String> _commentedPosts = {};
   final Set<String> _expandedPosts = {};
+
+  // Deep-link support: jump to the post a notification pointed at, once loaded.
+  final Map<String, GlobalKey> _postKeys = {};
+  bool _handledInitialPost = false;
 
   @override
   void initState() {
@@ -93,6 +104,43 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
 
   void _onPostsChanged() {
     if (mounted) setState(() {});
+    _maybeHandleInitialPost();
+  }
+
+  /// Once posts are loaded, jump to the post a notification pointed at. Opens
+  /// its comment thread for comment/reply taps; best-effort scrolls it into
+  /// view for like taps. Runs at most once.
+  void _maybeHandleInitialPost() {
+    if (_handledInitialPost) return;
+    final targetId = widget.initialPostId;
+    if (targetId == null) return;
+
+    Map<String, dynamic>? post;
+    for (final p in _filteredPosts) {
+      if (p['id'] == targetId) {
+        post = p;
+        break;
+      }
+    }
+    if (post == null) return; // not loaded / filtered out — leave it on the feed
+    _handledInitialPost = true;
+
+    final target = post;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final ctx = _postKeys[targetId]?.currentContext;
+      if (ctx != null) {
+        Scrollable.ensureVisible(
+          ctx,
+          duration: const Duration(milliseconds: 400),
+          curve: Curves.easeOutCubic,
+          alignment: 0.1,
+        );
+      }
+      if (widget.initialOpenComments) {
+        _openCommentsSheet(target);
+      }
+    });
   }
 
   Future<void> _loadMyInteractions() async {
@@ -269,6 +317,7 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
       showVerificationRequiredDialog(
         context,
         isVerified: _isVerified,
+        username: widget.username,
         message:
             'Only verified citizens can like. Please complete identity verification first.',
       );
@@ -276,9 +325,10 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
     }
     final userId = _supabase.auth.currentUser?.id;
     if (userId == null) {
-      showFriendlyErrorDialog(
+      showAppSnackBar(
         context,
-        'Your session has expired. Please log in again.',
+        "Your session has expired. Please log in again.",
+        type: AppSnackType.error,
       );
       return;
     }
@@ -318,14 +368,16 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
         );
         if (e is PostgrestException &&
             (e.hint ?? '') == 'rate_limit_exceeded') {
-          showRateLimitDialog(
+          showAppSnackBar(
             context,
-            'You\'ve liked too many comments. You can like up to 60 comments per minute. Please wait a moment before trying again.',
+            "You've liked too many comments. Please wait a moment before trying again.",
+            type: AppSnackType.error,
           );
         } else {
-          showFriendlyErrorDialog(
+          showAppSnackBar(
             context,
-            'Unable to process your like. Please try again.',
+            "Unable to process your like. Please try again.",
+            type: AppSnackType.error,
           );
         }
       }
@@ -341,6 +393,7 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
       showVerificationRequiredDialog(
         context,
         isVerified: _isVerified,
+        username: widget.username,
         message:
             'Only verified citizens can like posts. Please complete identity verification first.',
       );
@@ -348,9 +401,10 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
     }
     final userId = _supabase.auth.currentUser?.id;
     if (userId == null) {
-      showFriendlyErrorDialog(
+      showAppSnackBar(
         context,
-        'Your session has expired. Please log in again.',
+        "Your session has expired. Please log in again.",
+        type: AppSnackType.error,
       );
       return;
     }
@@ -380,14 +434,16 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
         CommunityPostsProvider.instance.bumpPostLike(postId, wasLiked ? 1 : -1);
         if (e is PostgrestException &&
             (e.hint ?? '') == 'rate_limit_exceeded') {
-          showRateLimitDialog(
+          showAppSnackBar(
             context,
-            'You\'ve liked too many posts. You can like up to 60 posts per minute. Please wait a moment before trying again.',
+            "You've liked too many posts. Please wait a moment before trying again.",
+            type: AppSnackType.error,
           );
         } else {
-          showFriendlyErrorDialog(
+          showAppSnackBar(
             context,
-            'Unable to process your like. Please try again.',
+            "Unable to process your like. Please try again.",
+            type: AppSnackType.error,
           );
         }
       }
@@ -512,6 +568,7 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
       showVerificationRequiredDialog(
         context,
         isVerified: _isVerified,
+        username: widget.username,
         message:
             'Only verified citizens can view and post comments. Please complete identity verification first.',
       );
@@ -591,10 +648,18 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
                                 itemCount: visiblePosts.length,
                                 separatorBuilder: (_, _) =>
                                     SizedBox(height: width * 0.035),
-                                itemBuilder: (_, i) => _animated(
-                                  i + 1,
-                                  _buildPostCard(width, visiblePosts[i]),
-                                ),
+                                itemBuilder: (_, i) {
+                                  final post = visiblePosts[i];
+                                  final pid = post['id'] as String;
+                                  return KeyedSubtree(
+                                    key: _postKeys.putIfAbsent(
+                                        pid, () => GlobalKey()),
+                                    child: _animated(
+                                      i + 1,
+                                      _buildPostCard(width, post),
+                                    ),
+                                  );
+                                },
                               ),
                             ),
                     ),
@@ -1024,6 +1089,8 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
           post['authorPhotoUrl'] as String?,
           photoPath: post['authorPhotoPath'] as String?,
           blank: blankAvatar,
+          // Official "LGU Aparri" avatar has no green ring (matches admin side).
+          ring: post['isOfficial'] != true,
         ),
         SizedBox(width: width * 0.025),
         Expanded(
@@ -1169,23 +1236,15 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
           onTap: onLikeTap,
           child: Row(
             children: [
-              Image.asset(
-                'assets/images/heart.webp',
-                width: width * 0.046,
-                height: width * 0.046,
+              // Use Material heart icons so the liked state is a genuinely
+              // filled heart — tinting the outline heart.webp red only ever
+              // produces a red outline (never a fill).
+              Icon(
+                liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                size: width * 0.046,
                 color: liked
                     ? const Color(0xFFEF4444)
                     : const Color(0xFF6B7280),
-                colorBlendMode: BlendMode.srcIn,
-                errorBuilder: (_, _, _) => Icon(
-                  liked
-                      ? Icons.favorite_rounded
-                      : Icons.favorite_border_rounded,
-                  size: width * 0.046,
-                  color: liked
-                      ? const Color(0xFFEF4444)
-                      : const Color(0xFF6B7280),
-                ),
               ),
               SizedBox(width: width * 0.012),
               Text(

@@ -79,6 +79,7 @@ Widget buildAuthorAvatar(
   String? photoUrl, {
   String? photoPath,
   bool blank = false,
+  bool ring = true,
 }) {
   // Masked citizen (guest view): neutral grey FB-style silhouette, no green ring.
   if (blank) {
@@ -103,7 +104,9 @@ Widget buildAuthorAvatar(
       height: size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        border: Border.all(color: AppColors.green, width: 1.5),
+        border: ring
+            ? Border.all(color: AppColors.green, width: 1.5)
+            : null,
       ),
       clipBehavior: Clip.antiAlias,
       child: CachedNetworkImage(
@@ -138,7 +141,7 @@ Widget buildAuthorAvatar(
     decoration: BoxDecoration(
       shape: BoxShape.circle,
       color: AppColors.green.withValues(alpha: 0.12),
-      border: Border.all(color: AppColors.green, width: 1.5),
+      border: ring ? Border.all(color: AppColors.green, width: 1.5) : null,
     ),
     child: Icon(
       Icons.account_balance_rounded,

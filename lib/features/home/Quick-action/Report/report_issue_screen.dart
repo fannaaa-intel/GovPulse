@@ -12,7 +12,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'location_picker_screen.dart';
 import 'dart:async';
-import '../../../../core/widgets/Home/Newsfeed/rate_limit_dialogs.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 
 // ── Aparri bounding box — must match location_picker_screen.dart ──────────
 const double _riMinLat = 18.2750;
@@ -490,7 +490,11 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
           _pickedBarangay = null;
           _useCurrentLocation = false;
         });
-        _showOutsideAparriDialog();
+        showAppSnackBar(
+          context,
+          "Your location is outside Aparri. Please pick a barangay manually.",
+          type: AppSnackType.error,
+        );
         return;
       }
 
@@ -514,101 +518,6 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
         });
       }
     }
-  }
-
-  // ── Outside Aparri warning dialog ──────────────────────────────────────────
-  void _showOutsideAparriDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) {
-        final width = MediaQuery.of(ctx).size.width.clamp(0.0, 480.0);
-        return Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 64,
-                  height: 64,
-                  decoration: BoxDecoration(
-                    color: Colors.red.withValues(alpha: 0.10),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.wrong_location_rounded,
-                    color: Colors.red,
-                    size: 32,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  'Outside Aparri',
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF1F2937),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Your current location is outside Aparri, Cagayan. Please pick a barangay manually to set your location.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Color(0xFF6B7280),
-                    height: 1.55,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.pop(ctx);
-                      _openLocationPicker();
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primaryBlue,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                    child: const Text(
-                      'Pick a Barangay',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                SizedBox(
-                  width: double.infinity,
-                  child: TextButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    child: Text(
-                      'Dismiss',
-                      style: TextStyle(
-                        color: AppColors.primaryBlue,
-                        fontWeight: FontWeight.w600,
-                        fontSize: width * 0.035,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
   }
 
   Future<void> _openLocationPicker() async {
@@ -1376,69 +1285,10 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
     }
 
     if (hasOversized && mounted) {
-      await showDialog(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          contentPadding: const EdgeInsets.all(24),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Image.asset(
-                'assets/images/report/sad_face.webp',
-                width: 72,
-                height: 72,
-                errorBuilder: (_, _, _) => const Icon(
-                  Icons.sentiment_dissatisfied_rounded,
-                  size: 72,
-                  color: Colors.orange,
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'File Too Large!',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF1F2937),
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Some files exceeded the size limit.\nImages must be under 10MB and videos under 50MB.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Color(0xFF6B7280),
-                  height: 1.5,
-                ),
-              ),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primaryBlue,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                  child: const Text(
-                    'Got it',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
+      showAppSnackBar(
+        context,
+        "Some files were too large. Images must be under 10MB, videos under 50MB.",
+        type: AppSnackType.error,
       );
     }
 
@@ -2109,30 +1959,44 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
         });
       }
       // ── 5. Success ────────────────────────────────────────────────────────
-      if (mounted) _showSuccessDialog();
+      if (mounted) {
+        showAppSnackBar(
+          context,
+          "Report submitted successfully.",
+          type: AppSnackType.success,
+        );
+        Navigator.pop(context);
+      }
     } on StorageException catch (e) {
       if (mounted) {
-        showFriendlyErrorDialog(context, 'File upload failed: ${e.message}');
+        showAppSnackBar(
+          context,
+          'File upload failed: ${e.message}',
+          type: AppSnackType.error,
+        );
       }
     } on PostgrestException catch (e) {
       if (mounted) {
         if ((e.hint ?? '') == 'rate_limit_exceeded') {
-          showRateLimitDialog(
+          showAppSnackBar(
             context,
-            'You have reached the daily limit of 5 reports. Please come back tomorrow to submit another report.',
+            "You've reached your daily limit of 5 reports. Please come back tomorrow.",
+            type: AppSnackType.error,
           );
         } else {
-          showFriendlyErrorDialog(
+          showAppSnackBar(
             context,
-            'Could not save your report. Please try again.',
+            "Could not submit your report. Please try again.",
+            type: AppSnackType.error,
           );
         }
       }
     } catch (e) {
       if (mounted) {
-        showFriendlyErrorDialog(
+        showAppSnackBar(
           context,
-          'Something went wrong. Please try again.',
+          "Could not submit your report. Please try again.",
+          type: AppSnackType.error,
         );
       }
     }
@@ -2195,81 +2059,6 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
                   ),
                   child: const Text(
                     'OK',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ── Success dialog ───────────────────────────────────────────────────────────
-  void _showSuccessDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 64,
-                height: 64,
-                decoration: BoxDecoration(
-                  color: Colors.green.withValues(alpha: 0.10),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.check_circle_outline_rounded,
-                  color: Colors.green,
-                  size: 32,
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Report Submitted!',
-                style: TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w800,
-                  color: Color(0xFF1F2937),
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Your report has been received and is now pending review. Thank you for helping improve our community.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Color(0xFF6B7280),
-                  height: 1.55,
-                ),
-              ),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(ctx); // close dialog
-                    Navigator.pop(context); // go back to previous screen
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.green,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                  child: const Text(
-                    'Done',
                     style: TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.w700,

@@ -142,6 +142,7 @@ class ResponsiveNavScaffold extends ConsumerWidget {
         if (!(effectiveIsVerified ?? isVerified)) {
           showVerificationRequiredDialog(
             context,
+            username: username,
             message: 'Only verified citizens can access My Reports.',
           );
           return;
@@ -183,7 +184,30 @@ class ResponsiveNavScaffold extends ConsumerWidget {
       barrierLabel: 'Notifications',
       barrierColor: Colors.transparent,
       transitionDuration: const Duration(milliseconds: 250),
-      pageBuilder: (_, _, _) => NotificationPopup(width: width),
+      pageBuilder: (_, _, _) => NotificationPopup(
+        width: width,
+        onTap: (n) {
+          Navigator.pop(context); // close the sheet, then route the tap
+          routeCitizenNotificationTap(
+            context,
+            n,
+            username: username,
+            isVerified: verifStatus == VerifStatus.verified,
+            isPending: verifStatus == VerifStatus.pending,
+            onOpenNewsFeed: ({String? postId, bool openComments = false}) =>
+                Navigator.pushNamed(
+              context,
+              '/newsfeed',
+              arguments: {
+                'username': username,
+                'isVerified': verifStatus == VerifStatus.verified,
+                'initialPostId': ?postId,
+                if (postId != null) 'initialOpenComments': openComments,
+              },
+            ),
+          );
+        },
+      ),
       transitionBuilder: (_, anim, _, child) => FadeTransition(
         opacity: anim,
         child: ScaleTransition(
@@ -192,6 +216,11 @@ class ResponsiveNavScaffold extends ConsumerWidget {
         ),
       ),
     );
+    // Re-sync the badge from the DB once the sheet closes, so a mid-animation
+    // Clear-All (which may not finish deleting every row before the sheet is
+    // dismissed) still leaves the count accurate. The bell listens to
+    // NotificationService.unread, so this reload refreshes it without setState.
+    await NotificationService.load();
   }
 
   // ── Logout (mirrors Home / Settings) ───────────────────────────────────────
@@ -382,32 +411,37 @@ class ResponsiveNavScaffold extends ConsumerWidget {
                 errorBuilder: (_, _, _) =>
                     const Icon(Icons.notifications_outlined, size: 30),
               ),
-              if (NotificationService.count > 0)
-                Positioned(
-                  right: -4,
-                  top: -4,
-                  child: Container(
-                    constraints: const BoxConstraints(
-                      minWidth: 14,
-                      minHeight: 14,
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 3),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF22C55E),
-                      borderRadius: BorderRadius.circular(7),
-                      border: Border.all(color: Colors.white, width: 1.2),
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      '${NotificationService.count}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 8,
-                        fontWeight: FontWeight.w700,
+              Positioned(
+                right: -4,
+                top: -4,
+                child: ValueListenableBuilder<int>(
+                  valueListenable: NotificationService.unread,
+                  builder: (_, count, _) {
+                    if (count <= 0) return const SizedBox.shrink();
+                    return Container(
+                      constraints: const BoxConstraints(
+                        minWidth: 14,
+                        minHeight: 14,
                       ),
-                    ),
-                  ),
+                      padding: const EdgeInsets.symmetric(horizontal: 3),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF22C55E),
+                        borderRadius: BorderRadius.circular(7),
+                        border: Border.all(color: Colors.white, width: 1.2),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        '$count',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 8,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    );
+                  },
                 ),
+              ),
             ],
           ),
         ),

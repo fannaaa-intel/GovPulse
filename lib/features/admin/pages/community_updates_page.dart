@@ -8,6 +8,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/Home/Newsfeed/image_grid.dart';
 import '../../../core/widgets/Home/Newsfeed/news_feed_helpers.dart';
 import '../../../core/widgets/modal/media_picker_sheet.dart';
+import '../providers/admin_profile_provider.dart';
 import '../providers/community_updates_provider.dart';
 import '../theme/admin_ui.dart';
 import '../widgets/admin_skeleton.dart';
@@ -67,6 +68,8 @@ class _CommunityUpdatesPageState extends ConsumerState<CommunityUpdatesPage> {
                   const SizedBox(height: 16),
                   if (_tab == _Tab.feed) ...[
                     _ComposerBar(
+                      photoUrl:
+                          ref.watch(adminProfileProvider).valueOrNull?.photoUrl,
                       onTap: () => showCommunityComposer(context, ref),
                     ),
                     const SizedBox(height: 16),
@@ -178,7 +181,8 @@ class _TabBar extends StatelessWidget {
 
 class _ComposerBar extends StatelessWidget {
   final VoidCallback onTap;
-  const _ComposerBar({required this.onTap});
+  final String? photoUrl;
+  const _ComposerBar({required this.onTap, this.photoUrl});
 
   @override
   Widget build(BuildContext context) {
@@ -192,7 +196,7 @@ class _ComposerBar extends StatelessWidget {
       padding: const EdgeInsets.all(14),
       child: Row(
         children: [
-          buildAuthorAvatar(42, null),
+          buildAuthorAvatar(42, photoUrl, ring: false),
           const SizedBox(width: 12),
           Expanded(
             child: Material(
@@ -362,7 +366,7 @@ class _UpdateCard extends ConsumerWidget {
             padding: const EdgeInsets.fromLTRB(16, 14, 8, 0),
             child: Row(
               children: [
-                buildAuthorAvatar(42, post.authorPhotoUrl),
+                buildAuthorAvatar(42, post.authorPhotoUrl, ring: false),
                 const SizedBox(width: 10),
                 Expanded(child: _authorMeta()),
                 _CardMenu(post: post),
@@ -408,6 +412,14 @@ class _UpdateCard extends ConsumerWidget {
                 width - 32,
                 post.imageUrls.length,
                 imageUrls: post.imageUrls,
+                // Tap a photo to open the same full-screen viewer the citizen
+                // newsfeed uses (swipeable, zoomable).
+                onImageTap: (index) => openImageViewer(
+                  context,
+                  post.imageUrls.length,
+                  index,
+                  urls: post.imageUrls,
+                ),
               ),
             ),
           const SizedBox(height: 12),
@@ -742,6 +754,12 @@ class _PendingCardState extends ConsumerState<_PendingCard> {
                 width - 28,
                 post.imageUrls.length,
                 imageUrls: post.imageUrls,
+                onImageTap: (index) => openImageViewer(
+                  context,
+                  post.imageUrls.length,
+                  index,
+                  urls: post.imageUrls,
+                ),
               ),
             ),
           Padding(
@@ -1209,7 +1227,11 @@ class _ComposerFormState extends ConsumerState<_ComposerForm> {
                 children: [
                   Row(
                     children: [
-                      buildAuthorAvatar(40, null),
+                      buildAuthorAvatar(
+                        40,
+                        ref.watch(adminProfileProvider).valueOrNull?.photoUrl,
+                        ring: false,
+                      ),
                       const SizedBox(width: 10),
                       const Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1517,7 +1539,7 @@ class _ComposerFormState extends ConsumerState<_ComposerForm> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(
-                      _isEdit ? Icons.check_rounded : Icons.send_rounded,
+                      _isEdit ? Icons.check_rounded : Icons.publish_rounded,
                       size: 19,
                     ),
                     const SizedBox(width: 9),
@@ -1786,7 +1808,12 @@ class _CommentsPanelState extends ConsumerState<_CommentsPanel> {
   }
 
   void _reload() {
-    setState(() => _future = _repo.fetchComments(widget.post.id));
+    // Block body (not an arrow) so the setState callback returns void — an
+    // arrow `() => _future = ...` returns the assigned Future, which trips
+    // Flutter's "setState() callback returned a Future" assertion.
+    setState(() {
+      _future = _repo.fetchComments(widget.post.id);
+    });
     // Keep the feed's comment counts in sync.
     ref.read(communityUpdatesProvider.notifier).refresh();
   }
@@ -1959,7 +1986,10 @@ class _CommentsPanelState extends ConsumerState<_CommentsPanel> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              buildAvatar(34, null),
+              buildAvatar(
+                34,
+                ref.watch(adminProfileProvider).valueOrNull?.photoUrl,
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: TextField(

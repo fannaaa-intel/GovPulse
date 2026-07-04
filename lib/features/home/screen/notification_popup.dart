@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:ui';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -15,6 +16,19 @@ class AppNotification {
   final Color color;
   final String type;
 
+  /// The user who performed the action (like/comment/reply). Null for
+  /// system/self notifications and staff-actor activity.
+  final String? actorId;
+
+  /// A ready-to-render, full public URL to the actor's profile photo. Null
+  /// unless the notification was caused by another user's action. When present
+  /// it replaces the leading icon with that person's photo.
+  final String? actorPhotoUrl;
+
+  /// The community post this notification refers to (likes / comments / replies).
+  /// Null for notifications with no post context. Lets a tap jump to that post.
+  final String? postId;
+
   AppNotification({
     this.id,
     required this.icon,
@@ -23,6 +37,9 @@ class AppNotification {
     required this.time,
     required this.color,
     this.type = 'general',
+    this.actorId,
+    this.actorPhotoUrl,
+    this.postId,
   });
 
   String formatTimeAgo(DateTime t) {
@@ -43,6 +60,9 @@ class AppNotification {
       time: DateTime.parse(row['created_at'] as String),
       color: Color((row['color_value'] as int)),
       type: row['type'] as String? ?? 'general',
+      actorId: row['actor_id'] as String?,
+      actorPhotoUrl: row['actor_photo_url'] as String?,
+      postId: row['post_id'] as String?,
     );
   }
 
@@ -66,6 +86,16 @@ class AppNotification {
 // ── Service ───────────────────────────────────────────────────────────────────
 class NotificationService {
   static List<AppNotification> notifications = [];
+
+  /// Live badge count. Every bell listens to this via [ValueListenableBuilder],
+  /// so the badge updates the instant a notification is loaded / added /
+  /// removed / cleared — no navigation or manual setState needed, and it can
+  /// never drift negative because it's always exactly the list length.
+  static final ValueNotifier<int> unread = ValueNotifier<int>(0);
+
+  /// Keep [unread] in lock-step with the backing list. Called after every
+  /// mutation below.
+  static void _sync() => unread.value = notifications.length;
 
   static SupabaseClient get _db => Supabase.instance.client;
   static String? get _uid => _db.auth.currentUser?.id;
@@ -138,6 +168,7 @@ class NotificationService {
       notifications = (rows as List)
           .map((r) => AppNotification.fromRow(r as Map<String, dynamic>))
           .toList();
+      _sync();
     } catch (e) {
       debugPrint('NotificationService.load error: $e');
     }
@@ -175,6 +206,7 @@ class NotificationService {
           .select()
           .single();
       notifications.insert(0, AppNotification.fromRow(row));
+      _sync();
       await _showOnPhone(n); // mirror to the phone's notification tray
       debugPrint(
         'NotificationService: inserted "${n.title}" (type: ${n.type})',
@@ -191,6 +223,7 @@ class NotificationService {
     try {
       await _db.from('notifications').delete().eq('id', n.id!);
       notifications.removeWhere((x) => x.id == n.id);
+      _sync();
     } catch (e) {
       debugPrint('NotificationService.remove error: $e');
     }
@@ -202,6 +235,7 @@ class NotificationService {
     try {
       await _db.from('notifications').delete().eq('user_id', uid);
       notifications.clear();
+      _sync();
     } catch (e) {
       debugPrint('NotificationService.clearAll error: $e');
     }
@@ -258,6 +292,50 @@ class NotificationService {
   }
 
   static int get count => notifications.length;
+}
+
+/// Routes a tap on a citizen notification. Only actionable notifications
+/// navigate; everything else is informational and does nothing.
+///
+///  • `verification_reminder` ("please verify your account") → opens the
+///    verification flow, but ONLY for a user who still needs it. A verified or
+///    already-pending (submitted, awaiting review) user has nothing to open, so
+///    tapping does nothing.
+///  • social activity (`post_like` / `post_comment` / `comment_reply` /
+///    `comment_like`) → opens the community feed, jumping to the post when its
+///    id is known; anything about a comment opens that post's comment thread.
+///  • `verification_submitted` ("we've received your ID"), the verification-
+///    approved / "you're verified" notice, LGU broadcasts, staff messages and
+///    admin responses (`general`) → informational, no navigation.
+///
+/// The caller closes the notification sheet before calling this.
+void routeCitizenNotificationTap(
+  BuildContext context,
+  AppNotification n, {
+  required String username,
+  required bool isVerified,
+  required bool isPending,
+  required void Function({String? postId, bool openComments}) onOpenNewsFeed,
+}) {
+  switch (n.type) {
+    case 'verification_reminder':
+      if (isVerified || isPending) return; // nothing to do → stays on home
+      Navigator.pushNamed(context, '/verification', arguments: username);
+      break;
+    case 'post_like':
+    case 'post_comment':
+    case 'comment_reply':
+    case 'comment_like':
+      // Anything about a comment (comment/reply/comment-like) opens the post's
+      // thread; a post like just jumps to the post.
+      onOpenNewsFeed(
+        postId: n.postId,
+        openComments: n.type != 'post_like',
+      );
+      break;
+    default:
+      break;
+  }
 }
 
 // ── Swipeable Notification Item ───────────────────────────────────────────────
@@ -865,6 +943,37 @@ class _NotifItem extends StatelessWidget {
     final n = notification;
     final w = width;
 
+    // Current icon leading — kept unchanged for every notification without an
+    // actor photo (reports, verifications, staff activity, old rows, …).
+    final Widget iconLeading = Container(
+      padding: EdgeInsets.all(w * 0.025),
+      decoration: BoxDecoration(
+        color: n.color.withValues(alpha: .15),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Icon(n.icon, color: n.color, size: w * 0.055),
+    );
+
+    // When the notification carries a real actor photo URL, show that person's
+    // photo instead of the icon. Same footprint as the icon container
+    // (icon w*0.055 + padding w*0.025 on each side = w*0.105) so the row layout
+    // doesn't shift. A broken/unreachable URL falls back to [iconLeading].
+    final String? photoUrl = n.actorPhotoUrl;
+    final Widget leading =
+        (photoUrl != null && photoUrl.isNotEmpty)
+        ? ClipOval(
+            child: SizedBox(
+              width: w * 0.105,
+              height: w * 0.105,
+              child: CachedNetworkImage(
+                imageUrl: photoUrl,
+                fit: BoxFit.cover,
+                errorWidget: (_, _, _) => iconLeading,
+              ),
+            ),
+          )
+        : iconLeading;
+
     return Container(
       margin: spaced ? EdgeInsets.only(bottom: w * 0.025) : EdgeInsets.zero,
       padding: EdgeInsets.all(w * 0.03),
@@ -874,14 +983,7 @@ class _NotifItem extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Container(
-            padding: EdgeInsets.all(w * 0.025),
-            decoration: BoxDecoration(
-              color: n.color.withValues(alpha: .15),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Icon(n.icon, color: n.color, size: w * 0.055),
-          ),
+          leading,
           SizedBox(width: w * 0.025),
           Expanded(
             child: Column(

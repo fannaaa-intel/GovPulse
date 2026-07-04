@@ -10,7 +10,7 @@ import '../../features/verification/screens/email_verification_screen.dart';
 import '../../features/onboarding/otp_loading_screen.dart';
 import '../../core/services/auth_service.dart';
 import '../../core/services/facebook_signin_service.dart';
-import '../../core/widgets/modal/verification_required_dialog.dart';
+import '../../core/widgets/app_snackbar.dart';
 import '../../core/network/network_wrapper.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/widgets/mobile_form_shell.dart';
@@ -298,10 +298,10 @@ class _SignupScreenState extends State<SignupScreen>
       final msg = e.toString().replaceFirst('Exception: ', '');
       // Surface via the shared dialog (not a SnackBar / inline text).
       if (msg != 'Facebook sign-in was cancelled.') {
-        await showErrorDialog(
+        showAppSnackBar(
           context,
-          title: 'Facebook sign-in failed',
-          message: msg,
+          "Facebook sign-in failed. Please try again.",
+          type: AppSnackType.error,
         );
       }
     }
@@ -729,10 +729,15 @@ class _SignupScreenState extends State<SignupScreen>
                       const SizedBox(height: 10),
                       SizedBox(
                         width: double.infinity,
-                        height: 48,
-                        child: TextButton.icon(
-                          style: TextButton.styleFrom(
-                            foregroundColor: AppColors.hint,
+                        height: 52,
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            backgroundColor: Colors.white,
+                            foregroundColor: const Color(0xFF374151),
+                            side: const BorderSide(
+                              color: Color(0xFFCBD2DE),
+                              width: 1.2,
+                            ),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(16),
                             ),
@@ -741,12 +746,13 @@ class _SignupScreenState extends State<SignupScreen>
                           icon: const Icon(
                             Icons.person_outline_rounded,
                             size: 20,
+                            color: Color(0xFF374151),
                           ),
                           label: const Text(
                             "Continue as guest",
                             style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ),

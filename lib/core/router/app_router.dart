@@ -340,11 +340,15 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
       bool isVerified = false;
       String? userBarangay;
       bool isGuest = false;
+      String? initialPostId;
+      bool initialOpenComments = false;
       if (args is Map<String, dynamic>) {
         username = args['username'] as String? ?? '';
         isVerified = args['isVerified'] as bool? ?? false;
         userBarangay = args['userBarangay'] as String?;
         isGuest = args['isGuest'] as bool? ?? false;
+        initialPostId = args['initialPostId'] as String?;
+        initialOpenComments = args['initialOpenComments'] as bool? ?? false;
       } else if (args is String) {
         username = args;
       }
@@ -357,6 +361,8 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
             isVerified: isVerified,
             userBarangay: userBarangay,
             isGuest: isGuest,
+            initialPostId: initialPostId,
+            initialOpenComments: initialOpenComments,
           ),
         ),
         transitionsBuilder: (_, anim, _, child) =>

@@ -14,6 +14,7 @@
 //  deliberately does NOT touch the citizen-facing NotificationService.
 // ════════════════════════════════════════════════════════════════════════════
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -105,6 +106,15 @@ class AdminNotif {
   final bool read;
   final Color color;
 
+  /// The user who performed the action (like/comment/reply). Null for events
+  /// with no acting user (report/feedback/suggestion/verification) and for
+  /// staff-actor activity.
+  final String? actorId;
+
+  /// A ready-to-render, full public URL to the actor's profile photo. When
+  /// present it replaces the leading icon with that person's photo.
+  final String? actorPhotoUrl;
+
   AdminNotif({
     required this.id,
     required this.topic,
@@ -113,6 +123,8 @@ class AdminNotif {
     required this.createdAt,
     required this.read,
     required this.color,
+    this.actorId,
+    this.actorPhotoUrl,
   });
 
   factory AdminNotif.fromRow(Map<String, dynamic> r) => AdminNotif(
@@ -125,6 +137,8 @@ class AdminNotif {
         DateTime.now(),
     read: r['read_at'] != null,
     color: Color(((r['color_value'] as num?)?.toInt() ?? 0xFF2563EB)),
+    actorId: r['actor_id'] as String?,
+    actorPhotoUrl: r['actor_photo_url'] as String?,
   );
 
   IconData get icon => _iconForTopic(topic);
@@ -152,6 +166,12 @@ class AdminNotifCenter {
 
   /// Bumped whenever a Realtime change lands, so an open panel can reload.
   final ValueNotifier<int> revision = ValueNotifier<int>(0);
+
+  /// Set to a notification's [topic] when an admin taps a row in the panel.
+  /// The dashboard shell listens, maps the topic to the matching nav tab and
+  /// switches to it, then resets this to null. Kept as a topic (not a raw tab
+  /// index) so the notification panel stays decoupled from the nav order.
+  final ValueNotifier<String?> openTopic = ValueNotifier<String?>(null);
 
   RealtimeChannel? _channel;
   String? _subscribedUid;
@@ -230,6 +250,14 @@ class AdminNotifCenter {
   Future<void> markRead(List<String>? topics) async {
     try {
       await _sb.rpc('mark_notifications_read', params: {'p_topics': topics});
+    } catch (_) {}
+    await refreshUnread();
+  }
+
+  /// Deletes a single notification by id (mirrors the citizen swipe-to-delete).
+  Future<void> delete(String id) async {
+    try {
+      await _sb.from('notifications').delete().eq('id', id);
     } catch (_) {}
     await refreshUnread();
   }
@@ -426,6 +454,23 @@ class _AdminNotifPanelState extends State<_AdminNotifPanel> {
     });
   }
 
+  // Removes a notification locally + in the DB. Shared by the swipe gesture
+  // (touch) and the trash button (pointer / wide layouts).
+  void _deleteItem(AdminNotif item) {
+    setState(() {
+      _items = _items.where((n) => n.id != item.id).toList();
+    });
+    AdminNotifCenter.I.delete(item.id);
+  }
+
+  // Tapping a notification closes the panel and asks the dashboard shell to jump
+  // to the tab that owns this topic (Reports / Suggestions / Feedback /
+  // Verification / Community). The shell maps the topic → tab and resets it.
+  void _handleTap(AdminNotif item) {
+    Navigator.of(context).pop();
+    AdminNotifCenter.I.openTopic.value = item.topic;
+  }
+
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
@@ -568,7 +613,34 @@ class _AdminNotifPanelState extends State<_AdminNotifPanel> {
                         color: AdminUi.subtle,
                         indent: 56,
                       ),
-                      itemBuilder: (_, i) => _NotifRow(_items[i]),
+                      itemBuilder: (_, i) {
+                        final item = _items[i];
+                        // Swipe left to delete — mirrors the citizen
+                        // notification's swipe-to-delete (red trash panel).
+                        // Works with touch and mouse-drag. On wider (pointer)
+                        // layouts we also show an explicit trash button, since
+                        // swiping isn't discoverable with a mouse.
+                        return Dismissible(
+                          key: ValueKey(item.id),
+                          direction: DismissDirection.endToStart,
+                          onDismissed: (_) => _deleteItem(item),
+                          background: Container(
+                            color: const Color(0xFFEF4444),
+                            alignment: Alignment.centerRight,
+                            padding: const EdgeInsets.only(right: 20),
+                            child: const Icon(
+                              Icons.delete_rounded,
+                              color: Colors.white,
+                              size: 22,
+                            ),
+                          ),
+                          child: _NotifRow(
+                            item,
+                            onDelete: narrow ? null : () => _deleteItem(item),
+                            onTap: () => _handleTap(item),
+                          ),
+                        );
+                      },
                     ),
             ),
           ],
@@ -689,78 +761,134 @@ class _NotifSkeletonRow extends StatelessWidget {
 
 class _NotifRow extends StatelessWidget {
   final AdminNotif n;
-  const _NotifRow(this.n);
+
+  /// When non-null, a trash button is shown (pointer / wide layouts, where
+  /// swipe-to-delete isn't discoverable). On touch layouts this is null and
+  /// deletion is via the swipe gesture instead.
+  final VoidCallback? onDelete;
+
+  /// Tapping the row navigates to the tab that owns this notification's topic.
+  final VoidCallback? onTap;
+
+  const _NotifRow(this.n, {this.onDelete, this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: n.read ? null : n.color.withValues(alpha: 0.05),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 30,
-            height: 30,
-            decoration: BoxDecoration(
-              color: n.color.withValues(alpha: 0.14),
-              borderRadius: BorderRadius.circular(9),
+    // Current icon leading — kept unchanged for every notification without an
+    // actor photo (reports, verifications, staff activity, old rows, …).
+    final Widget iconLeading = Container(
+      width: 30,
+      height: 30,
+      decoration: BoxDecoration(
+        color: n.color.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: Icon(n.icon, size: 16, color: n.color),
+    );
+
+    // Actor photos only make sense for another citizen's activity (likes /
+    // comments). Submission notifications — report / feedback / suggestion /
+    // verification — describe an event, not a person, so they keep their icon
+    // even if the row happens to carry an actor photo URL.
+    const iconOnlyTopics = {'report', 'verification', 'feedback', 'suggestion'};
+
+    // When the notification carries a real actor photo URL, show that person's
+    // photo instead of the icon. Same 30×30 footprint so the row doesn't shift;
+    // a broken/unreachable URL falls back to [iconLeading].
+    final String? photoUrl = iconOnlyTopics.contains(n.topic)
+        ? null
+        : n.actorPhotoUrl;
+    final Widget leading = (photoUrl != null && photoUrl.isNotEmpty)
+        ? ClipOval(
+            child: SizedBox(
+              width: 30,
+              height: 30,
+              child: CachedNetworkImage(
+                imageUrl: photoUrl,
+                fit: BoxFit.cover,
+                errorWidget: (_, _, _) => iconLeading,
+              ),
             ),
-            child: Icon(n.icon, size: 16, color: n.color),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        n.title,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: n.read
-                              ? FontWeight.w600
-                              : FontWeight.w700,
-                          color: AdminUi.textPrimary,
+          )
+        : iconLeading;
+
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        color: n.read ? null : n.color.withValues(alpha: 0.05),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            leading,
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          n.title,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: n.read
+                                ? FontWeight.w600
+                                : FontWeight.w700,
+                            color: AdminUi.textPrimary,
+                          ),
                         ),
+                      ),
+                      if (!n.read)
+                        Container(
+                          width: 7,
+                          height: 7,
+                          margin: const EdgeInsets.only(left: 6, top: 4),
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF2563EB),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                    ],
+                  ),
+                  if (n.subtitle.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      n.subtitle,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AdminUi.textSecondary,
                       ),
                     ),
-                    if (!n.read)
-                      Container(
-                        width: 7,
-                        height: 7,
-                        margin: const EdgeInsets.only(left: 6, top: 4),
-                        decoration: const BoxDecoration(
-                          color: Color(0xFF2563EB),
-                          shape: BoxShape.circle,
-                        ),
-                      ),
                   ],
-                ),
-                if (n.subtitle.isNotEmpty) ...[
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 3),
                   Text(
-                    n.subtitle,
+                    n.timeAgo,
                     style: const TextStyle(
-                      fontSize: 12,
-                      color: AdminUi.textSecondary,
+                      fontSize: 11,
+                      color: AdminUi.textMuted,
                     ),
                   ),
                 ],
-                const SizedBox(height: 3),
-                Text(
-                  n.timeAgo,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: AdminUi.textMuted,
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
-        ],
+            if (onDelete != null) ...[
+              const SizedBox(width: 4),
+              IconButton(
+                onPressed: onDelete,
+                icon: const Icon(Icons.delete_outline_rounded),
+                iconSize: 18,
+                color: AdminUi.textMuted,
+                tooltip: 'Delete',
+                splashRadius: 18,
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }

@@ -37,6 +37,15 @@
         android:fullBackupContent="@xml/backup_rules"
         android:dataExtractionRules="@xml/data_extraction_rules">
 
+        <!-- Disable Impeller. On several devices the Impeller renderer leaves
+             Android platform views (the Google Map surface, in particular)
+             blank — tiles never paint, only the marker + "Google" watermark
+             draw — and platform views don't composite through route
+             transitions. Skia composites them reliably. -->
+        <meta-data
+            android:name="io.flutter.embedding.android.EnableImpeller"
+            android:value="false" />
+
         <meta-data
             android:name="com.google.android.geo.API_KEY"
             android:value="${MAPS_API_KEY}"/>

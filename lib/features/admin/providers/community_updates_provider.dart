@@ -223,16 +223,25 @@ class CommunityUpdatesRepository {
     final imagesByPost = await _fetchImages(ids);
     final profiles = await _fetchProfiles(authorIds);
     final roles = await _fetchRoles(authorIds);
+    final officialPhotos = await _fetchOfficialPhotos([
+      for (final e in roles.entries)
+        if (e.value == 'admin' || e.value == 'staff') e.key,
+    ]);
 
     return posts.map((p) {
       final aId = p['author_id'] as String;
       final profile = profiles[aId];
+      final role = roles[aId];
+      // Admin/staff post as the official LGU account: always "LGU Aparri",
+      // with the admin's uploaded profile photo when available.
+      final official = role == 'admin' || role == 'staff';
       return CommunityUpdate(
         id: p['id'] as String,
         authorId: aId,
-        authorName: profile?['name'] ?? _fallbackName(roles[aId]),
-        authorPhotoUrl: profile?['photoUrl'],
-        authorRole: roles[aId] ?? 'user',
+        authorName: official ? 'LGU Aparri' : (profile?['name'] ?? _fallbackName(role)),
+        authorPhotoUrl:
+            official ? (officialPhotos[aId] ?? profile?['photoUrl']) : profile?['photoUrl'],
+        authorRole: role ?? 'user',
         title: p['title'] as String? ?? '',
         body: p['body'] as String? ?? '',
         barangay: p['barangay'] as String? ?? '',
@@ -297,6 +306,26 @@ class CommunityUpdatesRepository {
       };
     }
     return map;
+  }
+
+  /// Profile photos for official (admin/staff) authors, read from
+  /// `admin_profiles`. Guarded so a missing row / RLS never breaks the feed.
+  Future<Map<String, String>> _fetchOfficialPhotos(List<String> userIds) async {
+    if (userIds.isEmpty) return const {};
+    try {
+      final rows = await _sb
+          .from('admin_profiles')
+          .select('user_id, photo_url')
+          .inFilter('user_id', userIds);
+      final map = <String, String>{};
+      for (final r in (rows as List).cast<Map<String, dynamic>>()) {
+        final url = r['photo_url'] as String?;
+        if (url != null && url.isNotEmpty) map[r['user_id'] as String] = url;
+      }
+      return map;
+    } catch (_) {
+      return const {};
+    }
   }
 
   Future<Map<String, String>> _fetchRoles(List<String> userIds) async {
@@ -506,18 +535,25 @@ class CommunityUpdatesRepository {
         .toList();
     final profiles = await _fetchProfiles(authorIds);
     final roles = await _fetchRoles(authorIds);
+    final officialPhotos = await _fetchOfficialPhotos([
+      for (final e in roles.entries)
+        if (e.value == 'admin' || e.value == 'staff') e.key,
+    ]);
 
     return list.map((c) {
       final aId = c['author_id'] as String;
       final profile = profiles[aId];
       final role = roles[aId] ?? 'citizen';
+      final official = role == 'admin' || role == 'staff';
       return CommunityComment(
         id: c['id'] as String,
         authorId: aId,
-        authorName:
-            profile?['name'] ??
-            (role == 'admin' || role == 'staff' ? 'LGU Aparri' : 'Resident'),
-        authorPhotoUrl: profile?['photoUrl'],
+        authorName: official
+            ? 'LGU Aparri'
+            : (profile?['name'] ?? 'Resident'),
+        authorPhotoUrl: official
+            ? (officialPhotos[aId] ?? profile?['photoUrl'])
+            : profile?['photoUrl'],
         authorRole: role,
         body: c['body'] as String? ?? '',
         parentId: c['parent_comment_id'] as String?,

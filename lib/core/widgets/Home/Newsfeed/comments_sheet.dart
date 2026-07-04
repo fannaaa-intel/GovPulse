@@ -6,7 +6,7 @@ import 'news_feed_helpers.dart';
 import 'image_grid.dart';
 import 'comment_item.dart';
 import 'edit_comment_sheet.dart';
-import '../../Home/Newsfeed/rate_limit_dialogs.dart';
+import '../../app_snackbar.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 class CommentsSheet extends StatefulWidget {
@@ -217,9 +217,10 @@ class _CommentsSheetState extends State<CommentsSheet> {
 
     final userId = _supabase.auth.currentUser?.id;
     if (userId == null) {
-      showFriendlyErrorDialog(
+      showAppSnackBar(
         context,
-        'Your session has expired. Please log in again.',
+        "Your session has expired. Please log in again.",
+        type: AppSnackType.error,
       );
       return;
     }
@@ -285,14 +286,16 @@ class _CommentsSheetState extends State<CommentsSheet> {
       if (mounted) {
         if (e is PostgrestException &&
             (e.hint ?? '') == 'rate_limit_exceeded') {
-          showRateLimitDialog(
+          showAppSnackBar(
             context,
-            'You\'re commenting too fast. You can post up to 10 comments per minute. Please wait a moment before trying again.',
+            "You're commenting too fast. Please wait a moment before trying again.",
+            type: AppSnackType.error,
           );
         } else {
-          showFriendlyErrorDialog(
+          showAppSnackBar(
             context,
-            'Could not send your comment. Please try again.',
+            "Could not send your comment. Please try again.",
+            type: AppSnackType.error,
           );
         }
       }
@@ -356,9 +359,10 @@ class _CommentsSheetState extends State<CommentsSheet> {
           currentText,
           markAsSending: false, // roll back and unblock
         );
-        showFriendlyErrorDialog(
+        showAppSnackBar(
           context,
-          'Could not edit your comment. Please try again.',
+          "Could not edit your comment. Please try again.",
+          type: AppSnackType.error,
         );
       }
     }
@@ -549,9 +553,10 @@ class _CommentsSheetState extends State<CommentsSheet> {
     } catch (_) {
       if (mounted) {
         loaderNavigator.pop();
-        showFriendlyErrorDialog(
+        showAppSnackBar(
           context,
-          'Could not delete your comment. Please try again.',
+          "Could not delete your comment. Please try again.",
+          type: AppSnackType.error,
         );
       }
     }
@@ -699,6 +704,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
               post['authorPhotoUrl'] as String?,
               photoPath: post['authorPhotoPath'] as String?,
               blank: post['blankAvatar'] == true,
+              ring: post['isOfficial'] != true,
             ),
             SizedBox(width: width * 0.025),
             Expanded(
@@ -804,23 +810,16 @@ class _CommentsSheetState extends State<CommentsSheet> {
               },
               child: Row(
                 children: [
-                  Image.asset(
-                    'assets/images/heart.webp',
-                    width: width * 0.046,
-                    height: width * 0.046,
+                  // Filled Material heart when liked — tinting the outline
+                  // heart.webp red only produces a red outline.
+                  Icon(
+                    isPostLiked
+                        ? Icons.favorite_rounded
+                        : Icons.favorite_border_rounded,
+                    size: width * 0.046,
                     color: isPostLiked
                         ? const Color(0xFFEF4444)
                         : const Color(0xFF6B7280),
-                    colorBlendMode: BlendMode.srcIn,
-                    errorBuilder: (_, _, _) => Icon(
-                      isPostLiked
-                          ? Icons.favorite_rounded
-                          : Icons.favorite_border_rounded,
-                      size: width * 0.046,
-                      color: isPostLiked
-                          ? const Color(0xFFEF4444)
-                          : const Color(0xFF6B7280),
-                    ),
                   ),
                   SizedBox(width: width * 0.012),
                   Text(

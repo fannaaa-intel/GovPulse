@@ -1,19 +1,21 @@
 import 'package:flutter/material.dart';
 
-import '../../../core/theme/app_colors.dart';
 import '../theme/admin_ui.dart';
+import 'admin_account_chip.dart';
 import 'admin_notifications.dart';
 
 class AdminTopBar extends StatelessWidget {
   final String title;
   final bool showMenuButton;
   final VoidCallback? onMenuTap;
+  final VoidCallback onLogout;
 
   const AdminTopBar({
     super.key,
     required this.title,
     required this.showMenuButton,
     this.onMenuTap,
+    required this.onLogout,
   });
 
   @override
@@ -55,7 +57,7 @@ class AdminTopBar extends StatelessWidget {
           if (showSearch) ...[_SearchField(), const SizedBox(width: 12)],
           const AdminNotificationBell(),
           const SizedBox(width: 10),
-          _AvatarChip(showName: showName),
+          AdminAccountChip(showName: showName, onLogout: onLogout),
         ],
       ),
     );
@@ -119,70 +121,3 @@ class _IconCircle extends StatelessWidget {
   }
 }
 
-class _AvatarChip extends StatelessWidget {
-  final bool showName;
-  const _AvatarChip({required this.showName});
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      type: MaterialType.transparency,
-      child: InkWell(
-        onTap: () {},
-        borderRadius: BorderRadius.circular(10),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-          child: Row(
-            children: [
-              Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: AppColors.primaryBlue.withValues(alpha: 0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: const Center(
-                  child: Text(
-                    'A',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.primaryBlue,
-                    ),
-                  ),
-                ),
-              ),
-              if (showName) ...[
-                const SizedBox(width: 8),
-                const Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'Administrator',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: AdminUi.textPrimary,
-                      ),
-                    ),
-                    Text(
-                      'LGU Aparri',
-                      style: TextStyle(fontSize: 11, color: AdminUi.textMuted),
-                    ),
-                  ],
-                ),
-                const SizedBox(width: 4),
-                const Icon(
-                  Icons.keyboard_arrow_down_rounded,
-                  size: 18,
-                  color: AdminUi.textMuted,
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../screens/admin_dashboard_screen.dart';
 import '../theme/admin_ui.dart';
+import 'admin_account_chip.dart';
 
 class AdminSidebar extends StatelessWidget {
   final List<AdminNavItem> items;
@@ -112,55 +113,17 @@ class AdminSidebar extends StatelessWidget {
       padding: const EdgeInsets.all(12),
       child: Column(
         children: [
-          if (!collapsed)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8, left: 4, right: 4),
-              child: Row(
-                children: [
-                  Container(
-                    width: 34,
-                    height: 34,
-                    decoration: BoxDecoration(
-                      color: AppColors.primaryBlue.withValues(alpha: 0.1),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Center(
-                      child: Text(
-                        'A',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.primaryBlue,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Administrator',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: AdminUi.textPrimary,
-                          ),
-                        ),
-                        Text(
-                          'LGU Aparri',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: AdminUi.textMuted,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Align(
+              alignment: collapsed ? Alignment.center : Alignment.centerLeft,
+              child: AdminAccountChip(
+                showName: !collapsed,
+                interactive: false,
+                onLogout: onLogout,
               ),
             ),
+          ),
           _LogoutTile(collapsed: collapsed, onLogout: onLogout),
         ],
       ),

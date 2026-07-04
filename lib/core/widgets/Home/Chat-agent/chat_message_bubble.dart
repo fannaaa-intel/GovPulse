@@ -86,6 +86,26 @@ class ChatMessageBubble extends StatelessWidget {
                           letterSpacing: 0.1,
                         ),
                       ),
+                      // On-device fallback marker — shown only for agent replies
+                      // produced offline (AI unavailable), so it's clear this
+                      // answer came from the built-in brain, not the AI.
+                      if (!isUser && message.offline) ...[
+                        SizedBox(width: width * 0.016),
+                        Icon(
+                          Icons.wifi_off_rounded,
+                          size: width * 0.026,
+                          color: AppColors.hint,
+                        ),
+                        SizedBox(width: width * 0.006),
+                        Text(
+                          'Offline · on-device',
+                          style: TextStyle(
+                            fontSize: width * 0.022,
+                            color: AppColors.hint,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
                       if (isUser) ...[
                         SizedBox(width: width * 0.010),
                         MessageStatusTicks(

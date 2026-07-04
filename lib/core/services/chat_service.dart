@@ -5,6 +5,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../widgets/Home/Chat-agent/chat_models.dart';
+import 'local_assistant.dart';
 import 'ticket_repository.dart';
 
 class ChatService extends ChangeNotifier {
@@ -66,6 +67,10 @@ class ChatService extends ChangeNotifier {
   String? _followUpReportCategory;
   String? _lastTicketId;
   bool _isAgentTyping = false;
+  /// Set by [_callAgent]: true when the last reply came from the on-device
+  /// fallback brain (AI unavailable) rather than the Groq function. Read by the
+  /// consumer branches so the message is flagged + shown with an offline chip.
+  bool _lastReplyOffline = false;
   int _unreadCount = 0;
   bool _isViewing = false;
   bool _disposed = false;
@@ -262,6 +267,7 @@ class ChatService extends ChangeNotifier {
     };
 
     String greeting;
+    var greetingOffline = false;
     try {
       final res = await Supabase.instance.client.functions.invoke(
         'chat-agent',
@@ -269,16 +275,23 @@ class ChatService extends ChangeNotifier {
       );
       if (session != _sessionId) return;
       final data = res.data;
-      greeting = (data is Map && data['reply'] is String)
+      final reply = (data is Map && data['reply'] is String)
           ? (data['reply'] as String).trim()
-          : _followUpFallbackGreeting();
+          : '';
+      if (reply.isNotEmpty) {
+        greeting = reply;
+      } else {
+        greeting = _followUpFallbackGreeting();
+        greetingOffline = true;
+      }
     } catch (_) {
       if (session != _sessionId) return;
       greeting = _followUpFallbackGreeting();
+      greetingOffline = true;
     }
 
     if (session != _sessionId) return;
-    await _agentSay(greeting, session, skipTyping: true);
+    await _agentSay(greeting, session, skipTyping: true, offline: greetingOffline);
     if (session != _sessionId) return;
     _maybeStartIdleTimer();
     notifyListeners();
@@ -538,12 +551,18 @@ class ChatService extends ChangeNotifier {
             cleaned.isNotEmpty ? cleaned : 'Salamat po! Ingat kayo. 😊',
             session,
             skipTyping: true,
+            offline: _lastReplyOffline,
           );
           if (session != _sessionId) return;
           _stage = ConversationStage.ended;
           _maybeStartIdleTimer();
         } else {
-          await _agentSay(raw, session, skipTyping: true);
+          await _agentSay(
+            raw,
+            session,
+            skipTyping: true,
+            offline: _lastReplyOffline,
+          );
           if (session != _sessionId) return;
           _stage = ConversationStage.awaitingIntent;
           _maybeStartIdleTimer();
@@ -575,11 +594,17 @@ class ChatService extends ChangeNotifier {
             cleaned.isNotEmpty ? cleaned : 'Salamat po! Ingat kayo. 😊',
             session,
             skipTyping: true,
+            offline: _lastReplyOffline,
           );
           if (session != _sessionId) return;
           _stage = ConversationStage.ended;
         } else {
-          await _agentSay(cleaned, session, skipTyping: true);
+          await _agentSay(
+            cleaned,
+            session,
+            skipTyping: true,
+            offline: _lastReplyOffline,
+          );
           if (session != _sessionId) return;
           _maybeStartIdleTimer();
         }
@@ -607,11 +632,17 @@ class ChatService extends ChangeNotifier {
             cleaned.isNotEmpty ? cleaned : 'Salamat po! Ingat kayo. 😊',
             session,
             skipTyping: true,
+            offline: _lastReplyOffline,
           );
           if (session != _sessionId) return;
           _stage = ConversationStage.ended;
         } else {
-          await _agentSay(cleaned, session, skipTyping: true);
+          await _agentSay(
+            cleaned,
+            session,
+            skipTyping: true,
+            offline: _lastReplyOffline,
+          );
           if (session != _sessionId) return;
           _maybeStartIdleTimer();
         }
@@ -654,6 +685,7 @@ class ChatService extends ChangeNotifier {
             cleaned.isNotEmpty ? cleaned : 'Salamat po! Ingat kayo. 😊',
             session,
             skipTyping: true,
+            offline: _lastReplyOffline,
           );
           if (session != _sessionId) return;
           _stage = ConversationStage.ended;
@@ -664,6 +696,7 @@ class ChatService extends ChangeNotifier {
             cleaned,
             session,
             skipTyping: true,
+            offline: _lastReplyOffline,
           ); // reuse first response
           if (session != _sessionId) return;
           _maybeStartIdleTimer();
@@ -859,16 +892,34 @@ class ChatService extends ChangeNotifier {
 
       final data = res.data;
       if (data is Map && data['reply'] is String) {
-        return (data['reply'] as String).trim();
+        final reply = (data['reply'] as String).trim();
+        if (reply.isNotEmpty) {
+          _lastReplyOffline = false;
+          return reply;
+        }
       }
 
       debugPrint('ChatService: unexpected edge function response: $data');
-      return _fallbackReply;
+      return _offlineReply(latest.text);
     } catch (e) {
+      // AI unavailable (offline / rate-limited / usage exhausted) → fall back to
+      // the on-device brain so the assistant stays useful (hybrid).
       debugPrint('ChatService: edge function error: $e');
       if (session != _sessionId) return '';
-      return _fallbackReply;
+      return _offlineReply(latest.text);
     }
+  }
+
+  /// On-device fallback answer for [userText], tagged with [_lastReplyOffline].
+  String _offlineReply(String userText) {
+    _lastReplyOffline = true;
+    return LocalAssistant.reply(
+      userText,
+      followUp: _stage == ConversationStage.followUp,
+      reportRef: _lastTicketReference,
+      reportStatus: _followUpReportStatus,
+      reportCategory: _followUpReportCategory,
+    );
   }
 
   Future<void> requestLiveAgent() async {
@@ -1061,10 +1112,6 @@ class ChatService extends ChangeNotifier {
     );
   }
 
-  static const _fallbackReply =
-      'Sorry po, I\'m having trouble connecting right now. '
-      'Please try again in a moment.';
-
   // ── Idle timer ────────────────────────────────────────────────────────
   bool get _stageAwaitsUser =>
       _stage == ConversationStage.awaitingIntent ||
@@ -1171,7 +1218,11 @@ class ChatService extends ChangeNotifier {
       'userMessage': '__greeting__',
     };
 
+    const staticGreeting =
+        "Good day po! I'm Kuya Gov, your LGU Aparri Support Agent. 👋\n\n"
+        "How can I help you today? Please choose an option below.";
     String greeting;
+    var greetingOffline = false;
     try {
       final res = await Supabase.instance.client.functions.invoke(
         'chat-agent',
@@ -1179,19 +1230,23 @@ class ChatService extends ChangeNotifier {
       );
       if (session != _sessionId) return;
       final data = res.data;
-      greeting = (data is Map && data['reply'] is String)
+      final reply = (data is Map && data['reply'] is String)
           ? (data['reply'] as String).trim()
-          : "Good day po! I'm Kuya Gov, your LGU Aparri Support Agent. 👋\n\n"
-                "How can I help you today? Please choose an option below.";
+          : '';
+      if (reply.isNotEmpty) {
+        greeting = reply;
+      } else {
+        greeting = staticGreeting;
+        greetingOffline = true;
+      }
     } catch (_) {
       if (session != _sessionId) return;
-      greeting =
-          "Good day po! I'm Kuya Gov, your LGU Aparri Support Agent. 👋\n\n"
-          "How can I help you today? Please choose an option below.";
+      greeting = staticGreeting;
+      greetingOffline = true;
     }
 
     if (session != _sessionId) return;
-    await _agentSay(greeting, session, skipTyping: true);
+    await _agentSay(greeting, session, skipTyping: true, offline: greetingOffline);
 
     if (session != _sessionId) return;
     _stage = ConversationStage.awaitingIntent;
@@ -1204,6 +1259,7 @@ class ChatService extends ChangeNotifier {
     String text,
     int session, {
     bool skipTyping = false,
+    bool offline = false,
   }) async {
     if (session != _sessionId) return;
 
@@ -1219,7 +1275,9 @@ class ChatService extends ChangeNotifier {
     if (session != _sessionId) return;
 
     _isAgentTyping = false;
-    _messages.add(ChatMsg(text: text, isUser: false, time: DateTime.now()));
+    _messages.add(
+      ChatMsg(text: text, isUser: false, time: DateTime.now(), offline: offline),
+    );
     if (_messages.length > 200) {
       _messages.removeRange(0, _messages.length - 200);
     }

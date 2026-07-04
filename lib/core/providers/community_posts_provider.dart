@@ -384,8 +384,15 @@ class CommunityPostsProvider extends ChangeNotifier {
         }
       }
 
+      final officialPhotos = await _officialPhotosFor(rows);
       _posts = _pinnedFirst(
-        rows.map((r) => _mapPostRow(r, commentsByPost[r['id']] ?? [])).toList(),
+        rows
+            .map((r) => _mapPostRow(
+                  r,
+                  commentsByPost[r['id']] ?? [],
+                  officialPhotos: officialPhotos,
+                ))
+            .toList(),
       );
 
       // Re-apply any pending edits so they aren't overwritten by stale DB data
@@ -480,11 +487,12 @@ class CommunityPostsProvider extends ChangeNotifier {
           if (kDebugMode) debugPrint('guest comments fetch failed: $e');
         }
 
+        final officialPhotos = await _officialPhotosFor(rows);
         _posts = _pinnedFirst(
           rows.map((r) {
             final pid = r['id'] as String;
             final loaded = guestComments[pid] ?? const <Map<String, dynamic>>[];
-            final m = _mapPostRow(r, loaded);
+            final m = _mapPostRow(r, loaded, officialPhotos: officialPhotos);
             // If comments loaded, the count is computed from them (matches the
             // visible list). Otherwise fall back to the server-provided count.
             if (loaded.isEmpty) {
@@ -507,10 +515,15 @@ class CommunityPostsProvider extends ChangeNotifier {
         final commentsByPost = postIds.isEmpty
             ? <String, List<Map<String, dynamic>>>{}
             : await _fetchCommentsForPosts(postIds);
+        final officialPhotos = await _officialPhotosFor(rows);
 
         _posts = _pinnedFirst(
           rows
-              .map((r) => _mapPostRow(r, commentsByPost[r['id']] ?? []))
+              .map((r) => _mapPostRow(
+                    r,
+                    commentsByPost[r['id']] ?? [],
+                    officialPhotos: officialPhotos,
+                  ))
               .toList(),
         );
       }
@@ -643,6 +656,33 @@ class CommunityPostsProvider extends ChangeNotifier {
     };
   }
 
+  /// Official (admin/staff) author photos, read live from `admin_profiles`
+  /// (public read). Keyed by author id. Guarded so a blocked read / missing
+  /// row never breaks the feed — it just falls back to the default LGU avatar.
+  Future<Map<String, String>> _officialPhotosFor(List<dynamic> rows) async {
+    final ids = <String>{
+      for (final r in rows)
+        if (isOfficialAuthorRole((r as Map)['author_role'] as String?) &&
+            r['author_id'] != null)
+          r['author_id'] as String,
+    }.toList();
+    if (ids.isEmpty) return const {};
+    try {
+      final res = await _supabase
+          .from('admin_profiles')
+          .select('user_id, photo_url')
+          .inFilter('user_id', ids);
+      final map = <String, String>{};
+      for (final r in (res as List).cast<Map<String, dynamic>>()) {
+        final url = r['photo_url'] as String?;
+        if (url != null && url.isNotEmpty) map[r['user_id'] as String] = url;
+      }
+      return map;
+    } catch (_) {
+      return const {};
+    }
+  }
+
   Future<Map<String, Map<String, String?>>> _resolveUserDetails(
     List<String> userIds,
   ) async {
@@ -688,8 +728,9 @@ class CommunityPostsProvider extends ChangeNotifier {
 
   Map<String, dynamic> _mapPostRow(
     Map<String, dynamic> row,
-    List<Map<String, dynamic>> comments,
-  ) {
+    List<Map<String, dynamic>> comments, {
+    Map<String, String> officialPhotos = const {},
+  }) {
     final imagePaths =
         (row['image_paths'] as List?)?.cast<String>() ?? const [];
     final imageUrls = imagePaths
@@ -718,6 +759,12 @@ class CommunityPostsProvider extends ChangeNotifier {
     final role = row['author_role'] as String?;
     final official = isOfficialAuthorRole(role);
     final rawName = (row['author_name'] as String?)?.trim() ?? '';
+    final authorId = row['author_id'] as String?;
+    // Official (admin/staff) authors resolve live to the LGU brand + the admin's
+    // uploaded avatar (admin_profiles), so it applies to every post — past and
+    // future — with no per-post backfill.
+    final officialUrl =
+        (official && authorId != null) ? officialPhotos[authorId] : null;
 
     late final String displayName;
     late final bool blankAvatar;
@@ -730,15 +777,17 @@ class CommunityPostsProvider extends ChangeNotifier {
       displayName = rawName.isEmpty ? 'Citizen' : rawName;
       blankAvatar = true;
     } else {
-      // Officials anywhere, and everyone in the logged-in feed → real identity.
-      displayName = rawName.isEmpty
-          ? (official ? 'LGU Aparri' : 'Resident')
-          : rawName;
+      // Officials always post as "LGU Aparri"; everyone else keeps their name.
+      displayName = official
+          ? 'LGU Aparri'
+          : (rawName.isEmpty ? 'Resident' : rawName);
       blankAvatar = false;
-      displayPhotoUrl = authorPhotoUrl;
-      displayPhotoPath = (authorPhotoPath != null && authorPhotoPath.isNotEmpty)
-          ? authorPhotoPath
-          : null;
+      displayPhotoUrl = officialUrl ?? authorPhotoUrl;
+      displayPhotoPath = officialUrl != null
+          ? null
+          : ((authorPhotoPath != null && authorPhotoPath.isNotEmpty)
+              ? authorPhotoPath
+              : null);
     }
 
     return {
