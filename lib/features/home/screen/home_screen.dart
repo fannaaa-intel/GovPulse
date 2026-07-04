@@ -181,7 +181,7 @@ class _HomePageState extends ConsumerState<HomePage>
 
   // ── Navigation helpers ────────────────────────────────────────────────────
 
-  void _goToNewsFeed() async {
+  void _goToNewsFeed({String? postId, bool openComments = false}) async {
     // Ensure the profile is loaded before navigating, so the feed filters by
     // the user's barangay on first open — not just city-wide / LGU broadcasts.
     // On a fresh app launch the profile may still be loading when the user
@@ -201,6 +201,9 @@ class _HomePageState extends ConsumerState<HomePage>
         'isVerified':
             (profile?.verifStatus ?? _verifStatus) == VerifStatus.verified,
         'userBarangay': profile?.barangay,
+        // Optional: jump to a specific post (from a notification tap).
+        'initialPostId': ?postId,
+        if (postId != null) 'initialOpenComments': openComments,
       },
     );
   }
@@ -209,6 +212,7 @@ class _HomePageState extends ConsumerState<HomePage>
     if (_verifStatus != VerifStatus.verified) {
       showVerificationRequiredDialog(
         context,
+        username: widget.username,
         message:
             'Only verified Aparri citizens can submit a report. '
             'Please complete your identity verification first.',
@@ -227,6 +231,7 @@ class _HomePageState extends ConsumerState<HomePage>
     if (_verifStatus != VerifStatus.verified) {
       showVerificationRequiredDialog(
         context,
+        username: widget.username,
         message:
             'Only verified Aparri citizens can submit a suggestion. '
             'Please complete your identity verification first.',
@@ -246,6 +251,7 @@ class _HomePageState extends ConsumerState<HomePage>
     if (_verifStatus != VerifStatus.verified) {
       showVerificationRequiredDialog(
         context,
+        username: widget.username,
         message:
             'Only verified Aparri citizens can submit feedback. '
             'Please complete your identity verification first.',
@@ -279,6 +285,7 @@ class _HomePageState extends ConsumerState<HomePage>
     if (_verifStatus != VerifStatus.verified) {
       showVerificationRequiredDialog(
         context,
+        username: widget.username,
         message:
             'Only verified Aparri citizens can chat with an agent. '
             'Please complete your identity verification first.',
@@ -334,6 +341,7 @@ class _HomePageState extends ConsumerState<HomePage>
       if (_verifStatus != VerifStatus.verified) {
         showVerificationRequiredDialog(
           context,
+          username: widget.username,
           message: 'Only verified citizens can access My Reports.',
         );
         return;
@@ -362,7 +370,21 @@ class _HomePageState extends ConsumerState<HomePage>
       barrierLabel: 'Notifications',
       barrierColor: Colors.transparent,
       transitionDuration: const Duration(milliseconds: 250),
-      pageBuilder: (_, _, _) => NotificationPopup(width: width),
+      pageBuilder: (_, _, _) => NotificationPopup(
+        width: width,
+        onTap: (n) {
+          Navigator.pop(context); // close the sheet, then route the tap
+          routeCitizenNotificationTap(
+            context,
+            n,
+            username: widget.username,
+            isVerified: _verifStatus == VerifStatus.verified,
+            isPending: _verifStatus == VerifStatus.pending,
+            onOpenNewsFeed: ({String? postId, bool openComments = false}) =>
+                _goToNewsFeed(postId: postId, openComments: openComments),
+          );
+        },
+      ),
       transitionBuilder: (_, anim, _, child) => FadeTransition(
         opacity: anim,
         child: ScaleTransition(
@@ -371,7 +393,12 @@ class _HomePageState extends ConsumerState<HomePage>
         ),
       ),
     );
-    setState(() {});
+    // Re-sync from the DB after the sheet closes so a mid-animation Clear-All
+    // still leaves the badge accurate (it may not finish deleting every row
+    // before dismissal). load() updates NotificationService.unread; setState
+    // also refreshes any child badges that read the count directly.
+    await NotificationService.load();
+    if (mounted) setState(() {});
   }
 
   Future<void> _handleLogout() async {
@@ -894,32 +921,37 @@ class _HomePageState extends ConsumerState<HomePage>
                 errorBuilder: (_, _, _) =>
                     const Icon(Icons.notifications_outlined, size: 30),
               ),
-              if (NotificationService.count > 0)
-                Positioned(
-                  right: -4,
-                  top: -4,
-                  child: Container(
-                    constraints: const BoxConstraints(
-                      minWidth: 14,
-                      minHeight: 14,
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 3),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF22C55E),
-                      borderRadius: BorderRadius.circular(7),
-                      border: Border.all(color: Colors.white, width: 1.2),
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      '${NotificationService.count}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 8,
-                        fontWeight: FontWeight.w700,
+              Positioned(
+                right: -4,
+                top: -4,
+                child: ValueListenableBuilder<int>(
+                  valueListenable: NotificationService.unread,
+                  builder: (_, count, _) {
+                    if (count <= 0) return const SizedBox.shrink();
+                    return Container(
+                      constraints: const BoxConstraints(
+                        minWidth: 14,
+                        minHeight: 14,
                       ),
-                    ),
-                  ),
+                      padding: const EdgeInsets.symmetric(horizontal: 3),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF22C55E),
+                        borderRadius: BorderRadius.circular(7),
+                        border: Border.all(color: Colors.white, width: 1.2),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        '$count',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 8,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    );
+                  },
                 ),
+              ),
             ],
           ),
         ),

@@ -55,11 +55,13 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
                 ],
                 _buildKpiRow(async),
                 const SizedBox(height: 16),
+                _buildAiHero(async),
+                const SizedBox(height: 16),
                 _buildChartsRow(async),
                 const SizedBox(height: 16),
                 _buildQualityRow(async),
                 const SizedBox(height: 16),
-                _buildInsightsRow(async),
+                _buildActivitySection(async),
               ],
             ),
           ),
@@ -251,7 +253,7 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
         value: data == null ? null : '${data.totalReports}',
         delta: null,
         caption: 'All citizen reports',
-        onTap: widget.onNavigate == null ? null : () => widget.onNavigate!(4),
+        onTap: widget.onNavigate == null ? null : () => widget.onNavigate!(3),
       ),
       _KpiCard(
         label: 'New this week',
@@ -271,7 +273,7 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
         value: data == null ? null : '${data.pendingVerification}',
         delta: null,
         caption: 'Awaiting ID review',
-        onTap: widget.onNavigate == null ? null : () => widget.onNavigate!(7),
+        onTap: widget.onNavigate == null ? null : () => widget.onNavigate!(6),
       ),
       _KpiCard(
         label: 'Resolution rate',
@@ -563,28 +565,19 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
     );
   }
 
-  // ── 4. Insights row: recent activity + AI/NLP (awaiting pipeline) ─────────
-  Widget _buildInsightsRow(AsyncValue<AdminDashboardData> async) {
-    return LayoutBuilder(
-      builder: (context, c) {
-        final wide = c.maxWidth >= 860;
-        final activity = _buildActivityCard(async);
-        final nlp = const _NlpInsightsCard();
-        if (wide) {
-          return IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(flex: 55, child: activity),
-                const SizedBox(width: 16),
-                Expanded(flex: 45, child: nlp),
-              ],
-            ),
-          );
-        }
-        return Column(children: [activity, const SizedBox(height: 16), nlp]);
-      },
+  // ── AI & NLP hero — promoted, full-width main content ─────────────────────
+  Widget _buildAiHero(AsyncValue<AdminDashboardData> async) {
+    final data = async.valueOrNull;
+    return _NlpInsightsCard(
+      insights: data?.nlp,
+      loading: async.isLoading && data == null,
+      hero: true,
     );
+  }
+
+  // ── Recent activity (full-width, now that the AI card is its own hero) ────
+  Widget _buildActivitySection(AsyncValue<AdminDashboardData> async) {
+    return _buildActivityCard(async);
   }
 
   Widget _buildActivityCard(AsyncValue<AdminDashboardData> async) {
@@ -627,7 +620,7 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
               if (widget.onNavigate != null)
                 _LinkButton(
                   label: 'View all',
-                  onTap: () => widget.onNavigate!(4),
+                  onTap: () => widget.onNavigate!(3),
                 ),
             ],
           ),
@@ -645,7 +638,7 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
         a.kind == ActivityKind.reportResolved ||
         a.kind == ActivityKind.reportRejected;
     return (isReport && widget.onNavigate != null)
-        ? () => widget.onNavigate!(4)
+        ? () => widget.onNavigate!(3)
         : null;
   }
 
@@ -1322,88 +1315,245 @@ class _ActivityRow extends StatelessWidget {
 // not faked. When the pipeline writes sentiment/urgency, populate the
 // AdminDashboardData model and swap the placeholders for the real widgets.
 class _NlpInsightsCard extends StatelessWidget {
-  const _NlpInsightsCard();
+  final NlpInsights? insights;
+  final bool loading;
+
+  /// When true the card renders as a prominent, full-width "hero": a tinted
+  /// gradient header and — on wide screens — the three insight panels laid out
+  /// side-by-side, so it reads as the dashboard's headline feature.
+  final bool hero;
+  const _NlpInsightsCard({
+    this.insights,
+    this.loading = false,
+    this.hero = false,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return _Card(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    final nlp = insights;
+    final hasData = !loading && nlp != null && nlp.hasData;
+
+    final badge = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.primaryBlue.withValues(alpha: hero ? 0.14 : 0.10),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
+          Icon(
+            (nlp?.usesAi ?? false)
+                ? Icons.bolt_rounded
+                : Icons.memory_rounded,
+            size: 12,
+            color: AppColors.primaryBlue,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            (nlp?.usesAi ?? false) ? 'Hybrid AI' : 'On-device NLP',
+            style: const TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w700,
+              color: AppColors.primaryBlue,
+            ),
+          ),
+        ],
+      ),
+    );
+
+    final header = Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: hero ? 40 : 30,
+          height: hero ? 40 : 30,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFF6366F1), AppColors.primaryBlue],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(hero ? 12 : 9),
+          ),
+          child: Icon(
+            Icons.auto_awesome_rounded,
+            size: hero ? 22 : 17,
+            color: Colors.white,
+          ),
+        ),
+        SizedBox(width: hero ? 12 : 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(
-                Icons.auto_awesome_rounded,
-                size: 18,
-                color: AppColors.primaryBlue,
-              ),
-              const SizedBox(width: 8),
-              const _CardTitle('AI & NLP insights'),
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: AppColors.primaryBlue.withValues(alpha: 0.10),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: const Text(
-                  'NLP pipeline',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.primaryBlue,
+              Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      'AI & NLP insights',
+                      style: TextStyle(
+                        fontSize: hero ? 17 : 15,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.3,
+                        color: AdminUi.textPrimary,
+                      ),
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 10),
+                  badge,
+                ],
+              ),
+              const SizedBox(height: 3),
+              const Text(
+                'Sentiment from feedback · urgency from reports · rating forecast',
+                style: TextStyle(fontSize: 12, color: AdminUi.textMuted),
               ),
             ],
           ),
-          const SizedBox(height: 4),
-          const Text(
-            'Sentiment, urgency, and forecast from citizen feedback',
-            style: TextStyle(fontSize: 12, color: AdminUi.textMuted),
-          ),
-          const SizedBox(height: 16),
-          const _NlpSlot(
-            icon: Icons.sentiment_satisfied_alt_rounded,
-            label: 'Citizen sentiment',
-            hint: 'Positive · neutral · negative split',
-          ),
-          const SizedBox(height: 10),
-          const _NlpSlot(
-            icon: Icons.priority_high_rounded,
-            label: 'Urgency triage',
-            hint: 'High · medium · low classification',
-          ),
-          const SizedBox(height: 10),
-          const _NlpSlot(
-            icon: Icons.insights_rounded,
-            label: 'Predictive outlook',
-            hint: 'Forecasted service-quality trend',
-          ),
-          const SizedBox(height: 14),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: AdminUi.subtle,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: AdminUi.border),
-            ),
-            child: const Row(
+        ),
+      ],
+    );
+
+    // The header is its own slim banner card so it reads as the section title.
+    final headerCard = _Card(
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+      child: header,
+    );
+
+    if (loading) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          headerCard,
+          const SizedBox(height: 12),
+          _Card(child: const _NlpLoading()),
+        ],
+      );
+    }
+    if (!hasData) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          headerCard,
+          const SizedBox(height: 12),
+          _Card(child: const _NlpEmpty()),
+        ],
+      );
+    }
+
+    // Three distinct containers — one per insight — so nothing feels crowded.
+    // Wide screens lay them side-by-side (equal height); narrow screens stack.
+    final sentiment = _Card(child: _NlpSentiment(nlp));
+    final urgency = _Card(child: _NlpUrgency(nlp));
+    final outlook = _Card(child: _NlpOutlook(nlp));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        headerCard,
+        const SizedBox(height: 12),
+        LayoutBuilder(
+          builder: (context, c) {
+            if (c.maxWidth >= 900) {
+              // IntrinsicHeight gives the Row a bounded height (the tallest
+              // card) so `stretch` can equalise the three cards — a plain
+              // `stretch` would force infinite height inside the scroll view.
+              return IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(child: sentiment),
+                    const SizedBox(width: 12),
+                    Expanded(child: urgency),
+                    const SizedBox(width: 12),
+                    Expanded(child: outlook),
+                  ],
+                ),
+              );
+            }
+            return Column(
               children: [
-                Icon(
-                  Icons.schedule_rounded,
-                  size: 14,
-                  color: AdminUi.textMuted,
-                ),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Awaiting NLP pipeline — these activate once feedback is classified.',
-                    style: TextStyle(fontSize: 11, color: AdminUi.textMuted),
-                  ),
-                ),
+                sentiment,
+                const SizedBox(height: 12),
+                urgency,
+                const SizedBox(height: 12),
+                outlook,
               ],
+            );
+          },
+        ),
+        const SizedBox(height: 12),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: _footnote(nlp),
+        ),
+      ],
+    );
+  }
+
+  Widget _footnote(NlpInsights nlp) {
+    final s = nlp.aiClassified > 0
+        ? 'AI ${nlp.aiClassified}/${nlp.analyzed}'
+        : '${nlp.analyzed}';
+    final u = nlp.reportsAiClassified > 0
+        ? 'AI ${nlp.reportsAiClassified}/${nlp.reportsAnalyzed}'
+        : '${nlp.reportsAnalyzed}';
+    return _NlpFootnote(
+      'Sentiment · $s feedback   ·   Urgency · $u report'
+      '${nlp.reportsAnalyzed == 1 ? '' : 's'}',
+    );
+  }
+}
+
+/// Loading shimmer that mirrors the populated card's rough height.
+class _NlpLoading extends StatelessWidget {
+  const _NlpLoading();
+
+  @override
+  Widget build(BuildContext context) {
+    return const AdminShimmer(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SkeletonBox(width: 120, height: 12),
+          SizedBox(height: 10),
+          SkeletonBox(width: double.infinity, height: 12, radius: 6),
+          SizedBox(height: 18),
+          SkeletonBox(width: 100, height: 12),
+          SizedBox(height: 10),
+          SkeletonBox(width: double.infinity, height: 28, radius: 8),
+          SizedBox(height: 18),
+          SkeletonBox(width: 110, height: 12),
+          SizedBox(height: 10),
+          SkeletonBox(width: double.infinity, height: 20),
+        ],
+      ),
+    );
+  }
+}
+
+class _NlpEmpty extends StatelessWidget {
+  const _NlpEmpty();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      decoration: BoxDecoration(
+        color: AdminUi.subtle,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AdminUi.border),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.forum_outlined, size: 15, color: AdminUi.textMuted),
+          SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'No feedback to analyze yet — insights appear once citizens submit feedback.',
+              style: TextStyle(fontSize: 11.5, color: AdminUi.textMuted),
             ),
           ),
         ],
@@ -1412,45 +1562,1024 @@ class _NlpInsightsCard extends StatelessWidget {
   }
 }
 
-class _NlpSlot extends StatelessWidget {
+// Shared sentiment palette.
+const Color _kSentPos = AppColors.green;
+const Color _kSentNeu = Color(0xFF94A3B8);
+const Color _kSentNeg = AppColors.red;
+
+Color _sentimentColor(String s) => switch (s) {
+  'positive' => _kSentPos,
+  'negative' => _kSentNeg,
+  _ => _kSentNeu,
+};
+Color _urgencyColor(String u) => switch (u) {
+  'high' => AppColors.red,
+  'medium' => AppColors.orange,
+  _ => AppColors.green,
+};
+
+// Urgency sort rank so the breakdown reads High→Medium→Low, matching the bars.
+// (Sentiment is ordered by star rating instead — see _NlpSentimentState.)
+int _urgRank(String u) => u == 'high' ? 0 : (u == 'medium' ? 1 : 2);
+String _cap(String s) => s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
+
+List<FeedbackInsightItem> _sortedBy(
+  List<FeedbackInsightItem> items,
+  int Function(FeedbackInsightItem) rank,
+) {
+  final out = [...items];
+  out.sort((a, b) {
+    final r = rank(a).compareTo(rank(b));
+    if (r != 0) return r;
+    final at = a.createdAt?.millisecondsSinceEpoch ?? 0;
+    final bt = b.createdAt?.millisecondsSinceEpoch ?? 0;
+    return bt.compareTo(at); // newest first within a bucket
+  });
+  return out;
+}
+
+// ── Sentiment split — filterable bars + ordered feedback breakdown ───────────
+class _NlpSentiment extends StatefulWidget {
+  final NlpInsights nlp;
+  const _NlpSentiment(this.nlp);
+
+  @override
+  State<_NlpSentiment> createState() => _NlpSentimentState();
+}
+
+class _NlpSentimentState extends State<_NlpSentiment> {
+  String? _filter; // null = all; else 'positive' | 'neutral' | 'negative'
+
+  void _toggle(String f) => setState(() => _filter = _filter == f ? null : f);
+
+  @override
+  Widget build(BuildContext context) {
+    final nlp = widget.nlp;
+    // Order the responses by star rating, highest → lowest (5 → 0). Negating
+    // the rating turns the ascending sort into descending; ties fall back to
+    // newest-first inside [_sortedBy].
+    final sorted = _sortedBy(nlp.sentimentItems, (i) => -i.rating);
+    final filtered =
+        _filter == null ? sorted : sorted.where((i) => i.sentiment == _filter).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _NlpSectionLabel(
+          icon: Icons.sentiment_satisfied_alt_rounded,
+          label: 'Citizen sentiment',
+          hint: '${nlp.analyzed} feedback',
+        ),
+        const SizedBox(height: 10),
+        _InsightBarRow(
+          color: _kSentPos,
+          label: 'Positive',
+          count: nlp.positive,
+          share: nlp.positiveShare,
+          selected: _filter == 'positive',
+          filterActive: _filter != null,
+          onTap: nlp.positive == 0 ? null : () => _toggle('positive'),
+        ),
+        _InsightBarRow(
+          color: _kSentNeu,
+          label: 'Neutral',
+          count: nlp.neutral,
+          share: nlp.neutralShare,
+          selected: _filter == 'neutral',
+          filterActive: _filter != null,
+          onTap: nlp.neutral == 0 ? null : () => _toggle('neutral'),
+        ),
+        _InsightBarRow(
+          color: _kSentNeg,
+          label: 'Negative',
+          count: nlp.negative,
+          share: nlp.negativeShare,
+          selected: _filter == 'negative',
+          filterActive: _filter != null,
+          onTap: nlp.negative == 0 ? null : () => _toggle('negative'),
+        ),
+        _InsightBreakdown(
+          items: filtered,
+          urgencyMode: false,
+          headerLabel: _filter == null ? 'RESPONSES' : '${_cap(_filter!)} · ${filtered.length}',
+          sheetTitle: _filter == null ? 'All responses' : '${_cap(_filter!)} feedback',
+          accent: _filter == null ? AdminUi.textMuted : _sentimentColor(_filter!),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Urgency triage — filterable bars + ordered report breakdown ──────────────
+class _NlpUrgency extends StatefulWidget {
+  final NlpInsights nlp;
+  const _NlpUrgency(this.nlp);
+
+  @override
+  State<_NlpUrgency> createState() => _NlpUrgencyState();
+}
+
+class _NlpUrgencyState extends State<_NlpUrgency> {
+  String? _filter; // null = all; else 'high' | 'medium' | 'low'
+
+  void _toggle(String f) => setState(() => _filter = _filter == f ? null : f);
+
+  @override
+  Widget build(BuildContext context) {
+    final nlp = widget.nlp;
+    final total = nlp.reportsAnalyzed;
+    double share(int n) => total == 0 ? 0 : n / total;
+    final sorted = _sortedBy(nlp.urgencyItems, (i) => _urgRank(i.urgency));
+    final filtered =
+        _filter == null ? sorted : sorted.where((i) => i.urgency == _filter).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _NlpSectionLabel(
+          icon: Icons.priority_high_rounded,
+          label: 'Urgency triage',
+          hint: '${nlp.reportsAnalyzed} reports',
+        ),
+        const SizedBox(height: 10),
+        _InsightBarRow(
+          color: AppColors.red,
+          label: 'High',
+          count: nlp.urgentHigh,
+          share: share(nlp.urgentHigh),
+          selected: _filter == 'high',
+          filterActive: _filter != null,
+          onTap: nlp.urgentHigh == 0 ? null : () => _toggle('high'),
+        ),
+        _InsightBarRow(
+          color: AppColors.orange,
+          label: 'Medium',
+          count: nlp.urgentMedium,
+          share: share(nlp.urgentMedium),
+          selected: _filter == 'medium',
+          filterActive: _filter != null,
+          onTap: nlp.urgentMedium == 0 ? null : () => _toggle('medium'),
+        ),
+        _InsightBarRow(
+          color: AppColors.green,
+          label: 'Low',
+          count: nlp.urgentLow,
+          share: share(nlp.urgentLow),
+          selected: _filter == 'low',
+          filterActive: _filter != null,
+          onTap: nlp.urgentLow == 0 ? null : () => _toggle('low'),
+        ),
+        _InsightBreakdown(
+          items: filtered,
+          urgencyMode: true,
+          headerLabel: _filter == null ? 'REPORTS' : '${_cap(_filter!)} · ${filtered.length}',
+          sheetTitle: _filter == null ? 'All reports' : '${_cap(_filter!)} urgency',
+          accent: _filter == null ? AdminUi.textMuted : _urgencyColor(_filter!),
+        ),
+      ],
+    );
+  }
+}
+
+/// One KPI summary row that doubles as a filter: [dot + label] · [bar] · [count+%].
+/// Tapping filters the breakdown below to this bucket (tap again to clear); the
+/// active bucket is highlighted and the others dim so the filter state is clear.
+class _InsightBarRow extends StatelessWidget {
+  final Color color;
+  final String label;
+  final int count;
+  final double share; // 0..1
+  final bool selected;
+  final bool filterActive;
+  final VoidCallback? onTap;
+  const _InsightBarRow({
+    required this.color,
+    required this.label,
+    required this.count,
+    required this.share,
+    this.selected = false,
+    this.filterActive = false,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Dim the non-selected rows while a filter is active, so the chosen bucket
+    // stands out.
+    final dim = filterActive && !selected;
+    final row = AnimatedOpacity(
+      duration: const Duration(milliseconds: 150),
+      opacity: dim ? 0.45 : 1,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 6),
+        decoration: BoxDecoration(
+          color: selected ? color.withValues(alpha: 0.10) : null,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 74,
+              child: Row(
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration:
+                        BoxDecoration(color: color, shape: BoxShape.circle),
+                  ),
+                  const SizedBox(width: 7),
+                  Flexible(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                        color: selected ? color : AdminUi.textSecondary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: Container(
+                  height: 8,
+                  color: color.withValues(alpha: 0.14),
+                  child: FractionallySizedBox(
+                    alignment: Alignment.centerLeft,
+                    widthFactor: share.clamp(0.0, 1.0),
+                    child: Container(color: color),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            SizedBox(
+              width: 50,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: [
+                  Text(
+                    '$count',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      color: color,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    '${(share * 100).round()}%',
+                    style:
+                        const TextStyle(fontSize: 11, color: AdminUi.textMuted),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (onTap == null) return row;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: row,
+      ),
+    );
+  }
+}
+
+/// The always-visible breakdown list under a sentiment/urgency summary, ordered
+/// to match the bars. Shows up to [_maxItems]; if more don't fit, a "+N more"
+/// row opens the full (filtered) list in a sheet — the only tap needed.
+class _InsightBreakdown extends StatelessWidget {
+  static const _maxItems = 6;
+  final List<FeedbackInsightItem> items;
+  final bool urgencyMode;
+  final String headerLabel;
+  final String sheetTitle;
+  final Color accent;
+  const _InsightBreakdown({
+    required this.items,
+    required this.urgencyMode,
+    required this.headerLabel,
+    required this.sheetTitle,
+    required this.accent,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (items.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: const [
+            Divider(height: 1, color: AdminUi.subtle),
+            SizedBox(height: 10),
+            Text(
+              'No items in this bucket.',
+              style: TextStyle(fontSize: 11.5, color: AdminUi.textMuted),
+            ),
+          ],
+        ),
+      );
+    }
+    final shown = items.take(_maxItems).toList();
+    final more = items.length - shown.length;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Divider(height: 1, color: AdminUi.subtle),
+          const SizedBox(height: 8),
+          Text(
+            headerLabel.toUpperCase(),
+            style: const TextStyle(
+              fontSize: 9.5,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.6,
+              color: AdminUi.textMuted,
+            ),
+          ),
+          const SizedBox(height: 4),
+          for (final it in shown)
+            _BreakdownRow(item: it, urgencyMode: urgencyMode),
+          if (more > 0)
+            _SeeAllRow(
+              label: 'View all ${items.length}',
+              onTap: () => _showBreakdownSheet(
+                context,
+                title: sheetTitle,
+                accent: accent,
+                urgencyMode: urgencyMode,
+                items: items,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A tappable "View all N" row shown when the breakdown overflows the card.
+class _SeeAllRow extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+  const _SeeAllRow({required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(6),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 2),
+          child: Row(
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.primaryBlue,
+                ),
+              ),
+              const SizedBox(width: 2),
+              const Icon(Icons.chevron_right_rounded,
+                  size: 15, color: AppColors.primaryBlue),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Opens the full (filtered) breakdown list — a bottom sheet on phones, a
+/// centered dialog on wider screens.
+void _showBreakdownSheet(
+  BuildContext context, {
+  required String title,
+  required Color accent,
+  required bool urgencyMode,
+  required List<FeedbackInsightItem> items,
+}) {
+  final mq = MediaQuery.of(context);
+  final narrow = mq.size.width < 640;
+  final content = _BreakdownSheet(
+    title: title,
+    accent: accent,
+    urgencyMode: urgencyMode,
+    items: items,
+  );
+  if (narrow) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AdminUi.surface,
+      isScrollControlled: true,
+      // A drag handle + capped height keep the sheet usable, and the inner
+      // SafeArea(bottom) makes it sit above the phone's system navigation —
+      // whether the device uses 3-button or gesture navigation.
+      showDragHandle: true,
+      constraints: BoxConstraints(maxHeight: mq.size.height * 0.85),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => content,
+    );
+  } else {
+    showDialog(
+      context: context,
+      builder: (_) => Dialog(
+        backgroundColor: AdminUi.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520, maxHeight: 600),
+          child: content,
+        ),
+      ),
+    );
+  }
+}
+
+class _BreakdownSheet extends StatelessWidget {
+  final String title;
+  final Color accent;
+  final bool urgencyMode;
+  final List<FeedbackInsightItem> items;
+  const _BreakdownSheet({
+    required this.title,
+    required this.accent,
+    required this.urgencyMode,
+    required this.items,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 8, 10),
+            child: Row(
+              children: [
+                Container(
+                  width: 10,
+                  height: 10,
+                  decoration:
+                      BoxDecoration(color: accent, shape: BoxShape.circle),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: AdminUi.textPrimary,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '${items.length}',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AdminUi.textMuted,
+                  ),
+                ),
+                const Spacer(),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close_rounded),
+                  color: AdminUi.textMuted,
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: AdminUi.border),
+          Flexible(
+            child: ListView.separated(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
+              itemCount: items.length,
+              separatorBuilder: (_, _) =>
+                  const Divider(height: 1, color: AdminUi.subtle),
+              itemBuilder: (_, i) =>
+                  _BreakdownRow(item: items[i], urgencyMode: urgencyMode),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BreakdownRow extends StatelessWidget {
+  final FeedbackInsightItem item;
+  final bool urgencyMode;
+  const _BreakdownRow({required this.item, required this.urgencyMode});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = urgencyMode
+        ? _urgencyColor(item.urgency)
+        : _sentimentColor(item.sentiment);
+    final subtitle = urgencyMode
+        ? (item.service.isNotEmpty ? item.service : null)
+        : (item.comment != null && item.comment!.isNotEmpty
+            ? item.comment
+            : (item.service.isNotEmpty ? item.service : null));
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 7,
+            height: 7,
+            margin: const EdgeInsets.only(top: 4, right: 8),
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AdminUi.textPrimary,
+                  ),
+                ),
+                if (subtitle != null)
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AdminUi.textMuted,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          // Trailing: urgency word (reports) or star rating (feedback).
+          if (urgencyMode)
+            Text(
+              item.urgency,
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w700,
+                color: color,
+              ),
+            )
+          else if (item.rating > 0)
+            _MiniStars(item.rating)
+          else
+            Text(
+              item.sentiment,
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w700,
+                color: color,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Predictive outlook — trend headline + aligned Prior/Recent/Forecast rows ─
+class _NlpOutlook extends StatelessWidget {
+  final NlpInsights nlp;
+  const _NlpOutlook(this.nlp);
+
+  @override
+  Widget build(BuildContext context) {
+    final (icon, color, word) = switch (nlp.trend) {
+      InsightTrend.improving => (
+        Icons.trending_up_rounded,
+        AppColors.green,
+        'Improving',
+      ),
+      InsightTrend.declining => (
+        Icons.trending_down_rounded,
+        AppColors.red,
+        'Declining',
+      ),
+      InsightTrend.stable => (
+        Icons.trending_flat_rounded,
+        AppColors.primaryBlue,
+        'Stable',
+      ),
+    };
+
+    final recent = nlp.recentAvg;
+    final forecast = nlp.forecastRating;
+    final delta = nlp.trendDelta;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _NlpSectionLabel(
+          icon: Icons.insights_rounded,
+          label: 'Predictive outlook',
+        ),
+        const SizedBox(height: 10),
+        if (recent == null)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AdminUi.subtle,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AdminUi.border),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.hourglass_empty_rounded,
+                    size: 15, color: AdminUi.textMuted),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Not enough dated feedback to forecast yet.',
+                    style:
+                        TextStyle(fontSize: 11.5, color: AdminUi.textMuted),
+                  ),
+                ),
+              ],
+            ),
+          )
+        else ...[
+          // Trend headline chip + signed delta.
+          Row(
+            children: [
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(icon, size: 15, color: color),
+                    const SizedBox(width: 5),
+                    Text(
+                      word,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: color,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Spacer(),
+              if (delta != null)
+                Text(
+                  '${delta >= 0 ? '+' : ''}${delta.toStringAsFixed(1)}★',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: color,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          _outlookRow('Prior 30 days', nlp.priorAvg, AdminUi.textSecondary),
+          _outlookRow('Recent 30 days', recent, color, emphasize: true),
+          _outlookRow('Forecast', forecast, color,
+              emphasize: true, italicNote: 'projected'),
+        ],
+        if (nlp.focus.isNotEmpty || (nlp.aiSummary?.isNotEmpty ?? false)) ...[
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              const Icon(Icons.tips_and_updates_outlined,
+                  size: 14, color: AdminUi.textMuted),
+              const SizedBox(width: 6),
+              const Text(
+                'Recommended focus',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.3,
+                  color: AdminUi.textMuted,
+                ),
+              ),
+              const Spacer(),
+              // Signals whether the recommendations are AI-written or on-device.
+              _OutlookSourceChip(usesAi: nlp.outlookUsesAi),
+            ],
+          ),
+          if (nlp.aiSummary?.isNotEmpty ?? false) ...[
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(11),
+              decoration: BoxDecoration(
+                color: const Color(0xFF6366F1).withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                    color: const Color(0xFF6366F1).withValues(alpha: 0.18)),
+              ),
+              child: Text(
+                nlp.aiSummary!,
+                style: const TextStyle(
+                  fontSize: 12,
+                  height: 1.4,
+                  color: AdminUi.textSecondary,
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(height: 8),
+          for (final f in nlp.focus) _FocusCard(f),
+        ],
+      ],
+    );
+  }
+
+  Widget _outlookRow(String label, double? value, Color valueColor,
+      {bool emphasize = false, String? italicNote}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Row(
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    color: AdminUi.textSecondary,
+                  ),
+                ),
+                if (italicNote != null) ...[
+                  const SizedBox(width: 6),
+                  Text(
+                    italicNote,
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontStyle: FontStyle.italic,
+                      color: AdminUi.textMuted,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(
+                value == null ? '—' : value.toStringAsFixed(1),
+                style: TextStyle(
+                  fontSize: emphasize ? 15 : 13.5,
+                  fontWeight: emphasize ? FontWeight.w800 : FontWeight.w600,
+                  color: emphasize ? valueColor : AdminUi.textPrimary,
+                ),
+              ),
+              Text(
+                '★',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: emphasize
+                      ? valueColor.withValues(alpha: 0.8)
+                      : AdminUi.textMuted,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Tiny chip marking whether the recommendations are AI-written or on-device.
+class _OutlookSourceChip extends StatelessWidget {
+  final bool usesAi;
+  const _OutlookSourceChip({required this.usesAi});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = usesAi ? const Color(0xFF6366F1) : AdminUi.textMuted;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(usesAi ? Icons.auto_awesome_rounded : Icons.memory_rounded,
+              size: 10, color: color),
+          const SizedBox(width: 3),
+          Text(
+            usesAi ? 'AI' : 'On-device',
+            style: TextStyle(
+              fontSize: 9.5,
+              fontWeight: FontWeight.w700,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One recommended-focus card: a coloured severity dot, the issue + its metric,
+/// and the concrete suggested action beneath.
+class _FocusCard extends StatelessWidget {
+  final OutlookFocus focus;
+  const _FocusCard(this.focus);
+
+  Color get _color => switch (focus.severity) {
+        'high' => AppColors.red,
+        'medium' => AppColors.orange,
+        _ => AppColors.green,
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _color;
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.22)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 7,
+                height: 7,
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+              ),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  focus.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: AdminUi.textPrimary,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                focus.metric,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 5),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.arrow_right_alt_rounded,
+                  size: 15, color: color.withValues(alpha: 0.9)),
+              const SizedBox(width: 5),
+              Expanded(
+                child: Text(
+                  focus.suggestion,
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    height: 1.35,
+                    color: AdminUi.textSecondary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MiniStars extends StatelessWidget {
+  final int rating;
+  const _MiniStars(this.rating);
+
+  @override
+  Widget build(BuildContext context) {
+    final color = rating <= 1
+        ? AppColors.red
+        : (rating == 2 ? AppColors.orange : const Color(0xFFF59E0B));
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 1; i <= 5; i++)
+          Icon(
+            i <= rating ? Icons.star_rounded : Icons.star_outline_rounded,
+            size: 13,
+            color: i <= rating ? color : AdminUi.border,
+          ),
+      ],
+    );
+  }
+}
+
+class _NlpSectionLabel extends StatelessWidget {
   final IconData icon;
   final String label;
-  final String hint;
-  const _NlpSlot({required this.icon, required this.label, required this.hint});
+
+  /// Optional trailing affordance (e.g. "tap to view") shown right-aligned.
+  final String? hint;
+  const _NlpSectionLabel({required this.icon, required this.label, this.hint});
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Container(
-          width: 34,
-          height: 34,
-          decoration: BoxDecoration(
-            color: AdminUi.subtle,
-            borderRadius: BorderRadius.circular(9),
+        Icon(icon, size: 15, color: AdminUi.textMuted),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w600,
+            color: AdminUi.textSecondary,
           ),
-          child: Icon(icon, size: 17, color: AdminUi.textMuted),
         ),
-        const SizedBox(width: 12),
+        if (hint != null) ...[
+          const Spacer(),
+          Text(
+            hint!,
+            style: TextStyle(
+              fontSize: 10.5,
+              color: AdminUi.textMuted.withValues(alpha: 0.9),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _NlpFootnote extends StatelessWidget {
+  final String text;
+  const _NlpFootnote(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        const Icon(Icons.verified_rounded, size: 13, color: AdminUi.textMuted),
+        const SizedBox(width: 6),
         Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  color: AdminUi.textSecondary,
-                ),
-              ),
-              Text(
-                hint,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 11, color: AdminUi.textMuted),
-              ),
-            ],
+          child: Text(
+            text,
+            style: const TextStyle(fontSize: 11, color: AdminUi.textMuted),
           ),
         ),
       ],

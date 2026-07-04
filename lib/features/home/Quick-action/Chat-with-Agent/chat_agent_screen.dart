@@ -115,6 +115,7 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
       isUser: m.isUser,
       time: m.time,
       status: MessageStatus.values[m.status.index],
+      offline: m.offline,
     );
   }
 

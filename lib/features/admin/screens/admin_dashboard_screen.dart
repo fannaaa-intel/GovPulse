@@ -7,6 +7,7 @@ import '../../../core/services/chat_service.dart';
 import '../../../core/services/push_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/Home/Chat-bubbles/home_chat_bubble.dart';
+import '../widgets/admin_notifications.dart';
 import '../widgets/admin_sidebar.dart';
 import '../widgets/admin_snackbar.dart';
 import '../widgets/admin_topbar.dart';
@@ -14,6 +15,8 @@ import '../pages/admin_overview_page.dart';
 import '../pages/admin_reports_page.dart';
 import '../pages/admin_verification_page.dart';
 import '../pages/admin_events_page.dart';
+import '../pages/admin_feedback_page.dart';
+import '../pages/admin_suggestions_page.dart';
 import '../pages/community_updates_page.dart';
 
 class AdminDashboardScreen extends ConsumerStatefulWidget {
@@ -31,16 +34,53 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
   final List<AdminNavItem> navItems = const [
     AdminNavItem(icon: Icons.dashboard_rounded, label: 'Dashboard'), // 0
     AdminNavItem(icon: Icons.people_alt_rounded, label: 'Community'), // 1
-    AdminNavItem(icon: Icons.campaign_rounded, label: 'Announcements'), // 2
-    AdminNavItem(icon: Icons.event_rounded, label: 'Events'), // 3
-    AdminNavItem(icon: Icons.flag_rounded, label: 'Reports'), // 4
-    AdminNavItem(icon: Icons.lightbulb_rounded, label: 'Suggestions'), // 5
-    AdminNavItem(icon: Icons.reviews_rounded, label: 'Feedback'), // 6
-    AdminNavItem(icon: Icons.verified_user_rounded, label: 'Verification'), // 7
-    AdminNavItem(icon: Icons.emergency_rounded, label: 'Emergency'), // 8
-    AdminNavItem(icon: Icons.manage_accounts_rounded, label: 'Users'), // 9
-    AdminNavItem(icon: Icons.settings_rounded, label: 'Settings'), // 10
+    AdminNavItem(icon: Icons.event_rounded, label: 'Events'), // 2
+    AdminNavItem(icon: Icons.flag_rounded, label: 'Reports'), // 3
+    AdminNavItem(icon: Icons.lightbulb_rounded, label: 'Suggestions'), // 4
+    AdminNavItem(icon: Icons.reviews_rounded, label: 'Feedback'), // 5
+    AdminNavItem(icon: Icons.verified_user_rounded, label: 'Verification'), // 6
+    AdminNavItem(icon: Icons.emergency_rounded, label: 'Emergency'), // 7
+    AdminNavItem(icon: Icons.manage_accounts_rounded, label: 'Users'), // 8
+    AdminNavItem(icon: Icons.settings_rounded, label: 'Settings'), // 9
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    // Tapping a notification in the panel sets AdminNotifCenter.openTopic; we
+    // map that topic to its nav tab here and switch to it.
+    AdminNotifCenter.I.openTopic.addListener(_onNotifNavigate);
+  }
+
+  @override
+  void dispose() {
+    AdminNotifCenter.I.openTopic.removeListener(_onNotifNavigate);
+    super.dispose();
+  }
+
+  void _onNotifNavigate() {
+    final topic = AdminNotifCenter.I.openTopic.value;
+    if (topic == null) return;
+    AdminNotifCenter.I.openTopic.value = null; // consume it
+    final idx = _tabIndexForTopic(topic);
+    if (idx != null && mounted) setState(() => _selectedIndex = idx);
+  }
+
+  /// Maps a notification topic to the nav tab that owns it. Resolved by label
+  /// (not a hard-coded index) so it survives any nav reordering.
+  int? _tabIndexForTopic(String topic) {
+    final label = switch (topic) {
+      'report' => 'Reports',
+      'suggestion' => 'Suggestions',
+      'feedback' => 'Feedback',
+      'verification' => 'Verification',
+      'comment' || 'post_heart' || 'comment_heart' => 'Community',
+      _ => null,
+    };
+    if (label == null) return null;
+    final i = navItems.indexWhere((n) => n.label == label);
+    return i >= 0 ? i : null;
+  }
 
   Widget _buildPage() {
     switch (_selectedIndex) {
@@ -51,11 +91,15 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
         );
       case 1:
         return const CommunityUpdatesPage();
-      case 3:
+      case 2:
         return const AdminEventsPage();
-      case 4:
+      case 3:
         return const AdminReportsPage();
-      case 7:
+      case 4:
+        return const AdminSuggestionsPage();
+      case 5:
+        return const AdminFeedbackPage();
+      case 6:
         return const AdminVerificationPage();
       default:
         return _ComingSoon(label: navItems[_selectedIndex].label);
@@ -226,6 +270,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                   AdminTopBar(
                     title: navItems[_selectedIndex].label,
                     showMenuButton: false,
+                    onLogout: _confirmLogout,
                   ),
                   Expanded(child: _buildPage()),
                 ],
@@ -257,6 +302,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                   AdminTopBar(
                     title: navItems[_selectedIndex].label,
                     showMenuButton: false,
+                    onLogout: _confirmLogout,
                   ),
                   Expanded(child: _buildPage()),
                 ],
@@ -301,6 +347,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
               title: navItems[_selectedIndex].label,
               showMenuButton: true,
               onMenuTap: () => _scaffoldKey.currentState?.openDrawer(),
+              onLogout: _confirmLogout,
             ),
             Expanded(child: _buildPage()),
           ],

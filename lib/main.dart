@@ -1,9 +1,15 @@
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+// ignore: depend_on_referenced_packages
+import 'package:google_maps_flutter_android/google_maps_flutter_android.dart';
+// ignore: depend_on_referenced_packages
+import 'package:google_maps_flutter_platform_interface/google_maps_flutter_platform_interface.dart';
 import 'core/services/push_service.dart';
 
 import 'firebase_options.dart';
@@ -17,6 +23,18 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Force Hybrid Composition for Android Google Maps. Without it this device
+  // renders blank map tiles (only the marker + "Google" logo draw). Hybrid
+  // Composition composites the real map surface, so tiles render. The exit
+  // transition is handled separately (the map is snapshotted on close so it
+  // fades out with the route instead of popping abruptly).
+  if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+    final mapsImpl = GoogleMapsFlutterPlatform.instance;
+    if (mapsImpl is GoogleMapsFlutterAndroid) {
+      mapsImpl.useAndroidViewSurface = true;
+    }
+  }
 
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 

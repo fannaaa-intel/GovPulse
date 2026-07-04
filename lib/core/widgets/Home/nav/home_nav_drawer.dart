@@ -154,6 +154,7 @@ class HomeNavDrawer extends StatelessWidget {
                         if (item.index == 1 && !isVerified) {
                           showVerificationRequiredDialog(
                             context,
+                            username: username,
                             message:
                                 'Only verified citizens can access My Reports.',
                           );

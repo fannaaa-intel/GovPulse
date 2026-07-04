@@ -12,6 +12,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/modal/media_picker_sheet.dart';
 import '../providers/admin_events_provider.dart';
 import '../theme/admin_ui.dart';
+import '../widgets/admin_dialog_back.dart';
 import '../widgets/admin_skeleton.dart';
 import '../widgets/admin_snackbar.dart';
 
@@ -96,8 +97,7 @@ class _AdminEventsPageState extends ConsumerState<AdminEventsPage> {
         return false;
       }
       if (_query.isNotEmpty) {
-        final hay =
-            '${e.title} ${e.location} ${e.category}'.toLowerCase();
+        final hay = '${e.title} ${e.location} ${e.category}'.toLowerCase();
         if (!hay.contains(_query)) return false;
       }
       return true;
@@ -197,7 +197,10 @@ class _AdminEventsPageState extends ConsumerState<AdminEventsPage> {
         }
         return Row(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: [Expanded(child: title), actions],
+          children: [
+            Expanded(child: title),
+            actions,
+          ],
         );
       },
     );
@@ -294,8 +297,10 @@ class _AdminEventsPageState extends ConsumerState<AdminEventsPage> {
             decoration: InputDecoration(
               isDense: true,
               hintText: 'Search title, location, category…',
-              hintStyle:
-                  const TextStyle(fontSize: 13, color: AdminUi.textMuted),
+              hintStyle: const TextStyle(
+                fontSize: 13,
+                color: AdminUi.textMuted,
+              ),
               prefixIcon: const Icon(
                 Icons.search_rounded,
                 size: 18,
@@ -341,8 +346,7 @@ class _AdminEventsPageState extends ConsumerState<AdminEventsPage> {
                     child: Text(c, style: _ddStyle),
                   ),
               ],
-              onChanged: (v) =>
-                  setState(() => _categoryFilter = v ?? 'All'),
+              onChanged: (v) => setState(() => _categoryFilter = v ?? 'All'),
             ),
           ),
         ),
@@ -390,7 +394,9 @@ class _AdminEventsPageState extends ConsumerState<AdminEventsPage> {
             return _ResultsMessage(
               icon: Icons.event_busy_rounded,
               color: AdminUi.textMuted,
-              text: _statusFilter == null && _query.isEmpty &&
+              text:
+                  _statusFilter == null &&
+                      _query.isEmpty &&
                       _categoryFilter == 'All'
                   ? 'No events yet. Tap "New event" to publish one.'
                   : 'No events match your filters.',
@@ -475,11 +481,7 @@ class _CategoryChip extends StatelessWidget {
       ),
       child: Text(
         category,
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          color: c,
-        ),
+        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: c),
       ),
     );
   }
@@ -954,28 +956,136 @@ class _EventDetailDialogState extends ConsumerState<_EventDetailDialog> {
     );
   }
 
+  /// Opens the event photo full-screen and uncropped (BoxFit.contain) on a dark
+  /// backdrop, with pinch / scroll-wheel zoom. Fills the screen responsively on
+  /// phone, tablet and web, so the whole image is always visible.
+  void _showFullImage(String url) {
+    showGeneralDialog(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.92),
+      barrierDismissible: true,
+      barrierLabel: 'Event image',
+      transitionDuration: const Duration(milliseconds: 180),
+      pageBuilder: (ctx, _, _) => Stack(
+        children: [
+          Positioned.fill(
+            child: GestureDetector(
+              onTap: () => Navigator.pop(ctx),
+              child: InteractiveViewer(
+                minScale: 1,
+                maxScale: 4,
+                child: Center(
+                  child: CachedNetworkImage(
+                    imageUrl: url,
+                    fit: BoxFit.contain,
+                    placeholder: (_, _) => const Center(
+                      child: CircularProgressIndicator(color: Colors.white),
+                    ),
+                    errorWidget: (_, _, _) => const Icon(
+                      Icons.broken_image_rounded,
+                      color: Colors.white54,
+                      size: 48,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            top: MediaQuery.of(ctx).padding.top + 8,
+            right: 12,
+            child: Material(
+              color: Colors.black.withValues(alpha: 0.5),
+              shape: const CircleBorder(),
+              child: IconButton(
+                icon: const Icon(Icons.close_rounded, color: Colors.white),
+                onPressed: () => Navigator.pop(ctx),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Full-screen (phone) header — a back chevron + title, mirroring the citizen
+  // settings sub-screens (bordered rounded-square chevron, blue title).
+  Widget _chevronHeader() {
+    return Material(
+      color: Colors.white,
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 16, 8),
+          child: Row(
+            children: [
+              GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF3F4F6),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AdminUi.border),
+                  ),
+                  child: const Icon(
+                    Icons.arrow_back_ios_new_rounded,
+                    size: 16,
+                    color: AppColors.primaryBlue,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                'Event details',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.primaryBlue,
+                  letterSpacing: -0.3,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final width = MediaQuery.of(context).size.width.clamp(0.0, 620.0);
+    final size = MediaQuery.of(context).size;
+    final narrow = size.width < 480;
+    final width = size.width.clamp(0.0, 620.0);
     final notifier = ref.read(adminEventsProvider.notifier);
 
     return Dialog(
       backgroundColor: AdminUi.surface,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      // Phones: fill the screen with a chevron header, like the citizen
+      // settings sub-screens. Web / tablet: a centred card.
+      insetPadding: narrow ? EdgeInsets.zero : null,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(narrow ? 0 : 16),
+      ),
       child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: width, maxHeight: 660),
+        constraints: BoxConstraints(
+          maxWidth: narrow ? double.infinity : width,
+          maxHeight: narrow ? double.infinity : 660,
+        ),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisSize: narrow ? MainAxisSize.max : MainAxisSize.min,
           children: [
-            // Cover image + close
+            if (narrow) _chevronHeader(),
+            // Cover image + (close on web / chevron header on phone)
             Stack(
               children: [
                 ClipRRect(
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(16),
+                  borderRadius: BorderRadius.vertical(
+                    top: Radius.circular(narrow ? 0 : 16),
                   ),
                   child: SizedBox(
-                    height: 150,
+                    height: narrow ? 200 : 150,
                     width: double.infinity,
                     child: e.imageUrl == null || e.imageUrl!.isEmpty
                         ? Container(
@@ -986,44 +1096,91 @@ class _EventDetailDialogState extends ConsumerState<_EventDetailDialog> {
                               color: AdminUi.textMuted,
                             ),
                           )
-                        : CachedNetworkImage(
-                            imageUrl: e.imageUrl!,
-                            fit: BoxFit.cover,
-                            placeholder: (_, _) =>
-                                Container(color: AdminUi.subtle),
-                            errorWidget: (_, _, _) => Container(
-                              color: AdminUi.subtle,
-                              child: const Icon(
-                                Icons.broken_image_rounded,
-                                size: 30,
-                                color: AdminUi.textMuted,
+                        : GestureDetector(
+                            onTap: () => _showFullImage(e.imageUrl!),
+                            child: MouseRegion(
+                              cursor: SystemMouseCursors.click,
+                              child: CachedNetworkImage(
+                                imageUrl: e.imageUrl!,
+                                fit: BoxFit.cover,
+                                placeholder: (_, _) =>
+                                    Container(color: AdminUi.subtle),
+                                errorWidget: (_, _, _) => Container(
+                                  color: AdminUi.subtle,
+                                  child: const Icon(
+                                    Icons.broken_image_rounded,
+                                    size: 30,
+                                    color: AdminUi.textMuted,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
                   ),
                 ),
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: Material(
-                    color: Colors.black.withValues(alpha: 0.35),
-                    shape: const CircleBorder(),
-                    child: IconButton(
-                      icon: const Icon(Icons.close_rounded, color: Colors.white),
-                      iconSize: 18,
-                      onPressed: () => Navigator.pop(context),
+                // "Tap to view full image" hint — the banner is a cropped
+                // preview; tapping opens the complete, uncropped photo.
+                if (e.imageUrl != null && e.imageUrl!.isNotEmpty)
+                  Positioned(
+                    bottom: 8,
+                    right: 10,
+                    child: IgnorePointer(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.45),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.zoom_out_map_rounded,
+                              color: Colors.white,
+                              size: 13,
+                            ),
+                            SizedBox(width: 4),
+                            Text(
+                              'View',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
-                ),
-                Positioned(
-                  top: 10,
-                  left: 12,
-                  child: _StatusPill(e.status),
-                ),
+                if (!narrow)
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: Material(
+                      color: Colors.black.withValues(alpha: 0.35),
+                      shape: const CircleBorder(),
+                      child: IconButton(
+                        icon: const Icon(
+                          Icons.close_rounded,
+                          color: Colors.white,
+                        ),
+                        iconSize: 18,
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                    ),
+                  ),
+                Positioned(top: 10, left: 12, child: _StatusPill(e.status)),
               ],
             ),
 
             Flexible(
+              // Full-screen (phone) fills to pin the footer at the bottom;
+              // the web dialog shrink-wraps to its content.
+              fit: narrow ? FlexFit.tight : FlexFit.loose,
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(20),
                 child: Column(
@@ -1095,9 +1252,9 @@ class _EventDetailDialogState extends ConsumerState<_EventDetailDialog> {
                           onChanged: _busy
                               ? null
                               : (v) => _run(
-                                    () => notifier.setFeatured(e.id, v),
-                                    v ? 'Marked as featured.' : 'Unfeatured.',
-                                  ),
+                                  () => notifier.setFeatured(e.id, v),
+                                  v ? 'Marked as featured.' : 'Unfeatured.',
+                                ),
                         ),
                       ],
                     ),
@@ -1107,74 +1264,77 @@ class _EventDetailDialogState extends ConsumerState<_EventDetailDialog> {
             ),
 
             const Divider(height: 1, color: AdminUi.border),
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: Row(
-                children: [
-                  if (e.status == EventStatus.pending) ...[
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: _busy
-                            ? null
-                            : () => _run(
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  children: [
+                    if (e.status == EventStatus.pending) ...[
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _busy
+                              ? null
+                              : () => _run(
                                   () => notifier.reject(e.id),
                                   'Event rejected.',
                                 ),
-                        icon: const Icon(Icons.close_rounded, size: 18),
-                        label: const Text('Reject'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppColors.red,
-                          side: const BorderSide(color: AppColors.red),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          icon: const Icon(Icons.close_rounded, size: 18),
+                          label: const Text('Reject'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.red,
+                            side: const BorderSide(color: AppColors.red),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: _busy
-                            ? null
-                            : () => _run(
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: _busy
+                              ? null
+                              : () => _run(
                                   () => notifier.approve(e.id),
                                   'Event published.',
                                 ),
-                        icon: const Icon(Icons.check_rounded, size: 18),
-                        label: const Text('Publish'),
+                          icon: const Icon(Icons.check_rounded, size: 18),
+                          label: const Text('Publish'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.green,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                        ),
+                      ),
+                    ] else ...[
+                      IconButton(
+                        onPressed: _busy ? null : _confirmDelete,
+                        icon: const Icon(Icons.delete_outline_rounded),
+                        color: AppColors.red,
+                        tooltip: 'Delete',
+                      ),
+                      const Spacer(),
+                      ElevatedButton.icon(
+                        onPressed: _busy
+                            ? null
+                            : () {
+                                Navigator.pop(context);
+                                showEventForm(context, existing: e);
+                              },
+                        icon: const Icon(Icons.edit_rounded, size: 18),
+                        label: const Text('Edit'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.green,
+                          backgroundColor: AppColors.primaryBlue,
                           foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 18,
+                            vertical: 12,
+                          ),
                         ),
                       ),
-                    ),
-                  ] else ...[
-                    IconButton(
-                      onPressed: _busy ? null : _confirmDelete,
-                      icon: const Icon(Icons.delete_outline_rounded),
-                      color: AppColors.red,
-                      tooltip: 'Delete',
-                    ),
-                    const Spacer(),
-                    ElevatedButton.icon(
-                      onPressed: _busy
-                          ? null
-                          : () {
-                              Navigator.pop(context);
-                              showEventForm(context, existing: e);
-                            },
-                      icon: const Icon(Icons.edit_rounded, size: 18),
-                      label: const Text('Edit'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primaryBlue,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 18,
-                          vertical: 12,
-                        ),
-                      ),
-                    ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           ],
@@ -1399,8 +1559,9 @@ class _EventFormDialogState extends ConsumerState<_EventFormDialog> {
       if (!mounted) return;
       setState(() {
         _pickedBytes = bytes;
-        _pickedExt =
-            picked!.name.contains('.') ? picked.name.split('.').last : 'jpg';
+        _pickedExt = picked!.name.contains('.')
+            ? picked.name.split('.').last
+            : 'jpg';
       });
     } catch (e) {
       if (!mounted) return;
@@ -1439,7 +1600,10 @@ class _EventFormDialogState extends ConsumerState<_EventFormDialog> {
       // Upload a freshly picked image first (if any).
       var imageUrl = _imageUrl;
       if (_pickedBytes != null) {
-        imageUrl = await notifier.uploadImage(_pickedBytes!, _pickedExt ?? 'jpg');
+        imageUrl = await notifier.uploadImage(
+          _pickedBytes!,
+          _pickedExt ?? 'jpg',
+        );
       }
 
       final colorHex = _colorToHex(kEventCategoryColors[_category]!);
@@ -1457,8 +1621,9 @@ class _EventFormDialogState extends ConsumerState<_EventFormDialog> {
           'description': _description.text.trim().isEmpty
               ? null
               : _description.text.trim(),
-          'what_to_expect':
-              _expect.text.trim().isEmpty ? null : _expect.text.trim(),
+          'what_to_expect': _expect.text.trim().isEmpty
+              ? null
+              : _expect.text.trim(),
           'requirements': _requirements.text.trim().isEmpty
               ? null
               : _requirements.text.trim(),
@@ -1504,158 +1669,166 @@ class _EventFormDialogState extends ConsumerState<_EventFormDialog> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 8, 12),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      _isEdit ? 'Edit event' : 'New event',
-                      style: const TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w700,
-                        color: AdminUi.textPrimary,
-                      ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 16, 12),
+            child: Row(
+              children: [
+                AdminDialogBack(onTap: () => Navigator.pop(context)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    _isEdit ? 'Edit event' : 'New event',
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                      color: AdminUi.textPrimary,
                     ),
                   ),
-                  IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close_rounded),
-                    color: AdminUi.textMuted,
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-            const Divider(height: 1, color: AdminUi.border),
-            Flexible(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildImagePicker(),
-                      const SizedBox(height: 16),
-                      _field(_title, 'Title', hint: 'Event name', required: true),
-                      const SizedBox(height: 12),
-                      _buildCategoryPicker(),
-                      const SizedBox(height: 12),
-                      _field(
-                        _location,
-                        'Location',
-                        hint: 'Venue / barangay',
-                        required: true,
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(child: _buildDatePicker()),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _field(
-                              _time,
-                              'Time',
-                              hint: 'e.g. 9:00 AM',
-                              required: true,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      _field(
-                        _description,
-                        'Description',
-                        hint: 'What is this event about?',
-                        maxLines: 3,
-                      ),
-                      const SizedBox(height: 12),
-                      _field(
-                        _expect,
-                        'What to expect',
-                        hint: 'Optional',
-                        maxLines: 2,
-                      ),
-                      const SizedBox(height: 12),
-                      _field(
-                        _requirements,
-                        'Requirements',
-                        hint: 'Optional',
-                        maxLines: 2,
-                      ),
-                      const SizedBox(height: 12),
-                      Container(
-                        decoration: BoxDecoration(
-                          color: AdminUi.subtle,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: AdminUi.border),
-                        ),
-                        child: SwitchListTile(
-                          value: _featured,
-                          activeThumbColor: AppColors.primaryBlue,
-                          onChanged: (v) => setState(() => _featured = v),
-                          title: const Text(
-                            'Feature this event',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: AdminUi.textPrimary,
-                            ),
-                          ),
-                          subtitle: const Text(
-                            'Highlighted at the top of the citizen feed',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: AdminUi.textMuted,
-                            ),
-                          ),
-                          contentPadding:
-                              const EdgeInsets.symmetric(horizontal: 12),
-                        ),
-                      ),
-                      if (_error != null) ...[
-                        const SizedBox(height: 12),
-                        Text(
-                          _error!,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: AppColors.red,
+          ),
+          const Divider(height: 1, color: AdminUi.border),
+          Flexible(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildImagePicker(),
+                    const SizedBox(height: 16),
+                    _field(_title, 'Title', hint: 'Event name', required: true),
+                    const SizedBox(height: 12),
+                    _buildCategoryPicker(),
+                    const SizedBox(height: 12),
+                    _field(
+                      _location,
+                      'Location',
+                      hint: 'Venue / barangay',
+                      required: true,
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(child: _buildDatePicker()),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _field(
+                            _time,
+                            'Time',
+                            hint: 'e.g. 9:00 AM',
+                            required: true,
                           ),
                         ),
                       ],
+                    ),
+                    const SizedBox(height: 12),
+                    _field(
+                      _description,
+                      'Description',
+                      hint: 'What is this event about?',
+                      maxLines: 3,
+                    ),
+                    const SizedBox(height: 12),
+                    _field(
+                      _expect,
+                      'What to expect',
+                      hint: 'Optional',
+                      maxLines: 2,
+                    ),
+                    const SizedBox(height: 12),
+                    _field(
+                      _requirements,
+                      'Requirements',
+                      hint: 'Optional',
+                      maxLines: 2,
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: AdminUi.subtle,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: AdminUi.border),
+                      ),
+                      child: SwitchListTile(
+                        value: _featured,
+                        activeThumbColor: AppColors.primaryBlue,
+                        onChanged: (v) => setState(() => _featured = v),
+                        title: const Text(
+                          'Feature this event',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AdminUi.textPrimary,
+                          ),
+                        ),
+                        subtitle: const Text(
+                          'Highlighted at the top of the citizen feed',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: AdminUi.textMuted,
+                          ),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                        ),
+                      ),
+                    ),
+                    if (_error != null) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        _error!,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.red,
+                        ),
+                      ),
                     ],
-                  ),
+                  ],
                 ),
               ),
             ),
-            const Divider(height: 1, color: AdminUi.border),
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: Row(
-                children: [
-                  Expanded(
+          ),
+          const Divider(height: 1, color: AdminUi.border),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: SizedBox(
+                    height: 52,
                     child: OutlinedButton(
-                      onPressed:
-                          _saving ? null : () => Navigator.pop(context),
+                      onPressed: _saving ? null : () => Navigator.pop(context),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: AdminUi.textSecondary,
                         side: const BorderSide(color: AdminUi.border),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        textStyle: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
                       ),
                       child: const Text('Cancel'),
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: ElevatedButton.icon(
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: SizedBox(
+                    height: 52,
+                    child: FilledButton.icon(
                       onPressed: _saving ? null : _save,
                       icon: _saving
                           ? const SizedBox(
-                              width: 16,
-                              height: 16,
+                              width: 18,
+                              height: 18,
                               child: CircularProgressIndicator(
-                                strokeWidth: 2,
+                                strokeWidth: 2.4,
                                 color: Colors.white,
                               ),
                             )
@@ -1663,27 +1836,38 @@ class _EventFormDialogState extends ConsumerState<_EventFormDialog> {
                               _isEdit
                                   ? Icons.save_rounded
                                   : Icons.publish_rounded,
-                              size: 18,
+                              size: 20,
                             ),
                       label: Text(_isEdit ? 'Save changes' : 'Publish'),
-                      style: ElevatedButton.styleFrom(
+                      style: FilledButton.styleFrom(
                         backgroundColor: AppColors.primaryBlue,
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        elevation: 2,
+                        shadowColor: AppColors.primaryBlue.withValues(
+                          alpha: 0.4,
+                        ),
+                        textStyle: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
                       ),
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
-      );
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildImagePicker() {
-    final hasImage = _pickedBytes != null ||
-        (_imageUrl != null && _imageUrl!.isNotEmpty);
+    final hasImage =
+        _pickedBytes != null || (_imageUrl != null && _imageUrl!.isNotEmpty);
     return GestureDetector(
       onTap: _pickImage,
       child: Container(
@@ -1768,8 +1952,10 @@ class _EventFormDialogState extends ConsumerState<_EventFormDialog> {
               GestureDetector(
                 onTap: () => setState(() => _category = entry.key),
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 7,
+                  ),
                   decoration: BoxDecoration(
                     color: _category == entry.key
                         ? Color(entry.value).withValues(alpha: 0.14)
@@ -1895,8 +2081,10 @@ class _EventFormDialogState extends ConsumerState<_EventFormDialog> {
             hintStyle: const TextStyle(fontSize: 13, color: AdminUi.textMuted),
             filled: true,
             fillColor: AdminUi.surface,
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 11,
+            ),
             border: _border(AdminUi.border),
             enabledBorder: _border(AdminUi.border),
             focusedBorder: _border(AppColors.primaryBlue),

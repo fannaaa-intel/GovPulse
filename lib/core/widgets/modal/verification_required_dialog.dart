@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../theme/app_colors.dart';
@@ -7,8 +9,12 @@ Future<bool> showVerificationRequiredDialog(
   String message =
       'Only verified citizens can access this feature. Please complete the identity verification process first.',
   bool? isVerified,
+  String? username,
 }) async {
-  final width = MediaQuery.of(context).size.width;
+  // Cap the effective width so relative sizing stays phone-scaled and the
+  // dialog doesn't stretch too wide on web/desktop (mirrors app_snackbar.dart).
+  const maxDialogWidth = 440.0;
+  final width = math.min(MediaQuery.of(context).size.width, maxDialogWidth);
 
   // ── If caller knows the status, use it directly ───────────────────────────
   if (isVerified != null) {
@@ -61,67 +67,115 @@ Future<bool> showVerificationRequiredDialog(
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(width * 0.06),
       ),
-      child: Padding(
-        padding: EdgeInsets.all(width * 0.06),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(
-              width: width * 0.22,
-              height: width * 0.22,
-              child: Center(
-                child: Image.asset(
-                  'assets/images/verification/verified.webp',
-                  width: width * 0.18,
-                  height: width * 0.18,
-                  fit: BoxFit.contain,
-                ),
-              ),
-            ),
-            SizedBox(height: width * 0.045),
-            Text(
-              'Verification Required',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: width * 0.052,
-                fontWeight: FontWeight.w700,
-                color: const Color(0xFF1F2937),
-              ),
-            ),
-            SizedBox(height: width * 0.022),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: width * 0.034,
-                color: AppColors.hint,
-                height: 1.55,
-              ),
-            ),
-            SizedBox(height: width * 0.055),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () => Navigator.pop(ctx),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primaryBlue,
-                  elevation: 0,
-                  padding: EdgeInsets.symmetric(vertical: width * 0.042),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(width * 0.03),
-                  ),
-                ),
-                child: Text(
-                  'Got it',
-                  style: TextStyle(
-                    fontSize: width * 0.04,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: maxDialogWidth),
+        child: Padding(
+          padding: EdgeInsets.all(width * 0.06),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: width * 0.22,
+                height: width * 0.22,
+                child: Center(
+                  child: Image.asset(
+                    'assets/images/verification/verified.webp',
+                    width: width * 0.18,
+                    height: width * 0.18,
+                    fit: BoxFit.contain,
                   ),
                 ),
               ),
-            ),
-          ],
+              SizedBox(height: width * 0.045),
+              Text(
+                'Verification Required',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: width * 0.052,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF1F2937),
+                ),
+              ),
+              SizedBox(height: width * 0.022),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: width * 0.034,
+                  color: AppColors.hint,
+                  height: 1.55,
+                ),
+              ),
+              SizedBox(height: width * 0.055),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF1F2937),
+                        side: BorderSide(
+                          color: AppColors.hint.withValues(alpha: 0.4),
+                        ),
+                        padding: EdgeInsets.symmetric(vertical: width * 0.042),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(width * 0.03),
+                        ),
+                      ),
+                      child: Text(
+                        'Cancel',
+                        maxLines: 1,
+                        style: TextStyle(
+                          fontSize: width * 0.04,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                  SizedBox(width: width * 0.035),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        // Close the dialog first, then route — popping after
+                        // pushing would tear down the verification screen.
+                        final navigator = Navigator.of(ctx);
+                        navigator.pop();
+                        if (username != null) {
+                          navigator.pushNamed(
+                            '/verification',
+                            arguments: username,
+                          );
+                        } else {
+                          debugPrint(
+                            'showVerificationRequiredDialog: username was null; '
+                            'cannot navigate to /verification. Caller must pass '
+                            'username:.',
+                          );
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primaryBlue,
+                        elevation: 0,
+                        padding: EdgeInsets.symmetric(vertical: width * 0.042),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(width * 0.03),
+                        ),
+                      ),
+                      child: Text(
+                        'Verify',
+                        maxLines: 1,
+                        style: TextStyle(
+                          fontSize: width * 0.04,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     ),

@@ -813,6 +813,7 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
             final approved = await showVerificationRequiredDialog(
               context,
               isVerified: verifStatus == 'approved',
+              username: widget.username,
               message:
                   'Only verified citizens can edit their profile information. Please complete the identity verification process first.',
             );
@@ -900,6 +901,7 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
             final approved = await showVerificationRequiredDialog(
               context,
               isVerified: verifStatus == 'approved',
+              username: widget.username,
               message:
                   'Only verified citizens can view their submission history. Please complete the identity verification process first.',
             );

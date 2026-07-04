@@ -41,6 +41,7 @@ class AppBottomNav extends StatelessWidget {
         if (!isVerified) {
           showVerificationRequiredDialog(
             context,
+            username: username,
             message: 'Only verified citizens can access My Reports.',
           );
           return;

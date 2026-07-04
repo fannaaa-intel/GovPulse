@@ -73,12 +73,17 @@ class ChatMsg {
   MessageStatus status;
   final String? attachmentPath;
 
+  /// True when this agent reply was produced by the on-device fallback brain
+  /// (AI unavailable). The bubble shows an "answered on-device" chip.
+  final bool offline;
+
   ChatMsg({
     required this.text,
     required this.isUser,
     required this.time,
     this.status = MessageStatus.sent,
     this.attachmentPath,
+    this.offline = false,
   });
 
   Map<String, dynamic> toJson() => {
@@ -87,6 +92,7 @@ class ChatMsg {
     'time': time.toIso8601String(),
     'status': status.index,
     'attachmentPath': attachmentPath,
+    'offline': offline,
   };
 
   factory ChatMsg.fromJson(Map<String, dynamic> j) => ChatMsg(
@@ -95,5 +101,6 @@ class ChatMsg {
     time: DateTime.parse(j['time'] as String),
     status: MessageStatus.values[j['status'] as int],
     attachmentPath: j['attachmentPath'] as String?,
+    offline: j['offline'] as bool? ?? false,
   );
 }

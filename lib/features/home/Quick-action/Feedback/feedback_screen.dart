@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/Home/Newsfeed/rate_limit_dialogs.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 
 class FeedbackScreen extends StatefulWidget {
   final String username;
@@ -555,7 +556,12 @@ class _FeedbackScreenState extends State<FeedbackScreen>
       await supabase.from('feedbacks').insert(payload);
 
       if (!mounted) return;
-      _showSuccessDialog();
+      showAppSnackBar(
+        context,
+        "Feedback submitted successfully.",
+        type: AppSnackType.success,
+      );
+      Navigator.pop(context);
     } on StorageException catch (e) {
       if (!mounted) return;
       showFriendlyErrorDialog(context, 'File upload failed: ${e.message}');
@@ -584,84 +590,6 @@ class _FeedbackScreenState extends State<FeedbackScreen>
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
-  }
-
-  // ── Success dialog ────────────────────────────────────────────────────────────
-  void _showSuccessDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => Dialog(
-        backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        child: Padding(
-          padding: const EdgeInsets.all(28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 64,
-                height: 64,
-                decoration: BoxDecoration(
-                  color: Colors.green.withOpacity(0.10),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.check_circle_outline_rounded,
-                  size: 36,
-                  color: Colors.green,
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Feedback Submitted!',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF111827),
-                ),
-              ),
-              const SizedBox(height: 10),
-              const Text(
-                'Thank you! Your feedback helps the LGU of Aparri improve their services for everyone.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Color(0xFF6B7280),
-                  height: 1.5,
-                ),
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    Navigator.pop(context);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.green,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
-                  child: const Text(
-                    'Done',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 15,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 
   // ── Anonymous consent dialog (identical to SuggestionScreen) ─────────────────

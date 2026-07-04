@@ -11,16 +11,20 @@ Widget commentAction(
   required Color activeColor,
   required String pngAsset,
   required IconData fallbackIcon,
+  IconData? activeIcon,
   required VoidCallback onTap,
 }) {
   final color = active ? activeColor : const Color(0xFF6B7280);
-  return GestureDetector(
-    behavior: HitTestBehavior.opaque,
-    onTap: onTap,
-    child: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Image.asset(
+  // When [activeIcon] is supplied (e.g. the Like heart) render Material icons
+  // directly so the active state is a genuinely filled shape — tinting the
+  // outline PNG red only ever produces a red outline, never a fill.
+  final Widget leading = activeIcon != null
+      ? Icon(
+          active ? activeIcon : fallbackIcon,
+          size: width * 0.036,
+          color: color,
+        )
+      : Image.asset(
           pngAsset,
           width: width * 0.036,
           height: width * 0.036,
@@ -28,7 +32,14 @@ Widget commentAction(
           colorBlendMode: BlendMode.srcIn,
           errorBuilder: (_, _, _) =>
               Icon(fallbackIcon, size: width * 0.036, color: color),
-        ),
+        );
+  return GestureDetector(
+    behavior: HitTestBehavior.opaque,
+    onTap: onTap,
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        leading,
         SizedBox(width: width * 0.008),
         Text(
           label,
@@ -195,6 +206,7 @@ Widget buildCommentItem(
                                 activeColor: const Color(0xFFEF4444),
                                 pngAsset: 'assets/images/heart.webp',
                                 fallbackIcon: Icons.favorite_border_rounded,
+                                activeIcon: Icons.favorite_rounded,
                                 onTap: () => onToggleLike(id),
                               ),
                               commentAction(
@@ -419,6 +431,7 @@ Widget buildReplyItem(
                             activeColor: const Color(0xFFEF4444),
                             pngAsset: 'assets/images/heart.webp',
                             fallbackIcon: Icons.favorite_border_rounded,
+                            activeIcon: Icons.favorite_rounded,
                             onTap: () => onToggleLike(id),
                           ),
                           commentAction(

@@ -6,7 +6,7 @@ import '../../../../core/utils/password_validator.dart';
 import '../../../../core/widgets/inputs/rounded_input_field.dart';
 import '../../../../core/widgets/indicators/password_strength_bar.dart';
 import '../../../../core/widgets/mobile_form_shell.dart';
-import '../../../../core/widgets/modal/verification_required_dialog.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 
 class ChangePasswordNewScreen extends StatefulWidget {
   final String accessToken;
@@ -155,21 +155,13 @@ class _ChangePasswordNewScreenState extends State<ChangePasswordNewScreen>
 
         if (!mounted) return;
 
-        // ── Show success modal then pop back to S1 ────────────────────────────
-        await showSuccessDialog(
+        // ── Toast success then pop back to S1 ─────────────────────────────────
+        showAppSnackBar(
           context,
-          title: 'Password Changed!',
-          message:
-              'Your password has been updated successfully. You can now use your new password to sign in.',
-          buttonLabel: 'Done',
-          iconAsset: 'assets/images/protection.webp',
-          iconColor: AppColors.green, // ← tints the shield green
-          iconBgColor: AppColors.green.withValues(
-            alpha: 0.10,
-          ), // ← light green circle
+          "Password changed successfully.",
+          type: AppSnackType.success,
         );
 
-        if (!mounted) return;
         // Pop S3 + S2 → land back on S1 (which will now show the lock banner)
         Navigator.of(context)
           ..pop()

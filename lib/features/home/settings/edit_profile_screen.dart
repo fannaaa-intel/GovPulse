@@ -8,7 +8,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/constants/aparri_barangays.dart';
 import '../../../core/widgets/loading/loading_overlay.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import '../../../core/widgets/modal/verification_required_dialog.dart';
+import '../../../core/widgets/app_snackbar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/providers/user_profile_provider.dart';
 
@@ -289,12 +289,11 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
           .eq('user_id', user.id);
 
       if (!mounted) return;
-      await showSuccessDialog(
+      showAppSnackBar(
         context,
-        title: 'Profile Updated',
-        message: 'Your profile information has been saved successfully.',
+        "Profile updated successfully.",
+        type: AppSnackType.success,
       );
-      if (!mounted) return;
       ref.read(userProfileProvider.notifier).refresh();
       Navigator.pop(context, true);
     } catch (e) {
