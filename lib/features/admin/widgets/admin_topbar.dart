@@ -10,12 +10,16 @@ class AdminTopBar extends StatelessWidget {
   final VoidCallback? onMenuTap;
   final VoidCallback onLogout;
 
+  /// Opens the command palette (⌘K). Null → the search field isn't interactive.
+  final VoidCallback? onSearchTap;
+
   const AdminTopBar({
     super.key,
     required this.title,
     required this.showMenuButton,
     this.onMenuTap,
     required this.onLogout,
+    this.onSearchTap,
   });
 
   @override
@@ -54,7 +58,10 @@ class AdminTopBar extends StatelessWidget {
             ),
           ),
           const Spacer(),
-          if (showSearch) ...[_SearchField(), const SizedBox(width: 12)],
+          if (showSearch) ...[
+            _SearchField(onTap: onSearchTap),
+            const SizedBox(width: 12),
+          ],
           const AdminNotificationBell(),
           const SizedBox(width: 10),
           AdminAccountChip(showName: showName, onLogout: onLogout),
@@ -65,36 +72,46 @@ class AdminTopBar extends StatelessWidget {
 }
 
 class _SearchField extends StatelessWidget {
+  final VoidCallback? onTap;
+  const _SearchField({this.onTap});
+
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 38,
-      width: 220,
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      decoration: BoxDecoration(
-        color: AdminUi.subtle,
+    return Material(
+      color: AdminUi.subtle,
+      borderRadius: BorderRadius.circular(AdminUi.controlRadius),
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(AdminUi.controlRadius),
-        border: Border.all(color: AdminUi.border),
-      ),
-      child: const Row(
-        children: [
-          Icon(Icons.search_rounded, size: 16, color: AdminUi.textMuted),
-          SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              'Search…',
-              style: TextStyle(fontSize: 13, color: AdminUi.textMuted),
-            ),
+        child: Container(
+          height: 38,
+          width: 220,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AdminUi.controlRadius),
+            border: Border.all(color: AdminUi.border),
           ),
-          Text(
-            '⌘K',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
-              color: AdminUi.textMuted,
-            ),
+          child: const Row(
+            children: [
+              Icon(Icons.search_rounded, size: 16, color: AdminUi.textMuted),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Search…',
+                  style: TextStyle(fontSize: 13, color: AdminUi.textMuted),
+                ),
+              ),
+              Text(
+                '⌘K',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  color: AdminUi.textMuted,
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

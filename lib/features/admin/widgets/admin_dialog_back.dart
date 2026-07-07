@@ -5,7 +5,8 @@ import '../theme/admin_ui.dart';
 
 /// Back control for admin dialogs / full-screen forms — a rounded chevron
 /// button placed at the LEFT of the header title, mirroring the citizen
-/// settings screens (instead of a top-right X).
+/// settings screens. Web/desktop dialogs use a top-right X close instead (see
+/// the New event form), so this is only used for the phone full-screen header.
 class AdminDialogBack extends StatelessWidget {
   final VoidCallback onTap;
   const AdminDialogBack({super.key, required this.onTap});

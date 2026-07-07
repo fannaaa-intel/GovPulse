@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -11,6 +12,7 @@ import '../../../core/widgets/modal/media_picker_sheet.dart';
 import '../providers/admin_profile_provider.dart';
 import '../providers/community_updates_provider.dart';
 import '../theme/admin_ui.dart';
+import '../widgets/admin_dialog_back.dart';
 import '../widgets/admin_skeleton.dart';
 import '../widgets/admin_snackbar.dart';
 
@@ -369,7 +371,9 @@ class _UpdateCard extends ConsumerWidget {
                 buildAuthorAvatar(42, post.authorPhotoUrl, ring: false),
                 const SizedBox(width: 10),
                 Expanded(child: _authorMeta()),
-                _CardMenu(post: post),
+                // A temp card can't be edited/pinned/deleted yet (its row isn't
+                // saved) — hide the menu until the real post lands.
+                if (!post.isOptimistic) _CardMenu(post: post),
               ],
             ),
           ),
@@ -446,7 +450,12 @@ class _UpdateCard extends ConsumerWidget {
                   ),
                 ),
                 const Spacer(),
-                if (rejected) _RejectedReapprove(post: post) else _statusPill(),
+                if (post.isOptimistic)
+                  _postingPill()
+                else if (rejected)
+                  _RejectedReapprove(post: post)
+                else
+                  _statusPill(),
               ],
             ),
           ),
@@ -456,6 +465,12 @@ class _UpdateCard extends ConsumerWidget {
   }
 
   Widget _authorMeta() {
+    // Official posts read "LGU Aparri with <office>" when tagged to a specific
+    // entity; the default "LGU Aparri" tag just shows "LGU Aparri". The tag pill
+    // is then redundant, so it's dropped for official posts.
+    final tag = post.tag.trim();
+    final tagged = post.isOfficial && tag.isNotEmpty && tag != 'LGU Aparri';
+    final authorLabel = tagged ? '${post.authorName} with $tag' : post.authorName;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -463,7 +478,7 @@ class _UpdateCard extends ConsumerWidget {
           children: [
             Flexible(
               child: Text(
-                post.authorName,
+                authorLabel,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
@@ -478,8 +493,10 @@ class _UpdateCard extends ConsumerWidget {
         const SizedBox(height: 2),
         Row(
           children: [
-            _TagChip(label: post.tag, color: post.tagColorValue),
-            const SizedBox(width: 8),
+            if (!post.isOfficial) ...[
+              _TagChip(label: post.tag, color: post.tagColorValue),
+              const SizedBox(width: 8),
+            ],
             Flexible(
               child: Text(
                 '${post.barangayLabel} · ${post.createdAt == null ? '' : formatTimeAgo(post.createdAt!)}',
@@ -534,6 +551,38 @@ class _UpdateCard extends ConsumerWidget {
       ],
     ),
   );
+
+  /// Shown on the optimistic stand-in card while the real post uploads in the
+  /// background — a tiny spinner so the instant card still reads as "in flight".
+  Widget _postingPill() => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+    decoration: BoxDecoration(
+      color: AppColors.primaryBlue.withValues(alpha: 0.10),
+      borderRadius: BorderRadius.circular(20),
+    ),
+    child: const Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: 11,
+          height: 11,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: AppColors.primaryBlue,
+          ),
+        ),
+        SizedBox(width: 6),
+        Text(
+          'Posting…',
+          style: TextStyle(
+            fontSize: 11.5,
+            fontWeight: FontWeight.w700,
+            color: AppColors.primaryBlue,
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class _PinnedRibbon extends StatelessWidget {
@@ -569,9 +618,15 @@ class _RejectedReapprove extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return TextButton.icon(
       onPressed: () async {
-        await ref.read(communityUpdatesProvider.notifier).approve(post.id);
-        if (context.mounted) {
-          _toast(context, 'Post approved and published.');
+        try {
+          await ref.read(communityUpdatesProvider.notifier).approve(post.id);
+          if (context.mounted) {
+            _toast(context, 'Post approved and published.');
+          }
+        } catch (e) {
+          if (context.mounted) {
+            _toast(context, 'Could not approve: $e', error: true);
+          }
         }
       },
       icon: const Icon(Icons.check_circle_rounded, size: 16),
@@ -601,16 +656,28 @@ class _CardMenu extends ConsumerWidget {
             showCommunityComposer(context, ref, existing: post);
             break;
           case 'pin':
-            await notifier.togglePin(post);
-            if (context.mounted) {
-              _toast(context, post.pinned ? 'Unpinned.' : 'Pinned to top.');
+            try {
+              await notifier.togglePin(post);
+              if (context.mounted) {
+                _toast(context, post.pinned ? 'Unpinned.' : 'Pinned to top.');
+              }
+            } catch (e) {
+              if (context.mounted) {
+                _toast(context, 'Could not update: $e', error: true);
+              }
             }
             break;
           case 'delete':
             final ok = await _confirmDelete(context);
             if (ok == true) {
-              await notifier.delete(post);
-              if (context.mounted) _toast(context, 'Post deleted.');
+              try {
+                await notifier.delete(post);
+                if (context.mounted) _toast(context, 'Post deleted.');
+              } catch (e) {
+                if (context.mounted) {
+                  _toast(context, 'Could not delete: $e', error: true);
+                }
+              }
             }
             break;
         }
@@ -1182,7 +1249,6 @@ class _ComposerFormState extends ConsumerState<_ComposerForm> {
   final List<ComposerImage> _images = [];
   final List<PostImage> _removed = [];
   final Map<String, Uint8List> _thumbCache = {};
-  bool _saving = false;
 
   bool get _isEdit => widget.existing != null;
 
@@ -1233,25 +1299,34 @@ class _ComposerFormState extends ConsumerState<_ComposerForm> {
                         ring: false,
                       ),
                       const SizedBox(width: 10),
-                      const Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'LGU Aparri',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: AdminUi.textPrimary,
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              // Live preview of how the post will be attributed:
+                              // "LGU Aparri with <office>" when tagged to a
+                              // specific entity, else just "LGU Aparri".
+                              _category.label == 'LGU Aparri'
+                                  ? 'LGU Aparri'
+                                  : 'LGU Aparri with ${_category.label}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: AdminUi.textPrimary,
+                              ),
                             ),
-                          ),
-                          Text(
-                            'Official update',
-                            style: TextStyle(
-                              fontSize: 11.5,
-                              color: AdminUi.textMuted,
+                            const Text(
+                              'Official update',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: AdminUi.textMuted,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ],
                   ),
@@ -1264,13 +1339,13 @@ class _ComposerFormState extends ConsumerState<_ComposerForm> {
                     maxLines: 6,
                   ),
                   const SizedBox(height: 18),
-                  _label('Category'),
+                  _label('Tag'),
                   const SizedBox(height: 8),
-                  _categoryChips(),
+                  _categorySelector(),
                   const SizedBox(height: 18),
                   _label('Audience'),
                   const SizedBox(height: 8),
-                  _barangayDropdown(),
+                  _audienceSelector(),
                   const SizedBox(height: 18),
                   _label('Photos'),
                   const SizedBox(height: 8),
@@ -1286,26 +1361,37 @@ class _ComposerFormState extends ConsumerState<_ComposerForm> {
     );
   }
 
-  Widget _header() => Padding(
-    padding: const EdgeInsets.fromLTRB(18, 14, 10, 14),
-    child: Row(
-      children: [
-        Text(
-          _isEdit ? 'Edit update' : 'Create update',
-          style: const TextStyle(
-            fontSize: 17,
-            fontWeight: FontWeight.w700,
-            color: AdminUi.textPrimary,
+  // Web/tablet shows this as a floating dialog → X (exit); phones show it
+  // full-screen → back chevron, matching the events composer + citizen sub-screens.
+  Widget _header() {
+    final wide = MediaQuery.of(context).size.width >= 900;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(wide ? 18 : 12, 12, 8, 12),
+      child: Row(
+        children: [
+          if (!wide) ...[
+            AdminDialogBack(onTap: () => Navigator.of(context).pop()),
+            const SizedBox(width: 12),
+          ],
+          Expanded(
+            child: Text(
+              _isEdit ? 'Edit update' : 'Create update',
+              style: const TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                color: AdminUi.textPrimary,
+              ),
+            ),
           ),
-        ),
-        const Spacer(),
-        IconButton(
-          icon: const Icon(Icons.close_rounded, color: AdminUi.textMuted),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-      ],
-    ),
-  );
+          if (wide)
+            IconButton(
+              icon: const Icon(Icons.close_rounded, color: AdminUi.textMuted),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+        ],
+      ),
+    );
+  }
 
   Widget _label(String t) => Text(
     t,
@@ -1349,82 +1435,162 @@ class _ComposerFormState extends ConsumerState<_ComposerForm> {
     );
   }
 
-  Widget _categoryChips() {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: UpdateCategory.all.map((c) {
-        final sel = c.label == _category.label;
-        return GestureDetector(
-          onTap: () => setState(() => _category = c),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 130),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: sel ? c.color.withValues(alpha: 0.14) : AdminUi.subtle,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: sel ? c.color : AdminUi.border,
-                width: sel ? 1.4 : 1,
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 9,
-                  height: 9,
-                  decoration: BoxDecoration(
-                    color: c.color,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 7),
-                Text(
-                  c.label,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: sel ? FontWeight.w700 : FontWeight.w500,
-                    color: sel ? c.color : AdminUi.textSecondary,
-                  ),
-                ),
-              ],
-            ),
+  /// The selected category, shown as a tappable field (color dot + label) that
+  /// opens the searchable entity picker. Replaces the flat chip Wrap — 13
+  /// entities are too many for chips.
+  Widget _categorySelector() {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: _openCategoryPicker,
+        borderRadius: BorderRadius.circular(AdminUi.controlRadius),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
+          decoration: BoxDecoration(
+            color: AdminUi.subtle,
+            borderRadius: BorderRadius.circular(AdminUi.controlRadius),
+            border: Border.all(color: AdminUi.border),
           ),
-        );
-      }).toList(),
+          child: Row(
+            children: [
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: _category.color,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  _category.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AdminUi.textPrimary,
+                  ),
+                ),
+              ),
+              const Icon(
+                Icons.keyboard_arrow_down_rounded,
+                color: AdminUi.textMuted,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
-  Widget _barangayDropdown() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        color: AdminUi.subtle,
-        borderRadius: BorderRadius.circular(AdminUi.controlRadius),
-        border: Border.all(color: AdminUi.border),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          isExpanded: true,
-          value: _barangay,
-          icon: const Icon(
-            Icons.keyboard_arrow_down_rounded,
-            color: AdminUi.textMuted,
+  Future<void> _openCategoryPicker() async {
+    final picked = await _pickCategory();
+    if (picked != null && mounted) setState(() => _category = picked);
+  }
+
+  // Non-async so `context` is used synchronously (no async-gap lint). Dialog on
+  // web, slide-up sheet on phones — matching the composer itself.
+  Future<UpdateCategory?> _pickCategory() {
+    final wide = MediaQuery.of(context).size.width >= 900;
+    if (wide) {
+      return showDialog<UpdateCategory>(
+        context: context,
+        builder: (_) => Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 460, maxHeight: 560),
+            child: _CategoryPicker(current: _category),
           ),
-          borderRadius: BorderRadius.circular(12),
-          items: [
-            const DropdownMenuItem(
-              value: kAllBarangays,
-              child: Text('All barangays (city-wide)'),
-            ),
-            ...kBarangayOptions.map(
-              (b) => DropdownMenuItem(value: b, child: Text(b)),
-            ),
-          ],
-          onChanged: (v) => setState(() => _barangay = v ?? kAllBarangays),
-          style: const TextStyle(fontSize: 14, color: AdminUi.textPrimary),
         ),
+      );
+    }
+    return showModalBottomSheet<UpdateCategory>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+        child: _CategoryPicker(current: _category),
+      ),
+    );
+  }
+
+  String get _barangayLabel =>
+      _barangay.isEmpty ? 'All barangays (city-wide)' : _barangay;
+
+  /// Audience field — a tappable selector opening the same slide-up/dialog
+  /// searchable picker as the Tag field, so both are consistent (no native
+  /// dropdown menu).
+  Widget _audienceSelector() {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: _openBarangayPicker,
+        borderRadius: BorderRadius.circular(AdminUi.controlRadius),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
+          decoration: BoxDecoration(
+            color: AdminUi.subtle,
+            borderRadius: BorderRadius.circular(AdminUi.controlRadius),
+            border: Border.all(color: AdminUi.border),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.groups_rounded, size: 18, color: AdminUi.textMuted),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  _barangayLabel,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AdminUi.textPrimary,
+                  ),
+                ),
+              ),
+              const Icon(Icons.keyboard_arrow_down_rounded,
+                  color: AdminUi.textMuted),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openBarangayPicker() async {
+    final picked = await _pickBarangay();
+    if (picked != null && mounted) setState(() => _barangay = picked);
+  }
+
+  Future<String?> _pickBarangay() {
+    final wide = MediaQuery.of(context).size.width >= 900;
+    if (wide) {
+      return showDialog<String>(
+        context: context,
+        builder: (_) => Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 460, maxHeight: 560),
+            child: _BarangayPicker(current: _barangay),
+          ),
+        ),
+      );
+    }
+    return showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+        child: _BarangayPicker(current: _barangay),
       ),
     );
   }
@@ -1513,7 +1679,7 @@ class _ComposerFormState extends ConsumerState<_ComposerForm> {
         width: double.infinity,
         height: 54,
         child: FilledButton(
-          onPressed: _saving ? null : _submit,
+          onPressed: _submit,
           style: FilledButton.styleFrom(
             backgroundColor: AppColors.primaryBlue,
             disabledBackgroundColor: AppColors.primaryBlue.withValues(
@@ -1526,33 +1692,24 @@ class _ComposerFormState extends ConsumerState<_ComposerForm> {
               borderRadius: BorderRadius.circular(14),
             ),
           ),
-          child: _saving
-              ? const SizedBox(
-                  width: 22,
-                  height: 22,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2.6,
-                    color: Colors.white,
-                  ),
-                )
-              : Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      _isEdit ? Icons.check_rounded : Icons.publish_rounded,
-                      size: 19,
-                    ),
-                    const SizedBox(width: 9),
-                    Text(
-                      _isEdit ? 'Save changes' : 'Post update',
-                      style: const TextStyle(
-                        fontSize: 15.5,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.2,
-                      ),
-                    ),
-                  ],
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                _isEdit ? Icons.check_rounded : Icons.publish_rounded,
+                size: 19,
+              ),
+              const SizedBox(width: 9),
+              Text(
+                _isEdit ? 'Save changes' : 'Post update',
+                style: const TextStyle(
+                  fontSize: 15.5,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.2,
                 ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1659,49 +1816,444 @@ class _ComposerFormState extends ConsumerState<_ComposerForm> {
       return;
     }
 
-    setState(() => _saving = true);
     final notifier = ref.read(communityUpdatesProvider.notifier);
-    try {
-      if (_isEdit) {
-        final kept = _images.where((i) => !i.isNew).length;
-        final added = _images
-            .where((i) => i.isNew)
-            .map((i) => i.file!)
-            .toList();
-        await notifier.updatePost(
-          id: widget.existing!.id,
-          title: title,
-          body: body,
-          barangay: _barangay,
-          category: _category,
-          removed: _removed,
-          added: added,
-          keptCount: kept,
-        );
-      } else {
-        final files = _images.map((i) => i.file!).toList();
-        await notifier.createPost(
-          title: title,
-          body: body,
-          barangay: _barangay,
-          category: _category,
-          images: files,
-        );
-      }
-      if (mounted) {
-        Navigator.of(context).pop();
-        _toast(context, _isEdit ? 'Update saved.' : 'Update published.');
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _saving = false);
-        _toast(context, 'Could not save: $e', error: true);
-      }
+    // The composer is about to close, so its own context won't survive to show
+    // the background success/failure toast — use the root navigator's context,
+    // which outlives this dialog/page.
+    final rootContext = Navigator.of(context, rootNavigator: true).context;
+
+    // Kick off the write (the notifier updates the feed optimistically the
+    // instant it's called) and close immediately — the post already shows.
+    final Future<void> op;
+    if (_isEdit) {
+      final kept = _images.where((i) => !i.isNew).length;
+      final added = _images.where((i) => i.isNew).map((i) => i.file!).toList();
+      op = notifier.updatePost(
+        id: widget.existing!.id,
+        title: title,
+        body: body,
+        barangay: _barangay,
+        category: _category,
+        removed: _removed,
+        added: added,
+        keptCount: kept,
+      );
+    } else {
+      final files = _images.map((i) => i.file!).toList();
+      op = notifier.createPost(
+        title: title,
+        body: body,
+        barangay: _barangay,
+        category: _category,
+        images: files,
+        optimistic: _buildOptimisticPost(title, body),
+      );
     }
+
+    unawaited(
+      _reportSave(op, rootContext, _isEdit ? 'Update saved.' : 'Update published.'),
+    );
+    Navigator.of(context).pop();
+  }
+
+  /// The stand-in card shown in the feed the moment the admin hits post, before
+  /// the row + images finish uploading. It carries a `temp_` id so the notifier
+  /// can swap it for the real post once the reload lands. Photos are omitted —
+  /// they appear when the background upload completes and the feed reloads.
+  CommunityUpdate _buildOptimisticPost(String title, String body) {
+    return CommunityUpdate(
+      id: 'temp_${DateTime.now().microsecondsSinceEpoch}',
+      authorId: '',
+      authorName: 'LGU Aparri',
+      authorPhotoUrl: ref.read(adminProfileProvider).valueOrNull?.photoUrl,
+      authorRole: 'admin',
+      title: title,
+      body: body,
+      barangay: _barangay,
+      tag: _category.label,
+      tagColor: _category.hex,
+      status: PostStatus.approved,
+      rejectedReason: null,
+      pinned: false,
+      likesCount: 0,
+      commentsCount: 0,
+      createdAt: DateTime.now(),
+      images: const [],
+    );
+  }
+}
+
+/// Awaits a background post save and toasts the outcome on a context that
+/// outlives the (already-closed) composer. Top-level so it never touches the
+/// disposed composer State.
+Future<void> _reportSave(
+  Future<void> op,
+  BuildContext ctx,
+  String successMsg,
+) async {
+  try {
+    await op;
+    if (ctx.mounted) _toast(ctx, successMsg);
+  } catch (e) {
+    if (ctx.mounted) _toast(ctx, 'Could not save: $e', error: true);
   }
 }
 
 /// Renders a freshly-picked (not-yet-uploaded) image from its bytes.
+// ── Searchable entity picker for the composer's Category field ────────────────
+// A bottom sheet on phones, a centred card on web (matches the composer). Lists
+// the 13 offices/agencies with their colour dot; typing filters by label.
+class _CategoryPicker extends StatefulWidget {
+  final UpdateCategory current;
+  const _CategoryPicker({required this.current});
+  @override
+  State<_CategoryPicker> createState() => _CategoryPickerState();
+}
+
+class _CategoryPickerState extends State<_CategoryPicker> {
+  final TextEditingController _search = TextEditingController();
+  String _q = '';
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    final narrow = size.width < 900;
+    final q = _q.trim().toLowerCase();
+    final items = q.isEmpty
+        ? UpdateCategory.all
+        : UpdateCategory.all
+            .where((c) => c.label.toLowerCase().contains(q))
+            .toList();
+
+    final content = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (narrow)
+          Container(
+            margin: const EdgeInsets.only(top: 10, bottom: 2),
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: AdminUi.borderStrong,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(18, 14, 10, 10),
+          child: Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Select entity',
+                  style: TextStyle(
+                    fontSize: 16.5,
+                    fontWeight: FontWeight.w700,
+                    color: AdminUi.textPrimary,
+                  ),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close_rounded, color: AdminUi.textMuted),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+          child: TextField(
+            controller: _search,
+            autofocus: !narrow,
+            onChanged: (v) => setState(() => _q = v),
+            style: const TextStyle(fontSize: 14),
+            decoration: InputDecoration(
+              isDense: true,
+              hintText: 'Search offices and agencies…',
+              hintStyle:
+                  const TextStyle(fontSize: 13.5, color: AdminUi.textMuted),
+              prefixIcon: const Icon(Icons.search_rounded,
+                  size: 18, color: AdminUi.textMuted),
+              filled: true,
+              fillColor: AdminUi.subtle,
+              contentPadding: const EdgeInsets.symmetric(vertical: 11),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: AdminUi.border),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: AdminUi.border),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide:
+                    const BorderSide(color: AppColors.primaryBlue, width: 1.4),
+              ),
+            ),
+          ),
+        ),
+        const Divider(height: 1, color: AdminUi.border),
+        Flexible(
+          child: items.isEmpty
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 32),
+                  child: Text(
+                    'No matches',
+                    style: TextStyle(color: AdminUi.textMuted, fontSize: 13),
+                  ),
+                )
+              : ListView.separated(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  shrinkWrap: true,
+                  itemCount: items.length,
+                  separatorBuilder: (_, _) => const Divider(
+                    height: 1,
+                    color: AdminUi.subtle,
+                    indent: 44,
+                  ),
+                  itemBuilder: (_, i) {
+                    final c = items[i];
+                    final selected = c.label == widget.current.label;
+                    return InkWell(
+                      onTap: () => Navigator.of(context).pop(c),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 13),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 11,
+                              height: 11,
+                              decoration: BoxDecoration(
+                                color: c.color,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                c.label,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: selected
+                                      ? FontWeight.w700
+                                      : FontWeight.w500,
+                                  color:
+                                      selected ? c.color : AdminUi.textPrimary,
+                                ),
+                              ),
+                            ),
+                            if (selected)
+                              Icon(Icons.check_rounded, size: 18, color: c.color),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+
+    return Material(
+      color: AdminUi.surface,
+      borderRadius: narrow
+          ? const BorderRadius.vertical(top: Radius.circular(22))
+          : BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: narrow
+          ? SafeArea(
+              top: false,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: size.height * 0.8),
+                child: content,
+              ),
+            )
+          : content,
+    );
+  }
+}
+
+// ── Searchable barangay/audience picker (matches the Tag picker) ─────────────
+class _BarangayPicker extends StatefulWidget {
+  final String current;
+  const _BarangayPicker({required this.current});
+  @override
+  State<_BarangayPicker> createState() => _BarangayPickerState();
+}
+
+class _BarangayPickerState extends State<_BarangayPicker> {
+  final TextEditingController _search = TextEditingController();
+  String _q = '';
+
+  // (label, value) — "All barangays" first, then the barangay options.
+  static const _all = <(String, String)>[
+    ('All barangays (city-wide)', kAllBarangays),
+  ];
+  List<(String, String)> get _options =>
+      [..._all, for (final b in kBarangayOptions) (b, b)];
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    final narrow = size.width < 900;
+    final q = _q.trim().toLowerCase();
+    final items = q.isEmpty
+        ? _options
+        : _options.where((o) => o.$1.toLowerCase().contains(q)).toList();
+
+    final content = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (narrow)
+          Container(
+            margin: const EdgeInsets.only(top: 10, bottom: 2),
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: AdminUi.borderStrong,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(18, 14, 10, 10),
+          child: Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Select audience',
+                  style: TextStyle(
+                    fontSize: 16.5,
+                    fontWeight: FontWeight.w700,
+                    color: AdminUi.textPrimary,
+                  ),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close_rounded, color: AdminUi.textMuted),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+          child: TextField(
+            controller: _search,
+            autofocus: !narrow,
+            onChanged: (v) => setState(() => _q = v),
+            style: const TextStyle(fontSize: 14),
+            decoration: InputDecoration(
+              isDense: true,
+              hintText: 'Search barangay…',
+              hintStyle:
+                  const TextStyle(fontSize: 13.5, color: AdminUi.textMuted),
+              prefixIcon: const Icon(Icons.search_rounded,
+                  size: 18, color: AdminUi.textMuted),
+              filled: true,
+              fillColor: AdminUi.subtle,
+              contentPadding: const EdgeInsets.symmetric(vertical: 11),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: AdminUi.border),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: AdminUi.border),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide:
+                    const BorderSide(color: AppColors.primaryBlue, width: 1.4),
+              ),
+            ),
+          ),
+        ),
+        const Divider(height: 1, color: AdminUi.border),
+        Flexible(
+          child: items.isEmpty
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 32),
+                  child: Text('No matches',
+                      style: TextStyle(color: AdminUi.textMuted, fontSize: 13)),
+                )
+              : ListView.separated(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  shrinkWrap: true,
+                  itemCount: items.length,
+                  separatorBuilder: (_, _) => const Divider(
+                    height: 1,
+                    color: AdminUi.subtle,
+                    indent: 16,
+                  ),
+                  itemBuilder: (_, i) {
+                    final (label, value) = items[i];
+                    final selected = value == widget.current;
+                    return InkWell(
+                      onTap: () => Navigator.of(context).pop(value),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 13),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                label,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: selected
+                                      ? FontWeight.w700
+                                      : FontWeight.w500,
+                                  color: selected
+                                      ? AppColors.primaryBlue
+                                      : AdminUi.textPrimary,
+                                ),
+                              ),
+                            ),
+                            if (selected)
+                              const Icon(Icons.check_rounded,
+                                  size: 18, color: AppColors.primaryBlue),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+
+    return Material(
+      color: AdminUi.surface,
+      borderRadius: narrow
+          ? const BorderRadius.vertical(top: Radius.circular(22))
+          : BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: narrow
+          ? SafeArea(
+              top: false,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: size.height * 0.8),
+                child: content,
+              ),
+            )
+          : content,
+    );
+  }
+}
+
 class _LocalThumb extends StatelessWidget {
   final XFile file;
   final Map<String, Uint8List> cache;
@@ -1787,18 +2339,26 @@ class _CommentsPanel extends ConsumerStatefulWidget {
 
 class _CommentsPanelState extends ConsumerState<_CommentsPanel> {
   final TextEditingController _input = TextEditingController();
-  late Future<List<CommunityComment>> _future;
+
+  // Locally-held comment list. Every action (add / reply / edit / delete /
+  // react) mutates this in place so the panel reflects INSTANTLY — no
+  // FutureBuilder re-fetch skeleton, and the feed behind never reloads. The
+  // first load and the post-write reconcile both happen silently.
+  List<CommunityComment>? _comments; // null until the first load resolves
+  Object? _loadError;
+
   String? _replyToId;
   String? _replyToName;
-  bool _sending = false;
 
   CommunityUpdatesRepository get _repo =>
       ref.read(communityUpdatesRepoProvider);
+  CommunityUpdatesNotifier get _feed =>
+      ref.read(communityUpdatesProvider.notifier);
 
   @override
   void initState() {
     super.initState();
-    _future = _repo.fetchComments(widget.post.id);
+    _load();
   }
 
   @override
@@ -1807,15 +2367,35 @@ class _CommentsPanelState extends ConsumerState<_CommentsPanel> {
     super.dispose();
   }
 
-  void _reload() {
-    // Block body (not an arrow) so the setState callback returns void — an
-    // arrow `() => _future = ...` returns the assigned Future, which trips
-    // Flutter's "setState() callback returned a Future" assertion.
+  Future<void> _load() async {
+    try {
+      final list = await _repo.fetchComments(widget.post.id);
+      if (mounted) {
+        setState(() {
+          _comments = list;
+          _loadError = null;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _loadError = e);
+    }
+  }
+
+  /// Refetch and replace the list WITHOUT dropping back to the skeleton, so a
+  /// post-write reconcile (e.g. swapping a temp comment for the real row) never
+  /// flashes the panel. A failure just keeps the optimistic list.
+  Future<void> _silentSync() async {
+    try {
+      final list = await _repo.fetchComments(widget.post.id);
+      if (mounted) setState(() => _comments = list);
+    } catch (_) {/* keep what's on screen */}
+  }
+
+  void _startReply(String topLevelId, String name) {
     setState(() {
-      _future = _repo.fetchComments(widget.post.id);
+      _replyToId = topLevelId;
+      _replyToName = name;
     });
-    // Keep the feed's comment counts in sync.
-    ref.read(communityUpdatesProvider.notifier).refresh();
   }
 
   @override
@@ -1829,92 +2409,81 @@ class _CommentsPanelState extends ConsumerState<_CommentsPanel> {
         children: [
           _header(),
           const Divider(height: 1, color: AdminUi.border),
-          Flexible(
-            child: FutureBuilder<List<CommunityComment>>(
-              future: _future,
-              builder: (_, snap) {
-                if (snap.connectionState == ConnectionState.waiting) {
-                  return const AdminShimmer(
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 12,
-                      ),
-                      child: Column(
-                        children: [
-                          _CommentSkeletonRow(),
-                          _CommentSkeletonRow(),
-                          _CommentSkeletonRow(),
-                          _CommentSkeletonRow(),
-                        ],
-                      ),
-                    ),
-                  );
-                }
-                if (snap.hasError) {
-                  return Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Text(
-                      'Could not load comments: ${snap.error}',
-                      style: const TextStyle(color: AdminUi.textMuted),
-                    ),
-                  );
-                }
-                final all = snap.data ?? const [];
-                if (all.isEmpty) {
-                  return const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 48, horizontal: 24),
-                    child: Center(
-                      child: Text(
-                        'No comments yet.',
-                        style: TextStyle(color: AdminUi.textMuted),
-                      ),
-                    ),
-                  );
-                }
-                final tops = all.where((c) => !c.isReply).toList();
-                final repliesByParent = <String, List<CommunityComment>>{};
-                for (final c in all.where((c) => c.isReply)) {
-                  (repliesByParent[c.parentId!] ??= []).add(c);
-                }
-                return ListView(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 12,
-                  ),
-                  children: [
-                    for (final c in tops) ...[
-                      _CommentTile(
-                        comment: c,
-                        onDelete: () => _delete(c),
-                        onReply: () => setState(() {
-                          _replyToId = c.id;
-                          _replyToName = c.authorName;
-                        }),
-                      ),
-                      for (final r in (repliesByParent[c.id] ?? const []))
-                        Padding(
-                          padding: const EdgeInsets.only(left: 40),
-                          child: _CommentTile(
-                            comment: r,
-                            onDelete: () => _delete(r),
-                            onReply: () => setState(() {
-                              _replyToId =
-                                  c.id; // replies attach to the top-level
-                              _replyToName = r.authorName;
-                            }),
-                          ),
-                        ),
-                    ],
-                  ],
-                );
-              },
-            ),
-          ),
+          Flexible(child: _buildList()),
           const Divider(height: 1, color: AdminUi.border),
           _composer(),
         ],
       ),
+    );
+  }
+
+  Widget _buildList() {
+    if (_loadError != null) {
+      return Padding(
+        padding: const EdgeInsets.all(24),
+        child: Text(
+          'Could not load comments: $_loadError',
+          style: const TextStyle(color: AdminUi.textMuted),
+        ),
+      );
+    }
+    final all = _comments;
+    if (all == null) {
+      return const AdminShimmer(
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Column(
+            children: [
+              _CommentSkeletonRow(),
+              _CommentSkeletonRow(),
+              _CommentSkeletonRow(),
+              _CommentSkeletonRow(),
+            ],
+          ),
+        ),
+      );
+    }
+    if (all.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 48, horizontal: 24),
+        child: Center(
+          child: Text(
+            'No comments yet.',
+            style: TextStyle(color: AdminUi.textMuted),
+          ),
+        ),
+      );
+    }
+    final tops = all.where((c) => !c.isReply).toList();
+    final repliesByParent = <String, List<CommunityComment>>{};
+    for (final c in all.where((c) => c.isReply)) {
+      (repliesByParent[c.parentId!] ??= []).add(c);
+    }
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      children: [
+        for (final c in tops) ...[
+          _CommentTile(
+            comment: c,
+            onDelete: () => _delete(c),
+            onReply: () => _startReply(c.id, c.authorName),
+            onReact: () => _react(c),
+            onEdit: c.isOfficial ? () => _edit(c) : null,
+          ),
+          for (final r in (repliesByParent[c.id] ?? const []))
+            Padding(
+              padding: const EdgeInsets.only(left: 40),
+              child: _CommentTile(
+                comment: r,
+                onDelete: () => _delete(r),
+                // Replies always attach to the top-level parent.
+                onReply: () => _startReply(c.id, r.authorName),
+                onReact: () => _react(r),
+                onEdit: r.isOfficial ? () => _edit(r) : null,
+              ),
+            ),
+        ],
+      ],
     );
   }
 
@@ -2030,23 +2599,14 @@ class _CommentsPanelState extends ConsumerState<_CommentsPanel> {
                 shape: const CircleBorder(),
                 child: InkWell(
                   customBorder: const CircleBorder(),
-                  onTap: _sending ? null : _send,
-                  child: Padding(
-                    padding: const EdgeInsets.all(11),
-                    child: _sending
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2.2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Icon(
-                            Icons.send_rounded,
-                            color: Colors.white,
-                            size: 18,
-                          ),
+                  onTap: _send,
+                  child: const Padding(
+                    padding: EdgeInsets.all(11),
+                    child: Icon(
+                      Icons.send_rounded,
+                      color: Colors.white,
+                      size: 18,
+                    ),
                   ),
                 ),
               ),
@@ -2057,24 +2617,52 @@ class _CommentsPanelState extends ConsumerState<_CommentsPanel> {
     );
   }
 
+  /// Post a comment/reply. The comment appears in the list and the card's
+  /// count ticks up the instant Send is tapped; the write + reconcile happen in
+  /// the background, and a failure pulls the optimistic comment back out.
   Future<void> _send() async {
     final text = _input.text.trim();
-    if (text.isEmpty) return;
-    setState(() => _sending = true);
-    try {
-      await _repo.addComment(widget.post.id, text, parentId: _replyToId);
+    final current = _comments;
+    if (text.isEmpty || current == null) return;
+
+    final parentId = _replyToId;
+    final temp = CommunityComment(
+      id: 'temp_${DateTime.now().microsecondsSinceEpoch}',
+      authorId: '',
+      authorName: 'LGU Aparri',
+      authorPhotoUrl: ref.read(adminProfileProvider).valueOrNull?.photoUrl,
+      authorRole: 'admin',
+      body: text,
+      parentId: parentId,
+      likesCount: 0,
+      likedByMe: false,
+      createdAt: DateTime.now(),
+    );
+
+    setState(() {
+      _comments = [...current, temp];
       _input.clear();
       _replyToId = null;
       _replyToName = null;
-      _reload();
+    });
+    _feed.bumpCommentCount(widget.post.id, 1);
+
+    try {
+      await _repo.addComment(widget.post.id, text, parentId: parentId);
+      await _silentSync(); // swap the temp comment for the real row
     } catch (e) {
+      if (mounted) {
+        setState(
+          () => _comments = _comments?.where((c) => c.id != temp.id).toList(),
+        );
+      }
+      _feed.bumpCommentCount(widget.post.id, -1);
       if (mounted) _toast(context, 'Could not post comment: $e', error: true);
-    } finally {
-      if (mounted) setState(() => _sending = false);
     }
   }
 
   Future<void> _delete(CommunityComment c) async {
+    if (c.isOptimistic) return; // still saving; ignore
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -2094,15 +2682,110 @@ class _CommentsPanelState extends ConsumerState<_CommentsPanel> {
         ],
       ),
     );
-    if (ok != true) return;
+    final current = _comments;
+    if (ok != true || current == null) return;
+
+    // Remove instantly (and hide any replies whose parent just vanished).
+    setState(() {
+      _comments = current.where((x) => x.id != c.id).toList();
+    });
+    _feed.bumpCommentCount(widget.post.id, -1);
+
     try {
       await _repo.deleteComment(c.id);
-      _reload();
       if (mounted) _toast(context, 'Comment deleted.');
     } catch (e) {
+      if (mounted) setState(() => _comments = current);
+      _feed.bumpCommentCount(widget.post.id, 1);
       if (mounted) _toast(context, 'Could not delete: $e', error: true);
     }
   }
+
+  /// Edit one of the LGU's own comments — the new text shows immediately.
+  Future<void> _edit(CommunityComment c) async {
+    if (c.isOptimistic) return; // not saved yet
+    final current = _comments;
+    if (current == null) return;
+    final text = await _askEditComment(context, c.body);
+    final newBody = text?.trim() ?? '';
+    if (newBody.isEmpty || newBody == c.body) return;
+
+    setState(() {
+      _comments = [
+        for (final x in current)
+          if (x.id == c.id) x.copyWith(body: newBody) else x,
+      ];
+    });
+
+    try {
+      await _repo.editComment(c.id, newBody);
+      if (mounted) _toast(context, 'Comment updated.');
+    } catch (e) {
+      if (mounted) setState(() => _comments = current);
+      if (mounted) _toast(context, 'Could not edit: $e', error: true);
+    }
+  }
+
+  /// Like / unlike a comment — the heart + count flip on the spot.
+  Future<void> _react(CommunityComment c) async {
+    if (c.isOptimistic) return; // can't like an unsaved comment
+    final current = _comments;
+    if (current == null) return;
+    final nowLiked = !c.likedByMe;
+
+    setState(() {
+      _comments = [
+        for (final x in current)
+          if (x.id == c.id)
+            x.copyWith(
+              likedByMe: nowLiked,
+              likesCount: (x.likesCount + (nowLiked ? 1 : -1)).clamp(0, 1 << 31),
+            )
+          else
+            x,
+      ];
+    });
+
+    try {
+      await _repo.setCommentLike(c.id, nowLiked);
+    } catch (e) {
+      if (mounted) setState(() => _comments = current);
+      if (mounted) _toast(context, 'Could not react: $e', error: true);
+    }
+  }
+}
+
+/// Prompt to edit a comment's text, prefilled with [initial]. Returns the new
+/// text, or null if cancelled.
+Future<String?> _askEditComment(BuildContext context, String initial) {
+  final ctrl = TextEditingController(text: initial);
+  return showDialog<String>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: const Text('Edit comment'),
+      content: TextField(
+        controller: ctrl,
+        autofocus: true,
+        maxLines: 4,
+        minLines: 1,
+        decoration: InputDecoration(
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+          style: FilledButton.styleFrom(backgroundColor: AppColors.primaryBlue),
+          child: const Text('Save'),
+        ),
+      ],
+    ),
+  );
 }
 
 class _CommentSkeletonRow extends StatelessWidget {
@@ -2137,11 +2820,65 @@ class _CommentTile extends StatelessWidget {
   final CommunityComment comment;
   final VoidCallback onDelete;
   final VoidCallback onReply;
+  final VoidCallback onReact;
+
+  /// Null when the comment isn't the LGU's own (only official comments are
+  /// editable); otherwise opens the edit prompt.
+  final VoidCallback? onEdit;
   const _CommentTile({
     required this.comment,
     required this.onDelete,
     required this.onReply,
+    required this.onReact,
+    this.onEdit,
   });
+
+  Widget _textAction(
+    String label,
+    VoidCallback onTap, {
+    Color color = AdminUi.textMuted,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11.5,
+          fontWeight: FontWeight.w700,
+          color: color,
+        ),
+      ),
+    );
+  }
+
+  Widget _likeAction() {
+    final liked = comment.likedByMe;
+    final color = liked ? AppColors.red : AdminUi.textMuted;
+    return GestureDetector(
+      onTap: onReact,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+            size: 14,
+            color: color,
+          ),
+          if (comment.likesCount > 0) ...[
+            const SizedBox(width: 4),
+            Text(
+              '${comment.likesCount}',
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w700,
+                color: color,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2221,7 +2958,10 @@ class _CommentTile extends StatelessWidget {
                 ),
                 Padding(
                   padding: const EdgeInsets.only(top: 4, left: 6),
-                  child: Row(
+                  child: Wrap(
+                    spacing: 14,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       if (comment.createdAt != null)
                         Text(
@@ -2231,30 +2971,10 @@ class _CommentTile extends StatelessWidget {
                             color: AdminUi.textMuted,
                           ),
                         ),
-                      const SizedBox(width: 14),
-                      GestureDetector(
-                        onTap: onReply,
-                        child: const Text(
-                          'Reply',
-                          style: TextStyle(
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w700,
-                            color: AdminUi.textMuted,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      GestureDetector(
-                        onTap: onDelete,
-                        child: const Text(
-                          'Delete',
-                          style: TextStyle(
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.red,
-                          ),
-                        ),
-                      ),
+                      _likeAction(),
+                      _textAction('Reply', onReply),
+                      if (onEdit != null) _textAction('Edit', onEdit!),
+                      _textAction('Delete', onDelete, color: AppColors.red),
                     ],
                   ),
                 ),

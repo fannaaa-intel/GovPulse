@@ -38,6 +38,8 @@ import '../Quick-action/Events/events_screen.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/services/push_service.dart';
+import '../../../core/services/citizen_guard.dart';
+import '../../../core/widgets/citizen_guard_modals.dart';
 import '../../../core/providers/user_profile_provider.dart';
 
 class HomePage extends ConsumerStatefulWidget {
@@ -113,10 +115,39 @@ class _HomePageState extends ConsumerState<HomePage>
     NotificationService.load().then((_) {
       if (mounted) setState(() {});
     });
+
+    // Account enforcement: suspension → modal + auto sign-out; restriction →
+    // notice modal + per-feature gates. Starts the live subscription and shows
+    // the right modal on first load / whenever the status changes.
+    CitizenGuard.I.start();
+    CitizenGuard.I.status.addListener(_onGuardStatus);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _onGuardStatus());
+  }
+
+  bool _guardModalOpen = false;
+  String? _shownRestrictionSig;
+
+  void _onGuardStatus() {
+    if (!mounted || _guardModalOpen) return;
+    final s = CitizenGuard.I.status.value;
+    if (s.suspension != null) {
+      _guardModalOpen = true;
+      showSuspendedModal(context, s.suspension!)
+          .whenComplete(() => _guardModalOpen = false);
+      return;
+    }
+    final r = s.restriction;
+    if (r != null && r.signature != _shownRestrictionSig) {
+      _shownRestrictionSig = r.signature;
+      _guardModalOpen = true;
+      showRestrictionNotice(context, r)
+          .whenComplete(() => _guardModalOpen = false);
+    }
   }
 
   @override
   void dispose() {
+    CitizenGuard.I.status.removeListener(_onGuardStatus);
     homeRouteObserver.unsubscribe(this);
     _entryCtrl.dispose();
     super.dispose();
@@ -182,6 +213,7 @@ class _HomePageState extends ConsumerState<HomePage>
   // ── Navigation helpers ────────────────────────────────────────────────────
 
   void _goToNewsFeed({String? postId, bool openComments = false}) async {
+    if (!citizenGuardAllow(context, 'newsfeed')) return;
     // Ensure the profile is loaded before navigating, so the feed filters by
     // the user's barangay on first open — not just city-wide / LGU broadcasts.
     // On a fresh app launch the profile may still be loading when the user
@@ -209,6 +241,7 @@ class _HomePageState extends ConsumerState<HomePage>
   }
 
   void _goToReport() {
+    if (!citizenGuardAllow(context, 'reports')) return;
     if (_verifStatus != VerifStatus.verified) {
       showVerificationRequiredDialog(
         context,
@@ -228,6 +261,7 @@ class _HomePageState extends ConsumerState<HomePage>
   }
 
   void _goToSuggestion() {
+    if (!citizenGuardAllow(context, 'suggestions')) return;
     if (_verifStatus != VerifStatus.verified) {
       showVerificationRequiredDialog(
         context,
@@ -248,6 +282,7 @@ class _HomePageState extends ConsumerState<HomePage>
 
   // ─── NEW ────────────────────────────────────────────────────────────────────
   void _goToFeedback() {
+    if (!citizenGuardAllow(context, 'feedback')) return;
     if (_verifStatus != VerifStatus.verified) {
       showVerificationRequiredDialog(
         context,
@@ -282,6 +317,7 @@ class _HomePageState extends ConsumerState<HomePage>
   }
 
   void _goToChat() {
+    if (!citizenGuardAllow(context, 'ai_chat')) return;
     if (_verifStatus != VerifStatus.verified) {
       showVerificationRequiredDialog(
         context,

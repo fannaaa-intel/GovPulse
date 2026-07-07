@@ -35,6 +35,14 @@ class AdminEventsNotifier extends AsyncNotifier<List<EventModel>> {
     state = await AsyncValue.guard(_fetch);
   }
 
+  /// Silent background refetch (no loading flash) for the admin shell's
+  /// auto-refresh. Only commits on success, so a transient failure leaves the
+  /// last-good list on screen instead of flipping to an error state.
+  Future<void> silentRefresh() async {
+    final next = await AsyncValue.guard(_fetch);
+    if (next.hasValue) state = next;
+  }
+
   // ── Moderation ─────────────────────────────────────────────────────────────
 
   Future<void> approve(String id) async {
@@ -59,7 +67,14 @@ class AdminEventsNotifier extends AsyncNotifier<List<EventModel>> {
 
   // ── Create / update ─────────────────────────────────────────────────────────
 
+  List<EventModel> get _current => state.valueOrNull ?? const [];
+
   /// Admin-created events publish immediately (status = approved).
+  ///
+  /// Optimistic: when [optimistic] is provided it's shown in the feed the
+  /// instant this is called (the composer can close right away), then the cover
+  /// image uploads + the row inserts in the background and a silent reload swaps
+  /// in the real event. A failure rolls the temp card back and rethrows.
   Future<void> create({
     required String title,
     required String location,
@@ -69,30 +84,47 @@ class AdminEventsNotifier extends AsyncNotifier<List<EventModel>> {
     required String categoryColor,
     required bool isFeatured,
     String? imageUrl,
+    Uint8List? imageBytes,
+    String? imageExt,
     String? description,
     String? whatToExpect,
     String? requirements,
+    EventModel? optimistic,
   }) async {
-    final uid = _db.auth.currentUser?.id;
-    await _db.from('events').insert({
-      'title': title,
-      'location': location,
-      'event_date': eventDate.toIso8601String().substring(0, 10),
-      'event_time': eventTime,
-      'category': category,
-      'category_color': categoryColor,
-      'is_featured': isFeatured,
-      if (imageUrl != null && imageUrl.isNotEmpty) 'image_url': imageUrl,
-      if (description != null && description.trim().isNotEmpty)
-        'description': description.trim(),
-      if (whatToExpect != null && whatToExpect.trim().isNotEmpty)
-        'what_to_expect': whatToExpect.trim(),
-      if (requirements != null && requirements.trim().isNotEmpty)
-        'requirements': requirements.trim(),
-      'status': 'approved',
-      'created_by': uid,
-    });
-    await _reload();
+    final prev = _current;
+    if (optimistic != null) {
+      state = AsyncValue.data([optimistic, ...prev]);
+    }
+    try {
+      // Upload the freshly picked cover (if any) in the background.
+      var url = imageUrl;
+      if (imageBytes != null) {
+        url = await uploadImage(imageBytes, imageExt ?? 'jpg');
+      }
+      final uid = _db.auth.currentUser?.id;
+      await _db.from('events').insert({
+        'title': title,
+        'location': location,
+        'event_date': eventDate.toIso8601String().substring(0, 10),
+        'event_time': eventTime,
+        'category': category,
+        'category_color': categoryColor,
+        'is_featured': isFeatured,
+        if (url != null && url.isNotEmpty) 'image_url': url,
+        if (description != null && description.trim().isNotEmpty)
+          'description': description.trim(),
+        if (whatToExpect != null && whatToExpect.trim().isNotEmpty)
+          'what_to_expect': whatToExpect.trim(),
+        if (requirements != null && requirements.trim().isNotEmpty)
+          'requirements': requirements.trim(),
+        'status': 'approved',
+        'created_by': uid,
+      });
+      await _reload();
+    } catch (e) {
+      if (optimistic != null) state = AsyncValue.data(prev);
+      rethrow;
+    }
   }
 
   Future<void> edit(String id, Map<String, dynamic> fields) async {

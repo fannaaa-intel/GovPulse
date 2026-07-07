@@ -4,8 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../providers/admin_dashboard_provider.dart';
-import '../providers/admin_reports_provider.dart' show ReportStatus;
+import '../providers/admin_reports_provider.dart'
+    show ReportStatus, AdminReport, adminReportsProvider;
 import '../theme/admin_ui.dart';
+import '../utils/report_export.dart';
 import '../widgets/admin_skeleton.dart';
 import '../widgets/admin_snackbar.dart';
 
@@ -31,11 +33,40 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
   // toggle is instant and needs no refetch.
   int _rangeDays = 30;
 
+  // True while a CSV export is being built/saved, so the button can't be
+  // double-triggered and shows a spinner.
+  bool _exporting = false;
+
+  // Which dashboard section is shown, on narrow screens only (see below).
+  int _tab = 0;
+  static const List<String> _tabLabels = [
+    'Overview',
+    'Reports',
+    'AI',
+    'Ratings',
+  ];
+
+  /// Below this available width the dashboard splits into tabs to cut scrolling
+  /// (the phone app). At or above it — tablets landscape, desktop, web — the
+  /// full single-scroll layout is kept, since the wide side-by-side rows
+  /// already make it compact and there's room to show everything at once.
+  static const double _kTabbedMaxWidth = 900;
+
   @override
   Widget build(BuildContext context) {
     final async = ref.watch(adminDashboardProvider);
-    final pad = MediaQuery.of(context).size.width < 600 ? 16.0 : 24.0;
+    return LayoutBuilder(
+      builder: (context, c) {
+        final pad = c.maxWidth < 600 ? 16.0 : 24.0;
+        return c.maxWidth < _kTabbedMaxWidth
+            ? _buildTabbedLayout(async, pad)
+            : _buildFullLayout(async, pad);
+      },
+    );
+  }
 
+  // ── Wide / web layout: the original full single-scroll dashboard ──────────
+  Widget _buildFullLayout(AsyncValue<AdminDashboardData> async, double pad) {
     return RefreshIndicator(
       onRefresh: () => ref.read(adminDashboardProvider.notifier).refresh(),
       child: SingleChildScrollView(
@@ -68,6 +99,131 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
         ),
       ),
     );
+  }
+
+  // ── Narrow / app layout: pinned header + tabs to minimise scrolling ───────
+  Widget _buildTabbedLayout(AsyncValue<AdminDashboardData> async, double pad) {
+    return Column(
+      children: [
+        // Pinned zone — greeting, range toggle and the tab bar stay put while
+        // only the tab's content scrolls beneath them.
+        Padding(
+          padding: EdgeInsets.fromLTRB(pad, pad, pad, 0),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1400),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildHeader(),
+                  const SizedBox(height: 16),
+                  _buildTabBar(),
+                ],
+              ),
+            ),
+          ),
+        ),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: () =>
+                ref.read(adminDashboardProvider.notifier).refresh(),
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: EdgeInsets.fromLTRB(pad, 16, pad, pad + 24),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1400),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (async.hasError) ...[
+                        _buildErrorBanner(),
+                        const SizedBox(height: 16),
+                      ],
+                      ..._buildTabSections(async),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ── Tab bar + per-tab content (narrow layout only) ────────────────────────
+  Widget _buildTabBar() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: AdminUi.surface,
+        borderRadius: BorderRadius.circular(AdminUi.controlRadius),
+        border: Border.all(color: AdminUi.border),
+      ),
+      child: Row(
+        children: [
+          for (int i = 0; i < _tabLabels.length; i++)
+            Expanded(child: _tabButton(_tabLabels[i], i)),
+        ],
+      ),
+    );
+  }
+
+  Widget _tabButton(String label, int i) {
+    final selected = _tab == i;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => setState(() => _tab = i),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 6),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected ? AppColors.primaryBlue : Colors.transparent,
+          borderRadius: BorderRadius.circular(AdminUi.controlRadius - 3),
+        ),
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+            color: selected ? Colors.white : AdminUi.textSecondary,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The sections shown under the active tab. Each tab is deliberately short so
+  /// it fits with little scrolling (the whole point of the split):
+  ///  • Overview — headline KPIs + recent activity
+  ///  • Reports  — volume trend, status mix, top categories
+  ///  • AI       — the NLP insights hero
+  ///  • Ratings  — citizen satisfaction
+  List<Widget> _buildTabSections(AsyncValue<AdminDashboardData> async) {
+    switch (_tab) {
+      case 1:
+        return [
+          _buildChartsRow(async),
+          const SizedBox(height: 16),
+          _buildCategoriesCard(async),
+        ];
+      case 2:
+        return [_buildAiHero(async)];
+      case 3:
+        return [_buildSatisfactionCard(async)];
+      case 0:
+      default:
+        return [
+          _buildKpiRow(async),
+          const SizedBox(height: 16),
+          _buildActivitySection(async),
+        ];
+    }
   }
 
   // ── Header band ────────────────────────────────────────────────────────────
@@ -173,31 +329,35 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
       borderRadius: BorderRadius.circular(AdminUi.controlRadius),
       child: InkWell(
         borderRadius: BorderRadius.circular(AdminUi.controlRadius),
-        onTap: () {
-          showAdminSnackBar(
-            context,
-            'Export coming soon',
-            type: AdminSnackType.info,
-          );
-        },
+        onTap: _exporting ? null : _exportReports,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(AdminUi.controlRadius),
             border: Border.all(color: AdminUi.border),
           ),
-          child: const Row(
+          child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                Icons.download_rounded,
-                size: 16,
-                color: AdminUi.textSecondary,
-              ),
-              SizedBox(width: 6),
+              if (_exporting)
+                const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: AdminUi.textSecondary,
+                  ),
+                )
+              else
+                const Icon(
+                  Icons.download_rounded,
+                  size: 16,
+                  color: AdminUi.textSecondary,
+                ),
+              const SizedBox(width: 6),
               Text(
-                'Export',
-                style: TextStyle(
+                _exporting ? 'Exporting…' : 'Export',
+                style: const TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
                   color: AdminUi.textSecondary,
@@ -208,6 +368,57 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
         ),
       ),
     );
+  }
+
+  /// Export the reports in the currently selected range (7/30/90 days) as a CSV.
+  /// On web this downloads the file; on mobile it opens the share sheet.
+  Future<void> _exportReports() async {
+    setState(() => _exporting = true);
+    try {
+      final all = await ref.read(adminReportsProvider.future);
+
+      // Same window the trend chart uses: midnight, (days - 1) back to now.
+      final now = DateTime.now();
+      final start = DateTime(
+        now.year,
+        now.month,
+        now.day,
+      ).subtract(Duration(days: _rangeDays - 1));
+      final inRange = <AdminReport>[
+        for (final r in all)
+          if (r.createdAt != null && !r.createdAt!.isBefore(start)) r,
+      ];
+
+      if (!mounted) return;
+      if (inRange.isEmpty) {
+        showAdminSnackBar(
+          context,
+          'No reports in the last $_rangeDays days to export.',
+          type: AdminSnackType.info,
+        );
+        return;
+      }
+
+      final stamp = '${now.year}'
+          '${now.month.toString().padLeft(2, '0')}'
+          '${now.day.toString().padLeft(2, '0')}';
+      await exportReportsCsv(
+        filename: 'govpulse-reports-${_rangeDays}d-$stamp.csv',
+        reports: inRange,
+      );
+
+      if (!mounted) return;
+      showAdminSnackBar(
+        context,
+        'Exported ${inRange.length} report${inRange.length == 1 ? '' : 's'}.',
+        type: AdminSnackType.success,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      showAdminSnackBar(context, 'Export failed: $e', type: AdminSnackType.error);
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
   }
 
   Widget _buildErrorBanner() {
@@ -370,7 +581,7 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
     );
   }
 
-  // ── 3. Quality row: satisfaction + top categories ─────────────────────────
+  // ── Quality row: satisfaction + top categories (full layout only) ─────────
   Widget _buildQualityRow(AsyncValue<AdminDashboardData> async) {
     return LayoutBuilder(
       builder: (context, c) {
@@ -762,6 +973,9 @@ class _TrendChart extends StatelessWidget {
         maxX: (days - 1).toDouble(),
         minY: 0,
         maxY: maxY,
+        // Hard-clip everything to the plot area so a curved spline can never
+        // draw the line/fill outside the card (the overshoot bug on filtering).
+        clipData: const FlClipData.all(),
         gridData: FlGridData(
           show: true,
           drawVerticalLine: false,
@@ -826,6 +1040,9 @@ class _TrendChart extends StatelessWidget {
             spots: spots,
             isCurved: true,
             curveSmoothness: 0.25,
+            // Keep the spline from bulging past its data points (below 0 / above
+            // the peak), which is what pushed the line outside the container.
+            preventCurveOverShooting: true,
             color: AppColors.primaryBlue,
             barWidth: 2.5,
             isStrokeCapRound: true,

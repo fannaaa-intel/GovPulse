@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_colors.dart';
 import '../theme/admin_ui.dart';
 import '../providers/admin_feedback_provider.dart';
+import '../widgets/admin_detail_screen.dart';
 import '../widgets/admin_submission_ui.dart';
 import '../widgets/admin_snackbar.dart';
 
@@ -201,9 +202,8 @@ class _AdminFeedbackPageState extends ConsumerState<AdminFeedbackPage> {
   }
 
   Future<void> _openDetail(AdminFeedback f) async {
-    await showDialog(
-      context: context,
-      barrierColor: Colors.black54,
+    await showAdminDetail(
+      context,
       builder: (_) => _FeedbackDetailDialog(feedback: f),
     );
   }
@@ -807,11 +807,9 @@ class _FeedbackDetailDialogState extends ConsumerState<_FeedbackDetailDialog> {
       if (f.aspectFacility != null) MapEntry('Facility', f.aspectFacility!),
     ];
 
-    final body = Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 18, 12, 14),
+    // Rich header — X only in the wide dialog; the narrow page uses the chevron.
+    Widget richHeader({required bool showClose}) => Padding(
+          padding: EdgeInsets.fromLTRB(20, showClose ? 18 : 12, 12, 12),
           child: Row(
             children: [
               Container(
@@ -849,108 +847,114 @@ class _FeedbackDetailDialogState extends ConsumerState<_FeedbackDetailDialog> {
                   ],
                 ),
               ),
-              IconButton(
-                onPressed: () => Navigator.pop(context),
-                icon: const Icon(Icons.close_rounded),
-                color: AdminUi.textMuted,
-              ),
+              if (showClose)
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close_rounded),
+                  color: AdminUi.textMuted,
+                ),
             ],
           ),
-        ),
-        const Divider(height: 1, color: AdminUi.border),
-        Flexible(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SubmitterBlock(
-                  isAnonymous: f.isAnonymous,
-                  name: f.submitterName,
-                  photoUrl: f.submitterPhotoUrl,
-                  role: null,
-                ),
-                const SizedBox(height: 20),
-                _sectionTitle('SERVICE'),
-                const SizedBox(height: 8),
-                Text(f.serviceName.isEmpty ? '—' : f.serviceName,
-                    style: const TextStyle(
-                        fontSize: 13.5, height: 1.4, color: AdminUi.textPrimary)),
-                const SizedBox(height: 6),
-                Text('Visited · ${adminShortDate(f.visitDate)}',
-                    style: const TextStyle(
-                        fontSize: 12, color: AdminUi.textMuted)),
-                const SizedBox(height: 20),
-                _sectionTitle('OVERALL RATING'),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    _StarRow(rating: f.overallRating, size: 20),
-                    const SizedBox(width: 10),
-                    Text(feedbackRatingLabel(f.overallRating),
-                        style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: AdminUi.textSecondary)),
-                  ],
-                ),
-                if (aspects.isNotEmpty) ...[
-                  const SizedBox(height: 20),
-                  _sectionTitle('ASPECT RATINGS'),
-                  const SizedBox(height: 10),
-                  _AspectGrid(aspects: aspects),
-                ],
-                const SizedBox(height: 20),
-                _sectionTitle('COMMENT'),
-                const SizedBox(height: 8),
-                Text(
-                  f.comment ?? 'No comment provided.',
-                  style: TextStyle(
-                    fontSize: 13.5,
-                    height: 1.5,
-                    color: f.comment == null
-                        ? AdminUi.textMuted
-                        : AdminUi.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                _sectionTitle('PHOTOS'),
-                const SizedBox(height: 10),
-                _PhotoGallery(urls: f.photoUrls),
-                const SizedBox(height: 22),
-                RespondPanel(
-                  isAnonymous: f.isAnonymous,
-                  respondedAt: _respondedAt,
-                  existingResponse: _response,
-                  templates: _kFeedbackTemplates,
-                  noteController: _noteCtrl,
-                  onSendResponse: _respond,
-                  onSaveNote: _saveNote,
-                ),
-              ],
+        );
+
+    final scrollContent = SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SubmitterBlock(
+            isAnonymous: f.isAnonymous,
+            name: f.submitterName,
+            photoUrl: f.submitterPhotoUrl,
+            role: null,
+          ),
+          const SizedBox(height: 20),
+          _sectionTitle('SERVICE'),
+          const SizedBox(height: 8),
+          Text(f.serviceName.isEmpty ? '—' : f.serviceName,
+              style: const TextStyle(
+                  fontSize: 13.5, height: 1.4, color: AdminUi.textPrimary)),
+          const SizedBox(height: 6),
+          Text('Visited · ${adminShortDate(f.visitDate)}',
+              style: const TextStyle(fontSize: 12, color: AdminUi.textMuted)),
+          const SizedBox(height: 20),
+          _sectionTitle('OVERALL RATING'),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              _StarRow(rating: f.overallRating, size: 20),
+              const SizedBox(width: 10),
+              Text(feedbackRatingLabel(f.overallRating),
+                  style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AdminUi.textSecondary)),
+            ],
+          ),
+          if (aspects.isNotEmpty) ...[
+            const SizedBox(height: 20),
+            _sectionTitle('ASPECT RATINGS'),
+            const SizedBox(height: 10),
+            _AspectGrid(aspects: aspects),
+          ],
+          const SizedBox(height: 20),
+          _sectionTitle('COMMENT'),
+          const SizedBox(height: 8),
+          Text(
+            f.comment ?? 'No comment provided.',
+            style: TextStyle(
+              fontSize: 13.5,
+              height: 1.5,
+              color:
+                  f.comment == null ? AdminUi.textMuted : AdminUi.textPrimary,
             ),
           ),
-        ),
-      ],
+          const SizedBox(height: 20),
+          _sectionTitle('PHOTOS'),
+          const SizedBox(height: 10),
+          _PhotoGallery(urls: f.photoUrls),
+          const SizedBox(height: 22),
+          RespondPanel(
+            isAnonymous: f.isAnonymous,
+            respondedAt: _respondedAt,
+            existingResponse: _response,
+            templates: _kFeedbackTemplates,
+            noteController: _noteCtrl,
+            onSendResponse: _respond,
+            onSaveNote: _saveNote,
+          ),
+        ],
+      ),
     );
 
+    // Narrow → full-screen page.
     if (narrow) {
-      return Dialog(
-        backgroundColor: AdminUi.surface,
-        insetPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxHeight: size.height * 0.9),
-          child: body,
+      return AdminDetailScaffold(
+        title: 'Feedback details',
+        child: Column(
+          children: [
+            richHeader(showClose: false),
+            const Divider(height: 1, color: AdminUi.border),
+            Expanded(child: scrollContent),
+          ],
         ),
       );
     }
+
+    // Wide → centered dialog card.
     return Dialog(
       backgroundColor: AdminUi.surface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 640, maxHeight: 720),
-        child: body,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            richHeader(showClose: true),
+            const Divider(height: 1, color: AdminUi.border),
+            Flexible(child: scrollContent),
+          ],
+        ),
       ),
     );
   }

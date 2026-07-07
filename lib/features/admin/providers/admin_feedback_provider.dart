@@ -237,6 +237,10 @@ class AdminFeedbackNotifier extends AsyncNotifier<List<AdminFeedback>> {
     });
   }
 
+  /// Silent background refetch (no loading flash, keeps current filters) for the
+  /// admin shell's auto-refresh — `_reload` already preserves the view.
+  Future<void> silentRefresh() => _reload();
+
   Future<void> _reload() async {
     final next = await AsyncValue.guard(_fetchAll);
     if (next.hasValue) {

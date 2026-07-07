@@ -326,6 +326,15 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
     state = await AsyncValue.guard(_fetch);
   }
 
+  /// Background refetch that keeps the current data on screen — no loading
+  /// flash. Drives the dashboard's silent auto-refresh (poll + on tab focus).
+  /// A failed refetch is swallowed so a transient network blip never wipes the
+  /// last-good data or shows an error banner over live numbers.
+  Future<void> silentRefresh() async {
+    final next = await AsyncValue.guard(_fetch);
+    if (next.hasValue) state = next;
+  }
+
   Future<AdminDashboardData> _fetch() async {
     // Independent reads run concurrently.
     final results = await Future.wait<List<Map<String, dynamic>>>([

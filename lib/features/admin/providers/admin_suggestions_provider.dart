@@ -222,6 +222,10 @@ class AdminSuggestionsNotifier extends AsyncNotifier<List<AdminSuggestion>> {
     }
   }
 
+  /// Silent background refetch (no loading flash, keeps current filters) for the
+  /// admin shell's auto-refresh — `_reload` already preserves the view.
+  Future<void> silentRefresh() => _reload();
+
   /// The filtered + sorted slice the UI renders.
   List<AdminSuggestion> _view() {
     Iterable<AdminSuggestion> list = _all;
@@ -267,7 +271,7 @@ class AdminSuggestionsNotifier extends AsyncNotifier<List<AdminSuggestion>> {
     final msg = message.trim();
     final row = await _db
         .from('suggestions')
-        .select('user_id, is_anonymous')
+        .select('user_id, is_anonymous, category, category_other, details')
         .eq('id', id)
         .single();
     if ((row['is_anonymous'] as bool?) == true) {
@@ -283,10 +287,22 @@ class AdminSuggestionsNotifier extends AsyncNotifier<List<AdminSuggestion>> {
       // the responding admin as the actor makes the citizen's notification
       // render the admin's profile photo instead of a generic bell icon.
       final actorPhotoUrl = await _fetchAdminPhotoUrl(adminId);
+
+      // Anchor the notification to the specific suggestion, so a generic reply
+      // ("this isn't feasible") still tells the citizen WHAT it's about. The
+      // title names the category; the subtitle quotes a snippet of their own
+      // words before the reply, answering "response to what?" at a glance.
+      final category = suggestionCategoryLabel(
+        row['category'] as String?,
+        row['category_other'] as String?,
+      );
+      final title = 'Response to your $category suggestion';
+      final subtitle = _responseSubtitle(row['details'] as String?, msg);
+
       await _db.from('notifications').insert({
         'user_id': recipient,
-        'title': 'Response to your suggestion',
-        'subtitle': msg,
+        'title': title,
+        'subtitle': subtitle,
         'type': 'general',
         'color_value': 0xFF0D47A1,
         'icon_code': 0,
@@ -471,6 +487,20 @@ class AdminSuggestionsNotifier extends AsyncNotifier<List<AdminSuggestion>> {
     } catch (_) {
       return null;
     }
+  }
+
+  /// Builds the citizen-facing response subtitle: a short quote of their
+  /// original suggestion followed by the admin's reply, so the notification
+  /// carries its own context ("Re: … — reply") instead of a bare message.
+  /// Falls back to just the reply when the original details are empty.
+  static String _responseSubtitle(String? details, String reply) {
+    final original = (details ?? '').trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (original.isEmpty) return reply;
+    const maxLen = 80;
+    final snippet = original.length > maxLen
+        ? '${original.substring(0, maxLen).trimRight()}…'
+        : original;
+    return 'Re: "$snippet"\n$reply';
   }
 
   static double? _parseDouble(dynamic v) {

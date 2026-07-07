@@ -173,6 +173,22 @@ class AdminNotifCenter {
   /// index) so the notification panel stays decoupled from the nav order.
   final ValueNotifier<String?> openTopic = ValueNotifier<String?>(null);
 
+  /// Topics the admin has muted in Settings — excluded from the unread badge.
+  /// Fed by AdminSettingsNotifier (persisted in SharedPreferences).
+  Set<String> _mutedTopics = const {};
+  Set<String> get mutedTopics => _mutedTopics;
+
+  /// Admin topics that still count toward the badge (all topics minus muted).
+  List<String> get _countedTopics =>
+      kAllAdminTopics.where((t) => !_mutedTopics.contains(t)).toList();
+
+  /// Replace the muted-topic set and immediately recompute the unread badge, so
+  /// muting/unmuting is reflected the instant it's toggled in Settings.
+  void setMutedTopics(Set<String> topics) {
+    _mutedTopics = {...topics};
+    refreshUnread();
+  }
+
   RealtimeChannel? _channel;
   String? _subscribedUid;
 
@@ -219,12 +235,18 @@ class AdminNotifCenter {
       unread.value = 0;
       return;
     }
+    final counted = _countedTopics;
+    if (counted.isEmpty) {
+      // Every admin topic is muted → nothing to badge.
+      unread.value = 0;
+      return;
+    }
     try {
       final rows = await _sb
           .from('notifications')
           .select('id')
           .eq('user_id', uid)
-          .inFilter('topic', kAllAdminTopics)
+          .inFilter('topic', counted)
           .isFilter('read_at', null);
       unread.value = (rows as List).length;
     } catch (_) {
