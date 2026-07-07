@@ -723,6 +723,31 @@ class CommunityPostsProvider extends ChangeNotifier {
       }
     }
 
+    // Officials (admin/staff) keep their avatar in `admin_profiles`, not in
+    // public_user_profiles/profile-photos — so a comment by the LGU account
+    // would otherwise render the default icon and its public_user_profiles name
+    // ("System Admin"). Anyone with an admin_profiles row is official, so brand
+    // them as "LGU Aparri" with their uploaded avatar — matching how the SAME
+    // account renders on posts (via _officialPhotosFor).
+    try {
+      final admins = await _supabase
+          .from('admin_profiles')
+          .select('user_id, photo_url')
+          .inFilter('user_id', userIds);
+      for (final r in (admins as List).cast<Map<String, dynamic>>()) {
+        final id = r['user_id'] as String;
+        final url = (r['photo_url'] as String?)?.trim();
+        final entry = out.putIfAbsent(
+          id,
+          () => {'name': null, 'photoPath': null, 'photoUrl': null},
+        );
+        entry['name'] = 'LGU Aparri';
+        if (url != null && url.isNotEmpty) entry['photoUrl'] = url;
+      }
+    } catch (_) {
+      // Non-fatal — officials just fall back to the default avatar/name.
+    }
+
     return out;
   }
 

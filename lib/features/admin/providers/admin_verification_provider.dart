@@ -209,6 +209,14 @@ class AdminVerificationNotifier extends AsyncNotifier<List<AdminVerification>> {
     state = await AsyncValue.guard(_fetch);
   }
 
+  /// Silent background refetch (no loading flash, keeps current filters/search)
+  /// for the admin shell's auto-refresh. Unlike [_reload] it never shows the
+  /// loading state, and only commits on success so a blip keeps the last list.
+  Future<void> silentRefresh() async {
+    final next = await AsyncValue.guard(_fetch);
+    if (next.hasValue) state = next;
+  }
+
   Future<List<AdminVerification>> _fetch() async {
     var query = _db
         .from('verification_submissions')

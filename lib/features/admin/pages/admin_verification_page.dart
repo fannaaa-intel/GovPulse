@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_colors.dart';
 import '../theme/admin_ui.dart';
 import '../providers/admin_verification_provider.dart';
+import '../widgets/admin_detail_screen.dart';
 import '../widgets/admin_skeleton.dart';
 import '../widgets/admin_snackbar.dart';
 import '../../home/screen/notification_popup.dart';
@@ -40,9 +41,8 @@ class _AdminVerificationPageState
   }
 
   Future<void> _openDetail(AdminVerification v) async {
-    await showDialog(
-      context: context,
-      barrierColor: Colors.black54,
+    await showAdminDetail(
+      context,
       builder: (_) => _VerificationDetailDialog(verification: v),
     );
   }
@@ -958,21 +958,23 @@ class _VerificationDetailDialogState
   @override
   Widget build(BuildContext context) {
     final v = widget.verification;
+    final narrow = adminDetailIsNarrow(context);
     final width = MediaQuery.of(context).size.width.clamp(0.0, 640.0);
 
-    return Dialog(
-      backgroundColor: AdminUi.surface,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: width, maxHeight: 640),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 18, 12, 14),
-              child: Row(
-                children: [
-                  _Avatar(name: v.fullName, size: 44),
+    final content = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Narrow full-screen page gets the chevron header on top; wide keeps
+        // the X in the rich header below.
+        if (narrow) ...[
+          const AdminChevronHeader(title: 'ID verification'),
+          const Divider(height: 1, color: AdminUi.border),
+        ],
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 18, 12, 14),
+          child: Row(
+            children: [
+              _Avatar(name: v.fullName, size: 44),
                   const SizedBox(width: 14),
                   Expanded(
                     child: Column(
@@ -991,11 +993,12 @@ class _VerificationDetailDialogState
                       ],
                     ),
                   ),
-                  IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close_rounded),
-                    color: AdminUi.textMuted,
-                  ),
+                  if (!narrow)
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close_rounded),
+                      color: AdminUi.textMuted,
+                    ),
                 ],
               ),
             ),
@@ -1037,8 +1040,8 @@ class _VerificationDetailDialogState
                     ),
                     const SizedBox(height: 22),
                     _sectionTitle('APPLICANT DETAILS'),
-                    const SizedBox(height: 12),
-                    _infoCard([
+                    const SizedBox(height: 14),
+                    _detailGroup('Identification', [
                       _InfoTile(
                         icon: Icons.badge_rounded,
                         label: 'ID type',
@@ -1049,6 +1052,9 @@ class _VerificationDetailDialogState
                         label: 'ID number',
                         value: v.idNumber,
                       ),
+                    ]),
+                    const SizedBox(height: 16),
+                    _detailGroup('Personal', [
                       _InfoTile(
                         icon: Icons.wc_rounded,
                         label: 'Gender',
@@ -1069,6 +1075,9 @@ class _VerificationDetailDialogState
                         label: 'Civil status',
                         value: v.civilStatus,
                       ),
+                    ]),
+                    const SizedBox(height: 16),
+                    _detailGroup('Contact & address', [
                       _InfoTile(
                         icon: Icons.phone_rounded,
                         label: 'Contact number',
@@ -1084,22 +1093,28 @@ class _VerificationDetailDialogState
                         label: 'Street',
                         value: v.street,
                       ),
+                    ]),
+                    const SizedBox(height: 22),
+                    _sectionTitle('TIMELINE'),
+                    const SizedBox(height: 12),
+                    _infoCard([
                       _InfoTile(
                         icon: Icons.event_rounded,
                         label: 'Submitted',
                         value: _shortDate(v.createdAt),
                       ),
+                      if (v.status != VerificationStatus.pending)
+                        _InfoTile(
+                          icon: Icons.event_available_rounded,
+                          label: 'Reviewed',
+                          value: _shortDate(v.reviewedAt),
+                        ),
                     ]),
                     if (v.status != VerificationStatus.pending) ...[
                       const SizedBox(height: 22),
                       _sectionTitle('REVIEW'),
                       const SizedBox(height: 12),
                       _infoCard([
-                        _InfoTile(
-                          icon: Icons.event_available_rounded,
-                          label: 'Reviewed',
-                          value: _shortDate(v.reviewedAt),
-                        ),
                         _InfoTile(
                           icon: Icons.sticky_note_2_rounded,
                           label: 'Notes',
@@ -1158,7 +1173,23 @@ class _VerificationDetailDialogState
               ),
             ],
           ],
+    );
+
+    // Narrow → full-screen slide-up page; wide → centered dialog card.
+    if (narrow) {
+      return AdminSlideUp(
+        child: Scaffold(
+          backgroundColor: AdminUi.surface,
+          body: SafeArea(child: content),
         ),
+      );
+    }
+    return Dialog(
+      backgroundColor: AdminUi.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: width, maxHeight: 640),
+        child: content,
       ),
     );
   }
@@ -1194,6 +1225,29 @@ class _VerificationDetailDialogState
           );
         },
       ),
+    );
+  }
+
+  /// A named sub-group inside a section — a small subheading over its own info
+  /// card. Used to break the long applicant-details list into scannable
+  /// categories (Identification / Personal / Contact) instead of one dense grid.
+  Widget _detailGroup(String title, List<Widget> tiles) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 2, bottom: 8),
+          child: Text(
+            title,
+            style: const TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+              color: AdminUi.textSecondary,
+            ),
+          ),
+        ),
+        _infoCard(tiles),
+      ],
     );
   }
 }

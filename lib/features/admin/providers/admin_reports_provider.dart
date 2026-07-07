@@ -239,6 +239,11 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
     }
   }
 
+  /// Silent background refetch (no loading flash, keeps current filters) for the
+  /// admin shell's auto-refresh. `_reload` already preserves the view, so this
+  /// is just its public alias.
+  Future<void> silentRefresh() => _reload();
+
   /// Write then reload to reflect the truth.
   Future<void> updateStatus(String id, ReportStatus status) async {
     await _db

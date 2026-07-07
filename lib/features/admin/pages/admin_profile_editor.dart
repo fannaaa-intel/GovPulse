@@ -169,11 +169,14 @@ class _AdminProfileFormState extends ConsumerState<_AdminProfileForm> {
         mainAxisSize: widget.fullScreen ? MainAxisSize.max : MainAxisSize.min,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 16, 12),
+            padding: EdgeInsets.fromLTRB(widget.fullScreen ? 12 : 18, 12, 8, 12),
             child: Row(
               children: [
-                AdminDialogBack(onTap: () => Navigator.pop(context)),
-                const SizedBox(width: 12),
+                // Phone: back chevron on the left. Web/desktop: X on the right.
+                if (widget.fullScreen) ...[
+                  AdminDialogBack(onTap: () => Navigator.pop(context)),
+                  const SizedBox(width: 12),
+                ],
                 const Expanded(
                   child: Text(
                     'Edit profile',
@@ -184,6 +187,12 @@ class _AdminProfileFormState extends ConsumerState<_AdminProfileForm> {
                     ),
                   ),
                 ),
+                if (!widget.fullScreen)
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded,
+                        color: AdminUi.textMuted),
+                    onPressed: () => Navigator.pop(context),
+                  ),
               ],
             ),
           ),

@@ -5,6 +5,7 @@ import 'package:video_player/video_player.dart';
 import '../../../core/theme/app_colors.dart';
 import '../theme/admin_ui.dart';
 import '../providers/admin_reports_provider.dart';
+import '../widgets/admin_detail_screen.dart';
 import '../widgets/admin_submission_ui.dart';
 import '../widgets/admin_snackbar.dart';
 
@@ -193,9 +194,8 @@ class _AdminReportsPageState extends ConsumerState<AdminReportsPage> {
   }
 
   Future<void> _openDetail(AdminReport r) async {
-    await showDialog(
-      context: context,
-      barrierColor: Colors.black54,
+    await showAdminDetail(
+      context,
       builder: (_) => _ReportDetailDialog(report: r),
     );
   }
@@ -795,11 +795,10 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
     final size = MediaQuery.of(context).size;
     final narrow = size.width < 640;
 
-    final body = Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 18, 12, 14),
+    // Rich header — the category icon + title + id + status. The X only shows
+    // in the wide dialog; the narrow full-screen page uses the chevron header.
+    Widget richHeader({required bool showClose}) => Padding(
+          padding: EdgeInsets.fromLTRB(20, showClose ? 18 : 12, 12, 12),
           child: Row(
             children: [
               _CategoryIconBox(r.categoryKey, size: 44),
@@ -829,72 +828,84 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
                   ],
                 ),
               ),
-              IconButton(
-                onPressed: () => Navigator.pop(context),
-                icon: const Icon(Icons.close_rounded),
-                color: AdminUi.textMuted,
-              ),
+              if (showClose)
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close_rounded),
+                  color: AdminUi.textMuted,
+                ),
             ],
           ),
-        ),
-        const Divider(height: 1, color: AdminUi.border),
-        Flexible(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SubmitterBlock(
-                  isAnonymous: r.isAnonymous,
-                  name: r.submitterName,
-                  photoUrl: r.submitterPhotoUrl,
-                  role: r.submitterRole,
-                ),
-                const SizedBox(height: 20),
-                _sectionTitle('REPORT DETAILS'),
-                const SizedBox(height: 8),
-                Text(
-                  r.remarks.trim().isEmpty ? '—' : r.remarks,
-                  style: const TextStyle(
-                    fontSize: 13.5,
-                    height: 1.5,
-                    color: AdminUi.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                _sectionTitle('LOCATION'),
-                const SizedBox(height: 8),
-                _LocationBlock(report: r),
-                const SizedBox(height: 20),
-                _sectionTitle('ATTACHMENTS'),
-                const SizedBox(height: 10),
-                _MediaGallery(future: _mediaFuture),
-              ],
+        );
+
+    final scrollContent = SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SubmitterBlock(
+            isAnonymous: r.isAnonymous,
+            name: r.submitterName,
+            photoUrl: r.submitterPhotoUrl,
+            role: r.submitterRole,
+          ),
+          const SizedBox(height: 20),
+          _sectionTitle('REPORT DETAILS'),
+          const SizedBox(height: 8),
+          Text(
+            r.remarks.trim().isEmpty ? '—' : r.remarks,
+            style: const TextStyle(
+              fontSize: 13.5,
+              height: 1.5,
+              color: AdminUi.textPrimary,
             ),
           ),
-        ),
-        const Divider(height: 1, color: AdminUi.border),
-        _StatusFooter(current: _status, onChange: _changeStatus),
-      ],
+          const SizedBox(height: 20),
+          _sectionTitle('LOCATION'),
+          const SizedBox(height: 8),
+          _LocationBlock(report: r),
+          const SizedBox(height: 20),
+          _sectionTitle('ATTACHMENTS'),
+          const SizedBox(height: 10),
+          _MediaGallery(future: _mediaFuture),
+        ],
+      ),
     );
 
+    final footer = _StatusFooter(current: _status, onChange: _changeStatus);
+
+    // Narrow → full-screen page: chevron header, rich header, content, footer.
     if (narrow) {
-      return Dialog(
-        backgroundColor: AdminUi.surface,
-        insetPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxHeight: size.height * 0.9),
-          child: body,
+      return AdminDetailScaffold(
+        title: 'Report details',
+        child: Column(
+          children: [
+            richHeader(showClose: false),
+            const Divider(height: 1, color: AdminUi.border),
+            Expanded(child: scrollContent),
+            const Divider(height: 1, color: AdminUi.border),
+            footer,
+          ],
         ),
       );
     }
+
+    // Wide → centered dialog card.
     return Dialog(
       backgroundColor: AdminUi.surface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 640, maxHeight: 680),
-        child: body,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            richHeader(showClose: true),
+            const Divider(height: 1, color: AdminUi.border),
+            Flexible(child: scrollContent),
+            const Divider(height: 1, color: AdminUi.border),
+            footer,
+          ],
+        ),
       ),
     );
   }

@@ -1471,6 +1471,23 @@ void showEventForm(BuildContext context, {EventModel? existing}) {
   }
 }
 
+/// Awaits a background event create and toasts the outcome on a context that
+/// outlives the (already-closed) composer. Top-level so it never touches the
+/// disposed composer State.
+Future<void> _reportEventSave(Future<void> op, BuildContext ctx) async {
+  try {
+    await op;
+    if (ctx.mounted) {
+      showAdminSnackBar(ctx, 'Event published.', type: AdminSnackType.success);
+    }
+  } catch (_) {
+    if (ctx.mounted) {
+      showAdminSnackBar(ctx, 'Could not publish the event. Please try again.',
+          type: AdminSnackType.error);
+    }
+  }
+}
+
 class _EventFormDialog extends ConsumerStatefulWidget {
   final EventModel? existing;
   const _EventFormDialog({this.existing});
@@ -1590,25 +1607,20 @@ class _EventFormDialogState extends ConsumerState<_EventFormDialog> {
       setState(() => _error = 'Please choose an event date.');
       return;
     }
-    setState(() {
-      _saving = true;
-      _error = null;
-    });
-
     final notifier = ref.read(adminEventsProvider.notifier);
-    try {
-      // Upload a freshly picked image first (if any).
-      var imageUrl = _imageUrl;
-      if (_pickedBytes != null) {
-        imageUrl = await notifier.uploadImage(
-          _pickedBytes!,
-          _pickedExt ?? 'jpg',
-        );
-      }
+    final colorHex = _colorToHex(kEventCategoryColors[_category]!);
 
-      final colorHex = _colorToHex(kEventCategoryColors[_category]!);
-
-      if (_isEdit) {
+    // ── EDIT: keep the await-based flow (upload → save → close). ──────────────
+    if (_isEdit) {
+      setState(() {
+        _saving = true;
+        _error = null;
+      });
+      try {
+        var imageUrl = _imageUrl;
+        if (_pickedBytes != null) {
+          imageUrl = await notifier.uploadImage(_pickedBytes!, _pickedExt ?? 'jpg');
+        }
         await notifier.edit(widget.existing!.id, {
           'title': _title.text.trim(),
           'location': _location.text.trim(),
@@ -1618,18 +1630,54 @@ class _EventFormDialogState extends ConsumerState<_EventFormDialog> {
           'category_color': colorHex,
           'is_featured': _featured,
           'image_url': imageUrl,
-          'description': _description.text.trim().isEmpty
-              ? null
-              : _description.text.trim(),
-          'what_to_expect': _expect.text.trim().isEmpty
-              ? null
-              : _expect.text.trim(),
+          'description':
+              _description.text.trim().isEmpty ? null : _description.text.trim(),
+          'what_to_expect':
+              _expect.text.trim().isEmpty ? null : _expect.text.trim(),
           'requirements': _requirements.text.trim().isEmpty
               ? null
               : _requirements.text.trim(),
         });
-      } else {
-        await notifier.create(
+        if (!mounted) return;
+        Navigator.pop(context);
+        showAdminSnackBar(context, 'Event updated.', type: AdminSnackType.success);
+      } catch (err) {
+        if (!mounted) return;
+        setState(() {
+          _saving = false;
+          _error = 'Could not save the event. Please try again.';
+        });
+      }
+      return;
+    }
+
+    // ── CREATE: instant/optimistic — show the event + close immediately, then
+    //    upload the cover + insert in the background (like the newsfeed post). ─
+    final temp = EventModel(
+      id: 'temp_${DateTime.now().microsecondsSinceEpoch}',
+      title: _title.text.trim(),
+      location: _location.text.trim(),
+      eventDate: _date!,
+      eventTime: _time.text.trim(),
+      category: _category,
+      categoryColor: colorHex,
+      isFeatured: _featured,
+      imageUrl: null,
+      description:
+          _description.text.trim().isEmpty ? null : _description.text.trim(),
+      whatToExpect: _expect.text.trim().isEmpty ? null : _expect.text.trim(),
+      requirements:
+          _requirements.text.trim().isEmpty ? null : _requirements.text.trim(),
+      status: EventStatus.approved,
+      createdBy: '',
+      reviewedBy: null,
+      createdAt: DateTime.now(),
+    );
+    final rootContext = Navigator.of(context, rootNavigator: true).context;
+
+    unawaited(
+      _reportEventSave(
+        notifier.create(
           title: _title.text.trim(),
           location: _location.text.trim(),
           eventDate: _date!,
@@ -1637,31 +1685,24 @@ class _EventFormDialogState extends ConsumerState<_EventFormDialog> {
           category: _category,
           categoryColor: colorHex,
           isFeatured: _featured,
-          imageUrl: imageUrl,
+          imageBytes: _pickedBytes,
+          imageExt: _pickedExt,
           description: _description.text.trim(),
           whatToExpect: _expect.text.trim(),
           requirements: _requirements.text.trim(),
-        );
-      }
-
-      if (!mounted) return;
-      Navigator.pop(context);
-      showAdminSnackBar(
-        context,
-        _isEdit ? 'Event updated.' : 'Event published.',
-        type: AdminSnackType.success,
-      );
-    } catch (err) {
-      if (!mounted) return;
-      setState(() {
-        _saving = false;
-        _error = 'Could not save the event. Please try again.';
-      });
-    }
+          optimistic: temp,
+        ),
+        rootContext,
+      ),
+    );
+    Navigator.pop(context);
   }
 
   @override
   Widget build(BuildContext context) {
+    // Web/tablet shows this as a floating dialog → use an X (exit); phones show
+    // it full-screen → use a back chevron, like the citizen sub-screens.
+    final wide = MediaQuery.of(context).size.width >= 900;
     return Material(
       color: AdminUi.surface,
       borderRadius: BorderRadius.circular(16),
@@ -1670,11 +1711,13 @@ class _EventFormDialogState extends ConsumerState<_EventFormDialog> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 16, 12),
+            padding: EdgeInsets.fromLTRB(wide ? 18 : 12, 12, 8, 12),
             child: Row(
               children: [
-                AdminDialogBack(onTap: () => Navigator.pop(context)),
-                const SizedBox(width: 12),
+                if (!wide) ...[
+                  AdminDialogBack(onTap: () => Navigator.pop(context)),
+                  const SizedBox(width: 12),
+                ],
                 Expanded(
                   child: Text(
                     _isEdit ? 'Edit event' : 'New event',
@@ -1685,6 +1728,12 @@ class _EventFormDialogState extends ConsumerState<_EventFormDialog> {
                     ),
                   ),
                 ),
+                if (wide)
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded,
+                        color: AdminUi.textMuted),
+                    onPressed: () => Navigator.pop(context),
+                  ),
               ],
             ),
           ),

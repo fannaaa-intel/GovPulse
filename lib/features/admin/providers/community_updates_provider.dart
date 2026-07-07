@@ -29,13 +29,27 @@ class UpdateCategory {
 
   Color get color => _hexToColor(hex);
 
+  // Real external-entity tags: LGU-internal offices (#2563EB) and external /
+  // national agencies operating in Aparri (#EA580C). Stored verbatim in
+  // `community_posts.tag` / `tag_color` (plain text, no DB constraint).
+  static const _lguHex = '#2563EB';
+  static const _agencyHex = '#EA580C';
   static const all = <UpdateCategory>[
-    UpdateCategory('Announcement', '#22C55E'),
-    UpdateCategory('Advisory', '#F59E0B'),
-    UpdateCategory('Event', '#3B82F6'),
-    UpdateCategory('Health', '#14B8A6'),
-    UpdateCategory('Emergency', '#EF4444'),
-    UpdateCategory('Update', '#6366F1'),
+    // ── LGU-internal offices ──
+    UpdateCategory('LGU Aparri', _lguHex),
+    UpdateCategory('MDRRMO Aparri', _lguHex),
+    UpdateCategory('Municipal Health Office', _lguHex),
+    UpdateCategory('MENRO', _lguHex),
+    UpdateCategory('MSWDO', _lguHex),
+    UpdateCategory("Municipal Engineer's Office", _lguHex),
+    UpdateCategory("Municipal Agriculturist's Office", _lguHex),
+    UpdateCategory('PESO', _lguHex),
+    // ── External / national agencies ──
+    UpdateCategory('DPWH Cagayan 1st DEO', _agencyHex),
+    UpdateCategory('DENR', _agencyHex),
+    UpdateCategory('DOH Regional Office II', _agencyHex),
+    UpdateCategory('BFP Aparri', _agencyHex),
+    UpdateCategory('PNP Aparri', _agencyHex),
   ];
 
   static UpdateCategory byLabel(String label) =>
@@ -147,6 +161,45 @@ class CommunityUpdate {
   Color get tagColorValue => _hexToColor(tagColor);
   List<String> get imageUrls => images.map((e) => e.url).toList();
   String get barangayLabel => barangay.trim().isEmpty ? 'City-wide' : barangay;
+
+  /// A temp id is stamped on optimistic (not-yet-saved) posts so the UI can
+  /// render them in a subtle "posting…" state and the notifier can find/replace
+  /// them once the server row lands.
+  bool get isOptimistic => id.startsWith('temp_');
+
+  CommunityUpdate copyWith({
+    String? title,
+    String? body,
+    String? barangay,
+    String? tag,
+    String? tagColor,
+    String? status,
+    String? rejectedReason,
+    bool? pinned,
+    int? likesCount,
+    int? commentsCount,
+    List<PostImage>? images,
+  }) {
+    return CommunityUpdate(
+      id: id,
+      authorId: authorId,
+      authorName: authorName,
+      authorPhotoUrl: authorPhotoUrl,
+      authorRole: authorRole,
+      title: title ?? this.title,
+      body: body ?? this.body,
+      barangay: barangay ?? this.barangay,
+      tag: tag ?? this.tag,
+      tagColor: tagColor ?? this.tagColor,
+      status: status ?? this.status,
+      rejectedReason: rejectedReason ?? this.rejectedReason,
+      pinned: pinned ?? this.pinned,
+      likesCount: likesCount ?? this.likesCount,
+      commentsCount: commentsCount ?? this.commentsCount,
+      createdAt: createdAt,
+      images: images ?? this.images,
+    );
+  }
 }
 
 class CommunityComment {
@@ -158,6 +211,7 @@ class CommunityComment {
   final String body;
   final String? parentId; // non-null => a reply
   final int likesCount;
+  final bool likedByMe;
   final DateTime? createdAt;
 
   const CommunityComment({
@@ -169,11 +223,35 @@ class CommunityComment {
     required this.body,
     required this.parentId,
     required this.likesCount,
+    this.likedByMe = false,
     required this.createdAt,
   });
 
   bool get isOfficial => authorRole == 'admin' || authorRole == 'staff';
   bool get isReply => parentId != null;
+
+  /// Optimistic (not-yet-saved) comments carry a `temp_` id so the panel can
+  /// show them instantly and swap them for the server row on the silent reload.
+  bool get isOptimistic => id.startsWith('temp_');
+
+  CommunityComment copyWith({
+    String? body,
+    int? likesCount,
+    bool? likedByMe,
+  }) {
+    return CommunityComment(
+      id: id,
+      authorId: authorId,
+      authorName: authorName,
+      authorPhotoUrl: authorPhotoUrl,
+      authorRole: authorRole,
+      body: body ?? this.body,
+      parentId: parentId,
+      likesCount: likesCount ?? this.likesCount,
+      likedByMe: likedByMe ?? this.likedByMe,
+      createdAt: createdAt,
+    );
+  }
 }
 
 /// A new image waiting to be uploaded, or an existing one kept on edit.
@@ -533,20 +611,23 @@ class CommunityUpdatesRepository {
         .map((r) => r['author_id'] as String)
         .toSet()
         .toList();
+    final commentIds = list.map((r) => r['id'] as String).toList();
     final profiles = await _fetchProfiles(authorIds);
     final roles = await _fetchRoles(authorIds);
     final officialPhotos = await _fetchOfficialPhotos([
       for (final e in roles.entries)
         if (e.value == 'admin' || e.value == 'staff') e.key,
     ]);
+    final likedByMe = await _fetchMyCommentLikes(commentIds);
 
     return list.map((c) {
       final aId = c['author_id'] as String;
       final profile = profiles[aId];
       final role = roles[aId] ?? 'citizen';
       final official = role == 'admin' || role == 'staff';
+      final id = c['id'] as String;
       return CommunityComment(
-        id: c['id'] as String,
+        id: id,
         authorId: aId,
         authorName: official
             ? 'LGU Aparri'
@@ -558,9 +639,31 @@ class CommunityUpdatesRepository {
         body: c['body'] as String? ?? '',
         parentId: c['parent_comment_id'] as String?,
         likesCount: (c['likes_count'] as int?) ?? 0,
+        likedByMe: likedByMe.contains(id),
         createdAt: _parseTs(c['created_at']),
       );
     }).toList();
+  }
+
+  /// Which of [commentIds] the current user has liked, so each tile can render
+  /// its filled/empty heart. Guarded — a read hiccup just shows everything as
+  /// un-liked rather than breaking the panel.
+  Future<Set<String>> _fetchMyCommentLikes(List<String> commentIds) async {
+    final uid = _uid;
+    if (uid == null || commentIds.isEmpty) return const {};
+    try {
+      final rows = await _sb
+          .from('community_comment_likes')
+          .select('comment_id')
+          .eq('user_id', uid)
+          .inFilter('comment_id', commentIds);
+      return {
+        for (final r in (rows as List).cast<Map<String, dynamic>>())
+          r['comment_id'] as String,
+      };
+    } catch (_) {
+      return const {};
+    }
   }
 
   /// Post a comment as the current (admin) user. [parentId] makes it a reply.
@@ -579,8 +682,36 @@ class CommunityUpdatesRepository {
     });
   }
 
+  /// Edit a comment's text (LGU's own comments).
+  Future<void> editComment(String commentId, String body) async {
+    await _sb
+        .from('community_comments')
+        .update({'body': body.trim()})
+        .eq('id', commentId);
+  }
+
   Future<void> deleteComment(String commentId) async {
     await _sb.from('community_comments').delete().eq('id', commentId);
+  }
+
+  /// Like / unlike a comment as the current user. Mirrors the citizen newsfeed:
+  /// a row in `community_comment_likes` (comment_id + user_id); the count column
+  /// is kept by a DB trigger, so we don't write it here.
+  Future<void> setCommentLike(String commentId, bool like) async {
+    final uid = _uid;
+    if (uid == null) throw 'Your session has expired. Please log in again.';
+    if (like) {
+      await _sb.from('community_comment_likes').insert({
+        'comment_id': commentId,
+        'user_id': uid,
+      });
+    } else {
+      await _sb
+          .from('community_comment_likes')
+          .delete()
+          .eq('comment_id', commentId)
+          .eq('user_id', uid);
+    }
   }
 
   Future<void> delete(CommunityUpdate post) async {
@@ -628,21 +759,84 @@ class CommunityUpdatesNotifier extends AsyncNotifier<List<CommunityUpdate>> {
     state = next.hasValue ? next : state;
   }
 
+  /// Silent background refetch (no loading flash) for the admin shell's
+  /// auto-refresh — `_reload` already keeps the last-good data on failure.
+  Future<void> silentRefresh() => _reload();
+
+  // ── Optimistic helpers ─────────────────────────────────────────────────
+  //
+  // Every mutation below updates the in-memory feed FIRST so the UI reacts
+  // instantly, then talks to Supabase in the background and reconciles with a
+  // silent reload. If the write fails, the pre-change snapshot is restored and
+  // the error is rethrown so the caller can surface it.
+
+  List<CommunityUpdate> get _current => state.valueOrNull ?? const [];
+
+  /// Applies the feed's canonical order — pinned first, then newest-created —
+  /// so optimistic inserts/pin toggles sit where a real reload would put them.
+  List<CommunityUpdate> _sorted(List<CommunityUpdate> list) {
+    final out = [...list];
+    out.sort((a, b) {
+      if (a.pinned != b.pinned) return a.pinned ? -1 : 1;
+      final at = a.createdAt?.millisecondsSinceEpoch ?? 0;
+      final bt = b.createdAt?.millisecondsSinceEpoch ?? 0;
+      return bt.compareTo(at);
+    });
+    return out;
+  }
+
+  /// Replaces the post with matching id via [change]; no-op if absent.
+  void _patch(String id, CommunityUpdate Function(CommunityUpdate) change) {
+    state = AsyncData(
+      _sorted([
+        for (final p in _current)
+          if (p.id == id) change(p) else p,
+      ]),
+    );
+  }
+
+  /// Performs the [remote] write after the caller has already applied its
+  /// optimistic change, then reconciles with a reload — restoring [prev] and
+  /// rethrowing if the write throws.
+  Future<void> _optimistic(
+    List<CommunityUpdate> prev,
+    Future<void> Function() remote,
+  ) async {
+    try {
+      await remote();
+      await _reload();
+    } catch (e) {
+      state = AsyncData(prev);
+      rethrow;
+    }
+  }
+
+  /// Create a post that shows up in the feed immediately as a temp card, while
+  /// the row + image uploads happen in the background. [optimistic] is the
+  /// stand-in card (temp id, no server images yet); on success the reload swaps
+  /// in the real post, on failure the temp card is pulled back out.
   Future<void> createPost({
     required String title,
     required String body,
     required String barangay,
     required UpdateCategory category,
     required List<XFile> images,
+    CommunityUpdate? optimistic,
   }) async {
-    await _repo.createPost(
-      title: title,
-      body: body,
-      barangay: barangay,
-      category: category,
-      images: images,
+    final prev = _current;
+    if (optimistic != null) {
+      state = AsyncData(_sorted([optimistic, ...prev]));
+    }
+    await _optimistic(
+      prev,
+      () => _repo.createPost(
+        title: title,
+        body: body,
+        barangay: barangay,
+        category: category,
+        images: images,
+      ),
     );
-    await _reload();
   }
 
   Future<void> updatePost({
@@ -655,37 +849,68 @@ class CommunityUpdatesNotifier extends AsyncNotifier<List<CommunityUpdate>> {
     required List<XFile> added,
     required int keptCount,
   }) async {
-    await _repo.updatePost(
-      id: id,
-      title: title,
-      body: body,
-      barangay: barangay,
-      category: category,
-      removed: removed,
-      added: added,
-      keptCount: keptCount,
+    final prev = _current;
+    // Patch the text/category/audience instantly; images reconcile on reload.
+    _patch(
+      id,
+      (p) => p.copyWith(
+        title: title.trim(),
+        body: body.trim(),
+        barangay: barangay,
+        tag: category.label,
+        tagColor: category.hex,
+      ),
     );
-    await _reload();
+    await _optimistic(
+      prev,
+      () => _repo.updatePost(
+        id: id,
+        title: title,
+        body: body,
+        barangay: barangay,
+        category: category,
+        removed: removed,
+        added: added,
+        keptCount: keptCount,
+      ),
+    );
   }
 
   Future<void> approve(String id) async {
-    await _repo.approve(id);
-    await _reload();
+    final prev = _current;
+    _patch(id, (p) => p.copyWith(status: PostStatus.approved));
+    await _optimistic(prev, () => _repo.approve(id));
   }
 
   Future<void> reject(String id, String reason) async {
-    await _repo.reject(id, reason);
-    await _reload();
+    final prev = _current;
+    final r = reason.trim().isEmpty ? 'Rejected' : reason.trim();
+    _patch(id, (p) => p.copyWith(status: PostStatus.rejected, rejectedReason: r));
+    await _optimistic(prev, () => _repo.reject(id, reason));
   }
 
   Future<void> togglePin(CommunityUpdate post) async {
-    await _repo.setPinned(post.id, !post.pinned);
-    await _reload();
+    final prev = _current;
+    _patch(post.id, (p) => p.copyWith(pinned: !p.pinned));
+    await _optimistic(prev, () => _repo.setPinned(post.id, !post.pinned));
   }
 
   Future<void> delete(CommunityUpdate post) async {
-    await _repo.delete(post);
-    await _reload();
+    final prev = _current;
+    state = AsyncData(_current.where((p) => p.id != post.id).toList());
+    await _optimistic(prev, () => _repo.delete(post));
+  }
+
+  /// Nudge a post's comment count in the feed by [delta] (clamped at zero) so
+  /// the card's count reflects a comment add/delete instantly — no reload flash.
+  /// Called by the comments panel as it optimistically adds/removes comments.
+  void bumpCommentCount(String postId, int delta) {
+    _patch(
+      postId,
+      (p) => p.copyWith(
+        commentsCount: (p.commentsCount + delta).clamp(0, 1 << 31),
+      ),
+    );
   }
 }
 

@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -7,6 +10,16 @@ import '../../../core/services/chat_service.dart';
 import '../../../core/services/push_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/Home/Chat-bubbles/home_chat_bubble.dart';
+import '../providers/admin_dashboard_provider.dart';
+import '../providers/admin_events_provider.dart';
+import '../providers/admin_settings_provider.dart';
+import '../providers/admin_feedback_provider.dart';
+import '../providers/admin_reports_provider.dart';
+import '../providers/admin_suggestions_provider.dart';
+import '../providers/admin_users_provider.dart';
+import '../providers/admin_verification_provider.dart';
+import '../providers/community_updates_provider.dart';
+import '../widgets/admin_command_palette.dart';
 import '../widgets/admin_notifications.dart';
 import '../widgets/admin_sidebar.dart';
 import '../widgets/admin_snackbar.dart';
@@ -17,6 +30,8 @@ import '../pages/admin_verification_page.dart';
 import '../pages/admin_events_page.dart';
 import '../pages/admin_feedback_page.dart';
 import '../pages/admin_suggestions_page.dart';
+import '../pages/admin_settings_page.dart';
+import '../pages/admin_users_page.dart';
 import '../pages/community_updates_page.dart';
 
 class AdminDashboardScreen extends ConsumerStatefulWidget {
@@ -27,9 +42,16 @@ class AdminDashboardScreen extends ConsumerStatefulWidget {
       _AdminDashboardScreenState();
 }
 
-class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
+class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
+    with WidgetsBindingObserver {
   int _selectedIndex = 0;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  /// The visible section silently refetches so the admin sees near-realtime
+  /// numbers without a manual pull. Only the current tab polls — switching tabs
+  /// and resuming the app also trigger an immediate refresh. The interval is
+  /// configurable in Settings (adminSettingsProvider.pollSeconds; 0 = Off).
+  Timer? _pollTimer;
 
   final List<AdminNavItem> navItems = const [
     AdminNavItem(icon: Icons.dashboard_rounded, label: 'Dashboard'), // 0
@@ -39,23 +61,109 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
     AdminNavItem(icon: Icons.lightbulb_rounded, label: 'Suggestions'), // 4
     AdminNavItem(icon: Icons.reviews_rounded, label: 'Feedback'), // 5
     AdminNavItem(icon: Icons.verified_user_rounded, label: 'Verification'), // 6
-    AdminNavItem(icon: Icons.emergency_rounded, label: 'Emergency'), // 7
-    AdminNavItem(icon: Icons.manage_accounts_rounded, label: 'Users'), // 8
-    AdminNavItem(icon: Icons.settings_rounded, label: 'Settings'), // 9
+    AdminNavItem(icon: Icons.manage_accounts_rounded, label: 'Users'), // 7
+    AdminNavItem(icon: Icons.settings_rounded, label: 'Settings'), // 8
   ];
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // Tapping a notification in the panel sets AdminNotifCenter.openTopic; we
     // map that topic to its nav tab here and switch to it.
     AdminNotifCenter.I.openTopic.addListener(_onNotifNavigate);
+    _startPolling();
   }
 
   @override
   void dispose() {
+    _pollTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     AdminNotifCenter.I.openTopic.removeListener(_onNotifNavigate);
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Coming back to the app should show fresh data immediately, not wait for
+    // the next poll tick; pause polling entirely while backgrounded.
+    if (state == AppLifecycleState.resumed) {
+      _refreshCurrentTab();
+      _startPolling();
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      _pollTimer?.cancel();
+    }
+  }
+
+  // ── Silent auto-refresh ──────────────────────────────────────────────────
+  void _startPolling() {
+    _pollTimer?.cancel();
+    final seconds = ref.read(adminSettingsProvider).pollSeconds;
+    if (seconds <= 0) return; // "Off" — no auto-refresh
+    _pollTimer =
+        Timer.periodic(Duration(seconds: seconds), (_) => _refreshCurrentTab());
+  }
+
+  /// Silently refetches the data behind the currently visible tab. Guarded by
+  /// `hasValue` so the very first visit (still loading its initial data) isn't
+  /// double-fetched — only already-loaded sections get the background refresh.
+  /// Tabs without a data provider (Users/Settings) are no-ops.
+  void _refreshCurrentTab() {
+    switch (_selectedIndex) {
+      case 0:
+        if (ref.read(adminDashboardProvider).hasValue) {
+          ref.read(adminDashboardProvider.notifier).silentRefresh();
+        }
+      case 1:
+        if (ref.read(communityUpdatesProvider).hasValue) {
+          ref.read(communityUpdatesProvider.notifier).silentRefresh();
+        }
+      case 2:
+        if (ref.read(adminEventsProvider).hasValue) {
+          ref.read(adminEventsProvider.notifier).silentRefresh();
+        }
+      case 3:
+        if (ref.read(adminReportsProvider).hasValue) {
+          ref.read(adminReportsProvider.notifier).silentRefresh();
+        }
+      case 4:
+        if (ref.read(adminSuggestionsProvider).hasValue) {
+          ref.read(adminSuggestionsProvider.notifier).silentRefresh();
+        }
+      case 5:
+        if (ref.read(adminFeedbackProvider).hasValue) {
+          ref.read(adminFeedbackProvider.notifier).silentRefresh();
+        }
+      case 6:
+        if (ref.read(adminVerificationProvider).hasValue) {
+          ref.read(adminVerificationProvider.notifier).silentRefresh();
+        }
+      case 7:
+        if (ref.read(adminUsersProvider).hasValue) {
+          ref.read(adminUsersProvider.notifier).silentRefresh();
+        }
+    }
+  }
+
+  /// Switches to tab [i] and immediately refreshes it, then restarts the poll
+  /// clock so the freshly-shown tab gets a full interval before its next tick.
+  void _selectTab(int i) {
+    if (i != _selectedIndex) setState(() => _selectedIndex = i);
+    _refreshCurrentTab();
+    _startPolling();
+  }
+
+  /// Opens the ⌘K command palette. Feeds it the nav list (so results can jump
+  /// to any section) and the same tab-switch used by the sidebar.
+  void _openCommandPalette() {
+    showAdminCommandPalette(
+      context,
+      sections: [
+        for (final n in navItems) (icon: n.icon, label: n.label),
+      ],
+      onNavigate: _selectTab,
+    );
   }
 
   void _onNotifNavigate() {
@@ -63,7 +171,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
     if (topic == null) return;
     AdminNotifCenter.I.openTopic.value = null; // consume it
     final idx = _tabIndexForTopic(topic);
-    if (idx != null && mounted) setState(() => _selectedIndex = idx);
+    if (idx != null && mounted) _selectTab(idx);
   }
 
   /// Maps a notification topic to the nav tab that owns it. Resolved by label
@@ -87,7 +195,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
       case 0:
         return AdminOverviewPage(
           selectedIndex: _selectedIndex,
-          onNavigate: (i) => setState(() => _selectedIndex = i),
+          onNavigate: _selectTab,
         );
       case 1:
         return const CommunityUpdatesPage();
@@ -101,6 +209,10 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
         return const AdminFeedbackPage();
       case 6:
         return const AdminVerificationPage();
+      case 7:
+        return const AdminUsersPage();
+      case 8:
+        return AdminSettingsPage(onLogout: _confirmLogout);
       default:
         return _ComingSoon(label: navItems[_selectedIndex].label);
     }
@@ -237,17 +349,30 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Keep settings alive (loads prefs + pushes muted topics into the notif
+    // center) and restart polling immediately when the interval is changed.
+    ref.listen(adminSettingsProvider.select((s) => s.pollSeconds), (_, _) {
+      _startPolling();
+    });
+
     final width = MediaQuery.of(context).size.width;
     final bool isDesktop = width >= 1024;
     final bool isTablet = width >= 600 && width < 1024;
 
-    if (isDesktop) {
-      return _buildDesktopLayout();
-    } else if (isTablet) {
-      return _buildTabletLayout();
-    } else {
-      return _buildMobileLayout();
-    }
+    final Widget layout = isDesktop
+        ? _buildDesktopLayout()
+        : (isTablet ? _buildTabletLayout() : _buildMobileLayout());
+
+    // Global ⌘K / Ctrl-K opens the command palette from anywhere in the console.
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyK, control: true):
+            _openCommandPalette,
+        const SingleActivator(LogicalKeyboardKey.keyK, meta: true):
+            _openCommandPalette,
+      },
+      child: Focus(autofocus: true, child: layout),
+    );
   }
 
   // ── Desktop: permanent full sidebar ──────────────────────────────────────
@@ -261,7 +386,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
               items: navItems,
               selectedIndex: _selectedIndex,
               collapsed: false,
-              onItemTap: (i) => setState(() => _selectedIndex = i),
+              onItemTap: _selectTab,
               onLogout: _confirmLogout,
             ),
             Expanded(
@@ -271,6 +396,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                     title: navItems[_selectedIndex].label,
                     showMenuButton: false,
                     onLogout: _confirmLogout,
+                    onSearchTap: _openCommandPalette,
                   ),
                   Expanded(child: _buildPage()),
                 ],
@@ -293,7 +419,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
               items: navItems,
               selectedIndex: _selectedIndex,
               collapsed: true,
-              onItemTap: (i) => setState(() => _selectedIndex = i),
+              onItemTap: _selectTab,
               onLogout: _confirmLogout,
             ),
             Expanded(
@@ -303,6 +429,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                     title: navItems[_selectedIndex].label,
                     showMenuButton: false,
                     onLogout: _confirmLogout,
+                    onSearchTap: _openCommandPalette,
                   ),
                   Expanded(child: _buildPage()),
                 ],
@@ -330,7 +457,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
             selectedIndex: _selectedIndex,
             collapsed: false,
             onItemTap: (i) {
-              setState(() => _selectedIndex = i);
+              _selectTab(i);
               Navigator.pop(context);
             },
             onLogout: () {
@@ -348,6 +475,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
               showMenuButton: true,
               onMenuTap: () => _scaffoldKey.currentState?.openDrawer(),
               onLogout: _confirmLogout,
+              onSearchTap: _openCommandPalette,
             ),
             Expanded(child: _buildPage()),
           ],

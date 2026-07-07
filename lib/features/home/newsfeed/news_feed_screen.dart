@@ -1098,7 +1098,17 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                post['author'] as String,
+                // Official posts read "LGU Aparri with <office>" when tagged to
+                // a specific entity; the default "LGU Aparri" tag just shows
+                // "LGU Aparri". Citizen authors are unchanged.
+                () {
+                  final author = post['author'] as String;
+                  final tag = (post['tag'] as String?)?.trim() ?? '';
+                  final official = post['isOfficial'] == true;
+                  return (official && tag.isNotEmpty && tag != 'LGU Aparri')
+                      ? '$author with $tag'
+                      : author;
+                }(),
                 style: TextStyle(
                   fontSize: width * 0.038,
                   fontWeight: FontWeight.w800,
@@ -1122,35 +1132,39 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
                       fontWeight: FontWeight.w500,
                     ),
                   ),
-                  Container(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: width * 0.018,
-                      vertical: width * 0.005,
-                    ),
-                    decoration: BoxDecoration(
-                      color: post['tagColor'] as Color,
-                      borderRadius: BorderRadius.circular(width * 0.025),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.location_on_rounded,
-                          size: width * 0.028,
-                          color: Colors.white,
-                        ),
-                        SizedBox(width: width * 0.005),
-                        Text(
-                          post['tag'] as String,
-                          style: TextStyle(
-                            fontSize: width * 0.026,
+                  // The tag pill is redundant for official posts now that the
+                  // "with <office>" is in the author line — keep it only for
+                  // non-official (citizen) authors.
+                  if (post['isOfficial'] != true)
+                    Container(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: width * 0.018,
+                        vertical: width * 0.005,
+                      ),
+                      decoration: BoxDecoration(
+                        color: post['tagColor'] as Color,
+                        borderRadius: BorderRadius.circular(width * 0.025),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.location_on_rounded,
+                            size: width * 0.028,
                             color: Colors.white,
-                            fontWeight: FontWeight.w600,
                           ),
-                        ),
-                      ],
+                          SizedBox(width: width * 0.005),
+                          Text(
+                            post['tag'] as String,
+                            style: TextStyle(
+                              fontSize: width * 0.026,
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
                 ],
               ),
             ],
