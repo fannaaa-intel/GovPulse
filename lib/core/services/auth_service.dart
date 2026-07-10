@@ -71,6 +71,7 @@ class AuthService {
     if (email.isEmpty) throw 'No account found with that username.';
 
     // Step 2 — sign in with email + password
+    final String userId;
     try {
       final authResponse = await _client.auth.signInWithPassword(
         email: email,
@@ -80,18 +81,7 @@ class AuthService {
       if (authResponse.user == null) {
         throw 'Login failed. Please try again.';
       }
-
-      // Step 3 — fetch role_id (null = unverified citizen)
-      final userId = authResponse.user!.id;
-      final roleData = await _client
-          .from('user_roles')
-          .select('role_id')
-          .eq('user_id', userId)
-          .maybeSingle();
-
-      final roleId = roleData?['role_id'] as int?;
-
-      return (username: usernameFromDB, roleId: roleId);
+      userId = authResponse.user!.id;
     } on AuthException catch (e) {
       switch (e.statusCode) {
         case '400':
@@ -104,5 +94,39 @@ class AuthService {
     } catch (_) {
       throw 'Something went wrong. Please try again later.';
     }
+
+    // Step 3 — block deactivated accounts. The admin console can soft-deactivate
+    // an account (profiles.is_deactivated); the credentials still work, so
+    // without this check the sign-in above succeeds and the user gets a live
+    // session. Read the flag on the just-authenticated row (read-own RLS); a
+    // read failure is treated as "not deactivated" so it can't hard-block a
+    // legitimate login.
+    bool deactivated = false;
+    try {
+      final profile = await _client
+          .from('profiles')
+          .select('is_deactivated')
+          .eq('id', userId)
+          .maybeSingle();
+      deactivated = (profile?['is_deactivated'] as bool?) ?? false;
+    } catch (_) {
+      deactivated = false;
+    }
+    if (deactivated) {
+      // Drop the session we just created, then reject the login.
+      await _client.auth.signOut();
+      throw 'This account has been deactivated. Please contact the LGU to restore access.';
+    }
+
+    // Step 4 — fetch role_id (null = unverified citizen)
+    final roleData = await _client
+        .from('user_roles')
+        .select('role_id')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+    final roleId = roleData?['role_id'] as int?;
+
+    return (username: usernameFromDB, roleId: roleId);
   }
 }

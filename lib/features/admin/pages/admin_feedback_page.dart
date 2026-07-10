@@ -4,8 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_colors.dart';
 import '../theme/admin_ui.dart';
 import '../providers/admin_feedback_provider.dart';
+import '../providers/admin_identity_reveal_provider.dart';
 import '../widgets/admin_detail_screen.dart';
+import '../widgets/admin_moderation.dart';
 import '../widgets/admin_submission_ui.dart';
+import '../widgets/revealable_submitter.dart';
 import '../widgets/admin_snackbar.dart';
 
 const List<String> _kFeedbackTemplates = [
@@ -120,6 +123,7 @@ class _AdminFeedbackPageState extends ConsumerState<AdminFeedbackPage> {
     if (f.status != null) n++;
     if (f.sort != FeedbackSort.newest) n++;
     if (f.anonymousOnly) n++;
+    if (f.showDismissed) n++;
     return n;
   }
 
@@ -134,6 +138,7 @@ class _AdminFeedbackPageState extends ConsumerState<AdminFeedbackPage> {
         notifier.setStatus(null);
         notifier.setSort(FeedbackSort.newest);
         if (notifier.filters.anonymousOnly) notifier.toggleAnonymousOnly();
+        notifier.setShowDismissed(false);
       },
       content: Consumer(
         builder: (context, ref, _) {
@@ -193,6 +198,14 @@ class _AdminFeedbackPageState extends ConsumerState<AdminFeedbackPage> {
                 subtitle: 'Show only feedback with a withheld identity',
                 value: f.anonymousOnly,
                 onChanged: (_) => notifier.toggleAnonymousOnly(),
+              ),
+              const SizedBox(height: 18),
+              FilterSwitchRow(
+                icon: Icons.block_rounded,
+                label: 'Show dismissed',
+                subtitle: 'Review spam hidden from the list, analytics & AI',
+                value: f.showDismissed,
+                onChanged: (v) => notifier.setShowDismissed(v),
               ),
             ],
           );
@@ -279,16 +292,7 @@ class _Header extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Feedback',
-          style: TextStyle(
-            fontSize: 22,
-            fontWeight: FontWeight.w700,
-            letterSpacing: -0.5,
-            color: AdminUi.textPrimary,
-          ),
-        ),
-        const SizedBox(height: 2),
+        // The top bar already shows "Feedback", so no in-content page title.
         Row(
           children: [
             Text('$total feedback',
@@ -740,6 +744,7 @@ class _FeedbackDetailDialogState extends ConsumerState<_FeedbackDetailDialog> {
   late FeedbackStatus _status;
   DateTime? _respondedAt;
   String? _response;
+  bool _busy = false;
 
   @override
   void initState() {
@@ -790,6 +795,37 @@ class _FeedbackDetailDialogState extends ConsumerState<_FeedbackDetailDialog> {
         showAdminSnackBar(context, 'Couldn\'t save the note.',
             type: AdminSnackType.error);
       }
+    }
+  }
+
+  Future<void> _dismiss() async {
+    final reason = await showAdminDismissDialog(context, itemLabel: 'feedback');
+    if (reason == null || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await ref.read(adminFeedbackProvider.notifier).dismiss(widget.feedback.id, reason);
+      if (!mounted) return;
+      Navigator.pop(context);
+      showAdminSnackBar(context, 'Feedback dismissed — excluded from analytics & AI.',
+          type: AdminSnackType.success);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      showAdminSnackBar(context, 'Could not dismiss: $e', type: AdminSnackType.error);
+    }
+  }
+
+  Future<void> _restore() async {
+    setState(() => _busy = true);
+    try {
+      await ref.read(adminFeedbackProvider.notifier).restore(widget.feedback.id);
+      if (!mounted) return;
+      Navigator.pop(context);
+      showAdminSnackBar(context, 'Feedback restored.', type: AdminSnackType.success);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      showAdminSnackBar(context, 'Could not restore: $e', type: AdminSnackType.error);
     }
   }
 
@@ -862,7 +898,17 @@ class _FeedbackDetailDialogState extends ConsumerState<_FeedbackDetailDialog> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SubmitterBlock(
+          AdminModerationBar(
+            isDismissed: f.isDismissed,
+            reason: f.dismissedReason,
+            busy: _busy,
+            onDismiss: _dismiss,
+            onRestore: _restore,
+          ),
+          const SizedBox(height: 16),
+          RevealableSubmitter(
+            source: RevealSource.feedback,
+            submissionId: f.id,
             isAnonymous: f.isAnonymous,
             name: f.submitterName,
             photoUrl: f.submitterPhotoUrl,

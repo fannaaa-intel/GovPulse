@@ -544,11 +544,29 @@ class CommunityPostsProvider extends ChangeNotifier {
   Future<Map<String, List<Map<String, dynamic>>>> _fetchCommentsForPosts(
     List<String> postIds,
   ) async {
-    final rows = await _supabase
-        .from('community_comments')
-        .select()
-        .inFilter('post_id', postIds)
-        .order('created_at', ascending: true);
+    // Held (pending) comments are hidden from other citizens; the author still
+    // sees their own. Guarded: if the moderation migration isn't applied yet the
+    // `status` column is missing, so fall back to the unfiltered read.
+    final uid = _supabase.auth.currentUser?.id;
+    List<Map<String, dynamic>> rows;
+    try {
+      final base =
+          _supabase.from('community_comments').select().inFilter('post_id', postIds);
+      final filtered = uid != null
+          ? base.or('status.eq.approved,and(author_id.eq.$uid,status.eq.pending)')
+          : base.eq('status', 'approved');
+      rows = List<Map<String, dynamic>>.from(
+        await filtered.order('created_at', ascending: true),
+      );
+    } catch (_) {
+      rows = List<Map<String, dynamic>>.from(
+        await _supabase
+            .from('community_comments')
+            .select()
+            .inFilter('post_id', postIds)
+            .order('created_at', ascending: true),
+      );
+    }
 
     final authorIds = <String>{};
     for (final r in rows) {

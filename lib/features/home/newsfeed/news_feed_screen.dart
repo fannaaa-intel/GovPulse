@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../screen/home_screen.dart';
 import '../../../core/widgets/modal/verification_required_dialog.dart';
+import '../../../core/moderation/profanity_filter.dart';
 import '../../../core/providers/community_posts_provider.dart';
 import '../../../core/widgets/Home/Newsfeed/news_feed_helpers.dart';
 import '../../../core/widgets/Home/Newsfeed/image_grid.dart';
@@ -971,7 +972,7 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
             _buildPostHeader(width, post),
             SizedBox(height: width * 0.03),
             Text(
-              post['title'] as String,
+              ProfanityFilter.maskForDisplay(post['title'] as String),
               style: TextStyle(
                 fontSize: width * 0.045,
                 fontWeight: FontWeight.w800,
@@ -1174,7 +1175,10 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
     );
   }
 
-  Widget _buildPostBody(double width, String body, String postId) {
+  Widget _buildPostBody(double width, String rawBody, String postId) {
+    // Mask any profanity for display — citizens never see it, even if the row
+    // slipped past the client (the original text is untouched in the DB).
+    final body = ProfanityFilter.maskForDisplay(rawBody);
     final isExpanded = _expandedPosts.contains(postId);
     final textStyle = TextStyle(
       fontSize: width * 0.034,

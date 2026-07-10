@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -48,6 +49,7 @@ class AdminActivity {
       'user_deactivated' => 'Deactivated',
       'user_reactivated' => 'Reactivated',
       'broadcast_sent' => 'Broadcast to citizens',
+      'identity_revealed' => 'Revealed anonymous identity —',
       _ => action.replaceAll('_', ' '),
     };
     final target = targetLabel;
@@ -63,6 +65,13 @@ class AdminActivity {
     if (d.inDays < 7) return '${d.inDays} d ago';
     return '${createdAt.day}/${createdAt.month}/${createdAt.year}';
   }
+
+  /// Exact date + time, e.g. "Jul 8, 2026 · 11:07 AM" — shown in the full
+  /// "View all" history where precise timestamps matter.
+  String get exactTime => DateFormat('MMM d, y · h:mm a').format(createdAt);
+
+  /// Calendar day, e.g. "Jul 8, 2026" — used to group the history list.
+  String get dayLabel => DateFormat('MMM d, y').format(createdAt);
 }
 
 class AdminActivityNotifier extends AsyncNotifier<List<AdminActivity>> {
@@ -90,6 +99,29 @@ class AdminActivityNotifier extends AsyncNotifier<List<AdminActivity>> {
   Future<void> silentRefresh() async {
     final next = await AsyncValue.guard(_fetch);
     if (next.hasValue) state = next;
+  }
+
+  /// Reads the log for the "View all" history screen, optionally bounded by a
+  /// created_at range. Independent of [state] — the screen owns its own list so
+  /// it can apply date filters without disturbing the Settings card.
+  Future<List<AdminActivity>> fetchHistory({
+    DateTime? from,
+    DateTime? to,
+    int limit = 1000,
+  }) async {
+    var query = _db
+        .from('admin_activity_log')
+        .select('id, action, actor_name, target_label, detail, created_at');
+    if (from != null) {
+      query = query.gte('created_at', from.toUtc().toIso8601String());
+    }
+    if (to != null) {
+      query = query.lt('created_at', to.toUtc().toIso8601String());
+    }
+    final rows = await query.order('created_at', ascending: false).limit(limit);
+    return (rows as List)
+        .map((r) => AdminActivity.fromRow(r as Map<String, dynamic>))
+        .toList();
   }
 }
 

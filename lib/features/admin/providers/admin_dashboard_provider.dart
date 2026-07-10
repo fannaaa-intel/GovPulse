@@ -344,10 +344,15 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
       _selectFeedbacks(),
     ]);
 
-    final reportRows = results[0];
+    // Dismissed (spam / nonsense) rows are excluded from every metric and the
+    // AI forecast. Rows fetched before the spam_moderation migration simply lack
+    // the column (null), so they are all treated as active.
+    final reportRows =
+        results[0].where((r) => r['dismissed_at'] == null).toList();
     final pendingRows = results[1];
     final recentVerifRows = results[2];
-    final feedbackRows = results[3];
+    final feedbackRows =
+        results[3].where((r) => r['dismissed_at'] == null).toList();
 
     // AI recommendations are optional (function may not be deployed) and must
     // never break the dashboard — fetched separately and guarded.
@@ -419,21 +424,25 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
   Future<List<Map<String, dynamic>>> _selectReports() async {
     const baseCols =
         'id, category, category_other, barangay, remarks, status, created_at';
-    // Try WITH the AI urgency column; if the classify-report migration hasn't
-    // been applied yet the query errors, so retry without it (on-device only).
-    try {
-      final res = await _db
-          .from('reports')
-          .select('$baseCols, ai_urgency')
-          .order('created_at', ascending: false);
-      return List<Map<String, dynamic>>.from(res);
-    } catch (_) {
-      final res = await _db
-          .from('reports')
-          .select(baseCols)
-          .order('created_at', ascending: false);
-      return List<Map<String, dynamic>>.from(res);
+    // Prefer the AI-urgency + moderation columns, degrading gracefully when a
+    // migration hasn't been applied (classify-report and/or spam_moderation).
+    for (final cols in [
+      '$baseCols, ai_urgency, dismissed_at',
+      '$baseCols, dismissed_at',
+      '$baseCols, ai_urgency',
+      baseCols,
+    ]) {
+      try {
+        final res = await _db
+            .from('reports')
+            .select(cols)
+            .order('created_at', ascending: false);
+        return List<Map<String, dynamic>>.from(res);
+      } catch (_) {
+        // Column set unavailable — fall through to the next, smaller one.
+      }
     }
+    return const [];
   }
 
   Future<List<Map<String, dynamic>>> _selectPendingVerifications() async {
@@ -505,20 +514,22 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
         'id, office_label, service_name, overall_rating, '
         'aspect_staff, aspect_wait, aspect_clarity, aspect_facility, '
         'comment, created_at';
-    try {
-      final res = await _db
-          .from('feedbacks')
-          .select('$baseCols, ai_sentiment, ai_urgency');
-      return List<Map<String, dynamic>>.from(res);
-    } catch (_) {
-      // AI columns not present yet — fall back to the base columns.
+    // Prefer the AI sentiment/urgency + moderation columns, degrading gracefully
+    // when a migration hasn't been applied (classify-feedback / spam_moderation).
+    for (final cols in [
+      '$baseCols, ai_sentiment, ai_urgency, dismissed_at',
+      '$baseCols, dismissed_at',
+      '$baseCols, ai_sentiment, ai_urgency',
+      baseCols,
+    ]) {
       try {
-        final res = await _db.from('feedbacks').select(baseCols);
+        final res = await _db.from('feedbacks').select(cols);
         return List<Map<String, dynamic>>.from(res);
       } catch (_) {
-        return const [];
+        // Column set unavailable — fall through to the next, smaller one.
       }
     }
+    return const [];
   }
 
   // ── Derivations ──────────────────────────────────────────────────────────

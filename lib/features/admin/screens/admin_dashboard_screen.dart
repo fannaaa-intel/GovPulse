@@ -32,6 +32,7 @@ import '../pages/admin_feedback_page.dart';
 import '../pages/admin_suggestions_page.dart';
 import '../pages/admin_settings_page.dart';
 import '../pages/admin_users_page.dart';
+import '../pages/admin_team_page.dart';
 import '../pages/community_updates_page.dart';
 
 class AdminDashboardScreen extends ConsumerStatefulWidget {
@@ -61,8 +62,9 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
     AdminNavItem(icon: Icons.lightbulb_rounded, label: 'Suggestions'), // 4
     AdminNavItem(icon: Icons.reviews_rounded, label: 'Feedback'), // 5
     AdminNavItem(icon: Icons.verified_user_rounded, label: 'Verification'), // 6
-    AdminNavItem(icon: Icons.manage_accounts_rounded, label: 'Users'), // 7
-    AdminNavItem(icon: Icons.settings_rounded, label: 'Settings'), // 8
+    AdminNavItem(icon: Icons.manage_accounts_rounded, label: 'Citizens'), // 7
+    AdminNavItem(icon: Icons.badge_rounded, label: 'Team'), // 8
+    AdminNavItem(icon: Icons.settings_rounded, label: 'Settings'), // 9
   ];
 
   @override
@@ -140,6 +142,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
           ref.read(adminVerificationProvider.notifier).silentRefresh();
         }
       case 7:
+      case 8:
         if (ref.read(adminUsersProvider).hasValue) {
           ref.read(adminUsersProvider.notifier).silentRefresh();
         }
@@ -212,6 +215,8 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
       case 7:
         return const AdminUsersPage();
       case 8:
+        return const AdminTeamPage();
+      case 9:
         return AdminSettingsPage(onLogout: _confirmLogout);
       default:
         return _ComingSoon(label: navItems[_selectedIndex].label);

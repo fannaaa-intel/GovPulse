@@ -22,14 +22,52 @@ class _NetworkWrapperState extends State<NetworkWrapper> {
   Timer? _offlineDebounce;
   Timer? _onlineDebounce;
 
+  // ── Web-only connectivity toast state ──────────────────────────────────────
+  // On the website we don't take over the screen; we trust the browser's
+  // online/offline signal (navigator.onLine) and float a small toast instead —
+  // a persistent "Trying to reconnect…" while offline, then a brief
+  // "Reconnected" when it returns. See [_ConnectivityToast].
+  bool _webOffline = false;
+  bool _showReconnected = false;
+  Timer? _reconnectedTimer;
+
   @override
   void initState() {
     super.initState();
 
-    // Web: browser handles connectivity — always treat as online.
+    // Web: dart:io pings aren't available, so rely on the browser's
+    // online/offline events and surface a toast rather than the mobile
+    // full-screen overlay. The page stays fully interactive.
     if (kIsWeb) {
       _hasInternet = true;
       cachedInternetStatus = true;
+
+      // Seed the initial state in case we mount while already offline.
+      Connectivity().checkConnectivity().then((results) {
+        final online = !results.every((r) => r == ConnectivityResult.none);
+        if (mounted && !online) setState(() => _webOffline = true);
+      });
+
+      _subscription = Connectivity().onConnectivityChanged.listen((results) {
+        final online = !results.every((r) => r == ConnectivityResult.none);
+        if (!online && !_webOffline) {
+          _reconnectedTimer?.cancel();
+          setState(() {
+            _webOffline = true;
+            _showReconnected = false;
+          });
+        } else if (online && _webOffline) {
+          setState(() {
+            _webOffline = false;
+            _showReconnected = true;
+          });
+          // Auto-dismiss the "Reconnected" pill after a moment.
+          _reconnectedTimer?.cancel();
+          _reconnectedTimer = Timer(const Duration(seconds: 3), () {
+            if (mounted) setState(() => _showReconnected = false);
+          });
+        }
+      });
       return;
     }
 
@@ -84,12 +122,33 @@ class _NetworkWrapperState extends State<NetworkWrapper> {
   void dispose() {
     _offlineDebounce?.cancel();
     _onlineDebounce?.cancel();
+    _reconnectedTimer?.cancel();
     _subscription?.cancel();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    // Web: keep the page fully usable; just float a reconnect / reconnected
+    // toast at the bottom. No full-screen takeover.
+    if (kIsWeb) {
+      return Stack(
+        children: [
+          widget.child,
+          Positioned.fill(
+            child: SafeArea(
+              child: IgnorePointer(
+                child: _ConnectivityToast(
+                  offline: _webOffline,
+                  showReconnected: _showReconnected,
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
     return Stack(
       children: [
         widget.child,
@@ -126,6 +185,110 @@ class _NetworkWrapperState extends State<NetworkWrapper> {
               : const SizedBox.shrink(key: ValueKey('online')),
         ),
       ],
+    );
+  }
+}
+
+/// Web-only connectivity toast: a persistent "Trying to reconnect…" pill while
+/// offline, swapped for a brief "Reconnected" pill when the connection returns.
+/// Slides up + fades in on show; fades out when dismissed.
+class _ConnectivityToast extends StatelessWidget {
+  final bool offline;
+  final bool showReconnected;
+  const _ConnectivityToast({
+    required this.offline,
+    required this.showReconnected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    Widget? pill;
+    if (offline) {
+      pill = _pill(
+        key: const ValueKey('offline'),
+        bg: const Color(0xFF1F2937),
+        leading: const SizedBox(
+          width: 15,
+          height: 15,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            valueColor: AlwaysStoppedAnimation(Color(0xFFFBBF24)),
+          ),
+        ),
+        label: 'Trying to reconnect…',
+      );
+    } else if (showReconnected) {
+      pill = _pill(
+        key: const ValueKey('reconnected'),
+        bg: const Color(0xFF15803D),
+        leading: const Icon(Icons.wifi_rounded, size: 16, color: Colors.white),
+        label: 'Reconnected',
+      );
+    }
+
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 24),
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 300),
+          reverseDuration: const Duration(milliseconds: 250),
+          transitionBuilder: (child, animation) => FadeTransition(
+            opacity: animation,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0, 0.4),
+                end: Offset.zero,
+              ).animate(
+                CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+              ),
+              child: child,
+            ),
+          ),
+          child: pill ?? const SizedBox.shrink(key: ValueKey('none')),
+        ),
+      ),
+    );
+  }
+
+  Widget _pill({
+    required Key key,
+    required Color bg,
+    required Widget leading,
+    required String label,
+  }) {
+    return Material(
+      key: key,
+      color: Colors.transparent,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(30),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.20),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            leading,
+            const SizedBox(width: 10),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

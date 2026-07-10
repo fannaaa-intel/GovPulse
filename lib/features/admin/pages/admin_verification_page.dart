@@ -88,46 +88,15 @@ class _AdminVerificationPageState
   }
 
   // ── Header ─────────────────────────────────────────────────────────────────
+  // The top bar already shows "Verification"; pull-to-refresh replaces the old
+  // Refresh button, so the header is just the descriptive subtitle.
   Widget _buildHeader() {
-    return LayoutBuilder(
-      builder: (context, c) {
-        final title = Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: const [
-            Text(
-              'ID verification',
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.5,
-                color: AdminUi.textPrimary,
-              ),
-            ),
-            SizedBox(height: 2),
-            Text(
-              'Review resident identity submissions and approve access',
-              style: TextStyle(fontSize: 13, color: AdminUi.textMuted),
-            ),
-          ],
-        );
-
-        final refreshBtn = _GhostButton(
-          icon: Icons.refresh_rounded,
-          label: 'Refresh',
-          onTap: () => ref.read(adminVerificationProvider.notifier).refresh(),
-        );
-
-        if (c.maxWidth < 560) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [title, const SizedBox(height: 14), refreshBtn],
-          );
-        }
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [Expanded(child: title), refreshBtn],
-        );
-      },
+    return const Align(
+      alignment: Alignment.centerLeft,
+      child: Text(
+        'Review resident identity submissions and approve access',
+        style: TextStyle(fontSize: 13, color: AdminUi.textMuted),
+      ),
     );
   }
 
@@ -964,12 +933,8 @@ class _VerificationDetailDialogState
     final content = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Narrow full-screen page gets the chevron header on top; wide keeps
-        // the X in the rich header below.
-        if (narrow) ...[
-          const AdminChevronHeader(title: 'ID verification'),
-          const Divider(height: 1, color: AdminUi.border),
-        ],
+        // The narrow chevron header is pinned by the scaffold below (outside the
+        // slide-up); wide keeps the X in the rich header below.
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 18, 12, 14),
           child: Row(
@@ -1175,12 +1140,20 @@ class _VerificationDetailDialogState
           ],
     );
 
-    // Narrow → full-screen slide-up page; wide → centered dialog card.
+    // Narrow → full-screen page: the chevron header is PINNED, only the body
+    // below slides up (mirroring the citizen sub-screens). The opaque scaffold
+    // paints instantly (no black flash); the route fades out on the way back.
     if (narrow) {
-      return AdminSlideUp(
-        child: Scaffold(
-          backgroundColor: AdminUi.surface,
-          body: SafeArea(child: content),
+      return Scaffold(
+        backgroundColor: AdminUi.surface,
+        body: SafeArea(
+          child: Column(
+            children: [
+              const AdminChevronHeader(title: 'ID verification'),
+              const Divider(height: 1, color: AdminUi.border),
+              Expanded(child: AdminSlideUp(child: content)),
+            ],
+          ),
         ),
       );
     }
@@ -1517,51 +1490,6 @@ class _DocThumb extends ConsumerWidget {
 
 const TextStyle _ddStyle =
     TextStyle(fontSize: 13, color: AdminUi.textPrimary);
-
-class _GhostButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-  const _GhostButton({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: AdminUi.surface,
-      borderRadius: BorderRadius.circular(AdminUi.controlRadius),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AdminUi.controlRadius),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(AdminUi.controlRadius),
-            border: Border.all(color: AdminUi.border),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 16, color: AdminUi.textSecondary),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  color: AdminUi.textSecondary,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 class _FilterBox extends StatelessWidget {
   final Widget child;

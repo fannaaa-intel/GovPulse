@@ -12,6 +12,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/modal/media_picker_sheet.dart';
 import '../providers/admin_events_provider.dart';
 import '../theme/admin_ui.dart';
+import '../widgets/admin_detail_screen.dart';
 import '../widgets/admin_dialog_back.dart';
 import '../widgets/admin_skeleton.dart';
 import '../widgets/admin_snackbar.dart';
@@ -104,9 +105,8 @@ class _AdminEventsPageState extends ConsumerState<AdminEventsPage> {
     }).toList();
   }
 
-  Future<void> _openDetail(EventModel e) => showDialog(
-    context: context,
-    barrierColor: Colors.black54,
+  Future<void> _openDetail(EventModel e) => showAdminDetail(
+    context,
     builder: (_) => _EventDetailDialog(event: e),
   );
 
@@ -152,41 +152,23 @@ class _AdminEventsPageState extends ConsumerState<AdminEventsPage> {
   Widget _buildHeader() {
     return LayoutBuilder(
       builder: (context, c) {
+        // The top bar already shows "Events", so no in-content page title.
         final title = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: const [
-            Text(
-              'Events',
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.5,
-                color: AdminUi.textPrimary,
-              ),
-            ),
-            SizedBox(height: 2),
-            Text(
+          children: [
+            const Text(
               'Publish community events and review staff submissions',
               style: TextStyle(fontSize: 13, color: AdminUi.textMuted),
             ),
           ],
         );
 
-        final actions = Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: [
-            _GhostButton(
-              icon: Icons.refresh_rounded,
-              label: 'Refresh',
-              onTap: () => ref.read(adminEventsProvider.notifier).refresh(),
-            ),
-            _PrimaryButton(
-              icon: Icons.add_rounded,
-              label: 'New event',
-              onTap: () => _openForm(),
-            ),
-          ],
+        // Pull-to-refresh replaces the old Refresh button; just the primary
+        // "New event" action remains.
+        final actions = _PrimaryButton(
+          icon: Icons.add_rounded,
+          label: 'New event',
+          onTap: () => _openForm(),
         );
 
         if (c.maxWidth < 560) {
@@ -1008,335 +990,293 @@ class _EventDetailDialogState extends ConsumerState<_EventDetailDialog> {
     );
   }
 
-  // Full-screen (phone) header — a back chevron + title, mirroring the citizen
-  // settings sub-screens (bordered rounded-square chevron, blue title).
-  Widget _chevronHeader() {
-    return Material(
-      color: Colors.white,
-      child: SafeArea(
-        bottom: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 16, 8),
-          child: Row(
-            children: [
-              GestureDetector(
-                onTap: () => Navigator.pop(context),
-                child: Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF3F4F6),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: AdminUi.border),
+  @override
+  Widget build(BuildContext context) {
+    final narrow = adminDetailIsNarrow(context);
+    final width = MediaQuery.of(context).size.width.clamp(0.0, 620.0);
+    final notifier = ref.read(adminEventsProvider.notifier);
+
+    // Cover banner (tap to view full image). The web dialog shows an X to
+    // dismiss; the narrow full-screen page relies on the scaffold's chevron.
+    final coverImage = Stack(
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(narrow ? 0 : 16),
+          ),
+          child: SizedBox(
+            height: narrow ? 200 : 150,
+            width: double.infinity,
+            child: e.imageUrl == null || e.imageUrl!.isEmpty
+                ? Container(
+                    color: AdminUi.subtle,
+                    child: const Icon(
+                      Icons.event_rounded,
+                      size: 40,
+                      color: AdminUi.textMuted,
+                    ),
+                  )
+                : GestureDetector(
+                    onTap: () => _showFullImage(e.imageUrl!),
+                    child: MouseRegion(
+                      cursor: SystemMouseCursors.click,
+                      child: CachedNetworkImage(
+                        imageUrl: e.imageUrl!,
+                        fit: BoxFit.cover,
+                        placeholder: (_, _) =>
+                            Container(color: AdminUi.subtle),
+                        errorWidget: (_, _, _) => Container(
+                          color: AdminUi.subtle,
+                          child: const Icon(
+                            Icons.broken_image_rounded,
+                            size: 30,
+                            color: AdminUi.textMuted,
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
-                  child: const Icon(
-                    Icons.arrow_back_ios_new_rounded,
-                    size: 16,
-                    color: AppColors.primaryBlue,
+          ),
+        ),
+        // "Tap to view full image" hint — the banner is a cropped preview;
+        // tapping opens the complete, uncropped photo.
+        if (e.imageUrl != null && e.imageUrl!.isNotEmpty)
+          Positioned(
+            bottom: 8,
+            right: 10,
+            child: IgnorePointer(
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.45),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.zoom_out_map_rounded,
+                      color: Colors.white,
+                      size: 13,
+                    ),
+                    SizedBox(width: 4),
+                    Text(
+                      'View',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        if (!narrow)
+          Positioned(
+            top: 8,
+            right: 8,
+            child: Material(
+              color: Colors.black.withValues(alpha: 0.35),
+              shape: const CircleBorder(),
+              child: IconButton(
+                icon: const Icon(
+                  Icons.close_rounded,
+                  color: Colors.white,
+                ),
+                iconSize: 18,
+                onPressed: () => Navigator.pop(context),
+              ),
+            ),
+          ),
+        Positioned(top: 10, left: 12, child: _StatusPill(e.status)),
+      ],
+    );
+
+    final scrollContent = SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  e.title,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: AdminUi.textPrimary,
                   ),
                 ),
               ),
-              const SizedBox(width: 12),
-              const Text(
-                'Event details',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.primaryBlue,
-                  letterSpacing: -0.3,
-                ),
+              _CategoryChip(
+                category: e.category,
+                colorHex: e.categoryColor,
               ),
             ],
           ),
-        ),
+          const SizedBox(height: 14),
+          _InfoTile(
+            icon: Icons.location_on_rounded,
+            label: 'Location',
+            value: e.location,
+          ),
+          _InfoTile(
+            icon: Icons.calendar_today_rounded,
+            label: 'Date',
+            value: _shortDate(e.eventDate),
+          ),
+          _InfoTile(
+            icon: Icons.access_time_rounded,
+            label: 'Time',
+            value: e.eventTime,
+          ),
+          if ((e.description ?? '').isNotEmpty)
+            _Section(title: 'Description', body: e.description!),
+          if ((e.whatToExpect ?? '').isNotEmpty)
+            _Section(title: 'What to expect', body: e.whatToExpect!),
+          if ((e.requirements ?? '').isNotEmpty)
+            _Section(title: 'Requirements', body: e.requirements!),
+          const SizedBox(height: 8),
+          // Featured toggle
+          Row(
+            children: [
+              const Icon(
+                Icons.star_rounded,
+                size: 18,
+                color: AppColors.orange,
+              ),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Featured event',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AdminUi.textPrimary,
+                  ),
+                ),
+              ),
+              Switch(
+                value: e.isFeatured,
+                activeThumbColor: AppColors.primaryBlue,
+                onChanged: _busy
+                    ? null
+                    : (v) => _run(
+                        () => notifier.setFeatured(e.id, v),
+                        v ? 'Marked as featured.' : 'Unfeatured.',
+                      ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
-  }
 
-  @override
-  Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-    final narrow = size.width < 480;
-    final width = size.width.clamp(0.0, 620.0);
-    final notifier = ref.read(adminEventsProvider.notifier);
+    final footer = Padding(
+      padding: const EdgeInsets.all(12),
+      child: Row(
+        children: [
+          if (e.status == EventStatus.pending) ...[
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _busy
+                    ? null
+                    : () => _run(
+                        () => notifier.reject(e.id),
+                        'Event rejected.',
+                      ),
+                icon: const Icon(Icons.close_rounded, size: 18),
+                label: const Text('Reject'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.red,
+                  side: const BorderSide(color: AppColors.red),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: _busy
+                    ? null
+                    : () => _run(
+                        () => notifier.approve(e.id),
+                        'Event published.',
+                      ),
+                icon: const Icon(Icons.check_rounded, size: 18),
+                label: const Text('Publish'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.green,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+            ),
+          ] else ...[
+            IconButton(
+              onPressed: _busy ? null : _confirmDelete,
+              icon: const Icon(Icons.delete_outline_rounded),
+              color: AppColors.red,
+              tooltip: 'Delete',
+            ),
+            const Spacer(),
+            ElevatedButton.icon(
+              onPressed: _busy
+                  ? null
+                  : () {
+                      Navigator.pop(context);
+                      showEventForm(context, existing: e);
+                    },
+              icon: const Icon(Icons.edit_rounded, size: 18),
+              label: const Text('Edit'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primaryBlue,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 12,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+
+    // Narrow → full-screen slide-up page (chevron header + slide-up body),
+    // matching the reports / suggestions / feedback details. Wide → dialog card.
+    if (narrow) {
+      return AdminDetailScaffold(
+        title: 'Event details',
+        child: Column(
+          children: [
+            coverImage,
+            Expanded(child: scrollContent),
+            const Divider(height: 1, color: AdminUi.border),
+            SafeArea(top: false, child: footer),
+          ],
+        ),
+      );
+    }
 
     return Dialog(
       backgroundColor: AdminUi.surface,
-      // Phones: fill the screen with a chevron header, like the citizen
-      // settings sub-screens. Web / tablet: a centred card.
-      insetPadding: narrow ? EdgeInsets.zero : null,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(narrow ? 0 : 16),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: narrow ? double.infinity : width,
-          maxHeight: narrow ? double.infinity : 660,
-        ),
+        constraints: BoxConstraints(maxWidth: width, maxHeight: 660),
         child: Column(
-          mainAxisSize: narrow ? MainAxisSize.max : MainAxisSize.min,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            if (narrow) _chevronHeader(),
-            // Cover image + (close on web / chevron header on phone)
-            Stack(
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.vertical(
-                    top: Radius.circular(narrow ? 0 : 16),
-                  ),
-                  child: SizedBox(
-                    height: narrow ? 200 : 150,
-                    width: double.infinity,
-                    child: e.imageUrl == null || e.imageUrl!.isEmpty
-                        ? Container(
-                            color: AdminUi.subtle,
-                            child: const Icon(
-                              Icons.event_rounded,
-                              size: 40,
-                              color: AdminUi.textMuted,
-                            ),
-                          )
-                        : GestureDetector(
-                            onTap: () => _showFullImage(e.imageUrl!),
-                            child: MouseRegion(
-                              cursor: SystemMouseCursors.click,
-                              child: CachedNetworkImage(
-                                imageUrl: e.imageUrl!,
-                                fit: BoxFit.cover,
-                                placeholder: (_, _) =>
-                                    Container(color: AdminUi.subtle),
-                                errorWidget: (_, _, _) => Container(
-                                  color: AdminUi.subtle,
-                                  child: const Icon(
-                                    Icons.broken_image_rounded,
-                                    size: 30,
-                                    color: AdminUi.textMuted,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                  ),
-                ),
-                // "Tap to view full image" hint — the banner is a cropped
-                // preview; tapping opens the complete, uncropped photo.
-                if (e.imageUrl != null && e.imageUrl!.isNotEmpty)
-                  Positioned(
-                    bottom: 8,
-                    right: 10,
-                    child: IgnorePointer(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.45),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.zoom_out_map_rounded,
-                              color: Colors.white,
-                              size: 13,
-                            ),
-                            SizedBox(width: 4),
-                            Text(
-                              'View',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                if (!narrow)
-                  Positioned(
-                    top: 8,
-                    right: 8,
-                    child: Material(
-                      color: Colors.black.withValues(alpha: 0.35),
-                      shape: const CircleBorder(),
-                      child: IconButton(
-                        icon: const Icon(
-                          Icons.close_rounded,
-                          color: Colors.white,
-                        ),
-                        iconSize: 18,
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                    ),
-                  ),
-                Positioned(top: 10, left: 12, child: _StatusPill(e.status)),
-              ],
-            ),
-
-            Flexible(
-              // Full-screen (phone) fills to pin the footer at the bottom;
-              // the web dialog shrink-wraps to its content.
-              fit: narrow ? FlexFit.tight : FlexFit.loose,
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            e.title,
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w700,
-                              color: AdminUi.textPrimary,
-                            ),
-                          ),
-                        ),
-                        _CategoryChip(
-                          category: e.category,
-                          colorHex: e.categoryColor,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    _InfoTile(
-                      icon: Icons.location_on_rounded,
-                      label: 'Location',
-                      value: e.location,
-                    ),
-                    _InfoTile(
-                      icon: Icons.calendar_today_rounded,
-                      label: 'Date',
-                      value: _shortDate(e.eventDate),
-                    ),
-                    _InfoTile(
-                      icon: Icons.access_time_rounded,
-                      label: 'Time',
-                      value: e.eventTime,
-                    ),
-                    if ((e.description ?? '').isNotEmpty)
-                      _Section(title: 'Description', body: e.description!),
-                    if ((e.whatToExpect ?? '').isNotEmpty)
-                      _Section(title: 'What to expect', body: e.whatToExpect!),
-                    if ((e.requirements ?? '').isNotEmpty)
-                      _Section(title: 'Requirements', body: e.requirements!),
-                    const SizedBox(height: 8),
-                    // Featured toggle
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.star_rounded,
-                          size: 18,
-                          color: AppColors.orange,
-                        ),
-                        const SizedBox(width: 8),
-                        const Expanded(
-                          child: Text(
-                            'Featured event',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: AdminUi.textPrimary,
-                            ),
-                          ),
-                        ),
-                        Switch(
-                          value: e.isFeatured,
-                          activeThumbColor: AppColors.primaryBlue,
-                          onChanged: _busy
-                              ? null
-                              : (v) => _run(
-                                  () => notifier.setFeatured(e.id, v),
-                                  v ? 'Marked as featured.' : 'Unfeatured.',
-                                ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
+            coverImage,
+            Flexible(child: scrollContent),
             const Divider(height: 1, color: AdminUi.border),
-            SafeArea(
-              top: false,
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Row(
-                  children: [
-                    if (e.status == EventStatus.pending) ...[
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _busy
-                              ? null
-                              : () => _run(
-                                  () => notifier.reject(e.id),
-                                  'Event rejected.',
-                                ),
-                          icon: const Icon(Icons.close_rounded, size: 18),
-                          label: const Text('Reject'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppColors.red,
-                            side: const BorderSide(color: AppColors.red),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: _busy
-                              ? null
-                              : () => _run(
-                                  () => notifier.approve(e.id),
-                                  'Event published.',
-                                ),
-                          icon: const Icon(Icons.check_rounded, size: 18),
-                          label: const Text('Publish'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.green,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                          ),
-                        ),
-                      ),
-                    ] else ...[
-                      IconButton(
-                        onPressed: _busy ? null : _confirmDelete,
-                        icon: const Icon(Icons.delete_outline_rounded),
-                        color: AppColors.red,
-                        tooltip: 'Delete',
-                      ),
-                      const Spacer(),
-                      ElevatedButton.icon(
-                        onPressed: _busy
-                            ? null
-                            : () {
-                                Navigator.pop(context);
-                                showEventForm(context, existing: e);
-                              },
-                        icon: const Icon(Icons.edit_rounded, size: 18),
-                        label: const Text('Edit'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primaryBlue,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 18,
-                            vertical: 12,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
+            footer,
           ],
         ),
       ),
@@ -2180,50 +2120,6 @@ class _ImageHint extends StatelessWidget {
 
 const TextStyle _ddStyle = TextStyle(fontSize: 13, color: AdminUi.textPrimary);
 
-class _GhostButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-  const _GhostButton({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: AdminUi.surface,
-      borderRadius: BorderRadius.circular(AdminUi.controlRadius),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AdminUi.controlRadius),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(AdminUi.controlRadius),
-            border: Border.all(color: AdminUi.border),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 16, color: AdminUi.textSecondary),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  color: AdminUi.textSecondary,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 class _PrimaryButton extends StatelessWidget {
   final IconData icon;

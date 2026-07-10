@@ -9,24 +9,17 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/Home/Newsfeed/image_grid.dart';
 import '../../../core/widgets/Home/Newsfeed/news_feed_helpers.dart';
 import '../../../core/widgets/modal/media_picker_sheet.dart';
+import '../providers/admin_flagged_comments_provider.dart';
 import '../providers/admin_profile_provider.dart';
 import '../providers/community_updates_provider.dart';
 import '../theme/admin_ui.dart';
+import 'admin_flagged_comments_page.dart';
 import '../widgets/admin_dialog_back.dart';
 import '../widgets/admin_skeleton.dart';
 import '../widgets/admin_snackbar.dart';
+import '../widgets/admin_user_actions.dart';
 
 const int _kMaxImages = 6;
-
-// ════════════════════════════════════════════════════════════════════════════
-//  Community Updates page  (admin nav slot "Community")
-//
-//  Facebook-style: a composer bar pinned to the top, the published feed below,
-//  and a separate "Requests" tab holding the pending posts staff submit for
-//  approval. Lives inside the existing AdminDashboardScreen shell, which already
-//  provides the responsive sidebar / drawer + topbar, so here we just centre a
-//  ~720px feed column and let it go full-width on mobile.
-// ════════════════════════════════════════════════════════════════════════════
 
 class CommunityUpdatesPage extends ConsumerStatefulWidget {
   const CommunityUpdatesPage({super.key});
@@ -68,11 +61,15 @@ class _CommunityUpdatesPageState extends ConsumerState<CommunityUpdatesPage> {
                     onChanged: (t) => setState(() => _tab = t),
                   ),
                   const SizedBox(height: 16),
+                  const _FlaggedCommentsBanner(),
                   if (_tab == _Tab.feed) ...[
                     _ComposerBar(
-                      photoUrl:
-                          ref.watch(adminProfileProvider).valueOrNull?.photoUrl,
+                      photoUrl: ref
+                          .watch(adminProfileProvider)
+                          .valueOrNull
+                          ?.photoUrl,
                       onTap: () => showCommunityComposer(context, ref),
+                      onBroadcast: () => showBroadcastFlow(context, ref),
                     ),
                     const SizedBox(height: 16),
                   ],
@@ -89,6 +86,73 @@ class _CommunityUpdatesPageState extends ConsumerState<CommunityUpdatesPage> {
                   ),
                 ],
               ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Flagged comments review banner ───────────────────────────────────────────
+
+/// Only appears when comments are awaiting review; tapping opens the queue.
+class _FlaggedCommentsBanner extends ConsumerWidget {
+  const _FlaggedCommentsBanner();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final count =
+        ref.watch(adminFlaggedCommentsProvider).valueOrNull?.length ?? 0;
+    if (count == 0) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Material(
+        color: AppColors.orange.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(AdminUi.controlRadius),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AdminUi.controlRadius),
+          onTap: () => showFlaggedCommentsReview(context),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(AdminUi.controlRadius),
+              border: Border.all(
+                color: AppColors.orange.withValues(alpha: 0.45),
+              ),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.flag_rounded,
+                  size: 18,
+                  color: AppColors.orange,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    '$count comment${count == 1 ? '' : 's'} flagged for review',
+                    style: const TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFFB45309),
+                    ),
+                  ),
+                ),
+                const Text(
+                  'Review',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.primaryBlue,
+                  ),
+                ),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  size: 18,
+                  color: AppColors.primaryBlue,
+                ),
+              ],
             ),
           ),
         ),
@@ -183,8 +247,13 @@ class _TabBar extends StatelessWidget {
 
 class _ComposerBar extends StatelessWidget {
   final VoidCallback onTap;
+  final VoidCallback onBroadcast;
   final String? photoUrl;
-  const _ComposerBar({required this.onTap, this.photoUrl});
+  const _ComposerBar({
+    required this.onTap,
+    required this.onBroadcast,
+    this.photoUrl,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -218,6 +287,28 @@ class _ComposerBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 10),
+          // Broadcast a push notification to every citizen — distinct from a
+          // feed post, so it gets its own clearly-labelled action here.
+          Tooltip(
+            message: 'Broadcast to all citizens',
+            child: Material(
+              color: AppColors.primaryBlue.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(10),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: onBroadcast,
+                child: const Padding(
+                  padding: EdgeInsets.all(10),
+                  child: Icon(
+                    Icons.campaign_rounded,
+                    color: AppColors.primaryBlue,
+                    size: 20,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
           Material(
             color: AppColors.primaryBlue,
             borderRadius: BorderRadius.circular(10),
@@ -402,6 +493,10 @@ class _UpdateCard extends ConsumerWidget {
                     height: 1.45,
                   ),
                 ),
+                if (post.flagged) ...[
+                  const SizedBox(height: 10),
+                  _FlagBanner(reason: post.flagReason),
+                ],
                 if (rejected && (post.rejectedReason?.isNotEmpty ?? false)) ...[
                   const SizedBox(height: 10),
                   _ReasonBox(reason: post.rejectedReason!),
@@ -470,7 +565,9 @@ class _UpdateCard extends ConsumerWidget {
     // is then redundant, so it's dropped for official posts.
     final tag = post.tag.trim();
     final tagged = post.isOfficial && tag.isNotEmpty && tag != 'LGU Aparri';
-    final authorLabel = tagged ? '${post.authorName} with $tag' : post.authorName;
+    final authorLabel = tagged
+        ? '${post.authorName} with $tag'
+        : post.authorName;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -963,6 +1060,45 @@ class _ReasonBox extends StatelessWidget {
               style: const TextStyle(
                 fontSize: 12.5,
                 color: AppColors.red,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Amber "possible profanity" banner set by the server moderation trigger.
+/// Admins see the real (unmasked) text; this just prompts a review.
+class _FlagBanner extends StatelessWidget {
+  final String? reason;
+  const _FlagBanner({required this.reason});
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: AppColors.orange.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.orange.withValues(alpha: 0.45)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.flag_rounded, size: 15, color: AppColors.orange),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              (reason?.isNotEmpty ?? false)
+                  ? '$reason — review before publishing'
+                  : 'Possible profanity — review before publishing',
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFFB45309),
                 height: 1.35,
               ),
             ),
@@ -1499,8 +1635,10 @@ class _ComposerFormState extends ConsumerState<_ComposerForm> {
         context: context,
         builder: (_) => Dialog(
           backgroundColor: Colors.transparent,
-          insetPadding:
-              const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 24,
+            vertical: 24,
+          ),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 460, maxHeight: 560),
             child: _CategoryPicker(current: _category),
@@ -1540,7 +1678,11 @@ class _ComposerFormState extends ConsumerState<_ComposerForm> {
           ),
           child: Row(
             children: [
-              const Icon(Icons.groups_rounded, size: 18, color: AdminUi.textMuted),
+              const Icon(
+                Icons.groups_rounded,
+                size: 18,
+                color: AdminUi.textMuted,
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
@@ -1554,8 +1696,10 @@ class _ComposerFormState extends ConsumerState<_ComposerForm> {
                   ),
                 ),
               ),
-              const Icon(Icons.keyboard_arrow_down_rounded,
-                  color: AdminUi.textMuted),
+              const Icon(
+                Icons.keyboard_arrow_down_rounded,
+                color: AdminUi.textMuted,
+              ),
             ],
           ),
         ),
@@ -1575,8 +1719,10 @@ class _ComposerFormState extends ConsumerState<_ComposerForm> {
         context: context,
         builder: (_) => Dialog(
           backgroundColor: Colors.transparent,
-          insetPadding:
-              const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 24,
+            vertical: 24,
+          ),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 460, maxHeight: 560),
             child: _BarangayPicker(current: _barangay),
@@ -1851,7 +1997,11 @@ class _ComposerFormState extends ConsumerState<_ComposerForm> {
     }
 
     unawaited(
-      _reportSave(op, rootContext, _isEdit ? 'Update saved.' : 'Update published.'),
+      _reportSave(
+        op,
+        rootContext,
+        _isEdit ? 'Update saved.' : 'Update published.',
+      ),
     );
     Navigator.of(context).pop();
   }
@@ -1928,8 +2078,8 @@ class _CategoryPickerState extends State<_CategoryPicker> {
     final items = q.isEmpty
         ? UpdateCategory.all
         : UpdateCategory.all
-            .where((c) => c.label.toLowerCase().contains(q))
-            .toList();
+              .where((c) => c.label.toLowerCase().contains(q))
+              .toList();
 
     final content = Column(
       mainAxisSize: MainAxisSize.min,
@@ -1975,10 +2125,15 @@ class _CategoryPickerState extends State<_CategoryPicker> {
             decoration: InputDecoration(
               isDense: true,
               hintText: 'Search offices and agencies…',
-              hintStyle:
-                  const TextStyle(fontSize: 13.5, color: AdminUi.textMuted),
-              prefixIcon: const Icon(Icons.search_rounded,
-                  size: 18, color: AdminUi.textMuted),
+              hintStyle: const TextStyle(
+                fontSize: 13.5,
+                color: AdminUi.textMuted,
+              ),
+              prefixIcon: const Icon(
+                Icons.search_rounded,
+                size: 18,
+                color: AdminUi.textMuted,
+              ),
               filled: true,
               fillColor: AdminUi.subtle,
               contentPadding: const EdgeInsets.symmetric(vertical: 11),
@@ -1992,8 +2147,10 @@ class _CategoryPickerState extends State<_CategoryPicker> {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
-                borderSide:
-                    const BorderSide(color: AppColors.primaryBlue, width: 1.4),
+                borderSide: const BorderSide(
+                  color: AppColors.primaryBlue,
+                  width: 1.4,
+                ),
               ),
             ),
           ),
@@ -2024,7 +2181,9 @@ class _CategoryPickerState extends State<_CategoryPicker> {
                       onTap: () => Navigator.of(context).pop(c),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 13),
+                          horizontal: 16,
+                          vertical: 13,
+                        ),
                         child: Row(
                           children: [
                             Container(
@@ -2044,13 +2203,18 @@ class _CategoryPickerState extends State<_CategoryPicker> {
                                   fontWeight: selected
                                       ? FontWeight.w700
                                       : FontWeight.w500,
-                                  color:
-                                      selected ? c.color : AdminUi.textPrimary,
+                                  color: selected
+                                      ? c.color
+                                      : AdminUi.textPrimary,
                                 ),
                               ),
                             ),
                             if (selected)
-                              Icon(Icons.check_rounded, size: 18, color: c.color),
+                              Icon(
+                                Icons.check_rounded,
+                                size: 18,
+                                color: c.color,
+                              ),
                           ],
                         ),
                       ),
@@ -2096,8 +2260,10 @@ class _BarangayPickerState extends State<_BarangayPicker> {
   static const _all = <(String, String)>[
     ('All barangays (city-wide)', kAllBarangays),
   ];
-  List<(String, String)> get _options =>
-      [..._all, for (final b in kBarangayOptions) (b, b)];
+  List<(String, String)> get _options => [
+    ..._all,
+    for (final b in kBarangayOptions) (b, b),
+  ];
 
   @override
   void dispose() {
@@ -2158,10 +2324,15 @@ class _BarangayPickerState extends State<_BarangayPicker> {
             decoration: InputDecoration(
               isDense: true,
               hintText: 'Search barangay…',
-              hintStyle:
-                  const TextStyle(fontSize: 13.5, color: AdminUi.textMuted),
-              prefixIcon: const Icon(Icons.search_rounded,
-                  size: 18, color: AdminUi.textMuted),
+              hintStyle: const TextStyle(
+                fontSize: 13.5,
+                color: AdminUi.textMuted,
+              ),
+              prefixIcon: const Icon(
+                Icons.search_rounded,
+                size: 18,
+                color: AdminUi.textMuted,
+              ),
               filled: true,
               fillColor: AdminUi.subtle,
               contentPadding: const EdgeInsets.symmetric(vertical: 11),
@@ -2175,8 +2346,10 @@ class _BarangayPickerState extends State<_BarangayPicker> {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
-                borderSide:
-                    const BorderSide(color: AppColors.primaryBlue, width: 1.4),
+                borderSide: const BorderSide(
+                  color: AppColors.primaryBlue,
+                  width: 1.4,
+                ),
               ),
             ),
           ),
@@ -2186,8 +2359,10 @@ class _BarangayPickerState extends State<_BarangayPicker> {
           child: items.isEmpty
               ? const Padding(
                   padding: EdgeInsets.symmetric(vertical: 32),
-                  child: Text('No matches',
-                      style: TextStyle(color: AdminUi.textMuted, fontSize: 13)),
+                  child: Text(
+                    'No matches',
+                    style: TextStyle(color: AdminUi.textMuted, fontSize: 13),
+                  ),
                 )
               : ListView.separated(
                   padding: const EdgeInsets.symmetric(vertical: 4),
@@ -2205,7 +2380,9 @@ class _BarangayPickerState extends State<_BarangayPicker> {
                       onTap: () => Navigator.of(context).pop(value),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 13),
+                          horizontal: 16,
+                          vertical: 13,
+                        ),
                         child: Row(
                           children: [
                             Expanded(
@@ -2223,8 +2400,11 @@ class _BarangayPickerState extends State<_BarangayPicker> {
                               ),
                             ),
                             if (selected)
-                              const Icon(Icons.check_rounded,
-                                  size: 18, color: AppColors.primaryBlue),
+                              const Icon(
+                                Icons.check_rounded,
+                                size: 18,
+                                color: AppColors.primaryBlue,
+                              ),
                           ],
                         ),
                       ),
@@ -2388,7 +2568,9 @@ class _CommentsPanelState extends ConsumerState<_CommentsPanel> {
     try {
       final list = await _repo.fetchComments(widget.post.id);
       if (mounted) setState(() => _comments = list);
-    } catch (_) {/* keep what's on screen */}
+    } catch (_) {
+      /* keep what's on screen */
+    }
   }
 
   void _startReply(String topLevelId, String name) {
@@ -2739,7 +2921,10 @@ class _CommentsPanelState extends ConsumerState<_CommentsPanel> {
           if (x.id == c.id)
             x.copyWith(
               likedByMe: nowLiked,
-              likesCount: (x.likesCount + (nowLiked ? 1 : -1)).clamp(0, 1 << 31),
+              likesCount: (x.likesCount + (nowLiked ? 1 : -1)).clamp(
+                0,
+                1 << 31,
+              ),
             )
           else
             x,

@@ -29,10 +29,15 @@ Future<T?> showAdminDetail<T>(
   if (adminDetailIsNarrow(context)) {
     return Navigator.of(context).push<T>(
       PageRouteBuilder<T>(
-        opaque: true,
+        // Instant IN (the screen appears with no page transition), fade OUT on
+        // the way back — matching the citizen settings sub-screens. The content
+        // does its own slide-up inside the screen (see AdminDetailScaffold), so
+        // the opaque scaffold never flashes.
         transitionDuration: Duration.zero,
-        reverseTransitionDuration: Duration.zero,
+        reverseTransitionDuration: const Duration(milliseconds: 220),
         pageBuilder: (ctx, _, _) => builder(ctx),
+        transitionsBuilder: (_, anim, _, child) =>
+            FadeTransition(opacity: anim, child: child),
       ),
     );
   }
@@ -97,9 +102,10 @@ class AdminChevronHeader extends StatelessWidget {
   }
 }
 
-/// Slides its child up (with a light fade) on first build. Use inside an instant
-/// (Duration.zero) route so the route swap is instant and only the content
-/// animates — the citizen-side feel.
+/// Slides its child up (with a light fade) on first build — mirroring the
+/// citizen settings sub-screens. IMPORTANT: place this BELOW the pinned header,
+/// never around it: only the content should animate; the chevron header stays
+/// put and the opaque background paints instantly (no black flash).
 class AdminSlideUp extends StatefulWidget {
   final Widget child;
   const AdminSlideUp({super.key, required this.child});
@@ -110,20 +116,22 @@ class AdminSlideUp extends StatefulWidget {
 
 class _AdminSlideUpState extends State<AdminSlideUp>
     with SingleTickerProviderStateMixin {
+  // Values match the citizen sub-screens (e.g. AboutGovPulseScreen): a 420ms
+  // easeOutCubic rise from 10% down, with a subtle 0.8→1.0 fade.
   late final AnimationController _c = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 260),
+    duration: const Duration(milliseconds: 420),
   )..forward();
 
   late final Animation<Offset> _offset = Tween<Offset>(
-    begin: const Offset(0, 0.08),
+    begin: const Offset(0, 0.10),
     end: Offset.zero,
   ).animate(CurvedAnimation(parent: _c, curve: Curves.easeOutCubic));
 
-  late final Animation<double> _fade = CurvedAnimation(
-    parent: _c,
-    curve: Curves.easeOut,
-  );
+  late final Animation<double> _fade = Tween<double>(
+    begin: 0.8,
+    end: 1.0,
+  ).animate(CurvedAnimation(parent: _c, curve: Curves.easeOut));
 
   @override
   void dispose() {
@@ -153,17 +161,18 @@ class AdminDetailScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AdminSlideUp(
-      child: Scaffold(
-        backgroundColor: AdminUi.surface,
-        body: SafeArea(
-          child: Column(
-            children: [
-              AdminChevronHeader(title: title),
-              const Divider(height: 1, color: AdminUi.border),
-              Expanded(child: child),
-            ],
-          ),
+    // Scaffold (opaque background) paints instantly. The chevron header is
+    // PINNED — only the body below it slides up, exactly like the citizen
+    // settings sub-screens (header stays put, content rises + fades in).
+    return Scaffold(
+      backgroundColor: AdminUi.surface,
+      body: SafeArea(
+        child: Column(
+          children: [
+            AdminChevronHeader(title: title),
+            const Divider(height: 1, color: AdminUi.border),
+            Expanded(child: AdminSlideUp(child: child)),
+          ],
         ),
       ),
     );

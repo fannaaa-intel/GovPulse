@@ -93,6 +93,11 @@ class AdminReport {
   final int mediaCount;
   final DateTime? createdAt;
 
+  /// Soft-moderation: non-null when an admin dismissed this row as spam/nonsense.
+  /// Dismissed rows are hidden from the default list and excluded from analytics.
+  final DateTime? dismissedAt;
+  final String? dismissedReason;
+
   const AdminReport({
     required this.id,
     required this.shortId,
@@ -108,7 +113,11 @@ class AdminReport {
     required this.submitterRole,
     required this.mediaCount,
     required this.createdAt,
+    this.dismissedAt,
+    this.dismissedReason,
   });
+
+  bool get isDismissed => dismissedAt != null;
 }
 
 /// A media item attached to a report, resolved to a public URL for the detail
@@ -130,11 +139,16 @@ class ReportFilters {
   final ReportSort sort;
   final bool anonymousOnly;
 
+  /// When false (default), dismissed (spam) rows are hidden from the list; when
+  /// true the list shows ONLY dismissed rows so they can be reviewed/restored.
+  final bool showDismissed;
+
   const ReportFilters({
     this.status,
     this.query = '',
     this.sort = ReportSort.newest,
     this.anonymousOnly = false,
+    this.showDismissed = false,
   });
 
   ReportFilters copyWith({
@@ -143,12 +157,14 @@ class ReportFilters {
     String? query,
     ReportSort? sort,
     bool? anonymousOnly,
+    bool? showDismissed,
   }) {
     return ReportFilters(
       status: clearStatus ? null : (status ?? this.status),
       query: query ?? this.query,
       sort: sort ?? this.sort,
       anonymousOnly: anonymousOnly ?? this.anonymousOnly,
+      showDismissed: showDismissed ?? this.showDismissed,
     );
   }
 }
@@ -221,6 +237,14 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
     _publish();
   }
 
+  void setShowDismissed(bool show) {
+    if (show == _filters.showDismissed) return;
+    _filters = _filters.copyWith(showDismissed: show);
+    _publish();
+  }
+
+  int get dismissedCount => _all.where((r) => r.isDismissed).length;
+
   void _publish() => state = AsyncValue.data(_view());
 
   Future<void> refresh() async {
@@ -253,8 +277,39 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
     await _reload();
   }
 
+  /// Soft-dismiss a spam / nonsense report: hides it from the list and excludes
+  /// it from analytics. Reversible via [restore]. Audited with the current admin.
+  Future<void> dismiss(String id, String reason) async {
+    await _db
+        .from('reports')
+        .update({
+          'dismissed_at': DateTime.now().toUtc().toIso8601String(),
+          'dismissed_by': _db.auth.currentUser?.id,
+          'dismissed_reason': reason,
+        })
+        .eq('id', id);
+    await _reload();
+  }
+
+  /// Undo a dismissal — the report returns to the active list and analytics.
+  Future<void> restore(String id) async {
+    await _db
+        .from('reports')
+        .update({
+          'dismissed_at': null,
+          'dismissed_by': null,
+          'dismissed_reason': null,
+        })
+        .eq('id', id);
+    await _reload();
+  }
+
   List<AdminReport> _view() {
-    Iterable<AdminReport> list = _all;
+    // Dismissed (spam) rows are hidden by default; the "Show dismissed" filter
+    // flips the list to show ONLY them for review/restore.
+    Iterable<AdminReport> list = _all.where(
+      (r) => r.isDismissed == _filters.showDismissed,
+    );
 
     if (_filters.anonymousOnly) list = list.where((r) => r.isAnonymous);
 
@@ -283,25 +338,47 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
   }
 
   Future<List<AdminReport>> _fetchAll() async {
-    final rows = await _db
-        .from('reports')
-        .select(
-          'id, user_id, category, category_other, barangay, address, remarks, '
-          'status, is_anonymous, created_at, report_media(id)',
-        )
-        .order('created_at', ascending: false)
-        .limit(200); // barangay scale; range-based paging is the scale path.
+    // NOTE: user_id is deliberately NOT selected here. Anonymous rows must never
+    // carry their submitter's id in this response payload; named rows get their
+    // user_id via a separate query below. The only path to an anonymous
+    // identity is the guarded admin_reveal_submitter RPC (anonymous_reveal.sql).
+    const baseCols =
+        'id, category, category_other, barangay, address, remarks, '
+        'status, is_anonymous, created_at, report_media(id)';
+    // Try WITH the moderation columns; if the spam_moderation migration hasn't
+    // been applied yet the query errors, so retry without them (feature off).
+    List<Map<String, dynamic>> rows;
+    try {
+      rows = List<Map<String, dynamic>>.from(
+        await _db
+            .from('reports')
+            .select('$baseCols, dismissed_at, dismissed_reason')
+            .order('created_at', ascending: false)
+            .limit(200),
+      );
+    } catch (_) {
+      rows = List<Map<String, dynamic>>.from(
+        await _db
+            .from('reports')
+            .select(baseCols)
+            .order('created_at', ascending: false)
+            .limit(200), // barangay scale; range-based paging is the scale path.
+      );
+    }
 
-    final list = List<Map<String, dynamic>>.from(rows);
+    final list = rows;
     if (list.isEmpty) return const [];
 
-    // Collect user_ids ONLY for non-anonymous rows — anonymous submitters'
-    // profiles are never fetched (query-level omission, not a UI toggle).
-    final identifiedIds = <String>{
+    // Resolve user_ids for NAMED rows only, in a separate query. An anonymous
+    // reporter's user_id is never requested, so it never leaves the database to
+    // this client — closing the payload gap where an admin could read it off
+    // the wire despite the UI hiding it.
+    final namedIds = [
       for (final r in list)
-        if ((r['is_anonymous'] as bool?) != true && r['user_id'] != null)
-          r['user_id'] as String,
-    }.toList();
+        if ((r['is_anonymous'] as bool?) != true) r['id'] as String,
+    ];
+    final idToUid = await _fetchNamedUserIds(namedIds);
+    final identifiedIds = idToUid.values.toSet().toList();
 
     final profiles = await _fetchProfiles(identifiedIds);
     final roles = await _fetchRoles(identifiedIds);
@@ -311,7 +388,7 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
       final key = r['category'] as String? ?? 'others';
       final media = r['report_media'];
       final isAnon = (r['is_anonymous'] as bool?) ?? false;
-      final uid = r['user_id'] as String?;
+      final uid = idToUid[id]; // present for named rows only
       final profile = (!isAnon && uid != null) ? profiles[uid] : null;
       final role = (!isAnon && uid != null) ? roles[uid] : null;
 
@@ -332,8 +409,26 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
         submitterRole: role,
         mediaCount: media is List ? media.length : 0,
         createdAt: _parseTs(r['created_at']),
+        dismissedAt: _parseTs(r['dismissed_at']),
+        dismissedReason: r['dismissed_reason'] as String?,
       );
     }).toList();
+  }
+
+  /// Maps report id → submitter user_id, for NAMED reports only. Kept in its own
+  /// query so an anonymous report's user_id is never selected/transmitted.
+  Future<Map<String, String>> _fetchNamedUserIds(List<String> reportIds) async {
+    if (reportIds.isEmpty) return const {};
+    final rows = await _db
+        .from('reports')
+        .select('id, user_id')
+        .inFilter('id', reportIds);
+    final map = <String, String>{};
+    for (final r in List<Map<String, dynamic>>.from(rows)) {
+      final uid = r['user_id'] as String?;
+      if (uid != null) map[r['id'] as String] = uid;
+    }
+    return map;
   }
 
   Future<Map<String, Map<String, dynamic>>> _fetchProfiles(

@@ -133,23 +133,25 @@ class _CommandPaletteState extends ConsumerState<_CommandPalette> {
   List<_Result> get _userResults {
     final q = _query.trim().toLowerCase();
     if (q.isEmpty) return const [];
-    final idx = _indexForLabel('Users');
-    if (idx < 0) return const [];
+    // Citizens jump to "Citizen Management"; admins/staff jump to "Team".
+    final citizensIdx = _indexForLabel('Citizens');
+    final teamIdx = _indexForLabel('Team');
     final users = ref.watch(adminUsersProvider).valueOrNull ?? const [];
     return [
       for (final u in users)
         if (u.displayName.toLowerCase().contains(q) ||
             (u.email ?? '').toLowerCase().contains(q) ||
             (u.barangay ?? '').toLowerCase().contains(q))
-          _Result(
-            icon: u.isOfficial ? Icons.badge_rounded : Icons.person_rounded,
-            title: u.displayName,
-            subtitle: [
-              appUserRoleLabel(u.role),
-              if ((u.email ?? '').isNotEmpty) u.email!,
-            ].join(' · '),
-            navIndex: idx,
-          ),
+          if ((u.isOfficial ? teamIdx : citizensIdx) >= 0)
+            _Result(
+              icon: u.isOfficial ? Icons.badge_rounded : Icons.person_rounded,
+              title: u.displayName,
+              subtitle: [
+                appUserRoleLabel(u.role),
+                if ((u.email ?? '').isNotEmpty) u.email!,
+              ].join(' · '),
+              navIndex: u.isOfficial ? teamIdx : citizensIdx,
+            ),
     ].take(6).toList();
   }
 
