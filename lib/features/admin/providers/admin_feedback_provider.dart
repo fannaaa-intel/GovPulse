@@ -87,6 +87,11 @@ class AdminFeedback {
   final DateTime? reviewedAt;
   final DateTime? createdAt;
 
+  /// Soft-moderation: non-null when an admin dismissed this row as spam/nonsense.
+  /// Dismissed feedback is hidden from the list and excluded from analytics/AI.
+  final DateTime? dismissedAt;
+  final String? dismissedReason;
+
   const AdminFeedback({
     required this.id,
     required this.shortId,
@@ -109,10 +114,13 @@ class AdminFeedback {
     required this.adminResponse,
     required this.reviewedAt,
     required this.createdAt,
+    this.dismissedAt,
+    this.dismissedReason,
   });
 
   int get photoCount => photoUrls.length;
   bool get isLowRated => overallRating > 0 && overallRating <= 2;
+  bool get isDismissed => dismissedAt != null;
 }
 
 // ── Filters ──────────────────────────────────────────────────────────────────
@@ -137,7 +145,12 @@ class FeedbackFilters {
     this.query = '',
     this.sort = FeedbackSort.newest,
     this.anonymousOnly = false,
+    this.showDismissed = false,
   });
+
+  /// When false (default), dismissed (spam) rows are hidden; when true the list
+  /// shows ONLY dismissed rows so they can be reviewed / restored.
+  final bool showDismissed;
 
   FeedbackFilters copyWith({
     String? officeId,
@@ -149,6 +162,7 @@ class FeedbackFilters {
     String? query,
     FeedbackSort? sort,
     bool? anonymousOnly,
+    bool? showDismissed,
   }) {
     return FeedbackFilters(
       officeId: clearOffice ? null : (officeId ?? this.officeId),
@@ -157,6 +171,7 @@ class FeedbackFilters {
       query: query ?? this.query,
       sort: sort ?? this.sort,
       anonymousOnly: anonymousOnly ?? this.anonymousOnly,
+      showDismissed: showDismissed ?? this.showDismissed,
     );
   }
 }
@@ -225,6 +240,14 @@ class AdminFeedbackNotifier extends AsyncNotifier<List<AdminFeedback>> {
     _publish();
   }
 
+  void setShowDismissed(bool show) {
+    if (show == _filters.showDismissed) return;
+    _filters = _filters.copyWith(showDismissed: show);
+    _publish();
+  }
+
+  int get dismissedCount => _all.where((f) => f.isDismissed).length;
+
   void _publish() {
     state = AsyncValue.data(_view());
   }
@@ -251,7 +274,11 @@ class AdminFeedbackNotifier extends AsyncNotifier<List<AdminFeedback>> {
 
   /// The filtered + sorted slice the UI renders.
   List<AdminFeedback> _view() {
-    Iterable<AdminFeedback> list = _all;
+    // Dismissed (spam) rows are hidden by default; the "Show dismissed" filter
+    // flips the list to show ONLY them for review/restore.
+    Iterable<AdminFeedback> list = _all.where(
+      (f) => f.isDismissed == _filters.showDismissed,
+    );
 
     if (_filters.anonymousOnly) {
       list = list.where((f) => f.isAnonymous);
@@ -306,7 +333,7 @@ class AdminFeedbackNotifier extends AsyncNotifier<List<AdminFeedback>> {
     final msg = message.trim();
     final row = await _db
         .from('feedbacks')
-        .select('user_id, is_anonymous')
+        .select('user_id, is_anonymous, comment, office_label, service_name')
         .eq('id', id)
         .single();
     if ((row['is_anonymous'] as bool?) == true) {
@@ -321,11 +348,26 @@ class AdminFeedbackNotifier extends AsyncNotifier<List<AdminFeedback>> {
       // stays out of the admin notification centre. Carrying the responding
       // admin as the actor makes the citizen's notification render the admin's
       // profile photo instead of a generic bell icon.
+      // Anchor the notification to the specific feedback, so a generic reply
+      // ("Thanks for letting us know") still tells the citizen WHICH feedback
+      // it answers. The title names the office/service they rated; the subtitle
+      // quotes a snippet of their own comment before the reply, answering
+      // "response to what?" at a glance.
+      final service = (row['service_name'] as String?)?.trim();
+      final office = (row['office_label'] as String?)?.trim();
+      final about = (service != null && service.isNotEmpty)
+          ? service
+          : (office != null && office.isNotEmpty ? office : null);
+      final title = about == null
+          ? 'Response to your feedback'
+          : 'Response to your feedback on $about';
+      final subtitle = _responseSubtitle(row['comment'] as String?, msg);
+
       final actorPhotoUrl = await _fetchAdminPhotoUrl(adminId);
       await _db.from('notifications').insert({
         'user_id': recipient,
-        'title': 'Response to your feedback',
-        'subtitle': msg,
+        'title': title,
+        'subtitle': subtitle,
         'type': 'general',
         'color_value': 0xFF0D47A1,
         'icon_code': 0,
@@ -353,37 +395,77 @@ class AdminFeedbackNotifier extends AsyncNotifier<List<AdminFeedback>> {
     await _reload();
   }
 
+  /// Soft-dismiss spam / nonsense feedback: hides it from the list and excludes
+  /// it from the satisfaction stats + AI sentiment/forecast. Reversible.
+  Future<void> dismiss(String id, String reason) async {
+    await _db.from('feedbacks').update({
+      'dismissed_at': DateTime.now().toUtc().toIso8601String(),
+      'dismissed_by': _db.auth.currentUser?.id,
+      'dismissed_reason': reason,
+    }).eq('id', id);
+    await _reload();
+  }
+
+  /// Undo a dismissal — the feedback returns to the list and to analytics/AI.
+  Future<void> restore(String id) async {
+    await _db.from('feedbacks').update({
+      'dismissed_at': null,
+      'dismissed_by': null,
+      'dismissed_reason': null,
+    }).eq('id', id);
+    await _reload();
+  }
+
   // ── Fetch + resolve ────────────────────────────────────────────────────────
 
   Future<List<AdminFeedback>> _fetchAll() async {
-    final rows = await _db
-        .from('feedbacks')
-        .select(
-          'id, user_id, username, office_id, office_label, service_name, '
-          'overall_rating, aspect_staff, aspect_wait, aspect_clarity, '
-          'aspect_facility, visit_date, photo_urls, is_anonymous, comment, '
-          'status, admin_note, admin_response, reviewed_at, created_at',
-        )
-        .order('created_at', ascending: false)
-        .limit(200); // barangay scale; range-based paging is the scale path.
-
-    final list = List<Map<String, dynamic>>.from(rows);
+    // user_id is deliberately NOT selected — an anonymous feedback must never
+    // carry its submitter's id in this payload. Named rows get user_id via a
+    // separate query below; anonymous identities come only from the guarded
+    // admin_reveal_submitter RPC (anonymous_reveal.sql). `username` is already
+    // null for anonymous rows (nulled at submit), so it stays here for named.
+    const baseCols =
+        'id, username, office_id, office_label, service_name, '
+        'overall_rating, aspect_staff, aspect_wait, aspect_clarity, '
+        'aspect_facility, visit_date, photo_urls, is_anonymous, comment, '
+        'status, admin_note, admin_response, reviewed_at, created_at';
+    // Try WITH the moderation columns; retry without them if the spam_moderation
+    // migration hasn't been applied yet (feature simply stays off).
+    List<Map<String, dynamic>> list;
+    try {
+      list = List<Map<String, dynamic>>.from(
+        await _db
+            .from('feedbacks')
+            .select('$baseCols, dismissed_at, dismissed_reason')
+            .order('created_at', ascending: false)
+            .limit(200),
+      );
+    } catch (_) {
+      list = List<Map<String, dynamic>>.from(
+        await _db
+            .from('feedbacks')
+            .select(baseCols)
+            .order('created_at', ascending: false)
+            .limit(200), // barangay scale; range-based paging is the scale path.
+      );
+    }
     if (list.isEmpty) return const [];
 
-    // Collect user_ids ONLY for non-anonymous rows — anonymous submitters'
-    // profiles are never fetched (query-level omission, not a UI toggle).
-    final identifiedIds = <String>{
+    // Resolve user_ids for NAMED rows only, in a separate query, so an anonymous
+    // submitter's user_id never leaves the database to this client.
+    final namedIds = [
       for (final r in list)
-        if ((r['is_anonymous'] as bool?) != true && r['user_id'] != null)
-          r['user_id'] as String,
-    }.toList();
+        if ((r['is_anonymous'] as bool?) != true) r['id'] as String,
+    ];
+    final idToUid = await _fetchNamedUserIds(namedIds);
+    final identifiedIds = idToUid.values.toSet().toList();
     final profiles = await _fetchProfiles(identifiedIds);
 
     return list.map((r) {
       final id = r['id'] as String;
       final isAnon = (r['is_anonymous'] as bool?) ?? false;
 
-      final uid = r['user_id'] as String?;
+      final uid = idToUid[id]; // present for named rows only
       final profile = (!isAnon && uid != null) ? profiles[uid] : null;
 
       // HARD RULE: never resolve a name for anonymous rows. For named rows,
@@ -420,8 +502,26 @@ class AdminFeedbackNotifier extends AsyncNotifier<List<AdminFeedback>> {
         adminResponse: r['admin_response'] as String?,
         reviewedAt: _parseTs(r['reviewed_at']),
         createdAt: _parseTs(r['created_at']),
+        dismissedAt: _parseTs(r['dismissed_at']),
+        dismissedReason: r['dismissed_reason'] as String?,
       );
     }).toList();
+  }
+
+  /// Maps feedback id → submitter user_id, for NAMED rows only. Kept separate
+  /// so an anonymous feedback's user_id is never selected/transmitted.
+  Future<Map<String, String>> _fetchNamedUserIds(List<String> ids) async {
+    if (ids.isEmpty) return const {};
+    final rows = await _db
+        .from('feedbacks')
+        .select('id, user_id')
+        .inFilter('id', ids);
+    final map = <String, String>{};
+    for (final r in List<Map<String, dynamic>>.from(rows)) {
+      final uid = r['user_id'] as String?;
+      if (uid != null) map[r['id'] as String] = uid;
+    }
+    return map;
   }
 
   /// Resolves display names + profile photos for the given user ids from
@@ -477,6 +577,20 @@ class AdminFeedbackNotifier extends AsyncNotifier<List<AdminFeedback>> {
       return v.map((e) => e.toString()).where((e) => e.isNotEmpty).toList();
     }
     return const [];
+  }
+
+  /// Citizen-facing response subtitle: a short quote of their original comment
+  /// followed by the admin's reply, so the notification carries its own context
+  /// ("Re: … — reply") instead of a bare message. Falls back to just the reply
+  /// when there was no written comment (the title still names the office).
+  static String _responseSubtitle(String? comment, String reply) {
+    final original = (comment ?? '').trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (original.isEmpty) return reply;
+    const maxLen = 80;
+    final snippet = original.length > maxLen
+        ? '${original.substring(0, maxLen).trimRight()}…'
+        : original;
+    return 'Re: "$snippet"\n$reply';
   }
 
   static DateTime? _parseTs(dynamic v) {

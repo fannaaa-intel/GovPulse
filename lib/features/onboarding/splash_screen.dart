@@ -116,43 +116,55 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
     if (!goToIntro && user != null) {
       String username = '';
       int? roleId;
+      bool deactivated = false;
       try {
         final row = await Supabase.instance.client
             .from('profiles')
-            .select('username')
+            .select('username, is_deactivated')
             .eq('id', user.id)
             .maybeSingle();
         username = (row?['username'] as String?) ?? '';
-      } catch (_) {}
-      // Resolve role the same way AuthService.login does, so a restored
-      // session routes by role instead of always landing on citizen Home.
-      try {
-        final roleRow = await Supabase.instance.client
-            .from('user_roles')
-            .select('role_id')
-            .eq('user_id', user.id)
-            .maybeSingle();
-        roleId = roleRow?['role_id'] as int?;
+        deactivated = (row?['is_deactivated'] as bool?) ?? false;
       } catch (_) {}
 
-      if (!mounted) return;
+      // A soft-deactivated account must not resume its saved session. Drop the
+      // session and fall through to /login, where the next sign-in attempt
+      // surfaces the deactivation message.
+      if (deactivated) {
+        try {
+          await Supabase.instance.client.auth.signOut();
+        } catch (_) {}
+      } else {
+        // Resolve role the same way AuthService.login does, so a restored
+        // session routes by role instead of always landing on citizen Home.
+        try {
+          final roleRow = await Supabase.instance.client
+              .from('user_roles')
+              .select('role_id')
+              .eq('user_id', user.id)
+              .maybeSingle();
+          roleId = roleRow?['role_id'] as int?;
+        } catch (_) {}
 
-      // Make sure the community feed is in authenticated (non-guest) mode.
-      CommunityPostsProvider.instance.resetForAuthenticatedUser();
+        if (!mounted) return;
 
-      // role_id == 1 → admin dashboard; staff/citizen/unverified → Home.
-      final Widget destination = roleId == 1
-          ? const AdminDashboardScreen()
-          : NetworkWrapper(child: HomePage(username: username));
+        // Make sure the community feed is in authenticated (non-guest) mode.
+        CommunityPostsProvider.instance.resetForAuthenticatedUser();
 
-      Navigator.of(context).pushReplacement(
-        PageRouteBuilder(
-          transitionDuration: Duration.zero,
-          reverseTransitionDuration: Duration.zero,
-          pageBuilder: (_, _, _) => destination,
-        ),
-      );
-      return;
+        // role_id == 1 → admin dashboard; staff/citizen/unverified → Home.
+        final Widget destination = roleId == 1
+            ? const NetworkWrapper(child: AdminDashboardScreen())
+            : NetworkWrapper(child: HomePage(username: username));
+
+        Navigator.of(context).pushReplacement(
+          PageRouteBuilder(
+            transitionDuration: Duration.zero,
+            reverseTransitionDuration: Duration.zero,
+            pageBuilder: (_, _, _) => destination,
+          ),
+        );
+        return;
+      }
     }
 
     final routeName = goToIntro ? '/intro' : '/login';

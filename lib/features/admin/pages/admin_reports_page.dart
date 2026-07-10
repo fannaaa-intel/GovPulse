@@ -6,7 +6,10 @@ import '../../../core/theme/app_colors.dart';
 import '../theme/admin_ui.dart';
 import '../providers/admin_reports_provider.dart';
 import '../widgets/admin_detail_screen.dart';
+import '../widgets/admin_moderation.dart';
+import '../providers/admin_identity_reveal_provider.dart';
 import '../widgets/admin_submission_ui.dart';
+import '../widgets/revealable_submitter.dart';
 import '../widgets/admin_snackbar.dart';
 
 // ── Category visuals — the same webp illustrations the citizen form uses ──────
@@ -136,6 +139,7 @@ class _AdminReportsPageState extends ConsumerState<AdminReportsPage> {
     if (f.status != null) n++;
     if (f.sort != ReportSort.newest) n++;
     if (f.anonymousOnly) n++;
+    if (f.showDismissed) n++;
     return n;
   }
 
@@ -148,6 +152,7 @@ class _AdminReportsPageState extends ConsumerState<AdminReportsPage> {
         notifier.setStatus(null);
         notifier.setSort(ReportSort.newest);
         if (notifier.filters.anonymousOnly) notifier.toggleAnonymousOnly();
+        notifier.setShowDismissed(false);
       },
       content: Consumer(
         builder: (context, ref, _) {
@@ -185,6 +190,14 @@ class _AdminReportsPageState extends ConsumerState<AdminReportsPage> {
                 subtitle: 'Show only reports with a withheld identity',
                 value: f.anonymousOnly,
                 onChanged: (_) => notifier.toggleAnonymousOnly(),
+              ),
+              const SizedBox(height: 18),
+              FilterSwitchRow(
+                icon: Icons.block_rounded,
+                label: 'Show dismissed',
+                subtitle: 'Review spam hidden from the list & analytics',
+                value: f.showDismissed,
+                onChanged: (v) => notifier.setShowDismissed(v),
               ),
             ],
           );
@@ -278,16 +291,7 @@ class _Header extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Reports',
-          style: TextStyle(
-            fontSize: 22,
-            fontWeight: FontWeight.w700,
-            letterSpacing: -0.5,
-            color: AdminUi.textPrimary,
-          ),
-        ),
-        const SizedBox(height: 2),
+        // The top bar already shows "Reports", so no in-content page title.
         Row(
           children: [
             Text('$total report${total == 1 ? '' : 's'}',
@@ -769,6 +773,7 @@ class _ReportDetailDialog extends ConsumerStatefulWidget {
 class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
   late ReportStatus _status;
   late Future<List<ReportMedia>> _mediaFuture;
+  bool _busy = false;
 
   @override
   void initState() {
@@ -787,6 +792,37 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
     setState(() => _status = next);
     showAdminSnackBar(context, 'Status → ${reportStatusLabel(next)}',
         type: AdminSnackType.success);
+  }
+
+  Future<void> _dismiss() async {
+    final reason = await showAdminDismissDialog(context, itemLabel: 'report');
+    if (reason == null || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await ref.read(adminReportsProvider.notifier).dismiss(widget.report.id, reason);
+      if (!mounted) return;
+      Navigator.pop(context);
+      showAdminSnackBar(context, 'Report dismissed — hidden from analytics.',
+          type: AdminSnackType.success);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      showAdminSnackBar(context, 'Could not dismiss: $e', type: AdminSnackType.error);
+    }
+  }
+
+  Future<void> _restore() async {
+    setState(() => _busy = true);
+    try {
+      await ref.read(adminReportsProvider.notifier).restore(widget.report.id);
+      if (!mounted) return;
+      Navigator.pop(context);
+      showAdminSnackBar(context, 'Report restored.', type: AdminSnackType.success);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      showAdminSnackBar(context, 'Could not restore: $e', type: AdminSnackType.error);
+    }
   }
 
   @override
@@ -843,11 +879,22 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SubmitterBlock(
+          AdminModerationBar(
+            isDismissed: r.isDismissed,
+            reason: r.dismissedReason,
+            busy: _busy,
+            onDismiss: _dismiss,
+            onRestore: _restore,
+          ),
+          const SizedBox(height: 16),
+          RevealableSubmitter(
+            source: RevealSource.report,
+            submissionId: r.id,
             isAnonymous: r.isAnonymous,
             name: r.submitterName,
             photoUrl: r.submitterPhotoUrl,
             role: r.submitterRole,
+            subject: 'reporter',
           ),
           const SizedBox(height: 20),
           _sectionTitle('REPORT DETAILS'),

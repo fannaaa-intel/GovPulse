@@ -47,19 +47,21 @@ String appUserRoleLabel(AppUserRole r) => switch (r) {
 };
 
 /// Citizen identity-verification standing, derived from the latest
-/// `verification_submissions.status`. Rejected / never-submitted both read as
-/// "unverified" for filtering.
-enum CitizenVerif { unverified, pending, verified }
+/// `verification_submissions.status`. A rejected submission is distinct from
+/// never-having-submitted ("unverified") so the two get their own summary tiles.
+enum CitizenVerif { unverified, pending, verified, rejected }
 
 String citizenVerifLabel(CitizenVerif v) => switch (v) {
   CitizenVerif.verified => 'Verified',
   CitizenVerif.pending => 'Pending',
   CitizenVerif.unverified => 'Unverified',
+  CitizenVerif.rejected => 'Rejected',
 };
 
 CitizenVerif _verifFromStatus(String? s) => switch (s) {
   'approved' => CitizenVerif.verified,
   'pending' => CitizenVerif.pending,
+  'rejected' => CitizenVerif.rejected,
   _ => CitizenVerif.unverified,
 };
 
@@ -75,6 +77,10 @@ class ManagedUser {
   final String? barangay;
   final AppUserRole role;
   final CitizenVerif verif;
+
+  /// When the account was created (`profiles.created_at`). Drives the "Joined"
+  /// column and the newest/oldest sort.
+  final DateTime? joinedAt;
 
   final bool isDeactivated;
 
@@ -98,6 +104,7 @@ class ManagedUser {
     required this.barangay,
     required this.role,
     required this.verif,
+    required this.joinedAt,
     required this.isDeactivated,
     required this.restrictedFeatures,
     required this.restrictionReason,
@@ -128,45 +135,17 @@ class ManagedUser {
   }
 }
 
-// ── Filters ────────────────────────────────────────────────────────────────
-
-enum UsersTab { citizens, staff }
-
-class UsersFilters {
-  final UsersTab tab;
-  final String query;
-
-  /// Citizen verification sub-filter (Citizens tab only). Null = all.
-  final CitizenVerif? verif;
-
-  const UsersFilters({
-    this.tab = UsersTab.citizens,
-    this.query = '',
-    this.verif,
-  });
-
-  UsersFilters copyWith({
-    UsersTab? tab,
-    String? query,
-    CitizenVerif? verif,
-    bool clearVerif = false,
-  }) =>
-      UsersFilters(
-        tab: tab ?? this.tab,
-        query: query ?? this.query,
-        verif: clearVerif ? null : (verif ?? this.verif),
-      );
-}
-
 // ── Notifier ───────────────────────────────────────────────────────────────
+//
+//  The provider holds the FULL, unfiltered account list. Each page (Citizen
+//  Management, Team) filters/sorts locally, so the two pages never fight over a
+//  shared filter — and the command palette can search across everyone.
 
 class AdminUsersNotifier extends AsyncNotifier<List<ManagedUser>> {
   SupabaseClient get _db => Supabase.instance.client;
   String? get _adminId => _db.auth.currentUser?.id;
 
   List<ManagedUser> _all = const [];
-  UsersFilters _filters = const UsersFilters();
-  UsersFilters get filters => _filters;
 
   Iterable<ManagedUser> get _citizens =>
       _all.where((u) => u.role == AppUserRole.citizen);
@@ -180,39 +159,35 @@ class AdminUsersNotifier extends AsyncNotifier<List<ManagedUser>> {
       _citizens.where((u) => u.verif == CitizenVerif.pending).length;
   int get unverifiedCount =>
       _citizens.where((u) => u.verif == CitizenVerif.unverified).length;
+  int get rejectedVerifCount =>
+      _citizens.where((u) => u.verif == CitizenVerif.rejected).length;
   int get restrictedCount => _citizens.where((u) => u.isRestricted).length;
   int get suspendedCount => _citizens.where((u) => u.isSuspended).length;
+
+  /// Distinct barangays across citizens, alphabetically — feeds the barangay
+  /// filter dropdown on the Citizen Management page.
+  List<String> get barangays {
+    final set = <String>{
+      for (final u in _citizens)
+        if ((u.barangay ?? '').trim().isNotEmpty) u.barangay!.trim(),
+    };
+    final list = set.toList()..sort();
+    return list;
+  }
 
   @override
   Future<List<ManagedUser>> build() async {
     _all = await _fetchAll();
-    return _view();
+    return _all;
   }
 
-  // ── Filters (client-side) ──────────────────────────────────────────────
-  void setTab(UsersTab tab) {
-    _filters = _filters.copyWith(tab: tab);
-    _publish();
-  }
-
-  void setQuery(String q) {
-    if (q == _filters.query) return;
-    _filters = _filters.copyWith(query: q);
-    _publish();
-  }
-
-  void setVerifFilter(CitizenVerif? v) {
-    _filters = _filters.copyWith(verif: v, clearVerif: v == null);
-    _publish();
-  }
-
-  void _publish() => state = AsyncData(_view());
+  void _publish() => state = AsyncData(_all);
 
   Future<void> refresh() async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
       _all = await _fetchAll();
-      return _view();
+      return _all;
     });
   }
 
@@ -226,40 +201,12 @@ class AdminUsersNotifier extends AsyncNotifier<List<ManagedUser>> {
 
   Future<void> silentRefresh() => _reload();
 
-  List<ManagedUser> _view() {
-    Iterable<ManagedUser> list = _all;
-    // Team tab shows staff + admins; citizens tab shows citizens.
-    if (_filters.tab == UsersTab.staff) {
-      list = list.where((u) => u.isOfficial);
-    } else {
-      list = list.where((u) => u.role == AppUserRole.citizen);
-      if (_filters.verif != null) {
-        list = list.where((u) => u.verif == _filters.verif);
-      }
-    }
-
-    final q = _filters.query.trim().toLowerCase();
-    if (q.isNotEmpty) {
-      list = list.where((u) {
-        return u.displayName.toLowerCase().contains(q) ||
-            (u.username ?? '').toLowerCase().contains(q) ||
-            (u.email ?? '').toLowerCase().contains(q) ||
-            (u.barangay ?? '').toLowerCase().contains(q);
-      });
-    }
-    final out = list.toList()
-      ..sort((a, b) => a.displayName.toLowerCase().compareTo(
-            b.displayName.toLowerCase(),
-          ));
-    return out;
-  }
-
   // ── Fetch + resolve ─────────────────────────────────────────────────────
 
   Future<List<ManagedUser>> _fetchAll() async {
     final profiles = await _db
         .from('profiles')
-        .select('id, username, email, is_deactivated')
+        .select('id, username, email, is_deactivated, created_at')
         .limit(1000);
     final rows = List<Map<String, dynamic>>.from(profiles);
     if (rows.isEmpty) return const [];
@@ -345,6 +292,7 @@ class AdminUsersNotifier extends AsyncNotifier<List<ManagedUser>> {
         barangay: barangays[id],
         role: _roleFromId(roles[id]),
         verif: _verifFromStatus(verifs[id]),
+        joinedAt: _parseTs(p['created_at']),
         isDeactivated: (p['is_deactivated'] as bool?) ?? false,
         restrictedFeatures: restr == null
             ? const []
@@ -565,9 +513,14 @@ class AdminUsersNotifier extends AsyncNotifier<List<ManagedUser>> {
     required String title,
     required String subtitle,
   }) async {
+    // Pass p_color explicitly (the function's default blue) so the RPC binds
+    // unambiguously to broadcast_notification(text, text, bigint). Without it,
+    // a stray 6-arg overload lingering in some databases makes the call
+    // ambiguous (PostgREST PGRST203). See supabase/fix_broadcast_overload.sql.
     final res = await _db.rpc('broadcast_notification', params: {
       'p_title': title,
       'p_subtitle': subtitle,
+      'p_color': 4283980779, // 0xFF2563EB
     });
     final count = res is int ? res : int.tryParse('$res') ?? 0;
     await _log(
@@ -620,6 +573,10 @@ class AdminUsersNotifier extends AsyncNotifier<List<ManagedUser>> {
     String subtitle, {
     int color = 0xFF2563EB,
   }) async {
+    // Carry the acting admin as the notification's actor so the citizen's bell
+    // renders the admin's profile photo instead of a generic icon — matching
+    // the suggestion / feedback responses.
+    final actorPhotoUrl = await _fetchAdminPhotoUrl();
     await _db.from('notifications').insert({
       'user_id': userId,
       'title': title,
@@ -629,7 +586,28 @@ class AdminUsersNotifier extends AsyncNotifier<List<ManagedUser>> {
       'icon_code': 0,
       'is_approved': true,
       'sent_by': _adminId,
+      'actor_id': _adminId,
+      'actor_photo_url': actorPhotoUrl,
     });
+  }
+
+  /// The acting admin's avatar URL from `admin_profiles.photo_url`, used to
+  /// personalise citizen notifications. Best-effort — a missing profile or read
+  /// error just falls back to null (generic icon).
+  Future<String?> _fetchAdminPhotoUrl() async {
+    final id = _adminId;
+    if (id == null) return null;
+    try {
+      final row = await _db
+          .from('admin_profiles')
+          .select('photo_url')
+          .eq('user_id', id)
+          .maybeSingle();
+      final url = (row?['photo_url'] as String?)?.trim();
+      return (url != null && url.isNotEmpty) ? url : null;
+    } catch (_) {
+      return null;
+    }
   }
 
   static String _untilText(DateTime? expires) {
@@ -654,3 +632,8 @@ final adminUsersProvider =
     AsyncNotifierProvider<AdminUsersNotifier, List<ManagedUser>>(
       AdminUsersNotifier.new,
     );
+
+/// A one-shot search seed for the Citizen Management page. The Spam-watch review
+/// sets this (e.g. "Manage user") and the page consumes it to pre-fill its
+/// search box, then clears it back to ''.
+final manageUserQueryProvider = StateProvider<String>((_) => '');

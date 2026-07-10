@@ -101,9 +101,17 @@ class AdminSuggestion {
     required this.adminResponse,
     required this.reviewedAt,
     required this.createdAt,
+    this.dismissedAt,
+    this.dismissedReason,
   });
 
+  /// Soft-moderation: non-null when an admin dismissed this row as spam/nonsense.
+  /// Dismissed suggestions are hidden from the list and excluded from analytics.
+  final DateTime? dismissedAt;
+  final String? dismissedReason;
+
   bool get hasLocation => latitude != null && longitude != null;
+  bool get isDismissed => dismissedAt != null;
 }
 
 /// A single media item attached to a suggestion, resolved to a public URL for
@@ -138,7 +146,12 @@ class SuggestionFilters {
     this.query = '',
     this.sort = SuggestionSort.newest,
     this.anonymousOnly = false,
+    this.showDismissed = false,
   });
+
+  /// When false (default), dismissed (spam) rows are hidden; when true the list
+  /// shows ONLY dismissed rows so they can be reviewed / restored.
+  final bool showDismissed;
 
   SuggestionFilters copyWith({
     SuggestionStatus? status,
@@ -146,12 +159,14 @@ class SuggestionFilters {
     String? query,
     SuggestionSort? sort,
     bool? anonymousOnly,
+    bool? showDismissed,
   }) {
     return SuggestionFilters(
       status: clearStatus ? null : (status ?? this.status),
       query: query ?? this.query,
       sort: sort ?? this.sort,
       anonymousOnly: anonymousOnly ?? this.anonymousOnly,
+      showDismissed: showDismissed ?? this.showDismissed,
     );
   }
 }
@@ -202,6 +217,14 @@ class AdminSuggestionsNotifier extends AsyncNotifier<List<AdminSuggestion>> {
     _publish();
   }
 
+  void setShowDismissed(bool show) {
+    if (show == _filters.showDismissed) return;
+    _filters = _filters.copyWith(showDismissed: show);
+    _publish();
+  }
+
+  int get dismissedCount => _all.where((s) => s.isDismissed).length;
+
   void _publish() {
     state = AsyncValue.data(_view());
   }
@@ -228,7 +251,11 @@ class AdminSuggestionsNotifier extends AsyncNotifier<List<AdminSuggestion>> {
 
   /// The filtered + sorted slice the UI renders.
   List<AdminSuggestion> _view() {
-    Iterable<AdminSuggestion> list = _all;
+    // Dismissed (spam) rows are hidden by default; the "Show dismissed" filter
+    // flips the list to show ONLY them for review/restore.
+    Iterable<AdminSuggestion> list = _all.where(
+      (s) => s.isDismissed == _filters.showDismissed,
+    );
 
     if (_filters.anonymousOnly) {
       list = list.where((s) => s.isAnonymous);
@@ -330,6 +357,27 @@ class AdminSuggestionsNotifier extends AsyncNotifier<List<AdminSuggestion>> {
     await _reload();
   }
 
+  /// Soft-dismiss spam / nonsense suggestion: hides it from the list and
+  /// excludes it from the analytics category counts. Reversible.
+  Future<void> dismiss(String id, String reason) async {
+    await _db.from('suggestions').update({
+      'dismissed_at': DateTime.now().toUtc().toIso8601String(),
+      'dismissed_by': _db.auth.currentUser?.id,
+      'dismissed_reason': reason,
+    }).eq('id', id);
+    await _reload();
+  }
+
+  /// Undo a dismissal — the suggestion returns to the active list.
+  Future<void> restore(String id) async {
+    await _db.from('suggestions').update({
+      'dismissed_at': null,
+      'dismissed_by': null,
+      'dismissed_reason': null,
+    }).eq('id', id);
+    await _reload();
+  }
+
   /// Full media list (with public URLs) for a single suggestion — used by the
   /// detail dialog's gallery.
   Future<List<SuggestionMedia>> fetchMedia(String suggestionId) async {
@@ -363,26 +411,44 @@ class AdminSuggestionsNotifier extends AsyncNotifier<List<AdminSuggestion>> {
   // ── Fetch + resolve ────────────────────────────────────────────────────────
 
   Future<List<AdminSuggestion>> _fetchAll() async {
-    final rows = await _db
-        .from('suggestions')
-        .select(
-          'id, user_id, category, category_other, barangay, address, '
-          'latitude, longitude, details, is_anonymous, status, admin_note, '
-          'admin_response, reviewed_at, created_at, suggestion_media(id)',
-        )
-        .order('created_at', ascending: false)
-        .limit(200); // barangay scale; range-based paging is the scale path.
-
-    final list = List<Map<String, dynamic>>.from(rows);
+    // user_id is deliberately NOT selected — an anonymous suggestion must never
+    // carry its submitter's id in this payload. Named rows get user_id via a
+    // separate query below; anonymous identities come only from the guarded
+    // admin_reveal_submitter RPC (anonymous_reveal.sql).
+    const baseCols =
+        'id, category, category_other, barangay, address, '
+        'latitude, longitude, details, is_anonymous, status, admin_note, '
+        'admin_response, reviewed_at, created_at, suggestion_media(id)';
+    // Try WITH the moderation columns; retry without them if the spam_moderation
+    // migration hasn't been applied yet (feature simply stays off).
+    List<Map<String, dynamic>> list;
+    try {
+      list = List<Map<String, dynamic>>.from(
+        await _db
+            .from('suggestions')
+            .select('$baseCols, dismissed_at, dismissed_reason')
+            .order('created_at', ascending: false)
+            .limit(200),
+      );
+    } catch (_) {
+      list = List<Map<String, dynamic>>.from(
+        await _db
+            .from('suggestions')
+            .select(baseCols)
+            .order('created_at', ascending: false)
+            .limit(200), // barangay scale; range-based paging is the scale path.
+      );
+    }
     if (list.isEmpty) return const [];
 
-    // Collect user_ids ONLY for non-anonymous rows — anonymous submitters'
-    // profiles are never fetched (query-level omission, not a UI toggle).
-    final identifiedIds = <String>{
+    // Resolve user_ids for NAMED rows only, in a separate query, so an anonymous
+    // submitter's user_id never leaves the database to this client.
+    final namedIds = [
       for (final r in list)
-        if ((r['is_anonymous'] as bool?) != true && r['user_id'] != null)
-          r['user_id'] as String,
-    }.toList();
+        if ((r['is_anonymous'] as bool?) != true) r['id'] as String,
+    ];
+    final idToUid = await _fetchNamedUserIds(namedIds);
+    final identifiedIds = idToUid.values.toSet().toList();
 
     final profiles = await _fetchProfiles(identifiedIds);
     final roles = await _fetchRoles(identifiedIds);
@@ -394,7 +460,7 @@ class AdminSuggestionsNotifier extends AsyncNotifier<List<AdminSuggestion>> {
       final isAnon = (r['is_anonymous'] as bool?) ?? false;
       final media = r['suggestion_media'];
 
-      final uid = r['user_id'] as String?;
+      final uid = idToUid[id]; // present for named rows only
       final profile = (!isAnon && uid != null) ? profiles[uid] : null;
       final role = (!isAnon && uid != null) ? roles[uid] : null;
 
@@ -421,8 +487,26 @@ class AdminSuggestionsNotifier extends AsyncNotifier<List<AdminSuggestion>> {
         adminResponse: r['admin_response'] as String?,
         reviewedAt: _parseTs(r['reviewed_at']),
         createdAt: _parseTs(r['created_at']),
+        dismissedAt: _parseTs(r['dismissed_at']),
+        dismissedReason: r['dismissed_reason'] as String?,
       );
     }).toList();
+  }
+
+  /// Maps suggestion id → submitter user_id, for NAMED rows only. Kept separate
+  /// so an anonymous suggestion's user_id is never selected/transmitted.
+  Future<Map<String, String>> _fetchNamedUserIds(List<String> ids) async {
+    if (ids.isEmpty) return const {};
+    final rows = await _db
+        .from('suggestions')
+        .select('id, user_id')
+        .inFilter('id', ids);
+    final map = <String, String>{};
+    for (final r in List<Map<String, dynamic>>.from(rows)) {
+      final uid = r['user_id'] as String?;
+      if (uid != null) map[r['id'] as String] = uid;
+    }
+    return map;
   }
 
   Future<Map<String, Map<String, dynamic>>> _fetchProfiles(

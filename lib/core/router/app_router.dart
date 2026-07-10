@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/chat_service.dart';
 import '../network/network_wrapper.dart';
+import '../widgets/app_snackbar.dart';
 import '../../features/onboarding/splash_screen.dart';
 import '../../features/onboarding/intro_screen.dart';
 import '../../features/auth/login_screen.dart';
@@ -158,7 +159,8 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
                   PageRouteBuilder(
                     transitionDuration: Duration.zero,
                     reverseTransitionDuration: Duration.zero,
-                    pageBuilder: (_, _, _) => const AdminDashboardScreen(),
+                    pageBuilder: (_, _, _) =>
+                        const NetworkWrapper(child: AdminDashboardScreen()),
                     transitionsBuilder: (_, _, _, child) => child,
                   ),
                 );
@@ -203,6 +205,12 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
                 ),
                 (route) => false,
               );
+              // Root-overlay toast — survives the jump into Home.
+              showAppSnackBar(
+                ctx,
+                'Signed in with Facebook. Welcome back!',
+                type: AppSnackType.success,
+              );
             },
           ),
         ),
@@ -240,6 +248,12 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
                       NetworkWrapper(child: HomePage(username: username)),
                 ),
                 (route) => false,
+              );
+              // Root-overlay toast — survives the jump into Home.
+              showAppSnackBar(
+                ctx,
+                'Welcome to GovPulse! Your account is ready.',
+                type: AppSnackType.success,
               );
             },
           ),

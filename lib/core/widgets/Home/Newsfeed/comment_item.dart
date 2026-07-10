@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../theme/app_colors.dart';
+import '../../../moderation/profanity_filter.dart';
 import 'news_feed_helpers.dart';
 import 'comment_options_sheet.dart';
 
@@ -145,7 +146,8 @@ Widget buildCommentItem(
                           ),
                           SizedBox(height: width * 0.006),
                           Text(
-                            comment['text'] as String? ?? '',
+                            ProfanityFilter.maskForDisplay(
+                                comment['text'] as String? ?? ''),
                             style: TextStyle(
                               fontSize: width * 0.033,
                               color: const Color(0xFF374151),
@@ -367,7 +369,8 @@ Widget buildReplyItem(
                                 ),
                               ),
                             TextSpan(
-                              text: reply['text'] as String? ?? '',
+                              text: ProfanityFilter.maskForDisplay(
+                                  reply['text'] as String? ?? ''),
                               style: TextStyle(
                                 fontSize: width * 0.031,
                                 color: const Color(0xFF374151),

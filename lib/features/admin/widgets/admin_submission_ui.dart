@@ -728,10 +728,18 @@ Future<void> openAdminFilterSheet(
     child: content,
   );
   if (narrow) {
+    // Cap the sheet so a long filter list (e.g. feedback's Office options)
+    // stays a contained, rounded-top bottom sheet that scrolls internally —
+    // instead of stretching full-screen with its header sliding under the
+    // status bar. Keeps every filter sheet (reports / suggestions / feedback)
+    // looking and behaving the same.
+    final maxSheetHeight = MediaQuery.of(context).size.height * 0.85;
     return showModalBottomSheet(
       context: context,
       backgroundColor: AdminUi.surface,
       isScrollControlled: true,
+      showDragHandle: true,
+      constraints: BoxConstraints(maxHeight: maxSheetHeight),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),

@@ -9,6 +9,7 @@ import '../../core/widgets/mobile_form_shell.dart';
 import '../../core/network/network_wrapper.dart';
 import '../../core/services/facebook_signin_service.dart';
 import '../../core/widgets/app_snackbar.dart';
+import '../../core/widgets/auth/facebook_auth_overlay.dart';
 import '../auth/facebook_username_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -36,6 +37,7 @@ class _LoginScreenState extends State<LoginScreen>
   bool showPassword = false;
   String? errorMessage;
   bool isLoading = false;
+  bool _fbBusy = false;
 
   late final AnimationController _entranceController;
   late final Animation<double> _fadeAnim;
@@ -84,11 +86,21 @@ class _LoginScreenState extends State<LoginScreen>
     final width = MediaQuery.of(context).size.width;
 
     // Native app (phones & tablets) — mobile UI, identical on every size.
-    if (!kIsWeb) return _mobileScaffold(context);
-
     // Web — responsive across all widths.
-    if (width >= kWebTwoPanelMinWidth) return _webWideScaffold(context);
-    return _webCompactScaffold(context);
+    final Widget content = !kIsWeb
+        ? _mobileScaffold(context)
+        : (width >= kWebTwoPanelMinWidth
+            ? _webWideScaffold(context)
+            : _webCompactScaffold(context));
+
+    // While Facebook sign-in is in flight, cover the whole screen with a
+    // blocking spinner so the login form never flashes back mid-process.
+    return Stack(
+      children: [
+        content,
+        if (_fbBusy) const FacebookAuthOverlay(),
+      ],
+    );
   }
 
   // ── Mobile layout — caps + centers on tablets, always scrolls ─────────────
@@ -649,10 +661,23 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   Future<void> _signInWithFacebook() async {
+    if (_fbBusy) return;
+    setState(() => _fbBusy = true);
     try {
-      final user = await FacebookSignInService.signIn();
+      final user = await facebookSignInDetectingCancel();
 
       if (!mounted) return;
+      if (user == null) {
+        // User backed out of the Facebook browser — drop the overlay and tell
+        // them it didn't go through (instead of silently returning).
+        setState(() => _fbBusy = false);
+        showAppSnackBar(
+          context,
+          "Facebook sign-in cancelled.",
+          type: AppSnackType.error,
+        );
+        return;
+      }
 
       // Check if this user already has a username set
       final profile = await Supabase.instance.client
@@ -668,7 +693,8 @@ class _LoginScreenState extends State<LoginScreen>
       if (!mounted) return;
 
       if (hasUsername) {
-        // Existing Facebook user — go straight into the app
+        // Existing Facebook user — go straight into the app. Leave the overlay
+        // up; the app screen replaces this one, so it never flashes back.
         widget.onFacebookClick?.call();
       } else {
         // New Facebook user — pick a username first
@@ -677,6 +703,9 @@ class _LoginScreenState extends State<LoginScreen>
 
         if (!mounted) return;
 
+        // The username screen fully covers this one; drop the overlay so a
+        // back-out from there returns to a normal login (not a stuck spinner).
+        setState(() => _fbBusy = false);
         Navigator.push(
           context,
           PageRouteBuilder(
@@ -705,6 +734,7 @@ class _LoginScreenState extends State<LoginScreen>
       }
     } catch (e) {
       if (!mounted) return;
+      setState(() => _fbBusy = false);
       final msg = e.toString().replaceFirst('Exception: ', '');
       // Surface via the shared dialog (not a SnackBar / inline text).
       if (msg != 'Facebook sign-in was cancelled.') {

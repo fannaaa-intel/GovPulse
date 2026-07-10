@@ -10,6 +10,7 @@ import '../../features/verification/screens/email_verification_screen.dart';
 import '../../features/onboarding/otp_loading_screen.dart';
 import '../../core/services/auth_service.dart';
 import '../../core/services/facebook_signin_service.dart';
+import '../../core/widgets/auth/facebook_auth_overlay.dart';
 import '../../core/widgets/app_snackbar.dart';
 import '../../core/network/network_wrapper.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -55,6 +56,7 @@ class _SignupScreenState extends State<SignupScreen>
   bool showPassword = false;
   bool showConfirmPassword = false;
   bool emailLocked = false;
+  bool _fbBusy = false;
 
   Timer? _emailDebounce;
   Timer? _usernameDebounce;
@@ -256,17 +258,56 @@ class _SignupScreenState extends State<SignupScreen>
   }
 
   Future<void> _signInWithFacebook() async {
+    if (_fbBusy) return;
+    setState(() => _fbBusy = true);
     try {
-      final user = await FacebookSignInService.signIn();
+      final user = await facebookSignInDetectingCancel();
+
+      if (!mounted) return;
+      if (user == null) {
+        // User backed out of the Facebook browser — drop the overlay and tell
+        // them it didn't go through (instead of silently returning).
+        setState(() => _fbBusy = false);
+        showAppSnackBar(
+          context,
+          "Facebook sign-in cancelled.",
+          type: AppSnackType.error,
+        );
+        return;
+      }
+
+      // This Facebook account may already belong to an existing user. If they
+      // already picked a username, they're not signing up — send them straight
+      // into the app (same as the login screen), instead of the username picker
+      // where their existing handle would collide as "already exists".
+      final profile = await Supabase.instance.client
+          .from('profiles')
+          .select('username')
+          .eq('id', user.id)
+          .maybeSingle();
+
+      final hasUsername =
+          profile != null &&
+          (profile['username'] as String?)?.isNotEmpty == true;
 
       if (!mounted) return;
 
-      // Fetch their Facebook display name to pre-fill the username suggestion
+      if (hasUsername) {
+        // Existing Facebook user — go straight into the app. Leave the overlay
+        // up; the app screen replaces this one, so it never flashes back.
+        widget.onFacebookClick();
+        return;
+      }
+
+      // New user — fetch their Facebook display name to pre-fill the suggestion.
       final fbData = await FacebookSignInService.getUserData();
       final fbName = fbData['name'] as String? ?? '';
 
       if (!mounted) return;
 
+      // The username screen fully covers this one; drop the overlay so a
+      // back-out from there returns to a normal sign-up (not a stuck spinner).
+      setState(() => _fbBusy = false);
       Navigator.push(
         context,
         PageRouteBuilder(
@@ -295,6 +336,7 @@ class _SignupScreenState extends State<SignupScreen>
       );
     } catch (e) {
       if (!mounted) return;
+      setState(() => _fbBusy = false);
       final msg = e.toString().replaceFirst('Exception: ', '');
       // Surface via the shared dialog (not a SnackBar / inline text).
       if (msg != 'Facebook sign-in was cancelled.') {
@@ -418,10 +460,20 @@ class _SignupScreenState extends State<SignupScreen>
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
 
-    if (!kIsWeb) return _mobileScaffold(context);
+    final Widget content = !kIsWeb
+        ? _mobileScaffold(context)
+        : (width >= kWebTwoPanelMinWidth
+            ? _webScaffold(context)
+            : _webCompactScaffold(context));
 
-    if (width >= kWebTwoPanelMinWidth) return _webScaffold(context);
-    return _webCompactScaffold(context);
+    // While Facebook sign-up is in flight, cover the screen with a blocking
+    // spinner so the sign-up form never flashes back mid-process.
+    return Stack(
+      children: [
+        content,
+        if (_fbBusy) const FacebookAuthOverlay(),
+      ],
+    );
   }
 
   // ── Mobile layout ─────────────────────────────────────────────────────────

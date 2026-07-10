@@ -4,10 +4,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../providers/admin_dashboard_provider.dart';
+import '../providers/admin_feedback_provider.dart'
+    show AdminFeedback, adminFeedbackProvider;
 import '../providers/admin_reports_provider.dart'
     show ReportStatus, AdminReport, adminReportsProvider;
+import '../providers/admin_suggestions_provider.dart'
+    show AdminSuggestion, adminSuggestionsProvider;
 import '../theme/admin_ui.dart';
-import '../utils/report_export.dart';
+import '../utils/analytics_pdf.dart';
 import '../widgets/admin_skeleton.dart';
 import '../widgets/admin_snackbar.dart';
 
@@ -356,7 +360,7 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
                 ),
               const SizedBox(width: 6),
               Text(
-                _exporting ? 'Exporting…' : 'Export',
+                _exporting ? 'Generating…' : 'Export PDF',
                 style: const TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
@@ -370,12 +374,23 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
     );
   }
 
-  /// Export the reports in the currently selected range (7/30/90 days) as a CSV.
-  /// On web this downloads the file; on mobile it opens the share sheet.
+  /// Build a PDF findings report (reports, feedback, suggestions, and the AI
+  /// forecast) for the selected range and export it as a file — no print dialog.
+  /// On web this downloads the PDF; on mobile it opens the OS share sheet.
   Future<void> _exportReports() async {
     setState(() => _exporting = true);
     try {
-      final all = await ref.read(adminReportsProvider.future);
+      // Pull every dataset the report covers, concurrently.
+      final results = await Future.wait([
+        ref.read(adminReportsProvider.future),
+        ref.read(adminFeedbackProvider.future),
+        ref.read(adminSuggestionsProvider.future),
+        ref.read(adminDashboardProvider.future),
+      ]);
+      final reportsAll = results[0] as List<AdminReport>;
+      final feedbackAll = results[1] as List<AdminFeedback>;
+      final suggestionsAll = results[2] as List<AdminSuggestion>;
+      final dashboard = results[3] as AdminDashboardData;
 
       // Same window the trend chart uses: midnight, (days - 1) back to now.
       final now = DateTime.now();
@@ -384,33 +399,43 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
         now.month,
         now.day,
       ).subtract(Duration(days: _rangeDays - 1));
-      final inRange = <AdminReport>[
-        for (final r in all)
-          if (r.createdAt != null && !r.createdAt!.isBefore(start)) r,
-      ];
+      bool inRange(DateTime? t) => t != null && !t.isBefore(start);
+
+      // Dismissed (spam) rows never appear in the report, regardless of the
+      // admin's current "Show dismissed" filter state.
+      final reports = reportsAll
+          .where((r) => inRange(r.createdAt) && !r.isDismissed)
+          .toList();
+      final feedback = feedbackAll
+          .where((f) => inRange(f.createdAt) && !f.isDismissed)
+          .toList();
+      final suggestions = suggestionsAll
+          .where((s) => inRange(s.createdAt) && !s.isDismissed)
+          .toList();
 
       if (!mounted) return;
-      if (inRange.isEmpty) {
+      if (reports.isEmpty && feedback.isEmpty && suggestions.isEmpty) {
         showAdminSnackBar(
           context,
-          'No reports in the last $_rangeDays days to export.',
+          'Nothing to report in the last $_rangeDays days.',
           type: AdminSnackType.info,
         );
         return;
       }
 
-      final stamp = '${now.year}'
-          '${now.month.toString().padLeft(2, '0')}'
-          '${now.day.toString().padLeft(2, '0')}';
-      await exportReportsCsv(
-        filename: 'govpulse-reports-${_rangeDays}d-$stamp.csv',
-        reports: inRange,
+      await exportAnalyticsPdf(
+        rangeDays: _rangeDays,
+        now: now,
+        reports: reports,
+        feedback: feedback,
+        suggestions: suggestions,
+        dashboard: dashboard,
       );
 
       if (!mounted) return;
       showAdminSnackBar(
         context,
-        'Exported ${inRange.length} report${inRange.length == 1 ? '' : 's'}.',
+        'Findings report generated.',
         type: AdminSnackType.success,
       );
     } catch (e) {

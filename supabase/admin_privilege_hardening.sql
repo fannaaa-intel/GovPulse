@@ -100,14 +100,23 @@ set search_path = public
 as $$
 declare
   v_count integer;
+  v_photo text;
 begin
   if not public.is_admin() then
     raise exception 'not authorized';
   end if;
 
+  -- The broadcasting admin's avatar → the citizen bell shows their photo
+  -- instead of a generic icon (best-effort; null falls back to the icon).
+  select photo_url into v_photo
+  from public.admin_profiles
+  where user_id = auth.uid();
+
   insert into public.notifications
-    (user_id, title, subtitle, type, color_value, icon_code, is_approved, sent_by)
-  select p.id, p_title, p_subtitle, 'admin_broadcast', p_color, 0, true, auth.uid()
+    (user_id, title, subtitle, type, color_value, icon_code,
+     is_approved, sent_by, actor_id, actor_photo_url)
+  select p.id, p_title, p_subtitle, 'admin_broadcast', p_color, 0,
+         true, auth.uid(), auth.uid(), v_photo
   from public.profiles p
   where coalesce(p.is_deactivated, false) = false
     and not exists (

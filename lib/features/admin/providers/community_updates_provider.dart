@@ -137,6 +137,10 @@ class CommunityUpdate {
   final DateTime? createdAt;
   final List<PostImage> images;
 
+  /// Set by the server profanity trigger when the text may contain profanity.
+  final bool flagged;
+  final String? flagReason;
+
   const CommunityUpdate({
     required this.id,
     required this.authorId,
@@ -155,6 +159,8 @@ class CommunityUpdate {
     required this.commentsCount,
     required this.createdAt,
     required this.images,
+    this.flagged = false,
+    this.flagReason,
   });
 
   bool get isOfficial => authorRole == 'admin' || authorRole == 'staff';
@@ -179,6 +185,8 @@ class CommunityUpdate {
     int? likesCount,
     int? commentsCount,
     List<PostImage>? images,
+    bool? flagged,
+    String? flagReason,
   }) {
     return CommunityUpdate(
       id: id,
@@ -197,6 +205,8 @@ class CommunityUpdate {
       likesCount: likesCount ?? this.likesCount,
       commentsCount: commentsCount ?? this.commentsCount,
       createdAt: createdAt,
+      flagged: flagged ?? this.flagged,
+      flagReason: flagReason ?? this.flagReason,
       images: images ?? this.images,
     );
   }
@@ -332,6 +342,8 @@ class CommunityUpdatesRepository {
         commentsCount: (p['comments_count'] as int?) ?? 0,
         createdAt: _parseTs(p['created_at']),
         images: imagesByPost[p['id']] ?? const [],
+        flagged: p['flagged'] as bool? ?? false,
+        flagReason: p['flag_reason'] as String?,
       );
     }).toList();
   }
