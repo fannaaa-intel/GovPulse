@@ -19,7 +19,7 @@ import 'app_dialog.dart';
 /// Talks to Supabase directly (both admins and staff are authenticated and RLS
 /// on `report_resolution_media` + the public `resolution-media` bucket decides
 /// who can read/write), so no per-caller wiring is needed. Degrades to nothing
-/// if the migration (supabase/report_resolution_media.sql) hasn't been applied.
+/// if the migration (supabase/legacy/report_resolution_media.sql) hasn't been applied.
 class ResolutionMediaSection extends StatefulWidget {
   final String reportId;
 

@@ -8,7 +8,7 @@ import '../../admin/providers/admin_reports_provider.dart'
 //  Staff data layer — the ONLY place the staff console touches Supabase.
 //
 //  Reuses the citizen-side tables (concern_tickets, ticket_messages, reports)
-//  that already exist; the staff RLS in supabase/staff_portal.sql scopes every
+//  that already exist; the staff RLS in supabase/legacy/staff_portal.sql scopes every
 //  read/write to the signed-in staff member's department.
 // ════════════════════════════════════════════════════════════════════════════
 

@@ -35,7 +35,10 @@
       "Bash(sort -t: -k2 -rn)",
       "Bash(python \"C:/Users/DELL/AppData/Local/Temp/claude/c--Users-DELL-govpulse/e65cad6b-f047-432b-a596-5f3c04dcf410/scratchpad/migrate_dialogs.py\")",
       "PowerShell(flutter test test/app_dialog_test.dart -r expanded)",
-      "Bash(git rm *)"
+      "Bash(git rm *)",
+      "Bash(supabase --version)",
+      "Bash(docker --version)",
+      "Bash(docker info *)"
     ],
     "additionalDirectories": [
       "c:\\Users\\DELL\\.claude\\projects\\c--Users-DELL-govpulse\\memory"

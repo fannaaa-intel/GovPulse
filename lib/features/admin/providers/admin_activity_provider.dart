@@ -7,7 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 //
 //  Backs Settings → Activity log. Rows are written by AdminUsersNotifier._log()
 //  after each management action, into public.admin_activity_log (see
-//  supabase/admin_activity_log.sql). This provider only reads the recent tail.
+//  supabase/legacy/admin_activity_log.sql). This provider only reads the recent tail.
 // ════════════════════════════════════════════════════════════════════════════
 
 class AdminActivity {

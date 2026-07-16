@@ -7,7 +7,7 @@ import '../theme/app_colors.dart';
 /// console and the staff/external console. Staff/external post progress notes;
 /// the admin reads them and can post back (instructions / questions). The
 /// citizen NEVER sees these — access is gated by RLS on `report_notes`
-/// (see supabase/report_triage_gate.sql).
+/// (see supabase/legacy/report_triage_gate.sql).
 ///
 /// The widget talks to Supabase directly: both admins (role 1) and staff
 /// (role 2) are authenticated, and the table's policies decide what each can
