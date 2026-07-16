@@ -16,7 +16,7 @@ import 'admin_profile_provider.dart';
 //    • broadcast / targeted notification
 //  Restriction/suspension actions AUTO-INSERT a detailed citizen notification
 //  (and a "lifted" notice), matching the enforcement contract in
-//  supabase/user_management.sql.
+//  supabase/legacy/user_management.sql.
 // ════════════════════════════════════════════════════════════════════════════
 
 /// Restrictable features — the exact keys stored in
@@ -517,10 +517,15 @@ class AdminUsersNotifier extends AsyncNotifier<List<ManagedUser>> {
     required String title,
     required String subtitle,
   }) async {
-    // Pass p_color explicitly (the function's default blue) so the RPC binds
-    // unambiguously to broadcast_notification(text, text, bigint). Without it,
-    // a stray 6-arg overload lingering in some databases makes the call
-    // ambiguous (PostgREST PGRST203). See supabase/fix_broadcast_overload.sql.
+    // p_color is passed explicitly (it's the function's own default blue) so the
+    // RPC binds unambiguously to broadcast_notification(text, text, bigint).
+    //
+    // This was load-bearing until 2026-07-16: a stale 6-arg overload made the
+    // call ambiguous (PostgREST PGRST203), and fix_broadcast_overload.sql had
+    // failed to remove it — it dropped the wrong signature, and `IF EXISTS`
+    // can't tell "already gone" from "never matched", so it reported success and
+    // did nothing. The overload is now genuinely dropped, leaving this argument
+    // as belt-and-braces rather than the thing holding the call together.
     final res = await _db.rpc('broadcast_notification', params: {
       'p_title': title,
       'p_subtitle': subtitle,
