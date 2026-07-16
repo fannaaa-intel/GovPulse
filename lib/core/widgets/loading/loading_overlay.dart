@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 enum SkeletonLayout {
@@ -406,7 +407,7 @@ class _SkeletonScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Widget body = switch (layout) {
+    Widget makeBody() => switch (layout) {
       SkeletonLayout.home => const _HomeSkeletonScreen(),
       SkeletonLayout.editProfile => const _EditProfileSkeletonScreen(),
       SkeletonLayout.settings ||
@@ -420,12 +421,39 @@ class _SkeletonScreen extends StatelessWidget {
 
     final mq = MediaQuery.of(context);
     const double maxContentWidth = 480;
-    final double clampedWidth =
-        (layout != SkeletonLayout.home && mq.size.width > maxContentWidth)
-        ? maxContentWidth
-        : mq.size.width;
+    final double screenW = mq.size.width;
 
-    final Widget sized = clampedWidth >= mq.size.width
+    // WEB / large screens: render a multi-column skeleton so the loading state
+    // matches the wide web body instead of stranding a single phone-width
+    // column. Only the screens that gained a web body opt in here; the mobile
+    // app never hits this branch (screenW < 900).
+    const Set<SkeletonLayout> webMultiCol = {
+      SkeletonLayout.home,
+      SkeletonLayout.myReports,
+      SkeletonLayout.newsFeed,
+      SkeletonLayout.settings,
+      SkeletonLayout.mySubmissions,
+      SkeletonLayout.editProfile,
+    };
+    if (kIsWeb && screenW >= 900 && webMultiCol.contains(layout)) {
+      final Widget web = switch (layout) {
+        SkeletonLayout.home => const _WebHomeSkeleton(),
+        SkeletonLayout.newsFeed => const _WebFeedSkeleton(),
+        SkeletonLayout.myReports => const _WebGridSkeleton(kpi: true),
+        SkeletonLayout.settings ||
+        SkeletonLayout.editProfile => const _WebProfileSkeleton(),
+        _ => const _WebGridSkeleton(),
+      };
+      return Material(color: const Color(0xFFF3F4F6), child: web);
+    }
+
+    final Widget body = makeBody();
+    final double clampedWidth =
+        (layout != SkeletonLayout.home && screenW > maxContentWidth)
+        ? maxContentWidth
+        : screenW;
+
+    final Widget sized = clampedWidth >= screenW
         ? body
         : Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -443,6 +471,403 @@ class _SkeletonScreen extends StatelessWidget {
           );
 
     return Material(color: const Color(0xFFF3F4F6), child: sized);
+  }
+}
+
+// ── WEB skeletons (wide screens ≥ 900) ────────────────────────────────────────
+// Dedicated loading states that mirror the wide web bodies, so the skeleton
+// fills the same band instead of duplicating a phone column.
+
+Widget _skelSurface(
+  Widget child, {
+  EdgeInsetsGeometry padding = const EdgeInsets.all(18),
+}) {
+  return Container(
+    padding: padding,
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: const Color(0xFFE5E7EB)),
+    ),
+    child: child,
+  );
+}
+
+Widget _skelBand(Widget child) {
+  return SingleChildScrollView(
+    child: Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1080),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 40),
+          child: child,
+        ),
+      ),
+    ),
+  );
+}
+
+Widget _skelHeaderBar() => _skelSurface(
+  Row(
+    children: const [
+      _Shimmer(width: 140, height: 26),
+      Spacer(),
+      _Shimmer(width: 80, height: 18),
+    ],
+  ),
+);
+
+Widget _skelKpiCard() => _skelSurface(
+  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 18),
+  Column(
+    mainAxisSize: MainAxisSize.min,
+    children: const [
+      _Shimmer(width: 40, height: 40, radius: 20),
+      SizedBox(height: 12),
+      _Shimmer(width: 40, height: 22),
+      SizedBox(height: 8),
+      _Shimmer(width: 56, height: 12),
+    ],
+  ),
+);
+
+Widget _skelDetailCard() => _skelSurface(
+  Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: const [
+      Row(
+        children: [
+          _Shimmer(width: 40, height: 40, radius: 10),
+          SizedBox(width: 12),
+          Expanded(child: _Shimmer(width: double.infinity, height: 16)),
+          SizedBox(width: 12),
+          _Shimmer(width: 64, height: 20, radius: 10),
+        ],
+      ),
+      SizedBox(height: 16),
+      _Shimmer(width: 240, height: 12),
+      SizedBox(height: 10),
+      _Shimmer(width: 180, height: 12),
+      SizedBox(height: 10),
+      _Shimmer(width: 120, height: 12),
+    ],
+  ),
+);
+
+class _WebGridSkeleton extends StatelessWidget {
+  final bool kpi;
+  const _WebGridSkeleton({this.kpi = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return _skelBand(
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _skelHeaderBar(),
+          const SizedBox(height: 24),
+          if (kpi) ...[
+            Row(
+              children: [
+                for (int i = 0; i < 4; i++) ...[
+                  Expanded(child: _skelKpiCard()),
+                  if (i < 3) const SizedBox(width: 16),
+                ],
+              ],
+            ),
+            const SizedBox(height: 28),
+          ],
+          const _Shimmer(width: 180, height: 20),
+          const SizedBox(height: 16),
+          LayoutBuilder(
+            builder: (context, c) {
+              const target = 320.0;
+              final cols = (c.maxWidth / target).floor().clamp(1, 3);
+              final cellW = (c.maxWidth - 16 * (cols - 1)) / cols;
+              return Wrap(
+                spacing: 16,
+                runSpacing: 16,
+                children: [
+                  for (int i = 0; i < 6; i++)
+                    SizedBox(width: cellW, child: _skelDetailCard()),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WebProfileSkeleton extends StatelessWidget {
+  const _WebProfileSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return _skelBand(
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _skelHeaderBar(),
+          const SizedBox(height: 24),
+          // Profile banner
+          _skelSurface(
+            Row(
+              children: const [
+                _Shimmer(width: 64, height: 64, radius: 32),
+                SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _Shimmer(width: 160, height: 18),
+                      SizedBox(height: 10),
+                      _Shimmer(width: 220, height: 13),
+                      SizedBox(height: 10),
+                      _Shimmer(width: 90, height: 22, radius: 11),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 28),
+          // Two columns
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  children: const [
+                    _Shimmer(width: 120, height: 14),
+                    SizedBox(height: 12),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 24),
+              const Expanded(child: SizedBox.shrink()),
+            ],
+          ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  children: [
+                    _skelDetailCard(),
+                    const SizedBox(height: 20),
+                    _skelDetailCard(),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 24),
+              Expanded(
+                child: Column(
+                  children: [
+                    _skelDetailCard(),
+                    const SizedBox(height: 20),
+                    _skelDetailCard(),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WebHomeSkeleton extends StatelessWidget {
+  const _WebHomeSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Top nav bar
+        Container(
+          height: 60,
+          color: Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 40),
+          child: Row(
+            children: const [
+              _Shimmer(width: 120, height: 24),
+              Spacer(),
+              _Shimmer(width: 240, height: 18),
+              SizedBox(width: 24),
+              _Shimmer(width: 40, height: 40, radius: 20),
+            ],
+          ),
+        ),
+        Expanded(
+          child: _skelBand(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Hero band
+                const _Shimmer(width: double.infinity, height: 160, radius: 18),
+                const SizedBox(height: 24),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: _skelSurface(
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: const [
+                            _Shimmer(width: 160, height: 18),
+                            SizedBox(height: 18),
+                            _Shimmer(
+                              width: double.infinity,
+                              height: 90,
+                              radius: 12,
+                            ),
+                            SizedBox(height: 14),
+                            _Shimmer(
+                              width: double.infinity,
+                              height: 90,
+                              radius: 12,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 24),
+                    Expanded(
+                      flex: 2,
+                      child: _skelSurface(
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: const [
+                            _Shimmer(width: 140, height: 18),
+                            SizedBox(height: 16),
+                            _Shimmer(
+                              width: double.infinity,
+                              height: 44,
+                              radius: 10,
+                            ),
+                            SizedBox(height: 12),
+                            _Shimmer(
+                              width: double.infinity,
+                              height: 44,
+                              radius: 10,
+                            ),
+                            SizedBox(height: 12),
+                            _Shimmer(
+                              width: double.infinity,
+                              height: 44,
+                              radius: 10,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _WebFeedSkeleton extends StatelessWidget {
+  const _WebFeedSkeleton();
+
+  Widget _postCard() => _skelSurface(
+    Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: const [
+        Row(
+          children: [
+            _Shimmer(width: 40, height: 40, radius: 20),
+            SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _Shimmer(width: 140, height: 14),
+                SizedBox(height: 6),
+                _Shimmer(width: 90, height: 12),
+              ],
+            ),
+          ],
+        ),
+        SizedBox(height: 14),
+        _Shimmer(width: 340, height: 12),
+        SizedBox(height: 8),
+        _Shimmer(width: 300, height: 12),
+        SizedBox(height: 8),
+        _Shimmer(width: 200, height: 12),
+        SizedBox(height: 14),
+        _Shimmer(width: double.infinity, height: 180, radius: 12),
+      ],
+    ),
+  );
+
+  Widget _railCard() => _skelSurface(
+    Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: const [
+        Row(
+          children: [
+            _Shimmer(width: 36, height: 36, radius: 10),
+            SizedBox(width: 10),
+            Expanded(child: _Shimmer(width: double.infinity, height: 14)),
+          ],
+        ),
+        SizedBox(height: 12),
+        _Shimmer(width: double.infinity, height: 11),
+        SizedBox(height: 8),
+        _Shimmer(width: 180, height: 11),
+      ],
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    return _skelBand(
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: 600,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _skelHeaderBar(),
+                const SizedBox(height: 20),
+                _postCard(),
+                const SizedBox(height: 16),
+                _postCard(),
+                const SizedBox(height: 16),
+                _postCard(),
+              ],
+            ),
+          ),
+          const SizedBox(width: 32),
+          SizedBox(
+            width: 300,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _railCard(),
+                const SizedBox(height: 16),
+                _railCard(),
+                const SizedBox(height: 16),
+                _railCard(),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

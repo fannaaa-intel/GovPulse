@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../../../theme/app_colors.dart';
 import 'Chat_bubbles_model.dart';
@@ -22,7 +23,9 @@ class ChatOnlineDot extends StatelessWidget {
 // ── Agent avatar ──────────────────────────────────────────────────────────────
 class ChatAgentAvatar extends StatelessWidget {
   final double size;
-  const ChatAgentAvatar({super.key, this.size = 28});
+  // Connected staff's photo (their messages) → shown instead of the bot glyph.
+  final String? photoUrl;
+  const ChatAgentAvatar({super.key, this.size = 28, this.photoUrl});
 
   @override
   Widget build(BuildContext context) => Container(
@@ -32,14 +35,52 @@ class ChatAgentAvatar extends StatelessWidget {
       color: AppColors.primaryBlue.withValues(alpha: 0.10),
       shape: BoxShape.circle,
     ),
-    child: Center(
-      child: Icon(
-        Icons.support_agent_rounded,
-        size: size * 0.54,
-        color: AppColors.primaryBlue,
-      ),
-    ),
+    clipBehavior: Clip.antiAlias,
+    child: (photoUrl != null && photoUrl!.isNotEmpty)
+        ? CachedNetworkImage(
+            imageUrl: photoUrl!,
+            fit: BoxFit.cover,
+            errorWidget: (_, _, _) => _bot(),
+          )
+        : _bot(),
   );
+
+  Widget _bot() => Center(
+        child: Icon(
+          Icons.support_agent_rounded,
+          size: size * 0.54,
+          color: AppColors.primaryBlue,
+        ),
+      );
+}
+
+// ── Citizen (self) avatar — floating panel ────────────────────────────────────
+class ChatCitizenAvatar extends StatelessWidget {
+  final double size;
+  final String? photoUrl;
+  const ChatCitizenAvatar({super.key, this.size = 28, this.photoUrl});
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: size,
+    height: size,
+    decoration: const BoxDecoration(
+      color: AppColors.primaryBlue,
+      shape: BoxShape.circle,
+    ),
+    clipBehavior: Clip.antiAlias,
+    child: (photoUrl != null && photoUrl!.isNotEmpty)
+        ? CachedNetworkImage(
+            imageUrl: photoUrl!,
+            fit: BoxFit.cover,
+            errorWidget: (_, _, _) => _icon(),
+          )
+        : _icon(),
+  );
+
+  Widget _icon() => Center(
+        child: Icon(Icons.person_rounded, size: size * 0.6, color: Colors.white),
+      );
 }
 
 // ── Unread badge ──────────────────────────────────────────────────────────────

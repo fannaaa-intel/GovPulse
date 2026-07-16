@@ -101,6 +101,16 @@ class _ContactSupportScreenState extends State<ContactSupportScreen>
     return Scaffold(
       backgroundColor: const Color(0xFFF3F4F6),
       body: ResponsivePageBody(
+        shellTitle: 'Contact Support',
+        shellSubtitle:
+            'Reach the Aparri LGU team for help with your account, reports, '
+            'or anything else on GovPulse.',
+        shellIcon: Icons.support_agent_rounded,
+        shellHighlights: const [
+          (Icons.facebook_rounded, 'Message us on Facebook'),
+          (Icons.call_outlined, 'Call the support hotline'),
+          (Icons.location_on_outlined, 'Visit the municipal office'),
+        ],
         child: SafeArea(
           child: Column(
             children: [

@@ -72,6 +72,17 @@ class AdminFeedback {
   final DateTime? visitDate;
   final String? comment;
   final List<String> photoUrls;
+
+  /// Per-photo provenance, aligned index-for-index with [photoUrls]:
+  /// 'camera' = live GPS-stamped capture, 'upload'/missing = gallery photo.
+  final List<String> photoSources;
+
+  /// Per-photo AI-generated-image results, aligned index-for-index with
+  /// [photoUrls] (parallel arrays, exactly like [photoSources]). Populated by
+  /// the check-ai-image Edge Function (ai_image_detection.sql). Entries may be
+  /// null where the check hasn't completed for that photo.
+  final List<double?> photoAiScores;
+  final List<String?> photoAiStatus;
   final bool isAnonymous;
 
   /// Submitter name — always null for anonymous feedback (never resolved).
@@ -106,6 +117,9 @@ class AdminFeedback {
     required this.visitDate,
     required this.comment,
     required this.photoUrls,
+    this.photoSources = const [],
+    this.photoAiScores = const [],
+    this.photoAiStatus = const [],
     required this.isAnonymous,
     required this.submitterName,
     required this.submitterPhotoUrl,
@@ -119,6 +133,19 @@ class AdminFeedback {
   });
 
   int get photoCount => photoUrls.length;
+
+  /// True when the photo at [index] was a live, GPS-stamped camera capture.
+  bool isGpsVerifiedAt(int index) =>
+      index < photoSources.length && photoSources[index] == 'camera';
+
+  /// AI-likelihood 0..1 for the photo at [index], or null if not yet scored.
+  double? aiScoreAt(int index) =>
+      index < photoAiScores.length ? photoAiScores[index] : null;
+
+  /// AI-check status for the photo at [index] ('pending'|'completed'|'failed').
+  String? aiStatusAt(int index) =>
+      index < photoAiStatus.length ? photoAiStatus[index] : null;
+
   bool get isLowRated => overallRating > 0 && overallRating <= 2;
   bool get isDismissed => dismissedAt != null;
 }
@@ -326,64 +353,92 @@ class AdminFeedbackNotifier extends AsyncNotifier<List<AdminFeedback>> {
 
   // ── Mutations ─────────────────────────────────────────────────────────────
 
-  /// Reply to the citizen who submitted [id]: sends them a push + bell
-  /// notification and marks the feedback "Responded" (storing the reply).
-  /// Throws for anonymous submissions — there is no recipient to notify.
+  /// Reply to the citizen who submitted [id]: marks the feedback "Responded"
+  /// (storing the reply) and notifies the owner.
+  ///
+  /// Sends ONE notification, the same for named and anonymous submissions: it
+  /// names the office/service, quotes a snippet of their comment before the
+  /// reply, and carries the admin's avatar. Anonymous submitters get the
+  /// identical notification — it goes only to their own device, and their
+  /// anonymity is enforced where it matters (`is_anonymous` + a null public
+  /// `username`, so the admin/public still can't see who they are).
   Future<void> respond(String id, String message) async {
     final msg = message.trim();
     final row = await _db
         .from('feedbacks')
-        .select('user_id, is_anonymous, comment, office_label, service_name')
+        .select('user_id, comment, office_label, service_name')
         .eq('id', id)
         .single();
-    if ((row['is_anonymous'] as bool?) == true) {
-      throw 'This feedback is anonymous — there is no one to notify.';
-    }
     final recipient = row['user_id'] as String?;
     final adminId = _db.auth.currentUser?.id;
     final nowIso = DateTime.now().toUtc().toIso8601String();
+    // Fetched once: used for the notification actor AND stored on the row so the
+    // citizen's "LGU Response" block can show the admin's face (they can't read
+    // admin_profiles themselves).
+    final actorPhotoUrl = await _fetchAdminPhotoUrl(adminId);
 
     if (recipient != null) {
-      // Targeted citizen notification (push + bell). No topic → personal, so it
-      // stays out of the admin notification centre. Carrying the responding
-      // admin as the actor makes the citizen's notification render the admin's
-      // profile photo instead of a generic bell icon.
-      // Anchor the notification to the specific feedback, so a generic reply
-      // ("Thanks for letting us know") still tells the citizen WHICH feedback
-      // it answers. The title names the office/service they rated; the subtitle
-      // quotes a snippet of their own comment before the reply, answering
-      // "response to what?" at a glance.
+      // The title names the office/service they rated; the subtitle quotes a
+      // snippet of their own comment before the reply.
       final service = (row['service_name'] as String?)?.trim();
       final office = (row['office_label'] as String?)?.trim();
       final about = (service != null && service.isNotEmpty)
           ? service
           : (office != null && office.isNotEmpty ? office : null);
       final title = about == null
-          ? 'Response to your feedback'
-          : 'Response to your feedback on $about';
+          ? 'The LGU replied to your feedback'
+          : 'The LGU replied to your feedback on $about';
       final subtitle = _responseSubtitle(row['comment'] as String?, msg);
 
-      final actorPhotoUrl = await _fetchAdminPhotoUrl(adminId);
-      await _db.from('notifications').insert({
+      // `feedback_response` + `reference_id` let the citizen's tap deep-link to
+      // this item in "My Submissions". `reference_id` is an optional migration
+      // (notification_reference.sql) — retry without it if absent so replying
+      // never breaks (the tap then lands on the tab, not the item).
+      final notif = <String, dynamic>{
         'user_id': recipient,
         'title': title,
         'subtitle': subtitle,
-        'type': 'general',
+        'type': 'feedback_response',
+        'reference_id': id,
         'color_value': 0xFF0D47A1,
         'icon_code': 0,
         'is_approved': true,
         'sent_by': adminId,
         'actor_id': adminId,
         'actor_photo_url': actorPhotoUrl,
-      });
+      };
+      try {
+        await _db.from('notifications').insert(notif);
+      } on PostgrestException catch (e) {
+        if (e.message.toLowerCase().contains('reference_id')) {
+          notif.remove('reference_id');
+          await _db.from('notifications').insert(notif);
+        } else {
+          rethrow;
+        }
+      }
     }
 
-    await _db.from('feedbacks').update({
+    // `responder_photo_url` is an optional migration
+    // (submission_responder_avatar.sql) — retry without it if absent so
+    // replying never breaks (the reply block then shows the LGU icon).
+    final update = <String, dynamic>{
       'status': 'responded',
       'admin_response': msg,
       'reviewed_by': adminId,
       'reviewed_at': nowIso,
-    }).eq('id', id);
+      'responder_photo_url': actorPhotoUrl,
+    };
+    try {
+      await _db.from('feedbacks').update(update).eq('id', id);
+    } on PostgrestException catch (e) {
+      if (e.message.toLowerCase().contains('responder_photo_url')) {
+        update.remove('responder_photo_url');
+        await _db.from('feedbacks').update(update).eq('id', id);
+      } else {
+        rethrow;
+      }
+    }
     await _reload();
   }
 
@@ -429,27 +484,35 @@ class AdminFeedbackNotifier extends AsyncNotifier<List<AdminFeedback>> {
         'overall_rating, aspect_staff, aspect_wait, aspect_clarity, '
         'aspect_facility, visit_date, photo_urls, is_anonymous, comment, '
         'status, admin_note, admin_response, reviewed_at, created_at';
-    // Try WITH the moderation columns; retry without them if the spam_moderation
-    // migration hasn't been applied yet (feature simply stays off).
-    List<Map<String, dynamic>> list;
-    try {
-      list = List<Map<String, dynamic>>.from(
-        await _db
-            .from('feedbacks')
-            .select('$baseCols, dismissed_at, dismissed_reason')
-            .order('created_at', ascending: false)
-            .limit(200),
-      );
-    } catch (_) {
-      list = List<Map<String, dynamic>>.from(
-        await _db
-            .from('feedbacks')
-            .select(baseCols)
-            .order('created_at', ascending: false)
-            .limit(200), // barangay scale; range-based paging is the scale path.
-      );
+    // Column sets tried most-complete first: `dismissed_*` (spam_moderation),
+    // `photo_sources` (media_source_column) and `photo_ai_scores`/
+    // `photo_ai_status` (ai_image_detection) are each optional migrations, so we
+    // fall back through the combinations — a missing column never breaks the
+    // list, the corresponding feature just stays off.
+    const attempts = [
+      '$baseCols, photo_sources, photo_ai_scores, photo_ai_status, dismissed_at, dismissed_reason',
+      '$baseCols, photo_sources, photo_ai_scores, photo_ai_status',
+      '$baseCols, photo_sources, dismissed_at, dismissed_reason',
+      '$baseCols, dismissed_at, dismissed_reason',
+      '$baseCols, photo_sources',
+      baseCols,
+    ];
+    List<Map<String, dynamic>>? list;
+    for (final cols in attempts) {
+      try {
+        list = List<Map<String, dynamic>>.from(
+          await _db
+              .from('feedbacks')
+              .select(cols)
+              .order('created_at', ascending: false)
+              .limit(200), // barangay scale; range paging is the scale path.
+        );
+        break;
+      } catch (_) {
+        // Try the next, less-complete column set.
+      }
     }
-    if (list.isEmpty) return const [];
+    if (list == null || list.isEmpty) return const [];
 
     // Resolve user_ids for NAMED rows only, in a separate query, so an anonymous
     // submitter's user_id never leaves the database to this client.
@@ -478,9 +541,9 @@ class AdminFeedbackNotifier extends AsyncNotifier<List<AdminFeedback>> {
 
       return AdminFeedback(
         id: id,
-        shortId: id.length >= 8
-            ? id.substring(0, 8).toUpperCase()
-            : id.toUpperCase(),
+        // Prefixed so the admin quotes the SAME code the citizen sees on their
+        // feedback detail (My Submissions), e.g. FBK-F264C703.
+        shortId: 'FBK-${id.length >= 8 ? id.substring(0, 8).toUpperCase() : id.toUpperCase()}',
         officeId: (r['office_id'] as String?) ?? '',
         officeLabel: (r['office_label'] as String?) ?? 'Office',
         serviceName: (r['service_name'] as String?) ?? '',
@@ -494,6 +557,9 @@ class AdminFeedbackNotifier extends AsyncNotifier<List<AdminFeedback>> {
             ? null
             : (r['comment'] as String?),
         photoUrls: _parseStringList(r['photo_urls']),
+        photoSources: _parseStringList(r['photo_sources']),
+        photoAiScores: _parseNullableDoubleList(r['photo_ai_scores']),
+        photoAiStatus: _parseNullableStringList(r['photo_ai_status']),
         isAnonymous: isAnon,
         submitterName: (name != null && name.trim().isEmpty) ? null : name,
         submitterPhotoUrl: profile?['photoUrl'] as String?,
@@ -575,6 +641,24 @@ class AdminFeedbackNotifier extends AsyncNotifier<List<AdminFeedback>> {
   static List<String> _parseStringList(dynamic v) {
     if (v is List) {
       return v.map((e) => e.toString()).where((e) => e.isNotEmpty).toList();
+    }
+    return const [];
+  }
+
+  /// Index-PRESERVING parse of a Postgres numeric[] — nulls are kept so the
+  /// result stays aligned index-for-index with photo_urls (an unscored photo
+  /// keeps its slot instead of shifting later entries).
+  static List<double?> _parseNullableDoubleList(dynamic v) {
+    if (v is List) {
+      return v.map((e) => e is num ? e.toDouble() : null).toList();
+    }
+    return const [];
+  }
+
+  /// Index-PRESERVING parse of a Postgres text[] — nulls kept (see above).
+  static List<String?> _parseNullableStringList(dynamic v) {
+    if (v is List) {
+      return v.map((e) => e?.toString()).toList();
     }
     return const [];
   }

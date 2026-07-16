@@ -12,7 +12,13 @@
       "Bash(curl -s -o /dev/null -w \"HTTP %{http_code} | type=%{content_type} | bytes=%{size_download}\\\\n\" \"https://api.maptiler.com/maps/streets-v2/14/13728/7342@2x.png?key=0EIlUocqDFgChxbUV0Tu\")",
       "PowerShell(adb devices)",
       "PowerShell(flutter analyze lib/features/admin/pages/admin_suggestions_page.dart lib/features/admin/providers/admin_suggestions_provider.dart lib/features/admin/screens/admin_dashboard_screen.dart)",
-      "PowerShell(flutter analyze lib/features/admin/providers/admin_reports_provider.dart lib/features/admin/providers/admin_suggestions_provider.dart)"
+      "PowerShell(flutter analyze lib/features/admin/providers/admin_reports_provider.dart lib/features/admin/providers/admin_suggestions_provider.dart)",
+      "Bash(python -c ' *)",
+      "Bash(python -)",
+      "Bash(awk 'NR>=884 && NR<=980' lib/features/admin/pages/admin_reports_page.dart)",
+      "PowerShell(flutter analyze lib/features/admin/pages/admin_events_page.dart)",
+      "Bash(sed -n '/^Future<void> _reportEventSave\\(/,/^}/p')",
+      "Read(//tmp/**)"
     ]
   }
 }

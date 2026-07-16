@@ -66,6 +66,10 @@ class ChatService extends ChangeNotifier {
   String? _followUpReportId;
   String? _followUpReportCategory;
   String? _lastTicketId;
+  // The connected staff member's public identity, fetched on connect so the
+  // header can show the real person (name + photo). Cleared when the chat ends.
+  String? _agentName;
+  String? _agentPhotoUrl;
   bool _isAgentTyping = false;
   /// Set by [_callAgent]: true when the last reply came from the on-device
   /// fallback brain (AI unavailable) rather than the Groq function. Read by the
@@ -76,6 +80,12 @@ class ChatService extends ChangeNotifier {
   bool _disposed = false;
   int _sessionId = 0;
   RealtimeChannel? _agentChannel;
+  RealtimeChannel? _ticketStatusChannel;
+
+  /// Post-chat rating state. When a staff member ends the live conversation the
+  /// citizen is asked to rate it; [_submittedRating] locks in their score.
+  bool _awaitingRating = false;
+  int _submittedRating = 0;
   bool _connectAfterTicket = false;
   bool _isGhostTicket = false;
   String? _cName, _cNumber, _cAddress, _cEmail, _cNote;
@@ -102,6 +112,25 @@ class ChatService extends ChangeNotifier {
       _stage == ConversationStage.awaitingIntent &&
       !_isAgentTyping &&
       identical(this, I);
+  /// True while the citizen is connected to a live human staff member (vs the
+  /// bot). Drives the chat header swapping from "LGU Aparri Agent" to a live
+  /// staff identity, and back to the bot once the chat ends.
+  bool get isConnectedToStaff =>
+      _stage == ConversationStage.connectedToAgent;
+
+  /// The department the connected staff belongs to (for the header label), from
+  /// whichever flow opened the live chat. Null when not connected / unknown.
+  String? get connectedDepartment =>
+      isConnectedToStaff ? (_category?.department ?? _followUpDepartment) : null;
+
+  /// The connected staff member's real name once fetched (else null → the header
+  /// falls back to the department label).
+  String? get connectedStaffName => isConnectedToStaff ? _agentName : null;
+
+  /// The connected staff member's photo URL once fetched.
+  String? get connectedStaffPhotoUrl =>
+      isConnectedToStaff ? _agentPhotoUrl : null;
+
   bool get showBackToMenu =>
       _stage == ConversationStage.askingQuestion && !_isAgentTyping;
   bool get showContactConfirm =>
@@ -110,6 +139,11 @@ class ChatService extends ChangeNotifier {
       _stage == ConversationStage.ticketCreated ||
       _stage == ConversationStage.timedOut ||
       _stage == ConversationStage.ended;
+
+  /// True while the citizen should see the star-rating card (staff ended the
+  /// chat and they haven't rated yet). Consumed by the chat screen.
+  bool get showRatingBar => _awaitingRating && _submittedRating == 0;
+  int get submittedRating => _submittedRating;
 
   String? get lastTicketReference => _lastTicketReference;
   String? get lastTicketId => _lastTicketId;
@@ -124,6 +158,8 @@ class ChatService extends ChangeNotifier {
     _cancelIdleTimer();
     _agentChannel?.unsubscribe();
     _agentChannel = null;
+    _ticketStatusChannel?.unsubscribe();
+    _ticketStatusChannel = null;
     super.dispose();
   }
 
@@ -148,6 +184,10 @@ class ChatService extends ChangeNotifier {
     _cancelIdleTimer();
     _agentChannel?.unsubscribe();
     _agentChannel = null;
+    _ticketStatusChannel?.unsubscribe();
+    _ticketStatusChannel = null;
+    _awaitingRating = false;
+    _submittedRating = 0;
     _messages.clear();
     _stage = ConversationStage.greeting;
     _category = null;
@@ -180,6 +220,10 @@ class ChatService extends ChangeNotifier {
     if (!isFollowUp && _stage == ConversationStage.followUp) {
       _sessionId++;
       _cancelIdleTimer();
+      _ticketStatusChannel?.unsubscribe();
+      _ticketStatusChannel = null;
+      _awaitingRating = false;
+      _submittedRating = 0;
       _messages.clear();
       _activeBoxName = _scoped(_baseBox);
       _stage = ConversationStage.greeting;
@@ -195,6 +239,17 @@ class ChatService extends ChangeNotifier {
     }
 
     notifyListeners();
+
+    // Every time the chat is opened while "connected", make sure the live
+    // subscription is running and re-check the ticket status — this is what
+    // catches a chat the staff ended while the citizen's app was closed.
+    if (_stage == ConversationStage.connectedToAgent && _lastTicketId != null) {
+      if (_agentChannel == null) {
+        _startAgentSubscription(); // also verifies status
+      } else {
+        unawaited(_verifyAgentStatus(_lastTicketId!, _sessionId));
+      }
+    }
 
     if (_messages.isEmpty &&
         _stage == ConversationStage.greeting &&
@@ -230,6 +285,10 @@ class ChatService extends ChangeNotifier {
     _cancelIdleTimer();
     _agentChannel?.unsubscribe();
     _agentChannel = null;
+    _ticketStatusChannel?.unsubscribe();
+    _ticketStatusChannel = null;
+    _awaitingRating = false;
+    _submittedRating = 0;
 
     _messages.clear();
     _stage = ConversationStage.followUp;
@@ -330,6 +389,8 @@ class ChatService extends ChangeNotifier {
       _cancelIdleTimer();
       _agentChannel?.unsubscribe();
       _agentChannel = null;
+      _ticketStatusChannel?.unsubscribe();
+      _ticketStatusChannel = null;
       _activeBoxName = boxName;
 
       _followUpReportStatus = reportStatus;
@@ -353,6 +414,8 @@ class ChatService extends ChangeNotifier {
       _lastTicketReference = b.get('lastTicketReference') as String?;
       _lastTicketId = b.get('lastTicketId') as String?;
       _isGhostTicket = b.get('isGhostTicket', defaultValue: false) as bool;
+      _awaitingRating = b.get('awaitingRating', defaultValue: false) as bool;
+      _submittedRating = b.get('submittedRating', defaultValue: 0) as int;
 
       _messages
         ..clear()
@@ -403,12 +466,39 @@ class ChatService extends ChangeNotifier {
     Future.delayed(const Duration(milliseconds: 650), () {
       if (session != _sessionId) return;
       if (!_messages.contains(msg)) return;
+      // Don't clobber a delivery that already failed (or advanced further).
+      if (msg.status != MessageStatus.sent) return;
       msg.status = MessageStatus.delivered;
       notifyListeners();
       _persist();
     });
 
     await _routeUserMessage(msg, session);
+  }
+
+  /// Retries a failed outgoing message (the "Resend" affordance). Only messages
+  /// that failed to reach staff are retried through the ticket; anything else
+  /// re-runs the normal route.
+  Future<void> resendMessage(ChatMsg msg) async {
+    if (msg.status != MessageStatus.failed) return;
+    msg.status = MessageStatus.sent;
+    notifyListeners();
+    _persist();
+    final session = _sessionId;
+    if (_stage == ConversationStage.connectedToAgent) {
+      await _sendToStaff(msg, session);
+    } else {
+      await _routeUserMessage(msg, session);
+    }
+  }
+
+  /// Removes a message locally (the "Delete" affordance on a failed send). Only
+  /// meaningful for a failed message that never persisted to the DB.
+  void deleteMessage(ChatMsg msg) {
+    if (_messages.remove(msg)) {
+      notifyListeners();
+      _persist();
+    }
   }
 
   Future<void> pickCategory(ConcernCategory c) async {
@@ -1088,6 +1178,11 @@ class ChatService extends ChangeNotifier {
       _persist();
     } catch (e) {
       debugPrint('sendToStaff failed: $e');
+      if (session != _sessionId) return;
+      // Surface the failure so the citizen can resend or delete the bubble.
+      msg.status = MessageStatus.failed;
+      notifyListeners();
+      _persist();
     }
   }
 
@@ -1095,21 +1190,123 @@ class ChatService extends ChangeNotifier {
     final ticketId = _lastTicketId;
     if (ticketId == null) return;
     _agentChannel?.unsubscribe();
+    _ticketStatusChannel?.unsubscribe();
     final session = _sessionId;
+    // Start clean so a fresh connect never briefly shows a previous staffer.
+    _agentName = null;
+    _agentPhotoUrl = null;
+    unawaited(_fetchAgentIdentity(ticketId, session));
 
     _agentChannel = TicketRepository.I.subscribeToTicketMessages(
       ticketId: ticketId,
       onInsert: (row) {
         if (session != _sessionId) return;
         if (row['sender_type'] != 'staff') return;
-        final text = (row['message'] as String?)?.trim() ?? '';
+        final text = (row['text'] as String?)?.trim() ?? '';
         if (text.isEmpty) return;
-        _messages.add(ChatMsg(text: text, isUser: false, time: DateTime.now()));
+        _messages.add(ChatMsg(
+            text: text, isUser: false, time: DateTime.now(), fromStaff: true));
         if (!_isViewing) _unreadCount++;
         notifyListeners();
         _persist();
       },
     );
+
+    // When the staff member ends the chat, the ticket's status flips — that's
+    // the citizen's cue to show the rating card.
+    _ticketStatusChannel = TicketRepository.I.subscribeToTicketStatus(
+      ticketId: ticketId,
+      onStatus: (status) {
+        if (session != _sessionId) return;
+        if (status == 'resolved' || status == 'ended' || status == 'closed') {
+          _onAgentEnded(session);
+        }
+      },
+    );
+
+    // Catch a chat the staff already ended while the app was closed — the
+    // realtime channel above only sees changes from now on.
+    unawaited(_verifyAgentStatus(ticketId, session));
+  }
+
+  /// One-shot check of the ticket's current status on (re)connect; if it's
+  /// already terminal, end the chat locally so the citizen gets the rating card
+  /// instead of being able to keep typing into a closed conversation.
+  Future<void> _verifyAgentStatus(String ticketId, int session) async {
+    final status = await TicketRepository.I.fetchTicketStatus(ticketId);
+    if (session != _sessionId) return;
+    if (status == 'resolved' || status == 'ended' || status == 'closed') {
+      _onAgentEnded(session);
+    }
+  }
+
+  /// Fetches the connected staff member's real name + photo so the header shows
+  /// the actual person. Best-effort: on failure (or before the RPC is deployed)
+  /// the header just keeps the department label.
+  Future<void> _fetchAgentIdentity(String ticketId, int session) async {
+    final info = await TicketRepository.I.fetchTicketAgent(ticketId);
+    if (info == null || session != _sessionId) return;
+    _agentName = (info.name?.isNotEmpty ?? false) ? info.name : null;
+    _agentPhotoUrl = (info.photoUrl?.isNotEmpty ?? false) ? info.photoUrl : null;
+    notifyListeners();
+  }
+
+  /// Called when a staff member ends the live conversation. Closes the live
+  /// channels, moves to the terminal `ended` stage and — unless the citizen has
+  /// already rated — surfaces the rating card.
+  void _onAgentEnded(int session) {
+    if (session != _sessionId) return;
+    if (_stage == ConversationStage.ended) return; // already ended
+    // Keep the message channel alive briefly: the staff's closing message and
+    // this status update arrive on separate channels, so the goodbye may still
+    // be in flight. It's torn down on dispose / reset / new conversation.
+    _ticketStatusChannel?.unsubscribe();
+    _ticketStatusChannel = null;
+    _cancelIdleTimer();
+    _isAgentTyping = false;
+    _stage = ConversationStage.ended;
+    _awaitingRating = _submittedRating == 0;
+    if (!_isViewing) _unreadCount++;
+    notifyListeners();
+    _persist();
+  }
+
+  /// Records the citizen's 1–5 star rating for the just-ended conversation and
+  /// thanks them. First rating wins; the DB write is best-effort.
+  Future<void> submitRating(int stars, {String? comment}) async {
+    if (_submittedRating != 0 || stars < 1) return;
+    final session = _sessionId;
+    _submittedRating = stars.clamp(1, 5);
+    _awaitingRating = false;
+    notifyListeners();
+    _persist();
+
+    final ticketId = _lastTicketId;
+    if (ticketId != null) {
+      try {
+        await TicketRepository.I.rateTicket(
+          ticketId,
+          _submittedRating,
+          comment: comment,
+        );
+      } catch (e) {
+        debugPrint('rateTicket failed: $e');
+      }
+    }
+    if (session != _sessionId) return;
+    await _agentSay(
+      'Maraming salamat po sa inyong feedback! ⭐ Ingat kayo palagi. 😊',
+      session,
+      skipTyping: true,
+    );
+  }
+
+  /// Dismisses the rating card without scoring (the "Maybe later" action).
+  void dismissRating() {
+    if (!_awaitingRating) return;
+    _awaitingRating = false;
+    notifyListeners();
+    _persist();
   }
 
   // ── Idle timer ────────────────────────────────────────────────────────
@@ -1167,6 +1364,10 @@ class ChatService extends ChangeNotifier {
     _cancelIdleTimer();
     _agentChannel?.unsubscribe();
     _agentChannel = null;
+    _ticketStatusChannel?.unsubscribe();
+    _ticketStatusChannel = null;
+    _awaitingRating = false;
+    _submittedRating = 0;
     _lastSendAt = null;
     _messages.clear();
     _stage = ConversationStage.greeting;
@@ -1288,7 +1489,10 @@ class ChatService extends ChangeNotifier {
 
   void _markUserMessagesSeen() {
     for (final m in _messages) {
-      if (m.isUser && m.status != MessageStatus.seen) {
+      // A failed send is never "seen" — leave it so the resend/delete UI stays.
+      if (m.isUser &&
+          m.status != MessageStatus.seen &&
+          m.status != MessageStatus.failed) {
         m.status = MessageStatus.seen;
       }
     }
@@ -1362,6 +1566,8 @@ class ChatService extends ChangeNotifier {
       'followUpDepartment': _followUpDepartment,
       'followUpReportId': _followUpReportId,
       'followUpReportCategory': _followUpReportCategory,
+      'awaitingRating': _awaitingRating,
+      'submittedRating': _submittedRating,
     };
 
     if (session != _sessionId) return;
@@ -1392,6 +1598,8 @@ class ChatService extends ChangeNotifier {
     _followUpDepartment = b.get('followUpDepartment') as String?;
     _followUpReportId = b.get('followUpReportId') as String?;
     _followUpReportCategory = b.get('followUpReportCategory') as String?;
+    _awaitingRating = b.get('awaitingRating', defaultValue: false) as bool;
+    _submittedRating = b.get('submittedRating', defaultValue: 0) as int;
   }
 }
 

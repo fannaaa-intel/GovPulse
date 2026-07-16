@@ -49,6 +49,16 @@ class _TermsOfServiceScreenState extends State<TermsOfServiceScreen>
     return Scaffold(
       backgroundColor: const Color(0xFFF3F4F6),
       body: ResponsivePageBody(
+        shellTitle: 'Terms of Service',
+        shellSubtitle:
+            'The rules and guidelines for using GovPulse as an Aparri citizen.',
+        shellIcon: Icons.description_rounded,
+        shellHighlights: const [
+          (Icons.gavel_rounded, 'Your rights and responsibilities'),
+          (Icons.verified_user_rounded, 'Account & verification rules'),
+          (Icons.handshake_rounded, 'Fair and respectful use'),
+        ],
+        shellContentWidth: 640,
         child: SafeArea(
           child: Column(
             children: [

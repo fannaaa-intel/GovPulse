@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 /// Shared skeleton-loading primitives for the admin console.
@@ -112,6 +113,70 @@ class SkeletonBox extends StatelessWidget {
       ),
     );
   }
+}
+
+/// A remote image that shimmers while it loads, then fades in — the image
+/// equivalent of the shaped placeholders above.
+///
+/// Backed by [CachedNetworkImage], the same as the citizen side: it keeps a
+/// disk cache on mobile, so a photo survives an app restart instead of being
+/// re-downloaded. NOTE that its cache key is the URL — a signed URL that gets
+/// re-minted per view defeats it entirely, so whoever supplies [url] has to
+/// hand back a stable one (see AdminReportsNotifier.fetchMedia).
+///
+/// [errorChild] renders when the fetch fails. Sizing comes from the parent —
+/// give it a bounded box.
+class SkeletonNetworkImage extends StatelessWidget {
+  final String url;
+  final BoxFit fit;
+
+  /// Corner radius of the *placeholder* only; clip the widget itself if the
+  /// loaded image needs rounding too.
+  final double radius;
+  final Widget? errorChild;
+
+  const SkeletonNetworkImage({
+    super.key,
+    required this.url,
+    this.fit = BoxFit.cover,
+    this.radius = 0,
+    this.errorChild,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return CachedNetworkImage(
+      imageUrl: url,
+      // fit belongs to CachedNetworkImage itself, which hands it to the image
+      // it builds. Wrapping the image by hand to fade it in is what previously
+      // cost it its tight constraints and let a portrait photo letterbox.
+      fit: fit,
+      fadeInDuration: const Duration(milliseconds: 240),
+      placeholder: (_, _) => _placeholder(),
+      errorWidget: (_, _, _) =>
+          errorChild ??
+          const ColoredBox(
+            color: kSkeletonBase,
+            child: Center(
+              child: Icon(
+                Icons.broken_image_rounded,
+                size: 20,
+                color: Color(0xFF8A94A6),
+              ),
+            ),
+          ),
+    );
+  }
+
+  Widget _placeholder() => AdminShimmer(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: kSkeletonBase,
+            borderRadius: BorderRadius.circular(radius),
+          ),
+          child: const SizedBox.expand(),
+        ),
+      );
 }
 
 /// A circular placeholder (avatars, icon chips).

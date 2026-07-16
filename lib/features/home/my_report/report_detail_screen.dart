@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/app_snackbar.dart';
+import '../../../../core/widgets/resolution_media.dart';
 import '../my_report/my_reports_screen.dart';
 import '../Quick-action/Report/location_picker_screen.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -54,34 +56,31 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
   final List<({String url, String path})> _mediaItems = [];
   bool _mediaLoading = true;
 
+  /// Live copy of the report — starts from the pushed-in value and is refreshed
+  /// in place whenever the admin/staff move it (status, endorsement, note).
+  late ReportItem _report;
+  RealtimeChannel? _reportChannel;
+
   // ── Derived helpers ──────────────────────────────────────────────────────────
 
-  bool get _isResolved => widget.report.status == ReportStatus.resolved;
-  bool get _isRejected => widget.report.status == ReportStatus.rejected;
-  bool get _isPending => widget.report.status == ReportStatus.pending;
-  bool get _isUnderReview => widget.report.status == ReportStatus.underReview;
+  bool get _isResolved => _report.status == ReportStatus.resolved;
+  bool get _isRejected => _report.status == ReportStatus.rejected;
+  bool get _isPending => _report.status == ReportStatus.pending;
+  bool get _isUnderReview => _report.status == ReportStatus.underReview;
+  bool get _isInProgress => _report.status == ReportStatus.inProgress;
   bool _openingChat = false;
 
-  // Determine if the report was forwarded to an external department
-  // based on the category — roads/drainage/environment often go to DPWH or DENR
-  bool get _isForwarded =>
-      _isUnderReview &&
-      (widget.report.categoryKey == 'road' ||
-          widget.report.categoryKey == 'drainage' ||
-          widget.report.categoryKey == 'environment');
+  // Whether the report was actually endorsed to an external entity by an admin
+  // (out-of-LGU scope). Driven by real data (endorsed_to_department), never
+  // guessed from the category.
+  bool get _isEndorsed =>
+      (_report.endorsedToDepartment != null &&
+          _report.endorsedToDepartment!.trim().isNotEmpty);
 
-  String get _forwardedDepartment {
-    switch (widget.report.categoryKey) {
-      case 'road':
-        return 'Department of Public Works and Highways (DPWH)';
-      case 'drainage':
-        return 'DPWH — Flood Control Division';
-      case 'environment':
-        return 'DENR — Environmental Management Bureau';
-      default:
-        return 'Concerned Department';
-    }
-  }
+  String get _forwardedDepartment =>
+      _report.endorsedToDepartment?.trim().isNotEmpty == true
+          ? _report.endorsedToDepartment!.trim()
+          : 'External entity';
 
   String _departmentFromCategory(String category) {
     switch (category.toLowerCase()) {
@@ -101,39 +100,45 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
   }
 
   Color get _statusColor {
-    switch (widget.report.status) {
+    switch (_report.status) {
       case ReportStatus.resolved:
         return AppColors.green;
       case ReportStatus.rejected:
         return AppColors.red;
       case ReportStatus.underReview:
         return const Color(0xFF6366F1);
+      case ReportStatus.inProgress:
+        return const Color(0xFF2563EB);
       default:
         return AppColors.orange;
     }
   }
 
   String get _statusLabel {
-    switch (widget.report.status) {
+    switch (_report.status) {
       case ReportStatus.resolved:
         return 'Resolved';
       case ReportStatus.rejected:
         return 'Rejected';
       case ReportStatus.underReview:
         return 'Under Review';
+      case ReportStatus.inProgress:
+        return 'In Progress';
       default:
         return 'Pending';
     }
   }
 
   IconData get _statusIcon {
-    switch (widget.report.status) {
+    switch (_report.status) {
       case ReportStatus.resolved:
         return Icons.check_circle_rounded;
       case ReportStatus.rejected:
         return Icons.cancel_rounded;
       case ReportStatus.underReview:
         return Icons.manage_search_rounded;
+      case ReportStatus.inProgress:
+        return Icons.construction_rounded;
       default:
         return Icons.access_time_rounded;
     }
@@ -141,9 +146,26 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
 
   // ── Timeline steps ───────────────────────────────────────────────────────────
 
+  // Progress rank of the current status along the normal happy path.
+  // (rejected is handled as a separate branch below.)
+  int get _statusRank {
+    switch (_report.status) {
+      case ReportStatus.pending:
+        return 0;
+      case ReportStatus.underReview:
+        return 1;
+      case ReportStatus.inProgress:
+        return 2;
+      case ReportStatus.resolved:
+        return 3;
+      case ReportStatus.rejected:
+        return 0;
+    }
+  }
+
   List<_TimelineStep> get _timelineSteps {
     final steps = <_TimelineStep>[];
-    final date = _formatDateTime(widget.report.dateReported);
+    final date = _formatDateTime(_report.dateReported);
 
     // Step 1 — always completed
     steps.add(
@@ -156,106 +178,103 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
       ),
     );
 
-    if (_isPending) {
+    // ── Rejected branch: submitted → reviewed → closed ──
+    if (_isRejected) {
       steps.add(
         _TimelineStep(
           title: 'Initial review',
-          subtitle: 'Our team is reviewing your report.',
-          status: TimelineStepStatus.active,
-          icon: Icons.rate_review_rounded,
+          subtitle: 'Your report was assessed by our team.',
+          status: TimelineStepStatus.completed,
+          icon: Icons.manage_search_rounded,
         ),
       );
       steps.add(
         _TimelineStep(
-          title: 'Resolution in progress',
-          subtitle: 'The assigned team will work on this.',
-          status: TimelineStepStatus.pending,
-          icon: Icons.construction_rounded,
-        ),
-      );
-      steps.add(
-        _TimelineStep(
-          title: 'Closed',
-          subtitle: 'Final outcome pending.',
-          status: TimelineStepStatus.pending,
-          icon: Icons.flag_rounded,
+          title: 'Report closed',
+          subtitle: _report.rejectionNote?.trim().isNotEmpty == true
+              ? _report.rejectionNote!.trim()
+              : 'This report could not be actioned. Please contact our office for more information.',
+          status: TimelineStepStatus.completed,
+          icon: Icons.cancel_rounded,
         ),
       );
       return steps;
     }
 
-    // Step 2 — under review or beyond
+    // Step 2 — Initial review (rank 1)
     steps.add(
       _TimelineStep(
         title: 'Initial review',
-        subtitle: 'Your report is being assessed by our team.',
-        status: _isUnderReview || _isResolved || _isRejected
+        subtitle: _statusRank >= 1
+            ? 'Your report has been assessed by our team.'
+            : 'Our team is reviewing your report.',
+        status: _statusRank >= 1
             ? TimelineStepStatus.completed
-            : TimelineStepStatus.pending,
+            : TimelineStepStatus.active,
         icon: Icons.manage_search_rounded,
       ),
     );
 
-    // Step 3 — conditional forwarding
-    if (_isForwarded || _isResolved) {
+    // Step 3 — Endorsed to an external entity (REAL data, only when endorsed).
+    if (_isEndorsed) {
       steps.add(
         _TimelineStep(
-          title: 'Forwarded to department',
-          subtitle: _forwardedDepartment,
+          title: 'Endorsed to $_forwardedDepartment',
+          subtitle:
+              'This concern is outside the LGU\'s direct scope. It has been '
+              'endorsed to $_forwardedDepartment, who are now handling it.',
+          date: _report.endorsedAt != null
+              ? _formatDateTime(_report.endorsedAt!)
+              : null,
           status: _isResolved
               ? TimelineStepStatus.completed
               : TimelineStepStatus.active,
-          icon: Icons.account_balance_rounded,
+          icon: Icons.forward_to_inbox_rounded,
         ),
       );
     }
 
-    // Step 4 — in progress
+    // Step 4 — In progress (rank 2)
     steps.add(
       _TimelineStep(
         title: 'In progress',
-        subtitle: 'The assigned team is actively working on this report.',
-        status: _isResolved
+        subtitle: _isEndorsed
+            ? '$_forwardedDepartment is actively working on this report.'
+            : 'The assigned team is actively working on this report.',
+        status: _statusRank >= 3
             ? TimelineStepStatus.completed
-            : TimelineStepStatus.pending,
+            : _statusRank == 2
+                ? TimelineStepStatus.active
+                : TimelineStepStatus.pending,
         icon: Icons.construction_rounded,
       ),
     );
 
-    // Step 5 — verification
+    // Step 5 — Verification (only once resolved)
     if (_isResolved) {
       steps.add(
         _TimelineStep(
           title: 'Verification',
-          subtitle: 'The completed work is being verified by our team.',
+          subtitle: 'The completed work has been verified by our team.',
           status: TimelineStepStatus.completed,
           icon: Icons.verified_rounded,
         ),
       );
     }
 
-    // Step 6 — final
-    if (_isResolved) {
-      steps.add(
-        _TimelineStep(
-          title: 'Resolved',
-          subtitle:
-              'Your report has been resolved. Thank you for helping improve our community!',
-          status: TimelineStepStatus.completed,
-          icon: Icons.check_circle_rounded,
-        ),
-      );
-    } else if (_isRejected) {
-      steps.add(
-        _TimelineStep(
-          title: 'Report closed',
-          subtitle:
-              'This report could not be actioned. Please contact our office for more information.',
-          status: TimelineStepStatus.completed,
-          icon: Icons.cancel_rounded,
-        ),
-      );
-    }
+    // Step 6 — Resolved
+    steps.add(
+      _TimelineStep(
+        title: 'Resolved',
+        subtitle: _isResolved
+            ? 'Your report has been resolved. Thank you for helping improve our community!'
+            : 'Final outcome pending.',
+        status: _isResolved
+            ? TimelineStepStatus.completed
+            : TimelineStepStatus.pending,
+        icon: Icons.check_circle_rounded,
+      ),
+    );
 
     return steps;
   }
@@ -265,6 +284,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
   @override
   void initState() {
     super.initState();
+    _report = widget.report;
+    _subscribeReport();
 
     _entryCtrl = AnimationController(
       vsync: this,
@@ -288,11 +309,52 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
     });
 
     _loadMediaUrls();
-    _chatService = ChatService.forReport('RPT-${widget.report.id}');
+    _chatService = ChatService.forReport('RPT-${_report.id}');
+  }
+
+  /// Live-refresh the report row so the timeline reflects admin/staff moves
+  /// (status, endorsement, rejection note) the moment they happen.
+  void _subscribeReport() {
+    final supabase = Supabase.instance.client;
+    _reportChannel = supabase
+        .channel('report:${_report.fullId}')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'reports',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'id',
+            value: _report.fullId,
+          ),
+          callback: (_) => _refreshReport(),
+        )
+        .subscribe();
+  }
+
+  Future<void> _refreshReport() async {
+    try {
+      final row = await Supabase.instance.client
+          .from('reports')
+          .select('*, report_media(id)')
+          .eq('id', _report.fullId)
+          .single();
+      if (!mounted) return;
+      setState(() => _report = ReportItem.fromMap(row));
+      // Replay the timeline animation so the newly-reached step animates in.
+      _timelineCtrl
+        ..reset()
+        ..forward();
+    } catch (_) {
+      // Transient — the next event or a manual reopen will refresh.
+    }
   }
 
   @override
   void dispose() {
+    if (_reportChannel != null) {
+      Supabase.instance.client.removeChannel(_reportChannel!);
+    }
     _entryCtrl.dispose();
     _timelineCtrl.dispose();
     _shimmerCtrl.dispose();
@@ -309,7 +371,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
       final rows = await supabase
           .from('report_media')
           .select('storage_path, mime_type, display_order')
-          .eq('report_id', widget.report.fullId)
+          .eq('report_id', _report.fullId)
           .order('display_order', ascending: true);
 
       final futures = rows.map<Future<({String url, String path})?>>((
@@ -406,13 +468,14 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
   @override
   Widget build(BuildContext context) {
     final w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+    final bool wide = kIsWeb && MediaQuery.of(context).size.width >= 900;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF3F4F6),
       body: CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
-          _buildSliverAppBar(w),
+          _buildSliverAppBar(w, wide: wide),
           SliverToBoxAdapter(
             child: Align(
               alignment: Alignment.topCenter,
@@ -442,7 +505,15 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
                       _fadeSlide(4, _buildDetailsCard(w)),
                       if (_isResolved) ...[
                         SizedBox(height: w * .04),
-                        _fadeSlide(5, _buildThankYouBanner(w)),
+                        _fadeSlide(
+                          5,
+                          ResolutionMediaSection(
+                            reportId: _report.fullId,
+                            canEdit: false,
+                          ),
+                        ),
+                        SizedBox(height: w * .04),
+                        _fadeSlide(6, _buildThankYouBanner(w)),
                       ],
                       if (_isRejected) ...[
                         SizedBox(height: w * .04),
@@ -462,7 +533,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
 
   // ── Sliver app bar ────────────────────────────────────────────────────────────
 
-  Widget _buildSliverAppBar(double w) {
+  Widget _buildSliverAppBar(double w, {bool wide = false}) {
+    if (wide) return _buildSliverAppBarWeb(w);
     return SliverAppBar(
       expandedHeight: w * 0.40,
       pinned: true,
@@ -504,7 +576,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
                 const Icon(Icons.copy_rounded, color: Colors.white, size: 14),
                 const SizedBox(width: 5),
                 Text(
-                  'RPT-${widget.report.id}',
+                  'RPT-${_report.id}',
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 11,
@@ -587,7 +659,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
                     ),
                     SizedBox(height: w * .01),
                     Text(
-                      widget.report.category,
+                      _report.category,
                       style: TextStyle(
                         fontSize: w * .054,
                         fontWeight: FontWeight.w800,
@@ -601,7 +673,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
                       children: [
                         _statusPill(w),
                         SizedBox(width: w * .025),
-                        if (widget.report.isAnonymous)
+                        if (_report.isAnonymous)
                           _pillWidget(
                             w,
                             icon: Icons.lock_outline_rounded,
@@ -612,6 +684,157 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
                       ],
                     ),
                   ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── WEB header: full-bleed blue, content aligned to the 760 content band ────
+  Widget _buildSliverAppBarWeb(double w) {
+    final screenW = MediaQuery.of(context).size.width;
+    final sidePad = ((screenW - 760) / 2).clamp(24.0, double.infinity);
+    return SliverAppBar(
+      expandedHeight: 210,
+      pinned: true,
+      stretch: true,
+      automaticallyImplyLeading: false,
+      backgroundColor: AppColors.primaryBlue,
+      flexibleSpace: FlexibleSpaceBar(
+        background: Stack(
+          fit: StackFit.expand,
+          children: [
+            Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Color(0xFF1565C0),
+                    Color(0xFF0D47A1),
+                    Color(0xFF0A3070),
+                  ],
+                ),
+              ),
+            ),
+            Positioned(
+              top: -30,
+              right: -30,
+              child: Container(
+                width: 200,
+                height: 200,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withValues(alpha: 0.04),
+                ),
+              ),
+            ),
+            Positioned.fill(
+              child: SafeArea(
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(sidePad, 12, sidePad, 18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          GestureDetector(
+                            onTap: () => Navigator.pop(context),
+                            child: Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Icon(
+                                Icons.arrow_back_ios_new_rounded,
+                                size: 18,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                          const Spacer(),
+                          GestureDetector(
+                            onTap: _copyReportId,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(
+                                    Icons.copy_rounded,
+                                    color: Colors.white,
+                                    size: 14,
+                                  ),
+                                  const SizedBox(width: 5),
+                                  Text(
+                                    'RPT-${_report.id}',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Report details',
+                            style: TextStyle(
+                              fontSize: w * .032,
+                              color: Colors.white.withValues(alpha: 0.7),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          SizedBox(height: w * .01),
+                          Text(
+                            _report.category,
+                            style: TextStyle(
+                              fontSize: w * .054,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                              letterSpacing: -0.3,
+                              height: 1.2,
+                            ),
+                          ),
+                          SizedBox(height: w * .025),
+                          Row(
+                            children: [
+                              _statusPill(w),
+                              SizedBox(width: w * .025),
+                              if (_report.isAnonymous)
+                                _pillWidget(
+                                  w,
+                                  icon: Icons.lock_outline_rounded,
+                                  label: 'Anonymous',
+                                  bg: Colors.white.withValues(alpha: 0.15),
+                                  textColor: Colors.white,
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -698,7 +921,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Media thumbnail strip
-          if (widget.report.mediaCount > 0)
+          if (_report.mediaCount > 0)
             ClipRRect(
               borderRadius: BorderRadius.vertical(
                 top: Radius.circular(w * .04),
@@ -712,8 +935,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Location row
-                if (widget.report.barangay != null ||
-                    widget.report.address != null)
+                if (_report.barangay != null ||
+                    _report.address != null)
                   Row(
                     children: [
                       Icon(
@@ -725,8 +948,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
                       Expanded(
                         child: Text(
                           [
-                            widget.report.barangay,
-                            widget.report.address,
+                            _report.barangay,
+                            _report.address,
                             'Aparri, Cagayan',
                           ].where((s) => s != null && s.isNotEmpty).join(', '),
                           style: TextStyle(
@@ -751,7 +974,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
                     ),
                     SizedBox(width: w * .012),
                     Text(
-                      _formatDateTime(widget.report.dateReported),
+                      _formatDateTime(_report.dateReported),
                       style: TextStyle(
                         fontSize: w * .028,
                         color: const Color(0xFF9CA3AF),
@@ -766,7 +989,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
                 // View on map button
                 GestureDetector(
                   onTap: () {
-                    final barangay = widget.report.barangay;
+                    final barangay = _report.barangay;
                     if (barangay == null) return;
 
                     final coords = barangayCoords[barangay];
@@ -1326,23 +1549,29 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
   String get _timelineStatusSummary {
     if (_isResolved) return 'All steps completed';
     if (_isRejected) return 'Report closed';
+    if (_isInProgress) return 'Being worked on';
+    if (_isEndorsed) return 'Endorsed to $_forwardedDepartment';
     if (_isUnderReview) return 'Being processed';
+    if (_isPending) return 'Awaiting review';
     return 'Awaiting review';
   }
 
   Color get _progressBadgeColor {
     if (_isResolved) return AppColors.green;
     if (_isRejected) return AppColors.red;
-    if (_isUnderReview) return AppColors.primaryBlue;
+    if (_isUnderReview || _isInProgress) return AppColors.primaryBlue;
     return AppColors.orange;
   }
 
   String get _progressBadgeLabel {
     final steps = _timelineSteps;
-    final done = steps
-        .where((s) => s.status == TimelineStepStatus.completed)
+    // Count the step the report has *reached* — completed steps plus the one
+    // currently active — so an "In progress" report reads 3/4, matching the
+    // highlighted step, instead of 2/4 (which looked like it was a step behind).
+    final reached = steps
+        .where((s) => s.status != TimelineStepStatus.pending)
         .length;
-    return '$done/${steps.length}';
+    return '$reached/${steps.length}';
   }
 
   double get _timelineProgress {
@@ -1682,14 +1911,14 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
       child: Column(
         children: [
           // 1 — Attachments first
-          if (widget.report.mediaCount > 0) _buildMediaRow(w),
+          if (_report.mediaCount > 0) _buildMediaRow(w),
 
           // 2 — Category
           _detailRow(
             w,
             icon: Icons.category_outlined,
             label: 'Category',
-            value: widget.report.category,
+            value: _report.category,
             showDivider: true,
           ),
 
@@ -1698,20 +1927,20 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
             w,
             icon: Icons.notes_rounded,
             label: 'Description',
-            value: widget.report.remarks.isEmpty
+            value: _report.remarks.isEmpty
                 ? 'No description provided'
-                : widget.report.remarks,
+                : _report.remarks,
             showDivider: true,
           ),
 
           // 4 — Reported by
           _detailRow(
             w,
-            icon: widget.report.isAnonymous
+            icon: _report.isAnonymous
                 ? Icons.lock_outline_rounded
                 : Icons.person_outline_rounded,
             label: 'Reported by',
-            value: widget.report.isAnonymous ? 'Anonymous' : widget.username,
+            value: _report.isAnonymous ? 'Anonymous' : widget.username,
             showDivider: false,
           ),
         ],
@@ -1808,7 +2037,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
                             spacing: w * .025,
                             runSpacing: w * .025,
                             children: List.generate(
-                              widget.report.mediaCount.clamp(1, 6),
+                              _report.mediaCount.clamp(1, 6),
                               (_) => ClipRRect(
                                 borderRadius: BorderRadius.circular(w * .025),
                                 child: _shimmerBox(w, w * .20, w * .20),
@@ -1985,7 +2214,9 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
                 ),
                 SizedBox(height: w * .005),
                 Text(
-                  'This report did not meet the criteria for action. Please contact our office or chat with an agent for more details.',
+                  _report.rejectionNote?.trim().isNotEmpty == true
+                      ? _report.rejectionNote!.trim()
+                      : 'This report did not meet the criteria for action. Please contact our office or chat with an agent for more details.',
                   style: TextStyle(
                     fontSize: w * .028,
                     color: const Color(0xFF6B7280),
@@ -2039,7 +2270,11 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
           ),
         ],
       ),
-      child: Row(
+      child: Center(
+        heightFactor: 1,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 760),
+          child: Row(
         children: [
           Expanded(
             child: Column(
@@ -2105,13 +2340,15 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
           ),
         ],
       ),
+        ),
+      ),
     );
   }
 
   // ── Actions ───────────────────────────────────────────────────────────────────
 
   void _copyReportId() {
-    Clipboard.setData(ClipboardData(text: 'RPT-${widget.report.id}'));
+    Clipboard.setData(ClipboardData(text: 'RPT-${_report.id}'));
     showAppSnackBar(
       context,
       'Report ID copied to clipboard',
@@ -2142,11 +2379,11 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
     setState(() => _openingChat = true); // disable button immediately
     try {
       await _chatService.openFollowUp(
-        reportRef: 'RPT-${widget.report.id}',
-        reportCategory: widget.report.category,
+        reportRef: 'RPT-${_report.id}',
+        reportCategory: _report.category,
         reportStatus: _statusLabel,
-        reportId: widget.report.fullId,
-        reportDepartment: _departmentFromCategory(widget.report.category),
+        reportId: _report.fullId,
+        reportDepartment: _departmentFromCategory(_report.category),
       );
       if (!mounted) return;
       await Navigator.push(

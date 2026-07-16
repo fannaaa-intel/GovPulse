@@ -106,7 +106,12 @@ class _VerificationIdentityScreenState extends State<VerificationIdentityScreen>
       body: SafeArea(
         top: true,
         bottom: false,
-        child: Column(
+        // Web / large screens: cap + center the flow so form fields don't
+        // stretch edge-to-edge. Phones (≤560px) render pixel-identical.
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: Column(
           children: [
             _buildHeader(context),
             _buildStepper(),
@@ -127,6 +132,8 @@ class _VerificationIdentityScreenState extends State<VerificationIdentityScreen>
               ),
             ),
           ],
+            ),
+          ),
         ),
       ),
     );

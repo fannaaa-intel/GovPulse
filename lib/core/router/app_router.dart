@@ -49,6 +49,7 @@ import '../../features/home/settings/terms-of-service/terms_of_service_screen.da
 import '../../features/home/settings/privacy-policy/privacy_policy_screen.dart';
 import '../../features/home/settings/about/about_govpulse_screen.dart';
 import '../../features/admin/screens/admin_dashboard_screen.dart';
+import '../../features/staff/screens/staff_console_screen.dart';
 
 /// Required by [MaterialApp.navigatorObservers] for home route tracking.
 final RouteObserver<ModalRoute<void>> homeRouteObserver =
@@ -127,6 +128,30 @@ Map<String, WidgetBuilder> get appRoutes => {
 // ─── onGenerateRoute ──────────────────────────────────────────────────────────
 
 Route<dynamic>? onGenerateRoute(RouteSettings settings) {
+  // ── Web refresh / deep-link safety ─────────────────────────────────────────
+  // These routes carry in-memory arguments (a report, an event, verification
+  // data, …) that are LOST when the browser is refreshed directly on that URL.
+  // Without this guard the `settings.arguments as Map<String, dynamic>` casts
+  // below throw a null TypeError and white-screen the app. When the arguments
+  // are missing we send the user to the splash screen (which re-routes them to
+  // Home / Login) instead of crashing. The mobile app never hits this — it
+  // always navigates with arguments in memory — so its behaviour is unchanged.
+  const argRequiredRoutes = <String>{
+    '/report_detail',
+    '/event_detail',
+    '/verification_photo_instruction',
+    '/verification_upload_id',
+    '/verification_scan',
+    '/verification_review',
+    '/verification_identity',
+    '/verification_face_scan',
+    '/change_password_new',
+  };
+  if (argRequiredRoutes.contains(settings.name) &&
+      settings.arguments is! Map<String, dynamic>) {
+    return _instant(const GovPulseSplashScreen());
+  }
+
   switch (settings.name) {
     // ── Auth flow ────────────────────────────────────────────────────────────
     // /login, /signup use _instantInFadeOut:
@@ -151,7 +176,7 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
 
               // Role-based routing
               // 1 = admin  → admin dashboard (web & mobile)
-              // 2 = staff  → home (staff features unlocked inside)
+              // 2 = staff  → staff console (helpdesk: chat, reports, endorsements)
               // 3 = citizen, null = unverified → home
               if (result.roleId == 1) {
                 Navigator.pushReplacement(
@@ -161,6 +186,17 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
                     reverseTransitionDuration: Duration.zero,
                     pageBuilder: (_, _, _) =>
                         const NetworkWrapper(child: AdminDashboardScreen()),
+                    transitionsBuilder: (_, _, _, child) => child,
+                  ),
+                );
+              } else if (result.roleId == 2) {
+                Navigator.pushReplacement(
+                  ctx,
+                  PageRouteBuilder(
+                    transitionDuration: Duration.zero,
+                    reverseTransitionDuration: Duration.zero,
+                    pageBuilder: (_, _, _) =>
+                        const NetworkWrapper(child: StaffConsoleScreen()),
                     transitionsBuilder: (_, _, _, child) => child,
                   ),
                 );
@@ -356,6 +392,7 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
       bool isGuest = false;
       String? initialPostId;
       bool initialOpenComments = false;
+      bool initialHighlightPost = false;
       if (args is Map<String, dynamic>) {
         username = args['username'] as String? ?? '';
         isVerified = args['isVerified'] as bool? ?? false;
@@ -363,6 +400,7 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
         isGuest = args['isGuest'] as bool? ?? false;
         initialPostId = args['initialPostId'] as String?;
         initialOpenComments = args['initialOpenComments'] as bool? ?? false;
+        initialHighlightPost = args['initialHighlightPost'] as bool? ?? false;
       } else if (args is String) {
         username = args;
       }
@@ -377,6 +415,7 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
             isGuest: isGuest,
             initialPostId: initialPostId,
             initialOpenComments: initialOpenComments,
+            initialHighlightPost: initialHighlightPost,
           ),
         ),
         transitionsBuilder: (_, anim, _, child) =>
@@ -635,12 +674,22 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
       );
 
     case '/my_submissions':
-      final username = settings.arguments as String? ?? '';
+      // Accepts either a bare username String (Settings entry) or a richer
+      // MySubmissionsArgs (a reply notification deep-linking to a tab + item).
+      final subArgs = settings.arguments;
+      final MySubmissionsArgs mySubs = subArgs is MySubmissionsArgs
+          ? subArgs
+          : MySubmissionsArgs(username: subArgs as String? ?? '');
       return PageRouteBuilder(
         transitionDuration: Duration.zero,
         reverseTransitionDuration: const Duration(milliseconds: 280),
-        pageBuilder: (_, _, _) =>
-            NetworkWrapper(child: MySubmissionsScreen(username: username)),
+        pageBuilder: (_, _, _) => NetworkWrapper(
+          child: MySubmissionsScreen(
+            username: mySubs.username,
+            initialTab: mySubs.initialTab,
+            highlightId: mySubs.highlightId,
+          ),
+        ),
         transitionsBuilder: (_, anim, _, child) =>
             FadeTransition(opacity: anim, child: child),
       );

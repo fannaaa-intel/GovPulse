@@ -178,22 +178,25 @@ class TicketRepository {
   // ── Staff assignment ───────────────────────────────────────────────────────
 
   /// Finds an available staff member for the given department.
-  /// Returns null when no staff is online (Phase 1: bot handles everything).
+  /// Reads `admin_profiles` (staff rows carry department + is_online), returning
+  /// the user_id of an online staff member, or null when nobody is on duty (the
+  /// bot then handles the concern).
   Future<String?> findAvailableStaffId(String department) async {
+    if (department.isEmpty) return null;
     try {
       final rows = await _db
-          .from('staff') // ← adjust to your real staff table name
-          .select('id')
+          .from('admin_profiles')
+          .select('user_id')
           .eq('department', department)
           .eq('is_online', true)
           .limit(1);
       if (rows.isNotEmpty) {
-        return rows.first['id']?.toString();
+        return rows.first['user_id']?.toString();
       }
       return null;
     } catch (e) {
       debugPrint('findAvailableStaffId: $e');
-      return null; // staff table not built yet → treat as nobody online
+      return null; // no on-duty staff → treat as nobody online
     }
   }
 
@@ -210,24 +213,130 @@ class TicketRepository {
 
   /// Promotes a ghost ticket to a real, assigned live-agent ticket.
   /// Flips is_ghost → false, assigns staff, and fills the citizen's contact
-  /// columns from their profile (only real tickets ever carry personal data).
+  /// columns from their profile — UNLESS the chat is anonymous.
+  ///
+  /// A follow-up chat about an anonymous report stays anonymous: the citizen
+  /// chose to withhold their identity, so the staff member must never see it.
+  /// Anonymity is derived from the linked report (not trusted from the client),
+  /// so it holds even if the caller doesn't flag it.
   Future<void> promoteTicket({
     required String ticketId,
     required String staffUserId,
   }) async {
-    final contact = await getCitizenContact();
-    await _db
-        .from('concern_tickets')
-        .update({
-          'assigned_staff_id': staffUserId,
-          'is_ghost': false,
-          'contact_name': contact['name'],
-          'contact_number': contact['number'],
-          'contact_address': contact['address'],
-          'contact_email': contact['email'],
-          'updated_at': DateTime.now().toIso8601String(),
-        })
-        .eq('id', ticketId);
+    final anonymous = await _isTicketAnonymous(ticketId);
+
+    final update = <String, dynamic>{
+      'assigned_staff_id': staffUserId,
+      'is_ghost': false,
+      'updated_at': DateTime.now().toIso8601String(),
+    };
+
+    if (anonymous) {
+      // Never attach personal data to an anonymous chat; strip any that leaked.
+      update['is_anonymous'] = true;
+      update['contact_name'] = null;
+      update['contact_number'] = null;
+      update['contact_address'] = null;
+      update['contact_email'] = null;
+    } else {
+      final contact = await getCitizenContact();
+      update['contact_name'] = contact['name'];
+      update['contact_number'] = contact['number'];
+      update['contact_address'] = contact['address'];
+      update['contact_email'] = contact['email'];
+    }
+
+    await _db.from('concern_tickets').update(update).eq('id', ticketId);
+  }
+
+  /// True when a ticket must stay anonymous — either already flagged, or linked
+  /// to an anonymous report. Read failures fail safe (treated as NOT anonymous
+  /// only when we truly can't tell — here we default false but the report check
+  /// is best-effort so a linked anonymous report still wins).
+  Future<bool> _isTicketAnonymous(String ticketId) async {
+    try {
+      final t = await _db
+          .from('concern_tickets')
+          .select('is_anonymous, report_id')
+          .eq('id', ticketId)
+          .maybeSingle();
+      if (t == null) return false;
+      if (t['is_anonymous'] == true) return true;
+      final reportId = t['report_id']?.toString();
+      if (reportId == null) return false;
+      final r = await _db
+          .from('reports')
+          .select('is_anonymous')
+          .eq('id', reportId)
+          .maybeSingle();
+      return (r?['is_anonymous'] as bool?) ?? false;
+    } catch (e) {
+      debugPrint('_isTicketAnonymous: $e');
+      return false;
+    }
+  }
+
+  /// Live "agent rating" for the citizen chat header: the average of every
+  /// citizen's post-chat star rating + how many ratings it's based on. Reads a
+  /// SECURITY DEFINER RPC (`agent_avg_rating`) because RLS otherwise hides other
+  /// citizens' tickets — the RPC returns only the aggregate, never any rows.
+  /// Returns null on any error / before the RPC is deployed, so the header can
+  /// fall back gracefully.
+  Future<({double avg, int count})?> fetchAgentRating() async {
+    try {
+      final res = await _db.rpc('agent_avg_rating');
+      final row = (res is List && res.isNotEmpty)
+          ? res.first as Map<String, dynamic>
+          : (res is Map<String, dynamic> ? res : null);
+      if (row == null) return null;
+      final avg = (row['avg'] as num?)?.toDouble() ?? 0;
+      final count = (row['cnt'] as num?)?.toInt() ?? 0;
+      return (avg: avg, count: count);
+    } catch (e) {
+      debugPrint('fetchAgentRating: $e');
+      return null;
+    }
+  }
+
+  /// The assigned staff member's public identity (name + photo + department) for
+  /// a ticket the citizen owns — used to show the real person in the chat header
+  /// once connected. Reads the `ticket_agent` SECURITY DEFINER RPC (citizens
+  /// can't read admin_profiles directly). Null before the RPC is deployed, when
+  /// nobody's assigned, or on any error.
+  Future<({String? name, String? photoUrl, String? department})?>
+      fetchTicketAgent(String ticketId) async {
+    try {
+      final res = await _db.rpc('ticket_agent', params: {'p_ticket': ticketId});
+      final row = (res is List && res.isNotEmpty)
+          ? res.first as Map<String, dynamic>
+          : (res is Map<String, dynamic> ? res : null);
+      if (row == null) return null;
+      return (
+        name: (row['full_name'] as String?)?.trim(),
+        photoUrl: (row['photo_url'] as String?)?.trim(),
+        department: (row['department'] as String?)?.trim(),
+      );
+    } catch (e) {
+      debugPrint('fetchTicketAgent: $e');
+      return null;
+    }
+  }
+
+  /// The current status of a ticket — used to catch a chat that the staff ended
+  /// while the citizen's app was closed (the realtime status channel only sees
+  /// live changes, so a one-shot read on reconnect fills the gap).
+  Future<String?> fetchTicketStatus(String ticketId) async {
+    try {
+      final r = await _db
+          .from('concern_tickets')
+          .select('status')
+          .eq('id', ticketId)
+          .maybeSingle();
+      return r?['status'] as String?;
+    } catch (e) {
+      debugPrint('fetchTicketStatus: $e');
+      return null;
+    }
   }
 
   // ── Ticket messages ────────────────────────────────────────────────────────
@@ -248,7 +357,7 @@ class TicketRepository {
       'ticket_id': ticketId,
       'sender_id': senderId,
       'sender_type': senderType,
-      'message': message,
+      'text': message, // ← ticket_messages content column is `text`, not `message`
       'created_at': DateTime.now().toIso8601String(),
     });
   }
@@ -347,5 +456,47 @@ class TicketRepository {
           callback: (payload) => onInsert(payload.newRecord),
         )
         .subscribe();
+  }
+
+  /// Watches a ticket's row for status changes so the citizen chat learns when
+  /// a staff member ends the conversation (status → resolved / ended / closed).
+  RealtimeChannel subscribeToTicketStatus({
+    required String ticketId,
+    required void Function(String status) onStatus,
+  }) {
+    return _db
+        .channel('ticket_status:$ticketId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'concern_tickets',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'id',
+            value: ticketId,
+          ),
+          callback: (payload) {
+            final s = payload.newRecord['status'] as String?;
+            if (s != null) onStatus(s);
+          },
+        )
+        .subscribe();
+  }
+
+  /// Records the citizen's post-chat rating (1–5) for a ticket they own, via a
+  /// SECURITY DEFINER RPC (rate_ticket) so no broad update policy is needed.
+  Future<void> rateTicket(
+    String ticketId,
+    int rating, {
+    String? comment,
+  }) async {
+    await _db.rpc(
+      'rate_ticket',
+      params: {
+        'p_ticket_id': ticketId,
+        'p_rating': rating,
+        'p_comment': comment,
+      },
+    );
   }
 }

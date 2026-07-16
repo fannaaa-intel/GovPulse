@@ -121,14 +121,27 @@ class SuggestionMedia {
   final String url; // public URL
   final String? mimeType;
   final int displayOrder;
+
+  /// 'camera' = live GPS-stamped capture; 'upload'/null = unverified upload.
+  final String? source;
+
+  /// AI-generated-image likelihood 0..1 (null until the check completes), and
+  /// its lifecycle status ('pending' | 'completed' | 'failed' | null legacy).
+  /// Populated by the check-ai-image Edge Function (ai_image_detection.sql).
+  final double? aiScore;
+  final String? aiStatus;
   const SuggestionMedia({
     required this.path,
     required this.url,
     required this.mimeType,
     required this.displayOrder,
+    this.source,
+    this.aiScore,
+    this.aiStatus,
   });
 
   bool get isVideo => (mimeType ?? '').toLowerCase().startsWith('video/');
+  bool get isGpsVerified => source == 'camera';
 }
 
 // ── Filters ──────────────────────────────────────────────────────────────────
@@ -291,61 +304,89 @@ class AdminSuggestionsNotifier extends AsyncNotifier<List<AdminSuggestion>> {
 
   // ── Mutations ─────────────────────────────────────────────────────────────
 
-  /// Reply to the citizen who submitted [id]: sends them a push + bell
-  /// notification and marks the suggestion "Responded" (storing the reply).
-  /// Throws for anonymous submissions — there is no recipient to notify.
+  /// Reply to the citizen who submitted [id]: marks the suggestion "Responded"
+  /// (storing the reply) and notifies the owner.
+  ///
+  /// Sends ONE notification, the same for named and anonymous submissions: it
+  /// names the category, quotes a snippet of their own words before the reply,
+  /// and carries the admin's avatar. Anonymous submitters get the identical
+  /// notification — it goes only to their own device, and their anonymity is
+  /// enforced where it matters (`is_anonymous` + a null public `username`, so
+  /// the admin/public still can't see who they are).
   Future<void> respond(String id, String message) async {
     final msg = message.trim();
     final row = await _db
         .from('suggestions')
-        .select('user_id, is_anonymous, category, category_other, details')
+        .select('user_id, category, category_other, details')
         .eq('id', id)
         .single();
-    if ((row['is_anonymous'] as bool?) == true) {
-      throw 'This suggestion is anonymous — there is no one to notify.';
-    }
     final recipient = row['user_id'] as String?;
     final adminId = _db.auth.currentUser?.id;
     final nowIso = DateTime.now().toUtc().toIso8601String();
+    // Fetched once: used for the notification actor AND stored on the row so the
+    // citizen's "LGU Response" block can show the admin's face (they can't read
+    // admin_profiles themselves).
+    final actorPhotoUrl = await _fetchAdminPhotoUrl(adminId);
 
     if (recipient != null) {
-      // Targeted citizen notification (push + bell). No topic → it's a personal
-      // notification, so it stays out of the admin notification centre. Carrying
-      // the responding admin as the actor makes the citizen's notification
-      // render the admin's profile photo instead of a generic bell icon.
-      final actorPhotoUrl = await _fetchAdminPhotoUrl(adminId);
-
-      // Anchor the notification to the specific suggestion, so a generic reply
-      // ("this isn't feasible") still tells the citizen WHAT it's about. The
-      // title names the category; the subtitle quotes a snippet of their own
-      // words before the reply, answering "response to what?" at a glance.
+      // The title names the category; the subtitle quotes a snippet of their
+      // own words before the reply, answering "response to what?" at a glance.
       final category = suggestionCategoryLabel(
         row['category'] as String?,
         row['category_other'] as String?,
       );
-      final title = 'Response to your $category suggestion';
+      final title = 'The LGU replied to your $category suggestion';
       final subtitle = _responseSubtitle(row['details'] as String?, msg);
 
-      await _db.from('notifications').insert({
+      // `suggestion_response` + `reference_id` let the citizen's tap deep-link
+      // to this item in "My Submissions". `reference_id` is an optional
+      // migration (notification_reference.sql) — retry without it if absent so
+      // replying never breaks (the tap then lands on the tab, not the item).
+      final notif = <String, dynamic>{
         'user_id': recipient,
         'title': title,
         'subtitle': subtitle,
-        'type': 'general',
+        'type': 'suggestion_response',
+        'reference_id': id,
         'color_value': 0xFF0D47A1,
         'icon_code': 0,
         'is_approved': true,
         'sent_by': adminId,
         'actor_id': adminId,
         'actor_photo_url': actorPhotoUrl,
-      });
+      };
+      try {
+        await _db.from('notifications').insert(notif);
+      } on PostgrestException catch (e) {
+        if (e.message.toLowerCase().contains('reference_id')) {
+          notif.remove('reference_id');
+          await _db.from('notifications').insert(notif);
+        } else {
+          rethrow;
+        }
+      }
     }
 
-    await _db.from('suggestions').update({
+    // `responder_photo_url` is an optional migration
+    // (submission_responder_avatar.sql) — retry without it if absent so
+    // replying never breaks (the reply block then shows the LGU icon).
+    final update = <String, dynamic>{
       'status': 'responded',
       'admin_response': msg,
       'reviewed_by': adminId,
       'reviewed_at': nowIso,
-    }).eq('id', id);
+      'responder_photo_url': actorPhotoUrl,
+    };
+    try {
+      await _db.from('suggestions').update(update).eq('id', id);
+    } on PostgrestException catch (e) {
+      if (e.message.toLowerCase().contains('responder_photo_url')) {
+        update.remove('responder_photo_url');
+        await _db.from('suggestions').update(update).eq('id', id);
+      } else {
+        rethrow;
+      }
+    }
     await _reload();
   }
 
@@ -381,16 +422,36 @@ class AdminSuggestionsNotifier extends AsyncNotifier<List<AdminSuggestion>> {
   /// Full media list (with public URLs) for a single suggestion — used by the
   /// detail dialog's gallery.
   Future<List<SuggestionMedia>> fetchMedia(String suggestionId) async {
-    final rows = await _db
-        .from('suggestion_media')
-        .select('storage_path, mime_type, display_order')
-        .eq('suggestion_id', suggestionId)
-        .order('display_order', ascending: true);
+    // `source` (media_source_column.sql) and `ai_score`/`ai_status`
+    // (ai_image_detection.sql) are each optional migrations — try the fullest
+    // column set first and fall back so media viewing never breaks if a
+    // migration hasn't been applied yet.
+    const attempts = [
+      'storage_path, mime_type, display_order, source, ai_score, ai_status',
+      'storage_path, mime_type, display_order, source',
+      'storage_path, mime_type, display_order',
+    ];
+    List<Map<String, dynamic>>? rows;
+    for (final cols in attempts) {
+      try {
+        rows = List<Map<String, dynamic>>.from(
+          await _db
+              .from('suggestion_media')
+              .select(cols)
+              .eq('suggestion_id', suggestionId)
+              .order('display_order', ascending: true),
+        );
+        break;
+      } catch (_) {
+        // try the next (smaller) column set
+      }
+    }
+    rows ??= const [];
 
     // `suggestion-media` is a PRIVATE bucket, so a public URL 400s — sign each
     // object instead (mirrors how admin_verification_page views private media).
     final out = <SuggestionMedia>[];
-    for (final r in List<Map<String, dynamic>>.from(rows)) {
+    for (final r in rows) {
       final path = r['storage_path'] as String;
       String url;
       try {
@@ -403,6 +464,9 @@ class AdminSuggestionsNotifier extends AsyncNotifier<List<AdminSuggestion>> {
         url: url,
         mimeType: r['mime_type'] as String?,
         displayOrder: (r['display_order'] as int?) ?? 0,
+        source: r['source'] as String?,
+        aiScore: (r['ai_score'] as num?)?.toDouble(),
+        aiStatus: r['ai_status'] as String?,
       ));
     }
     return out;
@@ -466,9 +530,9 @@ class AdminSuggestionsNotifier extends AsyncNotifier<List<AdminSuggestion>> {
 
       return AdminSuggestion(
         id: id,
-        shortId: id.length >= 8
-            ? id.substring(0, 8).toUpperCase()
-            : id.toUpperCase(),
+        // Prefixed so the admin quotes the SAME code the citizen sees on their
+        // suggestion detail (My Submissions), e.g. SGS-4F3703A9.
+        shortId: 'SGS-${id.length >= 8 ? id.substring(0, 8).toUpperCase() : id.toUpperCase()}',
         categoryKey: key,
         category: suggestionCategoryLabel(key, other),
         categoryOther: other,

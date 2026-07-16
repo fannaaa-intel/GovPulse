@@ -11,6 +11,7 @@ import '../../core/router/app_router.dart';
 import '../../core/providers/community_posts_provider.dart';
 import '../home/screen/home_screen.dart';
 import '../admin/screens/admin_dashboard_screen.dart';
+import '../staff/screens/staff_console_screen.dart';
 
 /// ===============================
 /// SPLASH SCREEN
@@ -151,10 +152,12 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
         // Make sure the community feed is in authenticated (non-guest) mode.
         CommunityPostsProvider.instance.resetForAuthenticatedUser();
 
-        // role_id == 1 → admin dashboard; staff/citizen/unverified → Home.
+        // role_id == 1 → admin dashboard; 2 → staff console; else → Home.
         final Widget destination = roleId == 1
             ? const NetworkWrapper(child: AdminDashboardScreen())
-            : NetworkWrapper(child: HomePage(username: username));
+            : roleId == 2
+                ? const NetworkWrapper(child: StaffConsoleScreen())
+                : NetworkWrapper(child: HomePage(username: username));
 
         Navigator.of(context).pushReplacement(
           PageRouteBuilder(

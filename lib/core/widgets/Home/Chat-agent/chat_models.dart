@@ -1,6 +1,9 @@
 // lib/widgets/Home/Chat-agent/chat_models.dart
 
-enum MessageStatus { sent, delivered, seen }
+// `failed` MUST stay last so its index (3) matches chat_message.dart's enum —
+// chat_agent_screen maps between them by index — and so persisted status indices
+// (0..2) stay stable.
+enum MessageStatus { sent, delivered, seen, failed }
 
 enum ConversationStage {
   greeting,
@@ -77,6 +80,10 @@ class ChatMsg {
   /// (AI unavailable). The bubble shows an "answered on-device" chip.
   final bool offline;
 
+  /// True when this incoming message came from a live staff member (not the
+  /// bot) — so the bubble can show the staff member's photo instead of the bot.
+  final bool fromStaff;
+
   ChatMsg({
     required this.text,
     required this.isUser,
@@ -84,6 +91,7 @@ class ChatMsg {
     this.status = MessageStatus.sent,
     this.attachmentPath,
     this.offline = false,
+    this.fromStaff = false,
   });
 
   Map<String, dynamic> toJson() => {
@@ -93,6 +101,7 @@ class ChatMsg {
     'status': status.index,
     'attachmentPath': attachmentPath,
     'offline': offline,
+    'fromStaff': fromStaff,
   };
 
   factory ChatMsg.fromJson(Map<String, dynamic> j) => ChatMsg(
@@ -102,5 +111,6 @@ class ChatMsg {
     status: MessageStatus.values[j['status'] as int],
     attachmentPath: j['attachmentPath'] as String?,
     offline: j['offline'] as bool? ?? false,
+    fromStaff: j['fromStaff'] as bool? ?? false,
   );
 }

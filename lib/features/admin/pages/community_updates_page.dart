@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/deeplink_highlight.dart';
 import '../../../core/widgets/Home/Newsfeed/image_grid.dart';
 import '../../../core/widgets/Home/Newsfeed/news_feed_helpers.dart';
 import '../../../core/widgets/modal/media_picker_sheet.dart';
@@ -22,7 +23,12 @@ import '../widgets/admin_user_actions.dart';
 const int _kMaxImages = 6;
 
 class CommunityUpdatesPage extends ConsumerStatefulWidget {
-  const CommunityUpdatesPage({super.key});
+  /// A POST id to scroll to and flash once, when arriving from a comment
+  /// notification. (The notification is about a comment, but this console lists
+  /// posts — so the trigger sends the post's id. See
+  /// notification_deeplink_targets_3.sql §4.) Null for a normal open.
+  final String? highlightId;
+  const CommunityUpdatesPage({super.key, this.highlightId});
 
   @override
   ConsumerState<CommunityUpdatesPage> createState() =>
@@ -31,8 +37,40 @@ class CommunityUpdatesPage extends ConsumerStatefulWidget {
 
 enum _Tab { feed, requests }
 
-class _CommunityUpdatesPageState extends ConsumerState<CommunityUpdatesPage> {
+class _CommunityUpdatesPageState extends ConsumerState<CommunityUpdatesPage>
+    with DeepLinkHighlightMixin {
   _Tab _tab = _Tab.feed;
+
+  /// The last target we switched tabs for. Keyed on the id (not a bool) for the
+  /// same reason as [flashHighlightOnce]: this page stays mounted when a second
+  /// notification arrives while it's already open, so a latch would swallow it.
+  String? _tabSwitchedFor;
+
+  /// Flashes the target once posts have loaded, first switching to the tab that
+  /// actually contains it — a pending/rejected post lives on Requests, and
+  /// flashing a row on a tab the admin isn't looking at accomplishes nothing.
+  void _flashOnce(List<CommunityUpdate> all) {
+    final id = widget.highlightId;
+    if (id == null || id.isEmpty || _tabSwitchedFor == id) return;
+
+    CommunityUpdate? target;
+    for (final p in all) {
+      if (p.id == id) {
+        target = p;
+        break;
+      }
+    }
+    if (target == null) return; // not loaded / deleted — leave the tab as-is
+    _tabSwitchedFor = id;
+
+    final wanted =
+        target.status == PostStatus.approved ? _Tab.feed : _Tab.requests;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_tab != wanted) setState(() => _tab = wanted);
+      flashHighlightOnce(id);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -40,6 +78,10 @@ class _CommunityUpdatesPageState extends ConsumerState<CommunityUpdatesPage> {
     final pending = ref.watch(pendingCountProvider);
     final width = MediaQuery.of(context).size.width;
     final pad = width < 600 ? 14.0 : 24.0;
+
+    // Rows exist only once the fetch resolves — flash the deep-link target then.
+    final loaded = asyncPosts.valueOrNull;
+    if (loaded != null) _flashOnce(loaded);
 
     return Container(
       color: AdminUi.pageBg,
@@ -81,8 +123,16 @@ class _CommunityUpdatesPageState extends ConsumerState<CommunityUpdatesPage> {
                           ref.read(communityUpdatesProvider.notifier).refresh(),
                     ),
                     data: (all) => _tab == _Tab.feed
-                        ? _FeedList(posts: all)
-                        : _RequestsList(posts: all),
+                        ? _FeedList(
+                            posts: all,
+                            keyFor: highlightKey,
+                            isHighlighted: isHighlighted,
+                          )
+                        : _RequestsList(
+                            posts: all,
+                            keyFor: highlightKey,
+                            isHighlighted: isHighlighted,
+                          ),
                   ),
                 ],
               ),
@@ -331,7 +381,16 @@ class _ComposerBar extends StatelessWidget {
 
 class _FeedList extends StatelessWidget {
   final List<CommunityUpdate> posts;
-  const _FeedList({required this.posts});
+
+  /// Deep-link plumbing: the page owns the highlight state (via
+  /// [DeepLinkHighlightMixin]) and hands down a key + flag per post.
+  final GlobalKey Function(String id) keyFor;
+  final bool Function(String id) isHighlighted;
+  const _FeedList({
+    required this.posts,
+    required this.keyFor,
+    required this.isHighlighted,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -349,8 +408,14 @@ class _FeedList extends StatelessWidget {
       children: [
         for (final p in approved)
           Padding(
+            key: keyFor(p.id),
             padding: const EdgeInsets.only(bottom: 16),
-            child: _UpdateCard(post: p),
+            child: highlightRing(
+              highlighted: isHighlighted(p.id),
+              radius: AdminUi.cardRadius,
+              accent: AppColors.primaryBlue,
+              child: _UpdateCard(post: p),
+            ),
           ),
       ],
     );
@@ -361,7 +426,15 @@ class _FeedList extends StatelessWidget {
 
 class _RequestsList extends StatelessWidget {
   final List<CommunityUpdate> posts;
-  const _RequestsList({required this.posts});
+
+  /// Deep-link plumbing — see [_FeedList].
+  final GlobalKey Function(String id) keyFor;
+  final bool Function(String id) isHighlighted;
+  const _RequestsList({
+    required this.posts,
+    required this.keyFor,
+    required this.isHighlighted,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -386,8 +459,14 @@ class _RequestsList extends StatelessWidget {
           const SizedBox(height: 10),
           for (final p in pending)
             Padding(
+              key: keyFor(p.id),
               padding: const EdgeInsets.only(bottom: 14),
-              child: _PendingCard(post: p),
+              child: highlightRing(
+                highlighted: isHighlighted(p.id),
+                radius: AdminUi.cardRadius,
+                accent: AppColors.primaryBlue,
+                child: _PendingCard(post: p),
+              ),
             ),
         ],
         if (rejected.isNotEmpty) ...[
@@ -396,8 +475,14 @@ class _RequestsList extends StatelessWidget {
           const SizedBox(height: 10),
           for (final p in rejected)
             Padding(
+              key: keyFor(p.id),
               padding: const EdgeInsets.only(bottom: 14),
-              child: _UpdateCard(post: p),
+              child: highlightRing(
+                highlighted: isHighlighted(p.id),
+                radius: AdminUi.cardRadius,
+                accent: AppColors.primaryBlue,
+                child: _UpdateCard(post: p),
+              ),
             ),
         ],
       ],

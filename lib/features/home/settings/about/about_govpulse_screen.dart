@@ -53,6 +53,17 @@ class _AboutGovPulseScreenState extends State<AboutGovPulseScreen>
     return Scaffold(
       backgroundColor: const Color(0xFFF3F4F6),
       body: ResponsivePageBody(
+        shellTitle: 'About GovPulse',
+        shellSubtitle:
+            'The official digital platform connecting Aparri citizens with '
+            'their local government.',
+        shellIcon: Icons.info_rounded,
+        shellHighlights: const [
+          (Icons.campaign_rounded, 'Report and track community issues'),
+          (Icons.event_rounded, 'Stay updated on local events'),
+          (Icons.account_balance_rounded, 'Access LGU services online'),
+        ],
+        shellContentWidth: 620,
         child: SafeArea(
           child: Column(
             children: [

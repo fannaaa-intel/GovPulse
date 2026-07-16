@@ -1,30 +1,69 @@
 import 'dart:async';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/deeplink_highlight.dart';
 import '../theme/admin_ui.dart';
 import '../providers/admin_verification_provider.dart';
 import '../widgets/admin_detail_screen.dart';
 import '../widgets/admin_skeleton.dart';
+import '../widgets/admin_submission_ui.dart';
 import '../widgets/admin_snackbar.dart';
 import '../../home/screen/notification_popup.dart';
 
 class AdminVerificationPage extends ConsumerStatefulWidget {
-  const AdminVerificationPage({super.key});
+  /// A submission id to scroll to and flash once, when arriving from a
+  /// notification. Null for a normal open.
+  final String? highlightId;
+  const AdminVerificationPage({super.key, this.highlightId});
 
   @override
   ConsumerState<AdminVerificationPage> createState() =>
       _AdminVerificationPageState();
 }
 
-class _AdminVerificationPageState
-    extends ConsumerState<AdminVerificationPage> {
+class _AdminVerificationPageState extends ConsumerState<AdminVerificationPage>
+    with DeepLinkHighlightMixin {
   final _searchCtrl = TextEditingController();
   Timer? _debounce;
 
   // Status is filtered on the client (the provider fetches the whole queue),
   // so switching tabs is instant and the header counts stay accurate.
   VerificationStatus? _statusFilter;
+
+  /// The last target we cleared the filter for. Keyed on the id, not a bool —
+  /// this page stays mounted when a second notification arrives while it's
+  /// already open, so a latch would swallow it.
+  String? _revealedFor;
+
+  /// Makes the deep-link target reachable, then flashes it.
+  ///
+  /// The status filter is client-side and persists, so a target can be filtered
+  /// out of view — an admin sitting on "Approved" tapping a *new* (pending)
+  /// submission would flash a row that isn't rendered. Clearing the filter is
+  /// the point of the tap: they asked to see this one.
+  void _flashOnce(List<AdminVerification> all) {
+    final id = widget.highlightId;
+    if (id == null || id.isEmpty || _revealedFor == id) return;
+
+    AdminVerification? target;
+    for (final v in all) {
+      if (v.id == id) {
+        target = v;
+        break;
+      }
+    }
+    if (target == null) return; // not loaded yet — retry on the next build
+    _revealedFor = id;
+
+    final hidden = _statusFilter != null && _statusFilter != target.status;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (hidden) setState(() => _statusFilter = null);
+      flashHighlightOnce(id);
+    });
+  }
 
   @override
   void dispose() {
@@ -56,6 +95,9 @@ class _AdminVerificationPageState
     // Counts drive the stat cards; derived from whatever the search matched.
     final all = async.valueOrNull ?? const <AdminVerification>[];
     final loading = async.isLoading && async.valueOrNull == null;
+
+    // Rows exist only once the fetch resolves — flash the deep-link target then.
+    if (async.hasValue) _flashOnce(all);
 
     final visible = _statusFilter == null
         ? all
@@ -311,7 +353,12 @@ class _AdminVerificationPageState
                   children: [
                     const _TableHeader(),
                     for (final v in visible)
-                      _TableRow(verification: v, onTap: () => _openDetail(v)),
+                      _TableRow(
+                        key: highlightKey(v.id),
+                        verification: v,
+                        onTap: () => _openDetail(v),
+                        highlighted: isHighlighted(v.id),
+                      ),
                   ],
                 );
               }
@@ -321,8 +368,10 @@ class _AdminVerificationPageState
                   children: [
                     for (final v in visible)
                       _VerificationCard(
+                        key: highlightKey(v.id),
                         verification: v,
                         onTap: () => _openDetail(v),
+                        highlighted: isHighlighted(v.id),
                       ),
                   ],
                 ),
@@ -580,7 +629,15 @@ class _HCell extends StatelessWidget {
 class _TableRow extends StatelessWidget {
   final AdminVerification verification;
   final VoidCallback onTap;
-  const _TableRow({required this.verification, required this.onTap});
+
+  /// Set when this row is the deep-link target: it flashes, then fades back.
+  final bool highlighted;
+  const _TableRow({
+    super.key,
+    required this.verification,
+    required this.onTap,
+    this.highlighted = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -588,10 +645,16 @@ class _TableRow extends StatelessWidget {
       type: MaterialType.transparency,
       child: InkWell(
         onTap: onTap,
-        child: Container(
-          decoration: const BoxDecoration(
-            border: Border(bottom: BorderSide(color: AdminUi.border)),
-          ),
+        child: AnimatedContainer(
+          duration: kHighlightFade,
+          decoration: highlighted
+              ? highlightRowDecoration(
+                  accent: AppColors.primaryBlue,
+                  divider: const BorderSide(color: AdminUi.border),
+                )
+              : const BoxDecoration(
+                  border: Border(bottom: BorderSide(color: AdminUi.border)),
+                ),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Row(
             children: [
@@ -698,13 +761,26 @@ class _TableRow extends StatelessWidget {
 class _VerificationCard extends StatelessWidget {
   final AdminVerification verification;
   final VoidCallback onTap;
-  const _VerificationCard({required this.verification, required this.onTap});
+
+  /// Set when this card is the deep-link target: it flashes, then fades back.
+  /// Drawn as a ring so the card keeps its own surface + border.
+  final bool highlighted;
+  const _VerificationCard({
+    super.key,
+    required this.verification,
+    required this.onTap,
+    this.highlighted = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
-      child: Material(
+      child: highlightRing(
+        highlighted: highlighted,
+        radius: AdminUi.controlRadius,
+        accent: AppColors.primaryBlue,
+        child: Material(
         color: AdminUi.surface,
         clipBehavior: Clip.antiAlias,
         shape: RoundedRectangleBorder(
@@ -754,6 +830,7 @@ class _VerificationCard extends StatelessWidget {
             ),
           ),
         ),
+        ),
       ),
     );
   }
@@ -773,6 +850,11 @@ class _VerificationDetailDialog extends ConsumerStatefulWidget {
 class _VerificationDetailDialogState
     extends ConsumerState<_VerificationDetailDialog> {
   bool _busy = false;
+
+  /// Which PANE is showing when the layout is too narrow to seat both side by
+  /// side: 0 = Verification Status, 1 = Applicant Details. Status leads here,
+  /// unlike the other consoles — the ID photos are what you came to look at.
+  int _paneTab = 0;
 
   Future<void> _approve() async {
     final notesCtrl = TextEditingController();
@@ -924,259 +1006,385 @@ class _VerificationDetailDialogState
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
+  /// Left pane — where this submission stands, and the evidence you judge it
+  /// on. The ID photos live here rather than in the details pane: this is the
+  /// wider column, and they're the thing an admin actually has to look at
+  /// before deciding.
+  ///
+  /// Deliberately NOT the report's stepper: a verification has no stages to
+  /// walk through. It's waiting on a reviewer, or it's been decided.
+  Widget _statusPane() {
     final v = widget.verification;
-    final narrow = adminDetailIsNarrow(context);
-    final width = MediaQuery.of(context).size.width.clamp(0.0, 640.0);
+    final decided = v.status != VerificationStatus.pending;
+    final accent = _statusColor(v.status);
 
-    final content = Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // The narrow chevron header is pinned by the scaffold below (outside the
-        // slide-up); wide keeps the X in the rich header below.
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 18, 12, 14),
-          child: Row(
-            children: [
-              _Avatar(name: v.fullName, size: 44),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          v.fullName,
-                          style: const TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w700,
-                            color: AdminUi.textPrimary,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        _StatusPill(v.status),
+    final String headline;
+    final String blurb;
+    switch (v.status) {
+      case VerificationStatus.pending:
+        headline = 'This submission is awaiting review.';
+        blurb = 'Check the ID documents against the applicant\'s details, then '
+            'approve or reject. The applicant is notified either way.';
+        break;
+      case VerificationStatus.approved:
+        headline = 'This applicant is a verified resident.';
+        blurb = 'The ID was accepted and the citizen is marked verified across '
+            'the app.';
+        break;
+      case VerificationStatus.rejected:
+        headline = 'This submission was rejected.';
+        blurb = 'The applicant was notified and can submit again with corrected '
+            'details.';
+        break;
+    }
+
+    return _Pane(
+      title: 'Verification Status',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _StatusCard(
+            chip: _statusLabel(v.status),
+            headline: headline,
+            blurb: blurb,
+            accent: accent,
+            facts: [
+              (label: 'Submitted on', value: _shortDate(v.createdAt)),
+              if (decided)
+                (label: 'Reviewed on', value: _shortDate(v.reviewedAt))
+              else
+                (label: 'ID type', value: v.selectedIdType),
+            ],
+          ),
+          const SizedBox(height: 18),
+          _IconSection(
+            icon: Icons.badge_rounded,
+            title: 'Submitted Documents',
+            isLast: !decided,
+            child: LayoutBuilder(
+              builder: (context, c) {
+                const docs = [
+                  ('ID front', 0),
+                  ('ID back', 1),
+                  ('Selfie', 2),
+                ];
+                Widget thumbFor(int i) => _DocThumb(
+                  label: docs[i].$1,
+                  path: switch (i) {
+                    0 => v.idFrontPath,
+                    1 => v.idBackPath,
+                    _ => v.facePhotoPath,
+                  },
+                );
+                // Three across whenever each still gets a readable ~140px;
+                // below that they stack so an ID stays legible instead of
+                // shrinking into a stamp.
+                if (c.maxWidth < 420) {
+                  return Column(
+                    children: [
+                      for (var i = 0; i < 3; i++) ...[
+                        if (i > 0) const SizedBox(height: 12),
+                        thumbFor(i),
                       ],
-                    ),
-                  ),
-                  if (!narrow)
-                    IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.close_rounded),
-                      color: AdminUi.textMuted,
-                    ),
-                ],
-              ),
-            ),
-            const Divider(height: 1, color: AdminUi.border),
-            Flexible(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
-                child: Column(
+                    ],
+                  );
+                }
+                return Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _StatusBanner(
-                      status: v.status,
-                      reviewedAt: v.reviewedAt,
-                      createdAt: v.createdAt,
-                    ),
-                    const SizedBox(height: 20),
-                    _sectionTitle('SUBMITTED DOCUMENTS'),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _DocThumb(
-                            label: 'ID front',
-                            path: v.idFrontPath,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: _DocThumb(label: 'ID back', path: v.idBackPath),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: _DocThumb(
-                            label: 'Selfie',
-                            path: v.facePhotoPath,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 22),
-                    _sectionTitle('APPLICANT DETAILS'),
-                    const SizedBox(height: 14),
-                    _detailGroup('Identification', [
-                      _InfoTile(
-                        icon: Icons.badge_rounded,
-                        label: 'ID type',
-                        value: v.selectedIdType,
-                      ),
-                      _InfoTile(
-                        icon: Icons.pin_rounded,
-                        label: 'ID number',
-                        value: v.idNumber,
-                      ),
-                    ]),
-                    const SizedBox(height: 16),
-                    _detailGroup('Personal', [
-                      _InfoTile(
-                        icon: Icons.wc_rounded,
-                        label: 'Gender',
-                        value: v.gender ?? '—',
-                      ),
-                      _InfoTile(
-                        icon: Icons.cake_rounded,
-                        label: 'Birthdate',
-                        value: v.birthdate,
-                      ),
-                      _InfoTile(
-                        icon: Icons.public_rounded,
-                        label: 'Birthplace',
-                        value: v.birthplace,
-                      ),
-                      _InfoTile(
-                        icon: Icons.favorite_rounded,
-                        label: 'Civil status',
-                        value: v.civilStatus,
-                      ),
-                    ]),
-                    const SizedBox(height: 16),
-                    _detailGroup('Contact & address', [
-                      _InfoTile(
-                        icon: Icons.phone_rounded,
-                        label: 'Contact number',
-                        value: v.contactNumber,
-                      ),
-                      _InfoTile(
-                        icon: Icons.location_city_rounded,
-                        label: 'Barangay',
-                        value: v.barangay,
-                      ),
-                      _InfoTile(
-                        icon: Icons.signpost_rounded,
-                        label: 'Street',
-                        value: v.street,
-                      ),
-                    ]),
-                    const SizedBox(height: 22),
-                    _sectionTitle('TIMELINE'),
-                    const SizedBox(height: 12),
-                    _infoCard([
-                      _InfoTile(
-                        icon: Icons.event_rounded,
-                        label: 'Submitted',
-                        value: _shortDate(v.createdAt),
-                      ),
-                      if (v.status != VerificationStatus.pending)
-                        _InfoTile(
-                          icon: Icons.event_available_rounded,
-                          label: 'Reviewed',
-                          value: _shortDate(v.reviewedAt),
-                        ),
-                    ]),
-                    if (v.status != VerificationStatus.pending) ...[
-                      const SizedBox(height: 22),
-                      _sectionTitle('REVIEW'),
-                      const SizedBox(height: 12),
-                      _infoCard([
-                        _InfoTile(
-                          icon: Icons.sticky_note_2_rounded,
-                          label: 'Notes',
-                          value: v.reviewerNotes?.isNotEmpty == true
-                              ? v.reviewerNotes!
-                              : '—',
-                        ),
-                      ]),
+                    for (var i = 0; i < 3; i++) ...[
+                      if (i > 0) const SizedBox(width: 10),
+                      Expanded(child: thumbFor(i)),
                     ],
                   ],
+                );
+              },
+            ),
+          ),
+          if (decided)
+            _IconSection(
+              icon: Icons.sticky_note_2_rounded,
+              title: 'Review Notes',
+              isLast: true,
+              child: Text(
+                v.reviewerNotes?.isNotEmpty == true ? v.reviewerNotes! : '—',
+                style: const TextStyle(
+                  fontSize: 13,
+                  height: 1.5,
+                  color: AdminUi.textSecondary,
                 ),
               ),
             ),
-            if (v.status == VerificationStatus.pending) ...[
-              const Divider(height: 1, color: AdminUi.border),
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
+        ],
+      ),
+    );
+  }
+
+  /// Right pane — who the applicant says they are, and the decision buttons.
+  /// Mirrors the report details pane, including its Action block at the foot.
+  Widget _detailsPane() {
+    final v = widget.verification;
+    return _Pane(
+      title: 'Verification Details',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _Avatar(name: v.fullName, size: 72),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: _busy ? null : _reject,
-                        icon: const Icon(Icons.close_rounded, size: 18),
-                        label: const Text('Reject'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppColors.red,
-                          side: const BorderSide(color: AppColors.red),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                      ),
+                    _KvRow(
+                      label: 'Status',
+                      trailing: _StatusPill(v.status),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: _busy ? null : _approve,
-                        icon: _busy
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Icon(Icons.check_rounded, size: 18),
-                        label: const Text('Approve'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.green,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                      ),
+                    _KvRow(label: 'Applicant', value: v.fullName),
+                    _KvRow(label: 'ID', value: '#IDV-${_shortIdOf(v.id)}'),
+                    _KvRow(
+                      label: 'Date Submitted',
+                      value: _shortDate(v.createdAt),
                     ),
                   ],
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 18),
+          const Divider(height: 1, color: AdminUi.border),
+          const SizedBox(height: 18),
+          _IconSection(
+            icon: Icons.badge_rounded,
+            title: 'Identification',
+            child: _infoCard([
+              _InfoTile(
+                icon: Icons.badge_rounded,
+                label: 'ID type',
+                value: v.selectedIdType,
+              ),
+              _InfoTile(
+                icon: Icons.pin_rounded,
+                label: 'ID number',
+                value: v.idNumber,
+              ),
+            ]),
+          ),
+          _IconSection(
+            icon: Icons.person_rounded,
+            title: 'Personal',
+            child: _infoCard([
+              _InfoTile(
+                icon: Icons.wc_rounded,
+                label: 'Gender',
+                value: v.gender ?? '—',
+              ),
+              _InfoTile(
+                icon: Icons.cake_rounded,
+                label: 'Birthdate',
+                value: v.birthdate,
+              ),
+              _InfoTile(
+                icon: Icons.public_rounded,
+                label: 'Birthplace',
+                value: v.birthplace,
+              ),
+              _InfoTile(
+                icon: Icons.favorite_rounded,
+                label: 'Civil status',
+                value: v.civilStatus,
+              ),
+            ]),
+          ),
+          _IconSection(
+            icon: Icons.location_on_rounded,
+            title: 'Contact & address',
+            child: _infoCard([
+              _InfoTile(
+                icon: Icons.phone_rounded,
+                label: 'Contact number',
+                value: v.contactNumber,
+              ),
+              _InfoTile(
+                icon: Icons.location_city_rounded,
+                label: 'Barangay',
+                value: v.barangay,
+              ),
+              _InfoTile(
+                icon: Icons.signpost_rounded,
+                label: 'Street',
+                value: v.street,
+              ),
+            ]),
+          ),
+          _IconSection(
+            icon: Icons.schedule_rounded,
+            title: 'Timeline',
+            isLast: true,
+            child: _infoCard([
+              _InfoTile(
+                icon: Icons.event_rounded,
+                label: 'Submitted',
+                value: _shortDate(v.createdAt),
+              ),
+              if (v.status != VerificationStatus.pending)
+                _InfoTile(
+                  icon: Icons.event_available_rounded,
+                  label: 'Reviewed',
+                  value: _shortDate(v.reviewedAt),
+                ),
+            ]),
+          ),
+          // Only a submission still on the desk can be decided; a reviewed one
+          // shows its outcome in the status pane instead of live buttons.
+          if (v.status == VerificationStatus.pending) ...[
+            const SizedBox(height: 18),
+            const Divider(height: 1, color: AdminUi.border),
+            const SizedBox(height: 16),
+            const Text(
+              'Action',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: AdminUi.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 10),
+            LayoutBuilder(
+              builder: (context, c) {
+                final approve = _ActionButton(
+                  label: 'Approve',
+                  icon: Icons.check_rounded,
+                  color: AppColors.green,
+                  busy: _busy,
+                  onTap: _busy ? null : _approve,
+                );
+                final reject = _ActionButton(
+                  label: 'Reject',
+                  icon: Icons.close_rounded,
+                  color: AppColors.red,
+                  outlined: true,
+                  onTap: _busy ? null : _reject,
+                );
+                // Side by side needs room for both labels; below that they
+                // stack rather than ellipsing into "Appr…".
+                if (c.maxWidth < 300) {
+                  return Column(
+                    children: [approve, const SizedBox(height: 10), reject],
+                  );
+                }
+                return Row(
+                  children: [
+                    Expanded(child: approve),
+                    const SizedBox(width: 10),
+                    Expanded(child: reject),
+                  ],
+                );
+              },
+            ),
           ],
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final narrow = adminDetailIsNarrow(context);
+
+    // One pane at a time on a phone, or in a dialog too narrow for two columns.
+    // Status leads here (unlike the other consoles): the ID photos are what the
+    // admin opened this to look at.
+    Widget paneTabs() => AdminSegmentedTabs(
+      labels: const ['Verification Status', 'Applicant Details'],
+      selected: _paneTab,
+      onSelect: (i) => setState(() => _paneTab = i),
+    );
+
+    Widget activePane() => SingleChildScrollView(
+      padding: const EdgeInsets.all(14),
+      child: _paneTab == 0 ? _statusPane() : _detailsPane(),
     );
 
     // Narrow → full-screen page: the chevron header is PINNED, only the body
-    // below slides up (mirroring the citizen sub-screens). The opaque scaffold
-    // paints instantly (no black flash); the route fades out on the way back.
+    // below slides up (mirroring the citizen sub-screens).
     if (narrow) {
       return Scaffold(
-        backgroundColor: AdminUi.surface,
+        backgroundColor: AdminUi.pageBg,
         body: SafeArea(
           child: Column(
             children: [
               const AdminChevronHeader(title: 'ID verification'),
               const Divider(height: 1, color: AdminUi.border),
-              Expanded(child: AdminSlideUp(child: content)),
+              Expanded(
+                child: AdminSlideUp(
+                  child: Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
+                        child: paneTabs(),
+                      ),
+                      Expanded(child: activePane()),
+                    ],
+                  ),
+                ),
+              ),
             ],
           ),
         ),
       );
     }
+
     return Dialog(
-      backgroundColor: AdminUi.surface,
+      backgroundColor: AdminUi.pageBg,
+      // Tight vertical inset: the panes are long, and every pixel given back
+      // here is a pixel the admin doesn't have to scroll.
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+      clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: width, maxHeight: 640),
-        child: content,
+        constraints: const BoxConstraints(maxWidth: 1120, maxHeight: 900),
+        child: LayoutBuilder(
+          builder: (context, c) {
+            if (c.maxWidth < _kTwoPaneFrom) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
+                    child: Row(
+                      children: [
+                        Expanded(child: paneTabs()),
+                        const SizedBox(width: 10),
+                        const _PaneCloseButton(),
+                      ],
+                    ),
+                  ),
+                  Flexible(child: activePane()),
+                ],
+              );
+            }
+            return Stack(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: AdminTwoPaneRow(
+                    main: _statusPane(),
+                    side: _detailsPane(),
+                  ),
+                ),
+                // Pinned rather than scrolled with the pane — the way out stays
+                // put however far down you are.
+                const Positioned(top: 22, right: 22, child: _PaneCloseButton()),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
-
-  Widget _sectionTitle(String text) => Text(
-        text,
-        style: const TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.5,
-          color: AdminUi.textMuted,
-        ),
-      );
-
   Widget _infoCard(List<Widget> tiles) {
     return Container(
       decoration: BoxDecoration(
@@ -1201,116 +1409,451 @@ class _VerificationDetailDialogState
     );
   }
 
-  /// A named sub-group inside a section — a small subheading over its own info
-  /// card. Used to break the long applicant-details list into scannable
-  /// categories (Identification / Personal / Contact) instead of one dense grid.
-  Widget _detailGroup(String title, List<Widget> tiles) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 2, bottom: 8),
-          child: Text(
+}
+
+/// Width at which the detail splits into two columns. Matches the reports,
+/// suggestions and feedback consoles so every detail breaks at the same point.
+const double _kTwoPaneFrom = 900;
+
+/// Short, human-readable handle for a submission — the id has no server-side
+/// short form, so the first block of the uuid stands in.
+String _shortIdOf(String id) {
+  final clean = id.replaceAll('-', '');
+  return (clean.length >= 8 ? clean.substring(0, 8) : clean).toUpperCase();
+}
+
+String _statusLabel(VerificationStatus s) {
+  switch (s) {
+    case VerificationStatus.pending:
+      return 'Awaiting review';
+    case VerificationStatus.approved:
+      return 'Approved';
+    case VerificationStatus.rejected:
+      return 'Rejected';
+  }
+}
+
+/// Test hook for the status card that heads the detail's left pane — the piece
+/// with the width-dependent illustration and fact strip.
+Widget verificationStatusCardForTesting({
+  required String chip,
+  required String headline,
+  required String blurb,
+  required Color accent,
+  List<({String label, String value})> facts = const [],
+}) => _StatusCard(
+  chip: chip,
+  headline: headline,
+  blurb: blurb,
+  accent: accent,
+  facts: facts,
+);
+
+// ── Detail building blocks ───────────────────────────────────────────────────
+
+/// A titled white card — one of the two panes of the verification detail.
+class _Pane extends StatelessWidget {
+  final String title;
+  final Widget child;
+  const _Pane({required this.title, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AdminUi.surface,
+        borderRadius: BorderRadius.circular(AdminUi.cardRadius),
+        border: Border.all(color: AdminUi.border),
+        boxShadow: AdminUi.cardShadow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
             title,
             style: const TextStyle(
-              fontSize: 12.5,
-              fontWeight: FontWeight.w700,
-              color: AdminUi.textSecondary,
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: AdminUi.textPrimary,
+              letterSpacing: -0.4,
             ),
           ),
-        ),
-        _infoCard(tiles),
-      ],
+          const SizedBox(height: 16),
+          child,
+        ],
+      ),
     );
   }
 }
 
-// ── Detail: status banner + info tiles ───────────────────────────────────────
-
-class _StatusBanner extends StatelessWidget {
-  final VerificationStatus status;
-  final DateTime? reviewedAt;
-  final DateTime? createdAt;
-  const _StatusBanner({
-    required this.status,
-    this.reviewedAt,
-    this.createdAt,
+/// The status headline card at the top of the left pane — the verification's
+/// equivalent of the report's stage card, illustrated with the verified mark.
+class _StatusCard extends StatelessWidget {
+  final String chip;
+  final String headline;
+  final String blurb;
+  final Color accent;
+  final List<({String label, String value})> facts;
+  const _StatusCard({
+    required this.chip,
+    required this.headline,
+    required this.blurb,
+    required this.accent,
+    this.facts = const [],
   });
 
   @override
   Widget build(BuildContext context) {
-    final c = _statusColor(status);
-    final String title;
-    final String subtitle;
-    switch (status) {
-      case VerificationStatus.approved:
-        title = 'Verified citizen';
-        subtitle = reviewedAt == null
-            ? 'Approved'
-            : 'Approved · ${_shortDate(reviewedAt)}';
-        break;
-      case VerificationStatus.pending:
-        title = 'Awaiting review';
-        subtitle = createdAt == null
-            ? 'Submitted for verification'
-            : 'Submitted · ${_shortDate(createdAt)}';
-        break;
-      case VerificationStatus.rejected:
-        title = 'Submission rejected';
-        subtitle = reviewedAt == null
-            ? 'Reviewed'
-            : 'Reviewed · ${_shortDate(reviewedAt)}';
-        break;
-    }
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(AdminUi.cardRadius),
+        border: Border.all(color: accent.withValues(alpha: 0.20)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 7,
+                height: 7,
+                decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                chip,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  color: accent,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          LayoutBuilder(
+            builder: (context, c) {
+              final copy = Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    headline,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      height: 1.25,
+                      fontWeight: FontWeight.w800,
+                      color: AdminUi.textPrimary,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    blurb,
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      height: 1.45,
+                      color: AdminUi.textSecondary,
+                    ),
+                  ),
+                ],
+              );
+
+              // Below ~380px the illustration would squeeze the headline into a
+              // ragged column, so it drops out and the copy takes the full row.
+              if (c.maxWidth < 380) return copy;
+              return Row(
+                children: [
+                  Expanded(child: copy),
+                  const SizedBox(width: 12),
+                  Image.asset(
+                    'assets/images/verification/verified.webp',
+                    width: (c.maxWidth * 0.22).clamp(72.0, 116.0),
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                  ),
+                ],
+              );
+            },
+          ),
+          if (facts.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            _FactStrip(facts: facts, accent: accent),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// The white inset strip of label/value pairs at the foot of the status card.
+/// Side by side when there's room, stacked when there isn't, so a long ID type
+/// or date never gets clipped.
+class _FactStrip extends StatelessWidget {
+  final List<({String label, String value})> facts;
+  final Color accent;
+  const _FactStrip({required this.facts, required this.accent});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget fact(({String label, String value}) f) => Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          f.label,
+          style: const TextStyle(fontSize: 11, color: AdminUi.textMuted),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          f.value,
+          style: const TextStyle(
+            fontSize: 12.5,
+            height: 1.35,
+            fontWeight: FontWeight.w700,
+            color: AdminUi.textPrimary,
+          ),
+        ),
+      ],
+    );
 
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: c.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: c.withValues(alpha: 0.30)),
+        color: AdminUi.surface,
+        borderRadius: BorderRadius.circular(AdminUi.controlRadius),
+        border: Border.all(color: accent.withValues(alpha: 0.18)),
       ),
-      child: Row(
-        children: [
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: c.withValues(alpha: 0.16),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(_statusIcon(status), size: 20, color: c),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
+      child: LayoutBuilder(
+        builder: (context, c) {
+          // Each fact needs ~150px to seat a date on two lines; under that the
+          // row becomes a stack.
+          if (c.maxWidth >= facts.length * 150) {
+            return Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                for (var i = 0; i < facts.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 14),
+                  Expanded(child: fact(facts[i])),
+                ],
+              ],
+            );
+          }
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (var i = 0; i < facts.length; i++) ...[
+                if (i > 0) const SizedBox(height: 10),
+                fact(facts[i]),
+              ],
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// "Label: value" line in the details pane's id block. Pass [value] for plain
+/// text or [trailing] for a widget (the status pill).
+class _KvRow extends StatelessWidget {
+  final String label;
+  final String? value;
+  final Widget? trailing;
+  const _KvRow({required this.label, this.value, this.trailing});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '$label: ',
+            style: const TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+              color: AdminUi.textPrimary,
+            ),
+          ),
+          Expanded(
+            child:
+                trailing ??
                 Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: c,
-                  ),
-                ),
-                const SizedBox(height: 1),
-                Text(
-                  subtitle,
+                  value ?? '—',
                   style: const TextStyle(
-                    fontSize: 11.5,
+                    fontSize: 12.5,
+                    height: 1.35,
                     color: AdminUi.textSecondary,
                   ),
                 ),
-              ],
-            ),
           ),
         ],
       ),
     );
   }
 }
+
+/// An icon + heading with its content indented beneath — the repeating unit of
+/// both panes (Documents, Identification, Personal, Contact, Timeline).
+class _IconSection extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final Widget child;
+  final bool isLast;
+  const _IconSection({
+    required this.icon,
+    required this.title,
+    required this.child,
+    this.isLast = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: isLast ? 0 : 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 15, color: AppColors.primaryBlue),
+              const SizedBox(width: 7),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: AdminUi.textPrimary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Padding(padding: const EdgeInsets.only(left: 22), child: child),
+        ],
+      ),
+    );
+  }
+}
+
+/// A full-width decision button for the details pane's Action block.
+class _ActionButton extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color color;
+  final bool outlined;
+  final bool busy;
+  final VoidCallback? onTap;
+  const _ActionButton({
+    required this.label,
+    required this.icon,
+    required this.color,
+    this.onTap,
+    this.outlined = false,
+    this.busy = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final style = ButtonStyle(
+      padding: const WidgetStatePropertyAll(
+        EdgeInsets.symmetric(horizontal: 10, vertical: 13),
+      ),
+      shape: WidgetStatePropertyAll(
+        RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AdminUi.controlRadius),
+        ),
+      ),
+    );
+    final content = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (busy && !outlined)
+          const SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+          )
+        else
+          Icon(icon, size: 17),
+        const SizedBox(width: 7),
+        Flexible(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+          ),
+        ),
+      ],
+    );
+
+    return SizedBox(
+      width: double.infinity,
+      child: outlined
+          ? OutlinedButton(
+              onPressed: onTap,
+              style: style.merge(
+                OutlinedButton.styleFrom(
+                  foregroundColor: color,
+                  side: BorderSide(color: color.withValues(alpha: 0.45)),
+                ),
+              ),
+              child: content,
+            )
+          : FilledButton(
+              onPressed: onTap,
+              style: style.merge(
+                FilledButton.styleFrom(backgroundColor: color),
+              ),
+              child: content,
+            ),
+    );
+  }
+}
+
+/// The dialog's way out, styled to sit on a pane's top-right corner.
+class _PaneCloseButton extends StatelessWidget {
+  const _PaneCloseButton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AdminUi.subtle,
+      shape: const CircleBorder(),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => Navigator.pop(context),
+        child: Tooltip(
+          message: 'Close',
+          child: Container(
+            width: 32,
+            height: 32,
+            alignment: Alignment.center,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.fromBorderSide(BorderSide(color: AdminUi.border)),
+            ),
+            child: const Icon(
+              Icons.close_rounded,
+              size: 18,
+              color: AdminUi.textSecondary,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Detail: info tiles ───────────────────────────────────────────────────────
 
 class _InfoTile extends StatelessWidget {
   final IconData icon;
@@ -1413,11 +1956,13 @@ class _DocThumb extends ConsumerWidget {
                           .signedUrl(path),
                       builder: (context, snap) {
                         if (snap.connectionState != ConnectionState.done) {
-                          return const Center(
-                            child: SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
+                          // Shimmer, not a spinner: the box is already the
+                          // document's final size, so the placeholder reads as
+                          // the ID arriving rather than as a control in a hole.
+                          return const AdminShimmer(
+                            child: ColoredBox(
+                              color: kSkeletonBase,
+                              child: SizedBox.expand(),
                             ),
                           );
                         }
@@ -1434,13 +1979,19 @@ class _DocThumb extends ConsumerWidget {
                           child: Stack(
                             fit: StackFit.expand,
                             children: [
-                              Image.network(
-                                url,
+                              // Cached: the provider hands back a stable signed
+                              // URL per path, so flipping between submissions
+                              // doesn't re-download an ID it already has.
+                              SkeletonNetworkImage(
+                                url: url,
                                 fit: BoxFit.cover,
-                                errorBuilder: (_, _, _) => const Icon(
-                                  Icons.broken_image_rounded,
-                                  color: AdminUi.textMuted,
-                                  size: 20,
+                                errorChild: const ColoredBox(
+                                  color: AdminUi.subtle,
+                                  child: Icon(
+                                    Icons.broken_image_rounded,
+                                    color: AdminUi.textMuted,
+                                    size: 20,
+                                  ),
                                 ),
                               ),
                               Positioned(
@@ -1479,7 +2030,19 @@ class _DocThumb extends ConsumerWidget {
         backgroundColor: Colors.transparent,
         insetPadding: const EdgeInsets.all(24),
         child: InteractiveViewer(
-          child: Image.network(url, fit: BoxFit.contain),
+          // Cached: the thumb already warmed this URL, so zooming an ID shows
+          // it instead of re-fetching.
+          child: CachedNetworkImage(
+            imageUrl: url,
+            fit: BoxFit.contain,
+            placeholder: (_, _) =>
+                const Center(child: CircularProgressIndicator(color: Colors.white)),
+            errorWidget: (_, _, _) => const Icon(
+              Icons.broken_image_rounded,
+              color: Colors.white54,
+              size: 40,
+            ),
+          ),
         ),
       ),
     );

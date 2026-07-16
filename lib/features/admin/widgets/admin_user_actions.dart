@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../staff/data/staff_departments.dart';
 import '../providers/admin_users_provider.dart';
 import '../theme/admin_ui.dart';
 import 'admin_snackbar.dart';
@@ -792,6 +793,9 @@ class _NewStaffFormState extends State<_NewStaffForm> {
   final _email = TextEditingController();
   final _username = TextEditingController();
   final _password = TextEditingController();
+  bool _isExternal = false;
+  String _department = StaffDepartments.internal.first.name;
+  bool _showPassword = false;
   bool _busy = false;
   String? _error;
 
@@ -823,6 +827,8 @@ class _NewStaffFormState extends State<_NewStaffForm> {
         password: password,
         username: username,
         fullName: _name.text.trim(),
+        department: _department,
+        isExternal: _isExternal,
       );
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
@@ -849,6 +855,29 @@ class _NewStaffFormState extends State<_NewStaffForm> {
           const SizedBox(height: 6),
           _TextInput(controller: _name, hint: 'e.g. Juan Dela Cruz'),
           const SizedBox(height: 12),
+          const _FieldLabel('Staff type'),
+          const SizedBox(height: 6),
+          _StaffTypeToggle(
+            isExternal: _isExternal,
+            onChanged: (ext) => setState(() {
+              _isExternal = ext;
+              // Reset the selection to a valid option for the chosen type.
+              _department = (ext
+                      ? StaffDepartments.external
+                      : StaffDepartments.internal)
+                  .first
+                  .name;
+            }),
+          ),
+          const SizedBox(height: 12),
+          _FieldLabel(_isExternal ? 'Agency' : 'Department / category'),
+          const SizedBox(height: 6),
+          _DepartmentDropdown(
+            isExternal: _isExternal,
+            value: _department,
+            onChanged: (v) => setState(() => _department = v),
+          ),
+          const SizedBox(height: 12),
           const _FieldLabel('Email'),
           const SizedBox(height: 6),
           _TextInput(
@@ -863,9 +892,23 @@ class _NewStaffFormState extends State<_NewStaffForm> {
           const _FieldLabel('Temporary password'),
           const SizedBox(height: 6),
           _TextInput(
-              controller: _password,
-              hint: 'At least 8 characters',
-              obscure: true),
+            controller: _password,
+            hint: 'At least 8 characters',
+            obscure: !_showPassword,
+            suffix: GestureDetector(
+              onTap: () => setState(() => _showPassword = !_showPassword),
+              child: Padding(
+                padding: const EdgeInsets.all(11),
+                child: Image.asset(
+                  _showPassword
+                      ? 'assets/images/eye.webp'
+                      : 'assets/images/closed_eye.webp',
+                  height: 18,
+                  width: 18,
+                ),
+              ),
+            ),
+          ),
           if (_error != null) ...[
             const SizedBox(height: 12),
             Text(_error!,
@@ -931,12 +974,16 @@ class _TextInput extends StatelessWidget {
   final int maxLines;
   final bool obscure;
   final TextInputType? keyboard;
+
+  /// Optional trailing widget (e.g. a password visibility toggle).
+  final Widget? suffix;
   const _TextInput({
     required this.controller,
     required this.hint,
     this.maxLines = 1,
     this.obscure = false,
     this.keyboard,
+    this.suffix,
   });
   @override
   Widget build(BuildContext context) {
@@ -954,6 +1001,9 @@ class _TextInput extends StatelessWidget {
         fillColor: AdminUi.subtle,
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        suffixIcon: suffix,
+        suffixIconConstraints:
+            const BoxConstraints(minWidth: 40, minHeight: 40),
         border: _inputBorder(AdminUi.border),
         enabledBorder: _inputBorder(AdminUi.border),
         focusedBorder: _inputBorder(AppColors.primaryBlue, 1.4),
@@ -1025,6 +1075,107 @@ class _ReasonDropdown extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Two-way selector letting the admin decide up-front whether they're creating
+/// an internal LGU staff member or an external-entity account. The dept/agency
+/// list below adapts to this choice.
+class _StaffTypeToggle extends StatelessWidget {
+  final bool isExternal;
+  final ValueChanged<bool> onChanged;
+  const _StaffTypeToggle({required this.isExternal, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget seg(String label, IconData icon, bool ext) {
+      final selected = isExternal == ext;
+      return Expanded(
+        child: InkWell(
+          onTap: () => onChanged(ext),
+          borderRadius: BorderRadius.circular(AdminUi.controlRadius),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 11),
+            decoration: BoxDecoration(
+              color: selected
+                  ? AppColors.primaryBlue.withValues(alpha: 0.10)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(AdminUi.controlRadius),
+              border: Border.all(
+                color: selected ? AppColors.primaryBlue : AdminUi.border,
+                width: selected ? 1.4 : 1,
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon,
+                    size: 17,
+                    color:
+                        selected ? AppColors.primaryBlue : AdminUi.textMuted),
+                const SizedBox(width: 7),
+                Text(label,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color:
+                          selected ? AppColors.primaryBlue : AdminUi.textSecondary,
+                    )),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Row(
+      children: [
+        seg('LGU office', Icons.account_balance_rounded, false),
+        const SizedBox(width: 8),
+        seg('External entity', Icons.apartment_rounded, true),
+      ],
+    );
+  }
+}
+
+class _DepartmentDropdown extends StatelessWidget {
+  final bool isExternal;
+  final String value;
+  final ValueChanged<String> onChanged;
+  const _DepartmentDropdown({
+    required this.isExternal,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final options =
+        isExternal ? StaffDepartments.external : StaffDepartments.internal;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: AdminUi.subtle,
+        borderRadius: BorderRadius.circular(AdminUi.controlRadius),
+        border: Border.all(color: AdminUi.border),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: value,
+          isExpanded: true,
+          icon: const Icon(Icons.keyboard_arrow_down_rounded,
+              color: AdminUi.textMuted),
+          borderRadius: BorderRadius.circular(12),
+          style: const TextStyle(fontSize: 14, color: AdminUi.textPrimary),
+          hint: Text(isExternal ? 'Select agency' : 'Select department'),
+          items: [
+            for (final d in options)
+              DropdownMenuItem(value: d.name, child: Text(d.name)),
+          ],
+          onChanged: (v) => v == null ? null : onChanged(v),
+        ),
+      ),
     );
   }
 }

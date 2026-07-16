@@ -3,6 +3,7 @@ import '../../../../core/widgets/responsive_page.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/services/events_service.dart';
+import '../../../../core/widgets/event_status_pill.dart';
 import '../../../../core/widgets/loading/loading_overlay.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 // ─── UI model (keeps all existing widgets working as-is) ─────────────────────
@@ -205,6 +206,10 @@ class _EventsScreenState extends State<EventsScreen>
     final todayDate = DateTime(today.year, today.month, today.day);
 
     return _events.where((e) {
+      // Auto-hide events that ended more than a day ago (mirrors the backend
+      // cron that deletes them) so the list never shows stale activities.
+      if (isEventExpired(e.eventDate, e.time)) return false;
+
       final eDate = DateTime(
         e.eventDate.year,
         e.eventDate.month,
@@ -287,6 +292,16 @@ class _EventsScreenState extends State<EventsScreen>
       backgroundColor: const Color(0xFFF3F4F6),
       body: ResponsivePageBody(
         maxWidth: 900,
+        shellTitle: 'Events & Activities',
+        shellSubtitle:
+            'Stay updated with official LGU events happening in the community.',
+        shellIcon: Icons.event_available_rounded,
+        shellHighlights: const [
+          (Icons.calendar_today_rounded, 'Upcoming events'),
+          (Icons.place_outlined, 'Local venues'),
+          (Icons.notifications_none_rounded, 'Never miss out'),
+        ],
+        shellContentWidth: 680,
         child: SafeArea(
           child: Column(
             children: [
@@ -813,6 +828,15 @@ class _EventsScreenState extends State<EventsScreen>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: EventStatusPill(
+                          eventDate: event.eventDate,
+                          eventTime: event.time,
+                          fontSize: w * 0.026,
+                        ),
+                      ),
+                      SizedBox(height: w * 0.012),
                       Text(
                         event.title,
                         maxLines: 2,
@@ -870,7 +894,7 @@ class _EventsScreenState extends State<EventsScreen>
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.green,
                             elevation: 0,
-                            padding: EdgeInsets.symmetric(vertical: w * 0.026),
+                            padding: EdgeInsets.symmetric(vertical: w * 0.036),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(w * 0.022),
                             ),
@@ -985,6 +1009,15 @@ class _EventsScreenState extends State<EventsScreen>
                     small: true,
                   ),
                 ),
+                Positioned(
+                  top: w * 0.015,
+                  right: w * 0.015,
+                  child: EventStatusPill(
+                    eventDate: event.eventDate,
+                    eventTime: event.time,
+                    fontSize: w * 0.024,
+                  ),
+                ),
               ],
             ),
             Padding(
@@ -1048,12 +1081,10 @@ class _EventsScreenState extends State<EventsScreen>
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primaryBlue,
                         elevation: 0,
-                        padding: EdgeInsets.symmetric(vertical: w * 0.018),
+                        padding: EdgeInsets.symmetric(vertical: w * 0.034),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(w * 0.02),
                         ),
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
                       child: Text(
                         'View Details',

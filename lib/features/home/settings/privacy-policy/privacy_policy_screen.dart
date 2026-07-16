@@ -49,6 +49,16 @@ class _PrivacyPolicyScreenState extends State<PrivacyPolicyScreen>
     return Scaffold(
       backgroundColor: const Color(0xFFF3F4F6),
       body: ResponsivePageBody(
+        shellTitle: 'Privacy Policy',
+        shellSubtitle:
+            'How GovPulse collects, uses, and protects your personal data.',
+        shellIcon: Icons.privacy_tip_rounded,
+        shellHighlights: const [
+          (Icons.lock_rounded, 'Your data is encrypted & secure'),
+          (Icons.visibility_off_rounded, 'We never sell your information'),
+          (Icons.manage_accounts_rounded, 'You control your data'),
+        ],
+        shellContentWidth: 640,
         child: SafeArea(
           child: Column(
             children: [

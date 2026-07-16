@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/deeplink_highlight.dart';
 import '../theme/admin_ui.dart';
 import 'admin_skeleton.dart';
 
@@ -291,6 +292,465 @@ class SubmitterBlock extends StatelessWidget {
 
 // ── Status pill ──────────────────────────────────────────────────────────────
 
+/// The console's segmented pill tabs: a bordered track with the active segment
+/// filled blue.
+///
+/// A SMALL-SCREEN control. It divides the width evenly between its segments, so
+/// it only reads well with a few short labels and a phone-width track — stretch
+/// it across a desktop and the labels float in oversized boxes. Wide layouts
+/// (and any switcher with more than about four options) want
+/// [AdminUnderlineTabs] instead.
+///
+/// Used by the dashboard's narrow layout and by the report detail's phone
+/// pane switcher.
+class AdminSegmentedTabs extends StatelessWidget {
+  final List<String> labels;
+  final int selected;
+  final ValueChanged<int> onSelect;
+
+  const AdminSegmentedTabs({
+    super.key,
+    required this.labels,
+    required this.selected,
+    required this.onSelect,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: AdminUi.surface,
+        borderRadius: BorderRadius.circular(AdminUi.controlRadius),
+        border: Border.all(color: AdminUi.border),
+      ),
+      child: Row(
+        children: [
+          for (var i = 0; i < labels.length; i++)
+            Expanded(child: _segment(labels[i], i)),
+        ],
+      ),
+    );
+  }
+
+  Widget _segment(String label, int i) {
+    final isSelected = i == selected;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => onSelect(i),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 6),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.primaryBlue : Colors.transparent,
+          borderRadius: BorderRadius.circular(AdminUi.controlRadius - 3),
+        ),
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+            color: isSelected ? Colors.white : AdminUi.textSecondary,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Text tabs with a blue underline on the active one and a rule across the
+/// full width.
+///
+/// Unlike [AdminSegmentedTabs] these size to their labels and scroll when they
+/// run out of room, so they work at ANY width and with any number of options —
+/// nothing gets stretched on a desktop or crushed on a phone. This is the
+/// switcher to reach for by default.
+class AdminUnderlineTabs extends StatelessWidget {
+  final List<String> labels;
+  final int selected;
+  final ValueChanged<int> onSelect;
+
+  /// Optional trailing count per label, e.g. `Needs triage 2`. Same length as
+  /// [labels] when given. A zero still shows — "none waiting" is information.
+  final List<int>? counts;
+
+  const AdminUnderlineTabs({
+    super.key,
+    required this.labels,
+    required this.selected,
+    required this.onSelect,
+    this.counts,
+  }) : assert(
+          counts == null || counts.length == labels.length,
+          'counts must line up with labels',
+        );
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        // The rule spans the pane even when the tabs themselves scroll past it.
+        const Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: Divider(height: 1, color: AdminUi.border),
+        ),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var i = 0; i < labels.length; i++) _tab(labels[i], i),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _tab(String label, int i) {
+    final isSelected = i == selected;
+    final count = counts?[i];
+    return InkWell(
+      onTap: () => onSelect(i),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(2, 4, 2, 9),
+        margin: EdgeInsets.only(right: i == labels.length - 1 ? 0 : 22),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(
+              width: 2,
+              color: isSelected ? AppColors.primaryBlue : Colors.transparent,
+            ),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              maxLines: 1,
+              style: TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w700,
+                color: isSelected ? AppColors.primaryBlue : AdminUi.textMuted,
+              ),
+            ),
+            if (count != null) ...[
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? AppColors.primaryBlue.withValues(alpha: 0.12)
+                      : AdminUi.subtle,
+                  borderRadius: BorderRadius.circular(5),
+                ),
+                child: Text(
+                  '$count',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: isSelected
+                        ? AppColors.primaryBlue
+                        : AdminUi.textMuted,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A distinctive pill "rail" for switching between piles/buckets — the primary
+/// queue navigation on the Reports console.
+///
+/// Where [AdminUnderlineTabs] marks the active tab with a thin underline, this
+/// fills the active pile as a solid blue chip against a row of white chips, so
+/// "which pile am I in" reads at a glance on a desktop pane AND on a phone.
+///
+/// Chips size to their labels and scroll horizontally when they run out of room.
+/// A soft fade appears at whichever edge still hides chips — the affordance the
+/// bare scroll strip was missing — and selecting a chip (or arriving via a
+/// deep-link) scrolls it into view, so the active pile is never stranded
+/// off-screen on a narrow phone.
+class AdminPillTabs extends StatefulWidget {
+  final List<String> labels;
+  final int selected;
+  final ValueChanged<int> onSelect;
+
+  /// Optional trailing count per label, same length as [labels] when given.
+  /// A zero still shows — "none waiting" is information.
+  final List<int>? counts;
+
+  /// The colour the edge fades resolve to; match whatever the rail sits on.
+  /// Defaults to the admin page background.
+  final Color fadeColor;
+
+  const AdminPillTabs({
+    super.key,
+    required this.labels,
+    required this.selected,
+    required this.onSelect,
+    this.counts,
+    this.fadeColor = AdminUi.pageBg,
+  }) : assert(
+          counts == null || counts.length == labels.length,
+          'counts must line up with labels',
+        );
+
+  @override
+  State<AdminPillTabs> createState() => _AdminPillTabsState();
+}
+
+class _AdminPillTabsState extends State<AdminPillTabs> {
+  final _scroll = ScrollController();
+  late List<GlobalKey> _keys;
+  bool _fadeLeft = false;
+  bool _fadeRight = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _keys = List.generate(widget.labels.length, (_) => GlobalKey());
+    _scroll.addListener(_updateFades);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _revealSelected(animate: false);
+      _updateFades();
+    });
+  }
+
+  @override
+  void didUpdateWidget(AdminPillTabs old) {
+    super.didUpdateWidget(old);
+    if (widget.labels.length != _keys.length) {
+      _keys = List.generate(widget.labels.length, (_) => GlobalKey());
+    }
+    if (widget.selected != old.selected) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _revealSelected());
+    }
+  }
+
+  @override
+  void dispose() {
+    _scroll.removeListener(_updateFades);
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _updateFades() {
+    if (!_scroll.hasClients) return;
+    final pos = _scroll.position;
+    final left = pos.pixels > 0.5;
+    final right = pos.pixels < pos.maxScrollExtent - 0.5;
+    if (left != _fadeLeft || right != _fadeRight) {
+      setState(() {
+        _fadeLeft = left;
+        _fadeRight = right;
+      });
+    }
+  }
+
+  void _revealSelected({bool animate = true}) {
+    final i = widget.selected;
+    if (i < 0 || i >= _keys.length) return;
+    final ctx = _keys[i].currentContext;
+    if (ctx == null) return;
+    Scrollable.ensureVisible(
+      ctx,
+      alignment: 0.5,
+      duration: animate ? const Duration(milliseconds: 250) : Duration.zero,
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        SingleChildScrollView(
+          controller: _scroll,
+          scrollDirection: Axis.horizontal,
+          // Vertical room so the selected chip's soft shadow isn't clipped by
+          // the scroll viewport, which otherwise hugs the chip height exactly.
+          padding: const EdgeInsets.fromLTRB(0, 6, 0, 12),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var i = 0; i < widget.labels.length; i++) ...[
+                if (i > 0) const SizedBox(width: 8),
+                _chip(i),
+              ],
+            ],
+          ),
+        ),
+        if (_fadeLeft) _edgeFade(left: true),
+        if (_fadeRight) _edgeFade(left: false),
+      ],
+    );
+  }
+
+  Widget _edgeFade({required bool left}) => Positioned(
+        left: left ? 0 : null,
+        right: left ? null : 0,
+        top: 0,
+        bottom: 0,
+        child: IgnorePointer(
+          child: Container(
+            width: 28,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: left ? Alignment.centerLeft : Alignment.centerRight,
+                end: left ? Alignment.centerRight : Alignment.centerLeft,
+                colors: [
+                  widget.fadeColor,
+                  widget.fadeColor.withValues(alpha: 0),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
+  // One shared tempo for everything that moves when selection changes — the
+  // fill, the border, and the count's grow-and-fade — so the old pill shrinking
+  // and the new pill growing read as a single motion instead of separate bumps.
+  static const _transition = Duration(milliseconds: 260);
+  static const _curve = Curves.easeInOutCubic;
+
+  Widget _chip(int i) {
+    final isSelected = i == widget.selected;
+    final count = widget.counts?[i];
+    return AnimatedContainer(
+      key: _keys[i],
+      duration: _transition,
+      curve: _curve,
+      decoration: BoxDecoration(
+        color: isSelected ? AppColors.primaryBlue : AdminUi.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isSelected ? AppColors.primaryBlue : AdminUi.border,
+        ),
+        boxShadow: isSelected
+            ? [
+                BoxShadow(
+                  color: AppColors.primaryBlue.withValues(alpha: 0.22),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ]
+            : null,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(20),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: () => widget.onSelect(i),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  widget.labels[i],
+                  maxLines: 1,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: isSelected ? Colors.white : AdminUi.textSecondary,
+                  ),
+                ),
+                // Show the count on the active pile only. A single switcher
+                // both fades AND widens the badge in (and reverses on the pill
+                // you leave), so the pill grows and shrinks as one smooth move.
+                AnimatedSwitcher(
+                  duration: _transition,
+                  switchInCurve: _curve,
+                  switchOutCurve: _curve,
+                  transitionBuilder: (child, anim) => FadeTransition(
+                    opacity: anim,
+                    child: SizeTransition(
+                      axis: Axis.horizontal,
+                      axisAlignment: -1,
+                      sizeFactor: anim,
+                      child: child,
+                    ),
+                  ),
+                  child: (count != null && isSelected)
+                      ? Padding(
+                          key: const ValueKey('badge'),
+                          padding: const EdgeInsets.only(left: 7),
+                          child: _CountBadge(count: count),
+                        )
+                      : const SizedBox(key: ValueKey('none'), height: 20),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The count badge on the selected pill — a translucent-white chip on the blue
+/// fill. Only the active pile shows its count, so this never renders in the
+/// unselected state.
+class _CountBadge extends StatelessWidget {
+  final int count;
+  const _CountBadge({required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(minWidth: 20),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.22),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        '$count',
+        style: const TextStyle(
+          fontSize: 11.5,
+          fontWeight: FontWeight.w700,
+          color: Colors.white,
+        ),
+      ),
+    );
+  }
+}
+
+/// Side of one square tile in a details-pane attachment grid, for a row of
+/// [maxWidth].
+///
+/// Fits as many ~92px columns as the width allows, then lets them share the
+/// leftover so a row ends flush against the pane instead of trailing a ragged
+/// gap. Clamped at both ends: a thumb never shrinks below a comfortably
+/// tappable size on a phone, nor balloons into a hero on a wide pane.
+///
+/// Shared so Reports, Suggestions and Feedback grid identically — and so the
+/// skeleton placeholders can be shaped with the same number.
+double attachmentTileSize(double maxWidth, {double gap = 10}) {
+  const target = 92.0, minTile = 84.0, maxTile = 116.0;
+  // An unbounded or degenerate row (an unconstrained Wrap, a zero-width pane
+  // mid-layout) has nothing to divide — fall back to the target.
+  if (!maxWidth.isFinite || maxWidth <= 0) return target;
+  final cols = ((maxWidth + gap) / (target + gap)).floor().clamp(1, 8);
+  final tile = (maxWidth - gap * (cols - 1)) / cols;
+  return tile.clamp(minTile, maxTile);
+}
+
 class StatusPill extends StatelessWidget {
   final String label;
   final Color color;
@@ -330,9 +790,19 @@ class AdminResultsCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: AdminUi.surface,
         borderRadius: BorderRadius.circular(AdminUi.cardRadius),
-        border: Border.all(color: AdminUi.border),
         boxShadow: AdminUi.cardShadow,
       ),
+      // The border is a FOREGROUND decoration so it paints on top of the child.
+      // A Container paints its `decoration` BEHIND its child, so with the border
+      // in there the table header's opaque fill painted straight over the card's
+      // top border and rounded corners — squaring off the top of every results
+      // card while the borderless bottom looked fine.
+      foregroundDecoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AdminUi.cardRadius),
+        border: Border.all(color: AdminUi.border),
+      ),
+      // Clips the header's fill to the rounded corners. Uses `decoration`'s
+      // radius, which is why that has to keep its borderRadius too.
       clipBehavior: Clip.antiAlias,
       child: child,
     );
@@ -345,26 +815,36 @@ class SubmissionListCard extends StatelessWidget {
   final bool isAnonymous;
   final VoidCallback onTap;
   final Widget child;
+
+  /// Set when this card is a deep-link target: it flashes on arrival, then
+  /// fades back to its normal look. See [DeepLinkHighlightMixin].
+  final bool highlighted;
   const SubmissionListCard({
     super.key,
     required this.isAnonymous,
     required this.onTap,
     required this.child,
+    this.highlighted = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return AnimatedContainer(
+      duration: kHighlightFade,
       margin: const EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(
-        color: isAnonymous ? kAnonColor.withValues(alpha: 0.04) : AdminUi.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isAnonymous
-              ? kAnonColor.withValues(alpha: 0.28)
-              : AdminUi.border,
-        ),
-      ),
+      decoration: highlighted
+          ? highlightDecoration(radius: 12, accent: AppColors.primaryBlue)
+          : BoxDecoration(
+              color: isAnonymous
+                  ? kAnonColor.withValues(alpha: 0.04)
+                  : AdminUi.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isAnonymous
+                    ? kAnonColor.withValues(alpha: 0.28)
+                    : AdminUi.border,
+              ),
+            ),
       clipBehavior: Clip.antiAlias,
       child: Material(
         color: Colors.transparent,
@@ -853,9 +1333,9 @@ class _FilterSheetShell extends StatelessWidget {
 // ── Respond-to-citizen panel (suggestions & feedback) ───────────────────────
 
 /// The primary admin action for suggestions/feedback: reply to the submitter
-/// (sent as a push + bell notification) and keep an internal note. For an
-/// anonymous submission there is no one to notify, so the reply composer is
-/// replaced by a clear notice and only the internal note remains.
+/// and keep an internal note. Every reply goes out as a push + bell
+/// notification, named or anonymous alike; anonymous submissions show a notice
+/// above the composer clarifying that their identity still stays hidden.
 class RespondPanel extends StatefulWidget {
   final bool isAnonymous;
   final DateTime? respondedAt;
@@ -925,59 +1405,59 @@ class _RespondPanelState extends State<RespondPanel> {
       children: [
         _title('RESPOND TO CITIZEN'),
         const SizedBox(height: 10),
-        if (widget.isAnonymous)
-          _anonNotice()
-        else ...[
-          if (widget.respondedAt != null) _sentBanner(),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final t in widget.templates)
-                _TemplateChip(
-                  text: t,
-                  onTap: () {
-                    _replyCtrl.text = t;
-                    _replyCtrl.selection = TextSelection.collapsed(
-                      offset: t.length,
-                    );
-                    setState(() {});
-                  },
-                ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          _field(
-            _replyCtrl,
-            widget.respondedAt == null
-                ? 'Write a reply the citizen will receive…'
-                : 'Send another reply…',
-          ),
-          const SizedBox(height: 10),
-          Align(
-            alignment: Alignment.centerRight,
-            child: ElevatedButton.icon(
-              onPressed: _sending ? null : _send,
-              icon: _sending
-                  ? const SizedBox(
-                      width: 15,
-                      height: 15,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white),
-                    )
-                  : const Icon(Icons.send_rounded, size: 16),
-              label: Text(widget.respondedAt == null
-                  ? 'Send response'
-                  : 'Send again'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primaryBlue,
-                foregroundColor: Colors.white,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
+        if (widget.isAnonymous) ...[
+          _anonNotice(),
+          const SizedBox(height: 12),
+        ],
+        if (widget.respondedAt != null) _sentBanner(),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final t in widget.templates)
+              _TemplateChip(
+                text: t,
+                onTap: () {
+                  _replyCtrl.text = t;
+                  _replyCtrl.selection = TextSelection.collapsed(
+                    offset: t.length,
+                  );
+                  setState(() {});
+                },
               ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        _field(
+          _replyCtrl,
+          widget.respondedAt == null
+              ? 'Write a reply the citizen will receive…'
+              : 'Send another reply…',
+        ),
+        const SizedBox(height: 10),
+        Align(
+          alignment: Alignment.centerRight,
+          child: ElevatedButton.icon(
+            onPressed: _sending ? null : _send,
+            icon: _sending
+                ? const SizedBox(
+                    width: 15,
+                    height: 15,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white),
+                  )
+                : const Icon(Icons.send_rounded, size: 16),
+            label: Text(widget.respondedAt == null
+                ? 'Send response'
+                : 'Send again'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primaryBlue,
+              foregroundColor: Colors.white,
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
             ),
           ),
-        ],
+        ),
         const SizedBox(height: 22),
         _title('INTERNAL NOTE'),
         const SizedBox(height: 4),
@@ -1026,8 +1506,9 @@ class _RespondPanelState extends State<RespondPanel> {
           SizedBox(width: 10),
           Expanded(
             child: Text(
-              'Anonymous submission — there\'s no recipient to reply to. '
-              'You can still leave an internal note below.',
+              'Anonymous submission — your reply reaches the submitter on their '
+              'own device just like a named one. Their identity stays hidden '
+              'from you and the public unless it is formally revealed.',
               style: TextStyle(
                 fontSize: 12.5,
                 height: 1.4,
@@ -1269,4 +1750,20 @@ const List<String> _kMonths = [
 String adminShortDate(DateTime? t) {
   if (t == null) return '—';
   return '${_kMonths[t.month - 1]} ${t.day}, ${t.year}';
+}
+
+/// Clock time on its own, e.g. "10:30 AM".
+String adminClockTime(DateTime? t) {
+  if (t == null) return '—';
+  final h24 = t.hour;
+  final h = h24 % 12 == 0 ? 12 : h24 % 12;
+  final m = t.minute.toString().padLeft(2, '0');
+  return '$h:$m ${h24 < 12 ? 'AM' : 'PM'}';
+}
+
+/// Date and clock time together, e.g. "Jul 8, 2026 10:30 AM" — for the report
+/// timeline, where an admin needs to see exactly when a stage was reached.
+String adminLongDateTime(DateTime? t) {
+  if (t == null) return '—';
+  return '${adminShortDate(t)} ${adminClockTime(t)}';
 }

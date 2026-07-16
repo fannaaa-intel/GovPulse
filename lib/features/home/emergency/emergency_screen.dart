@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -10,6 +11,7 @@ import 'package:android_intent_plus/flag.dart';
 import '../../../../core/network/network_wrapper.dart';
 
 import '../../../core/widgets/Home/nav/responsive_nav_scaffold.dart';
+import '../../../core/widgets/web/web_card_grid.dart';
 import 'dart:io';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -285,6 +287,11 @@ class _EmergencyScreenState extends State<EmergencyScreen>
   }
 
   Future<void> _call(String number) async {
+    // Web can't place phone calls — copy the number to the clipboard instead.
+    if (kIsWeb) {
+      _copyNumber(number);
+      return;
+    }
     if (Platform.isAndroid) {
       final isEmergency = number == '911' || number == '112';
       if (isEmergency) {
@@ -379,7 +386,11 @@ class _EmergencyScreenState extends State<EmergencyScreen>
   // ─────────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+    final rawWidth = MediaQuery.of(context).size.width;
+    // WEB / large screens: hero + services grid that fills the width. Phones &
+    // narrow web keep the original 480px body, byte-for-byte unchanged.
+    final bool wide = kIsWeb && rawWidth >= 900;
+    final double w = wide ? 460.0 : rawWidth.clamp(0.0, 480.0);
     final scaffold = ResponsiveNavScaffold(
       showNav: widget.username.isNotEmpty,
       currentIndex: 3,
@@ -387,7 +398,9 @@ class _EmergencyScreenState extends State<EmergencyScreen>
       isVerified: widget.isVerified,
       backgroundColor: _C.pageBg,
       body: SafeArea(
-        child: Center(
+        child: wide
+            ? _buildEmergencyWebBody(w)
+            : Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 480),
             child: Column(
@@ -425,6 +438,55 @@ class _EmergencyScreenState extends State<EmergencyScreen>
 
     if (widget.username.isEmpty) return scaffold;
     return NetworkWrapper(child: scaffold);
+  }
+
+  // ── WEB body: hero + services grid ─────────────────────────────────────────
+  Widget _buildEmergencyWebBody(double w) {
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1080),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 56),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _topBar(w),
+                const SizedBox(height: 28),
+                Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 720),
+                    child: _hero911Card(w),
+                  ),
+                ),
+                const SizedBox(height: 40),
+                _sectionLabel(w, 'Emergency Services'),
+                const SizedBox(height: 20),
+                WebCardGrid(
+                  targetColumnWidth: 300,
+                  children: [
+                    for (final cat in _categories)
+                      _CatCard(
+                        cat: cat,
+                        iconBoxSize: w * .14,
+                        onTap: () => _openCategory(cat),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 28),
+                Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 720),
+                    child: _disclaimer(w),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   // ── Top bar — ORIGINAL sizes ──────────────────────────────────────────────
@@ -678,11 +740,51 @@ class _EmergencyScreenState extends State<EmergencyScreen>
                   ],
                 ),
                 SizedBox(height: w * .042),
-                _Slider911(onTriggered: () => _call('911')),
+                // Web can't dial — offer a copy button instead of the slider.
+                kIsWeb
+                    ? _copy911Button(w)
+                    : _Slider911(onTriggered: () => _call('911')),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // Web-only: copy the 911 hotline (replaces the slide-to-call action).
+  Widget _copy911Button(double w) {
+    return GestureDetector(
+      onTap: () => _copyNumber('911'),
+      child: Container(
+        height: w * .13,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(w * .065),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: .12),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.phone_in_talk_rounded, size: w * .05, color: AppColors.red),
+            SizedBox(width: w * .02),
+            Text(
+              'In an emergency, call 911',
+              style: TextStyle(
+                fontSize: w * .04,
+                fontWeight: FontWeight.w800,
+                color: AppColors.red,
+                letterSpacing: -.2,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1376,6 +1478,7 @@ class _CategoryModal extends StatelessWidget {
       ),
       child: Container(
         constraints: BoxConstraints(
+          maxWidth: 460,
           maxHeight: MediaQuery.of(context).size.height * .80,
         ),
         decoration: BoxDecoration(
@@ -1669,34 +1772,36 @@ class _HotlineRowState extends State<_HotlineRow>
                       ),
                     ),
                   ),
-                  SizedBox(width: w * .022),
-                  // ── Call ──────────────────────────────────────────────────
-                  GestureDetector(
-                    onTap: () {
-                      HapticFeedback.mediumImpact();
-                      widget.onCall(h.number);
-                    },
-                    child: Container(
-                      width: w * .112,
-                      height: w * .112,
-                      decoration: BoxDecoration(
-                        color: col,
-                        borderRadius: BorderRadius.circular(w * .028),
-                        boxShadow: [
-                          BoxShadow(
-                            color: col.withValues(alpha: .38),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Icon(
-                        Icons.phone_rounded,
-                        color: Colors.white,
-                        size: w * .044,
+                  // ── Call (native only — web can't dial, copy instead) ─────
+                  if (!kIsWeb) ...[
+                    SizedBox(width: w * .022),
+                    GestureDetector(
+                      onTap: () {
+                        HapticFeedback.mediumImpact();
+                        widget.onCall(h.number);
+                      },
+                      child: Container(
+                        width: w * .112,
+                        height: w * .112,
+                        decoration: BoxDecoration(
+                          color: col,
+                          borderRadius: BorderRadius.circular(w * .028),
+                          boxShadow: [
+                            BoxShadow(
+                              color: col.withValues(alpha: .38),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Icon(
+                          Icons.phone_rounded,
+                          color: Colors.white,
+                          size: w * .044,
+                        ),
                       ),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),

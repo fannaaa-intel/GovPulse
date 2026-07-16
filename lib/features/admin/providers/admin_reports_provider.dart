@@ -98,6 +98,26 @@ class AdminReport {
   final DateTime? dismissedAt;
   final String? dismissedReason;
 
+  /// External entity this report was endorsed to (out-of-LGU scope), e.g.
+  /// "DPWH". Non-null means ownership has been handed out of the LGU — these
+  /// rows drop out of the active admin queue into the "Endorsed" bucket.
+  final String? endorsedToDepartment;
+  final DateTime? endorsedAt;
+
+  /// Internal LGU office the admin ACCEPTED this report to (e.g. "Sanitation
+  /// Office"). Null while still on the admin's triage desk (pending). Mutually
+  /// exclusive with [endorsedToDepartment].
+  final String? assignedToDepartment;
+  final DateTime? assignedAt;
+
+  /// Display name of the admin who accepted this report at triage, resolved
+  /// from `assigned_by`. Null when unaccepted, or when the acceptor's profile
+  /// can't be read (the status tracker then just omits the "Accepted by" line).
+  final String? assignedByName;
+
+  /// Reason captured when a report is rejected at triage (shown to the citizen).
+  final String? rejectionNote;
+
   const AdminReport({
     required this.id,
     required this.shortId,
@@ -115,9 +135,53 @@ class AdminReport {
     required this.createdAt,
     this.dismissedAt,
     this.dismissedReason,
+    this.endorsedToDepartment,
+    this.endorsedAt,
+    this.assignedToDepartment,
+    this.assignedAt,
+    this.assignedByName,
+    this.rejectionNote,
   });
 
   bool get isDismissed => dismissedAt != null;
+
+  bool get isEndorsed =>
+      endorsedToDepartment != null && endorsedToDepartment!.trim().isNotEmpty;
+
+  bool get isAssigned =>
+      assignedToDepartment != null && assignedToDepartment!.trim().isNotEmpty;
+
+  /// Still on the admin's triage desk: not yet accepted, endorsed, or dismissed.
+  bool get needsTriage =>
+      status == ReportStatus.pending && !isEndorsed && !isAssigned;
+
+  /// Accepted and actively being handled — the office has it but hasn't closed
+  /// it. (Terminal states, and reports nobody owns yet, are not "working".)
+  bool get isWorking =>
+      status == ReportStatus.underReview || status == ReportStatus.inProgress;
+
+  /// Working clock: when it was routed to an office (falls back to filing time).
+  DateTime? get _clock => assignedAt ?? createdAt;
+
+  /// Aging: a report awaiting triage >2 days, or being worked >7 days, is
+  /// flagged so it surfaces instead of quietly rotting.
+  bool get isOverdue {
+    final now = DateTime.now();
+    if (needsTriage) {
+      return createdAt != null && now.difference(createdAt!).inDays >= 2;
+    }
+    if (status == ReportStatus.underReview ||
+        status == ReportStatus.inProgress) {
+      final c = _clock;
+      return c != null && now.difference(c).inDays >= 7;
+    }
+    return false;
+  }
+
+  int get ageDays {
+    final c = _clock;
+    return c == null ? 0 : DateTime.now().difference(c).inDays;
+  }
 }
 
 /// A media item attached to a report, resolved to a public URL for the detail
@@ -125,46 +189,135 @@ class AdminReport {
 class ReportMedia {
   final String url;
   final String? mimeType;
-  const ReportMedia({required this.url, required this.mimeType});
+
+  /// 'camera' = live GPS-stamped capture; 'upload'/null = gallery photo or
+  /// video whose location could not be verified.
+  final String? source;
+
+  /// AI-generated-image likelihood 0..1 (null until the check completes), and
+  /// its lifecycle status ('pending' | 'completed' | 'failed' | null legacy).
+  /// Populated by the check-ai-image Edge Function (ai_image_detection.sql).
+  final double? aiScore;
+  final String? aiStatus;
+  const ReportMedia({
+    required this.url,
+    required this.mimeType,
+    this.source,
+    this.aiScore,
+    this.aiStatus,
+  });
   bool get isVideo => (mimeType ?? '').toLowerCase().startsWith('video/');
+
+  /// True when the photo carries a baked-in, live GPS stamp.
+  bool get isGpsVerified => source == 'camera';
 }
 
 // ── Filters ──────────────────────────────────────────────────────────────────
 
+/// Mutually-exclusive views of the queue.
+///
+/// The list is bucketed by where a report sits in the PIPELINE rather than by
+/// raw status, because that's the admin's actual job: clear the triage desk,
+/// keep an eye on what the offices are working, and park what's left. Each
+/// bucket answers one question, so they can never combine into a contradiction.
+enum ReportBucket {
+  /// Everything still in the LGU's hands — excludes spam and endorsed-out rows.
+  all,
+
+  /// Filed but not yet accepted, endorsed or rejected — the admin's to-do list.
+  needsTriage,
+
+  /// Accepted into an office and actively being handled.
+  working,
+
+  /// Completed.
+  resolved,
+
+  /// Handed to an external entity; out of the LGU queue.
+  endorsed,
+
+  /// Soft-hidden spam, kept out of the list and analytics.
+  dismissed,
+}
+
+/// Whether [r] belongs in [bucket] — the single definition of the piles, kept
+/// pure so the rules are testable without a database behind them.
+///
+/// [ReportBucket.all] is the LGU's live queue, so it deliberately OVERLAPS the
+/// needsTriage / working / resolved piles; what it excludes is work that isn't
+/// the LGU's any more (endorsed out) or isn't real (dismissed spam).
+bool reportInBucket(AdminReport r, ReportBucket bucket) {
+  switch (bucket) {
+    case ReportBucket.dismissed:
+      return r.isDismissed;
+    case ReportBucket.endorsed:
+      return r.isEndorsed && !r.isDismissed;
+    case ReportBucket.needsTriage:
+      return r.needsTriage && !r.isDismissed;
+    case ReportBucket.working:
+      return !r.isDismissed && !r.isEndorsed && r.isWorking;
+    case ReportBucket.resolved:
+      return !r.isDismissed &&
+          !r.isEndorsed &&
+          r.status == ReportStatus.resolved;
+    case ReportBucket.all:
+      return !r.isDismissed && !r.isEndorsed;
+  }
+}
+
+String reportBucketLabel(ReportBucket b) {
+  switch (b) {
+    case ReportBucket.all:
+      return 'All';
+    case ReportBucket.needsTriage:
+      return 'Needs triage';
+    case ReportBucket.working:
+      return 'Working';
+    case ReportBucket.resolved:
+      return 'Resolved';
+    case ReportBucket.endorsed:
+      return 'Endorsed';
+    case ReportBucket.dismissed:
+      return 'Dismissed';
+  }
+}
+
 enum ReportSort { newest, oldest }
 
 class ReportFilters {
-  final ReportStatus? status; // null = all
+  /// Which slice of the queue is on screen. Exactly one at a time — the buckets
+  /// are the primary navigation, surfaced as tabs.
+  final ReportBucket bucket;
+
+  /// Narrows the current bucket to a single status. Independent of [bucket]:
+  /// it's the fine-grained cut (e.g. Rejected) the buckets don't have a tab for.
+  final ReportStatus? status; // null = any
   final String query;
   final ReportSort sort;
   final bool anonymousOnly;
 
-  /// When false (default), dismissed (spam) rows are hidden from the list; when
-  /// true the list shows ONLY dismissed rows so they can be reviewed/restored.
-  final bool showDismissed;
-
   const ReportFilters({
+    this.bucket = ReportBucket.all,
     this.status,
     this.query = '',
     this.sort = ReportSort.newest,
     this.anonymousOnly = false,
-    this.showDismissed = false,
   });
 
   ReportFilters copyWith({
+    ReportBucket? bucket,
     ReportStatus? status,
     bool clearStatus = false,
     String? query,
     ReportSort? sort,
     bool? anonymousOnly,
-    bool? showDismissed,
   }) {
     return ReportFilters(
+      bucket: bucket ?? this.bucket,
       status: clearStatus ? null : (status ?? this.status),
       query: query ?? this.query,
       sort: sort ?? this.sort,
       anonymousOnly: anonymousOnly ?? this.anonymousOnly,
-      showDismissed: showDismissed ?? this.showDismissed,
     );
   }
 }
@@ -175,14 +328,56 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
   SupabaseClient get _db => Supabase.instance.client;
   static const String _bucket = 'report-media';
 
-  /// Full media list (with public URLs) for a single report — used by the
-  /// detail dialog's gallery.
+  /// Signed URLs, memoised per report.
+  ///
+  /// `report-media` is a private bucket, so every photo is served through a
+  /// signed URL — and `createSignedUrl` mints a FRESH token per call, so the
+  /// url string differs every time. Url is the cache key for both Flutter's
+  /// ImageCache and the browser's HTTP cache, so re-signing on each open meant
+  /// every image cache-missed and downloaded again, on web and on the app.
+  /// Holding the urls makes them stable for the session, which is what lets
+  /// anything downstream cache at all.
+  final Map<String, ({DateTime at, List<ReportMedia> media})> _mediaCache = {};
+
+  /// Comfortably inside the signed urls' one-hour expiry, so a cached url can
+  /// never be handed out already dead.
+  static const Duration _mediaCacheTtl = Duration(minutes: 45);
+  static const int _signedUrlSeconds = 3600;
+
+  /// Full media list (with signed URLs) for a single report — used by the
+  /// detail dialog's gallery. Cached; a report's media is immutable once filed
+  /// (completion photos live in their own table), so there's nothing to miss.
   Future<List<ReportMedia>> fetchMedia(String reportId) async {
-    final rows = await _db
-        .from('report_media')
-        .select('storage_path, mime_type, display_order')
-        .eq('report_id', reportId)
-        .order('display_order', ascending: true);
+    final hit = _mediaCache[reportId];
+    if (hit != null && DateTime.now().difference(hit.at) < _mediaCacheTtl) {
+      return hit.media;
+    }
+
+    // `source` (media_source_column.sql) and `ai_score`/`ai_status`
+    // (ai_image_detection.sql) are each optional migrations — try the fullest
+    // column set first and fall back so media viewing never breaks if a
+    // migration hasn't been applied yet.
+    const attempts = [
+      'storage_path, mime_type, display_order, source, ai_score, ai_status',
+      'storage_path, mime_type, display_order, source',
+      'storage_path, mime_type, display_order',
+    ];
+    List<Map<String, dynamic>>? rows;
+    for (final cols in attempts) {
+      try {
+        rows = List<Map<String, dynamic>>.from(
+          await _db
+              .from('report_media')
+              .select(cols)
+              .eq('report_id', reportId)
+              .order('display_order', ascending: true),
+        );
+        break;
+      } catch (_) {
+        // try the next (smaller) column set
+      }
+    }
+    rows ??= const [];
 
     // `report-media` is a PRIVATE bucket, so a public URL 400s — sign each
     // object instead (mirrors how admin_verification_page views private media).
@@ -191,12 +386,23 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
       final path = r['storage_path'] as String;
       String url;
       try {
-        url = await _db.storage.from(_bucket).createSignedUrl(path, 3600);
+        url = await _db.storage
+            .from(_bucket)
+            .createSignedUrl(path, _signedUrlSeconds);
       } catch (_) {
         url = _db.storage.from(_bucket).getPublicUrl(path); // best-effort
       }
-      out.add(ReportMedia(url: url, mimeType: r['mime_type'] as String?));
+      out.add(
+        ReportMedia(
+          url: url,
+          mimeType: r['mime_type'] as String?,
+          source: r['source'] as String?,
+          aiScore: (r['ai_score'] as num?)?.toDouble(),
+          aiStatus: r['ai_status'] as String?,
+        ),
+      );
     }
+    _mediaCache[reportId] = (at: DateTime.now(), media: out);
     return out;
   }
 
@@ -237,13 +443,23 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
     _publish();
   }
 
-  void setShowDismissed(bool show) {
-    if (show == _filters.showDismissed) return;
-    _filters = _filters.copyWith(showDismissed: show);
+  void setBucket(ReportBucket bucket) {
+    if (bucket == _filters.bucket) return;
+    _filters = _filters.copyWith(bucket: bucket);
     _publish();
   }
 
-  int get dismissedCount => _all.where((r) => r.isDismissed).length;
+  /// Rows in [bucket], ignoring search / status / anonymous — the tab counts
+  /// must describe the bucket itself, not what's left after the other filters.
+  Iterable<AdminReport> _inBucket(ReportBucket bucket) =>
+      _all.where((r) => reportInBucket(r, bucket));
+
+  int bucketCount(ReportBucket bucket) => _inBucket(bucket).length;
+
+  /// Active reports (not spam, not endorsed out) that have aged past their SLA.
+  int get overdueCount => _all
+      .where((r) => !r.isDismissed && !r.isEndorsed && r.isOverdue)
+      .length;
 
   void _publish() => state = AsyncValue.data(_view());
 
@@ -268,12 +484,128 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
   /// is just its public alias.
   Future<void> silentRefresh() => _reload();
 
-  /// Write then reload to reflect the truth.
-  Future<void> updateStatus(String id, ReportStatus status) async {
-    await _db
-        .from('reports')
-        .update({'status': reportStatusToDb(status)})
-        .eq('id', id);
+  // NOTE: there is deliberately no raw setStatus here. A report's status is
+  // only ever moved by triage (accept / reject / reopen) or by the office that
+  // owns it — so the detail's stepper can never show a stage that nothing in
+  // the record accounts for.
+
+  /// Endorses an out-of-LGU-scope report to an external entity (e.g. DPWH).
+  /// The endorsed report then appears in that entity's staff-console inbox.
+  /// Passing null clears the endorsement.
+  Future<void> endorse(String id, String? department) async {
+    final now = DateTime.now().toUtc().toIso8601String();
+    final uid = _db.auth.currentUser?.id;
+    final update = <String, dynamic>{
+      'endorsed_to_department': department,
+      'endorsed_at': department == null ? null : now,
+      'endorsed_by': department == null ? null : uid,
+    };
+    if (department != null) {
+      // Endorsing = accepting the report OUT to an external entity. Ownership
+      // leaves the LGU, so clear any internal assignment, and auto-advance a
+      // still-Pending report to Under review (never leave it looking ignored).
+      update['assigned_to_department'] = null;
+      update['assigned_at'] = null;
+      final matches = _all.where((r) => r.id == id);
+      final current = matches.isEmpty ? null : matches.first;
+      if (current != null && current.status == ReportStatus.pending) {
+        update['status'] = reportStatusToDb(ReportStatus.underReview);
+      }
+    }
+    await _tryUpdate(id, update, ['assigned_to_department', 'assigned_at']);
+  }
+
+  /// Admin ACCEPTS a pending report INTO an internal LGU office. Sets the owning
+  /// department (auto-derived from the category, but the admin may override),
+  /// clears any external endorsement, and releases it to that office by moving
+  /// the status to Under review. The report is now visible to that dept's staff.
+  Future<void> accept(String id, String department) async {
+    final now = DateTime.now().toUtc().toIso8601String();
+    final update = <String, dynamic>{
+      'assigned_to_department': department,
+      'assigned_at': now,
+      'assigned_by': _db.auth.currentUser?.id,
+      // Accepting internally cancels any external endorsement.
+      'endorsed_to_department': null,
+      'endorsed_at': null,
+      'endorsed_by': null,
+      'status': reportStatusToDb(ReportStatus.underReview),
+    };
+    await _tryUpdate(
+      id,
+      update,
+      ['assigned_to_department', 'assigned_at', 'assigned_by'],
+    );
+  }
+
+  /// Admin REJECTS a report with a citizen-facing reason. Terminal — a DB
+  /// trigger notifies the reporter. If the report was already being worked by
+  /// an office (assigned/endorsed), also drops an admin work-log note so that
+  /// office is pinged the work was closed. Requires a note.
+  Future<void> reject(String id, String note) async {
+    final matches = _all.where((r) => r.id == id);
+    final before = matches.isEmpty ? null : matches.first;
+
+    final update = <String, dynamic>{
+      'status': reportStatusToDb(ReportStatus.rejected),
+      'rejection_note': note.trim(),
+    };
+    await _tryUpdate(id, update, ['rejection_note']);
+
+    if (before != null && (before.isAssigned || before.isEndorsed)) {
+      try {
+        await _db.from('report_notes').insert({
+          'report_id': id,
+          'author_id': _db.auth.currentUser?.id,
+          'author_role': 'admin',
+          'author_name': 'LGU Admin',
+          'body': 'Report closed by admin — ${note.trim()}',
+        });
+      } catch (_) {
+        // Non-fatal — the rejection already landed; the note is a courtesy ping.
+      }
+    }
+  }
+
+  /// Reopens a rejected report — returns it to the admin's triage desk
+  /// (pending) and clears the rejection reason. The citizen is notified it was
+  /// reopened (status-change trigger).
+  Future<void> reopen(String id) async {
+    // Return cleanly to the triage desk: pending AND unowned, so it lands back
+    // in Needs-triage. (A report rejected while an office was working it keeps
+    // its assignment — clearing it here avoids a pending-but-assigned limbo.)
+    final update = <String, dynamic>{
+      'status': reportStatusToDb(ReportStatus.pending),
+      'rejection_note': null,
+      'assigned_to_department': null,
+      'assigned_at': null,
+      'endorsed_to_department': null,
+      'endorsed_at': null,
+    };
+    await _tryUpdate(id, update, [
+      'rejection_note',
+      'assigned_to_department',
+      'assigned_at',
+    ]);
+  }
+
+  /// Writes an update, and if it fails because the report_triage_gate migration
+  /// hasn't been applied yet, retries without the not-yet-existing columns so
+  /// the core status change still lands.
+  Future<void> _tryUpdate(
+    String id,
+    Map<String, dynamic> update,
+    List<String> optionalCols,
+  ) async {
+    try {
+      await _db.from('reports').update(update).eq('id', id);
+    } catch (_) {
+      final fallback = Map<String, dynamic>.from(update)
+        ..removeWhere((k, _) => optionalCols.contains(k));
+      if (fallback.isNotEmpty) {
+        await _db.from('reports').update(fallback).eq('id', id);
+      }
+    }
     await _reload();
   }
 
@@ -305,11 +637,8 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
   }
 
   List<AdminReport> _view() {
-    // Dismissed (spam) rows are hidden by default; the "Show dismissed" filter
-    // flips the list to show ONLY them for review/restore.
-    Iterable<AdminReport> list = _all.where(
-      (r) => r.isDismissed == _filters.showDismissed,
-    );
+    // The bucket picks the slice; search / status / anonymous then narrow it.
+    Iterable<AdminReport> list = _inBucket(_filters.bucket);
 
     if (_filters.anonymousOnly) list = list.where((r) => r.isAnonymous);
 
@@ -342,29 +671,39 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
     // carry their submitter's id in this response payload; named rows get their
     // user_id via a separate query below. The only path to an anonymous
     // identity is the guarded admin_reveal_submitter RPC (anonymous_reveal.sql).
-    const baseCols =
+    const core =
         'id, category, category_other, barangay, address, remarks, '
         'status, is_anonymous, created_at, report_media(id)';
-    // Try WITH the moderation columns; if the spam_moderation migration hasn't
-    // been applied yet the query errors, so retry without them (feature off).
-    List<Map<String, dynamic>> rows;
-    try {
-      rows = List<Map<String, dynamic>>.from(
-        await _db
-            .from('reports')
-            .select('$baseCols, dismissed_at, dismissed_reason')
-            .order('created_at', ascending: false)
-            .limit(200),
-      );
-    } catch (_) {
-      rows = List<Map<String, dynamic>>.from(
-        await _db
-            .from('reports')
-            .select(baseCols)
-            .order('created_at', ascending: false)
-            .limit(200), // barangay scale; range-based paging is the scale path.
-      );
+    const endorse = 'endorsed_to_department, endorsed_at';
+    const triage =
+        'assigned_to_department, assigned_at, assigned_by, rejection_note';
+    const moderation = 'dismissed_at, dismissed_reason';
+    // Optional columns come from separate migrations (spam_moderation,
+    // staff_portal, report_triage_gate). Try the fullest set first and degrade
+    // one migration at a time so the list never breaks if one hasn't been run.
+    final attempts = [
+      '$core, $endorse, $triage, $moderation',
+      '$core, $endorse, $triage',
+      '$core, $endorse, $moderation',
+      '$core, $endorse',
+      core,
+    ];
+    List<Map<String, dynamic>>? rows;
+    for (final cols in attempts) {
+      try {
+        rows = List<Map<String, dynamic>>.from(
+          await _db
+              .from('reports')
+              .select(cols)
+              .order('created_at', ascending: false)
+              .limit(200), // barangay scale; range-based paging is the scale path.
+        );
+        break;
+      } catch (_) {
+        // try the next (smaller) column set
+      }
     }
+    rows ??= const [];
 
     final list = rows;
     if (list.isEmpty) return const [];
@@ -380,7 +719,18 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
     final idToUid = await _fetchNamedUserIds(namedIds);
     final identifiedIds = idToUid.values.toSet().toList();
 
-    final profiles = await _fetchProfiles(identifiedIds);
+    // The admins who accepted reports at triage. Resolved alongside submitters
+    // in one profile query — they're plain user_ids like any other, and are
+    // unrelated to the anonymity rules above (an acceptor is never the
+    // reporter's identity).
+    final acceptorIds = {
+      for (final r in list)
+        if (r['assigned_by'] is String) r['assigned_by'] as String,
+    };
+
+    final profiles = await _fetchProfiles(
+      {...identifiedIds, ...acceptorIds}.toList(),
+    );
     final roles = await _fetchRoles(identifiedIds);
 
     return list.map((r) {
@@ -411,6 +761,12 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
         createdAt: _parseTs(r['created_at']),
         dismissedAt: _parseTs(r['dismissed_at']),
         dismissedReason: r['dismissed_reason'] as String?,
+        endorsedToDepartment: _nullIfBlank(r['endorsed_to_department']),
+        endorsedAt: _parseTs(r['endorsed_at']),
+        assignedToDepartment: _nullIfBlank(r['assigned_to_department']),
+        assignedAt: _parseTs(r['assigned_at']),
+        assignedByName: profiles[r['assigned_by']]?['name'] as String?,
+        rejectionNote: _nullIfBlank(r['rejection_note']),
       );
     }).toList();
   }
@@ -475,6 +831,12 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
       };
     }
     return map;
+  }
+
+  static String? _nullIfBlank(dynamic v) {
+    if (v is! String) return null;
+    final t = v.trim();
+    return t.isEmpty ? null : t;
   }
 
   static DateTime? _parseTs(dynamic v) {

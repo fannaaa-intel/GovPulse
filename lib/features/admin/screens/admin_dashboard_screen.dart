@@ -7,9 +7,11 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/providers/user_profile_provider.dart';
 import '../../../core/services/chat_service.dart';
+import '../../../core/widgets/deeplink_highlight.dart' show kNonFlashingNotifTopics;
 import '../../../core/services/push_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/Home/Chat-bubbles/home_chat_bubble.dart';
+import '../../../core/widgets/logout_confirm_dialog.dart';
 import '../providers/admin_dashboard_provider.dart';
 import '../providers/admin_events_provider.dart';
 import '../providers/admin_settings_provider.dart';
@@ -151,11 +153,21 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
 
   /// Switches to tab [i] and immediately refreshes it, then restarts the poll
   /// clock so the freshly-shown tab gets a full interval before its next tick.
-  void _selectTab(int i) {
-    if (i != _selectedIndex) setState(() => _selectedIndex = i);
+  ///
+  /// [highlightId] deep-links to a specific row: the destination page scrolls
+  /// it into view and flashes it once. One-shot — consumed by the next build so
+  /// returning to the tab later doesn't re-flash a stale target.
+  void _selectTab(int i, {String? highlightId}) {
+    setState(() {
+      _selectedIndex = i;
+      _pendingHighlightId = highlightId;
+    });
     _refreshCurrentTab();
     _startPolling();
   }
+
+  /// Deep-link target awaiting the page that owns it. See [_selectTab].
+  String? _pendingHighlightId;
 
   /// Opens the ⌘K command palette. Feeds it the nav list (so results can jump
   /// to any section) and the same tab-switch used by the sidebar.
@@ -170,11 +182,17 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
   }
 
   void _onNotifNavigate() {
-    final topic = AdminNotifCenter.I.openTopic.value;
-    if (topic == null) return;
+    final target = AdminNotifCenter.I.openTopic.value;
+    if (target == null) return;
     AdminNotifCenter.I.openTopic.value = null; // consume it
-    final idx = _tabIndexForTopic(topic);
-    if (idx != null && mounted) _selectTab(idx);
+    final idx = _tabIndexForTopic(target.topic);
+    if (idx == null || !mounted) return;
+
+    // Reactions navigate but never flash — see [kNonFlashingNotifTopics].
+    final flash = kNonFlashingNotifTopics.contains(target.topic)
+        ? null
+        : target.referenceId;
+    _selectTab(idx, highlightId: flash);
   }
 
   /// Maps a notification topic to the nav tab that owns it. Resolved by label
@@ -194,6 +212,16 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
   }
 
   Widget _buildPage() {
+    // One-shot read: the page mounting now owns this target. Cleared after the
+    // frame so a later return to the same tab starts clean. Cleared without
+    // setState — the page already has the value it needs for this build.
+    final highlightId = _pendingHighlightId;
+    if (highlightId != null) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _pendingHighlightId = null,
+      );
+    }
+
     switch (_selectedIndex) {
       case 0:
         return AdminOverviewPage(
@@ -201,17 +229,17 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
           onNavigate: _selectTab,
         );
       case 1:
-        return const CommunityUpdatesPage();
+        return CommunityUpdatesPage(highlightId: highlightId);
       case 2:
         return const AdminEventsPage();
       case 3:
-        return const AdminReportsPage();
+        return AdminReportsPage(highlightId: highlightId);
       case 4:
-        return const AdminSuggestionsPage();
+        return AdminSuggestionsPage(highlightId: highlightId);
       case 5:
-        return const AdminFeedbackPage();
+        return AdminFeedbackPage(highlightId: highlightId);
       case 6:
-        return const AdminVerificationPage();
+        return AdminVerificationPage(highlightId: highlightId);
       case 7:
         return const AdminUsersPage();
       case 8:
@@ -225,107 +253,8 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
 
   // ── Logout flow (mirrors Settings) ───────────────────────────────────────
   Future<void> _confirmLogout() async {
-    final width = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
-
-    final shouldLogout = await showDialog<bool>(
-      context: context,
-      barrierColor: Colors.black54,
-      builder: (ctx) => Dialog(
-        backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(width * 0.045),
-        ),
-        child: Padding(
-          padding: EdgeInsets.all(width * 0.055),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: width * 0.16,
-                height: width * 0.16,
-                decoration: BoxDecoration(
-                  color: AppColors.red.withValues(alpha: 0.10),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  Icons.logout_rounded,
-                  size: width * 0.085,
-                  color: AppColors.red,
-                ),
-              ),
-              SizedBox(height: width * 0.04),
-              Text(
-                'Log Out?',
-                style: TextStyle(
-                  fontSize: width * 0.052,
-                  fontWeight: FontWeight.w700,
-                  color: const Color(0xFF1F2937),
-                ),
-              ),
-              SizedBox(height: width * 0.022),
-              Text(
-                'You\'ll need to sign in again to access your account.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: width * 0.034,
-                  color: const Color(0xFF6B7280),
-                  height: 1.45,
-                ),
-              ),
-              SizedBox(height: width * 0.055),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.pop(ctx, false),
-                      style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: AppColors.stroke),
-                        padding: EdgeInsets.symmetric(vertical: width * 0.035),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(width * 0.03),
-                        ),
-                      ),
-                      child: Text(
-                        'Cancel',
-                        style: TextStyle(
-                          fontSize: width * 0.038,
-                          fontWeight: FontWeight.w600,
-                          color: const Color(0xFF374151),
-                        ),
-                      ),
-                    ),
-                  ),
-                  SizedBox(width: width * 0.025),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () => Navigator.pop(ctx, true),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.red,
-                        elevation: 0,
-                        padding: EdgeInsets.symmetric(vertical: width * 0.035),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(width * 0.03),
-                        ),
-                      ),
-                      child: Text(
-                        'Log Out',
-                        style: TextStyle(
-                          fontSize: width * 0.038,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-
-    if (shouldLogout != true || !mounted) return;
+    final shouldLogout = await showLogoutConfirmDialog(context);
+    if (!shouldLogout || !mounted) return;
 
     showDialog(
       context: context,

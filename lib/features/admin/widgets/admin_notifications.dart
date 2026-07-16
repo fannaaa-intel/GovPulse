@@ -115,6 +115,14 @@ class AdminNotif {
   /// present it replaces the leading icon with that person's photo.
   final String? actorPhotoUrl;
 
+  /// The row this notification is about (report / suggestion / feedback id), so
+  /// a tap can land on that exact item and flash it instead of dumping the
+  /// admin at the top of a list to hunt for it.
+  ///
+  /// Null whenever the trigger that wrote the row doesn't set `reference_id` —
+  /// the tap then still opens the right tab, just without the highlight.
+  final String? referenceId;
+
   AdminNotif({
     required this.id,
     required this.topic,
@@ -125,6 +133,7 @@ class AdminNotif {
     required this.color,
     this.actorId,
     this.actorPhotoUrl,
+    this.referenceId,
   });
 
   factory AdminNotif.fromRow(Map<String, dynamic> r) => AdminNotif(
@@ -139,6 +148,7 @@ class AdminNotif {
     color: Color(((r['color_value'] as num?)?.toInt() ?? 0xFF2563EB)),
     actorId: r['actor_id'] as String?,
     actorPhotoUrl: r['actor_photo_url'] as String?,
+    referenceId: r['reference_id'] as String?,
   );
 
   IconData get icon => _iconForTopic(topic);
@@ -151,6 +161,17 @@ class AdminNotif {
     if (d.inDays < 7) return '${d.inDays} d ago';
     return '${createdAt.day}/${createdAt.month}/${createdAt.year}';
   }
+}
+
+/// Where a tapped admin notification wants the shell to go: which section, and
+/// which row to flash once it's there.
+class AdminNotifTarget {
+  final String topic;
+
+  /// The row to scroll to and flash. Null when the notification's trigger
+  /// doesn't record one → the shell just opens the tab.
+  final String? referenceId;
+  const AdminNotifTarget(this.topic, {this.referenceId});
 }
 
 // ── Data + live-count singleton ───────────────────────────────────────────────
@@ -167,11 +188,14 @@ class AdminNotifCenter {
   /// Bumped whenever a Realtime change lands, so an open panel can reload.
   final ValueNotifier<int> revision = ValueNotifier<int>(0);
 
-  /// Set to a notification's [topic] when an admin taps a row in the panel.
-  /// The dashboard shell listens, maps the topic to the matching nav tab and
-  /// switches to it, then resets this to null. Kept as a topic (not a raw tab
-  /// index) so the notification panel stays decoupled from the nav order.
-  final ValueNotifier<String?> openTopic = ValueNotifier<String?>(null);
+  /// Set when an admin taps a row in the panel. The dashboard shell listens,
+  /// maps the topic to the matching nav tab, switches to it and flashes
+  /// [AdminNotifTarget.referenceId] there, then resets this to null.
+  ///
+  /// Kept as a topic (not a raw tab index) so the notification panel stays
+  /// decoupled from the nav order.
+  final ValueNotifier<AdminNotifTarget?> openTopic =
+      ValueNotifier<AdminNotifTarget?>(null);
 
   /// Topics the admin has muted in Settings — excluded from the unread badge.
   /// Fed by AdminSettingsNotifier (persisted in SharedPreferences).
@@ -422,6 +446,13 @@ class _AdminNotifPanelState extends State<_AdminNotifPanel> {
   bool _loading = true;
   List<AdminNotif> _items = const [];
 
+  /// Ids removed locally whose DELETE may not have reached the read replica
+  /// yet. A Realtime DELETE fires [revision] → [_load], and that refetch can
+  /// briefly return the just-deleted row (replication lag), flashing it back
+  /// before it disappears. Filtering these out of every refetch keeps the
+  /// deletion final.
+  final Set<String> _pendingDeleted = {};
+
   @override
   void initState() {
     super.initState();
@@ -471,7 +502,8 @@ class _AdminNotifPanelState extends State<_AdminNotifPanel> {
     final items = await AdminNotifCenter.I.fetch(topics);
     if (!mounted) return;
     setState(() {
-      _items = items;
+      _items =
+          items.where((n) => !_pendingDeleted.contains(n.id)).toList();
       _loading = false;
     });
   }
@@ -479,6 +511,7 @@ class _AdminNotifPanelState extends State<_AdminNotifPanel> {
   // Removes a notification locally + in the DB. Shared by the swipe gesture
   // (touch) and the trash button (pointer / wide layouts).
   void _deleteItem(AdminNotif item) {
+    _pendingDeleted.add(item.id);
     setState(() {
       _items = _items.where((n) => n.id != item.id).toList();
     });
@@ -490,7 +523,8 @@ class _AdminNotifPanelState extends State<_AdminNotifPanel> {
   // Verification / Community). The shell maps the topic → tab and resets it.
   void _handleTap(AdminNotif item) {
     Navigator.of(context).pop();
-    AdminNotifCenter.I.openTopic.value = item.topic;
+    AdminNotifCenter.I.openTopic.value =
+        AdminNotifTarget(item.topic, referenceId: item.referenceId);
   }
 
   @override
@@ -733,20 +767,29 @@ class _NotifListSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const AdminShimmer(
-      child: Padding(
-        padding: EdgeInsets.symmetric(vertical: 6),
-        child: Column(
-          children: [
-            _NotifSkeletonRow(),
-            _NotifSkeletonRow(),
-            _NotifSkeletonRow(),
-            _NotifSkeletonRow(),
-            _NotifSkeletonRow(),
-            _NotifSkeletonRow(),
-          ],
-        ),
-      ),
+    // Only draw as many placeholder rows as fit the panel's height, then clip,
+    // so the skeleton never overflows. The panel's tab rows eat vertical space,
+    // so on short screens a fixed six rows used to spill past the list area.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const rowExtent = 68.0; // row content + vertical padding
+        final maxH = constraints.maxHeight.isFinite
+            ? constraints.maxHeight - 12 // outer vertical padding (6 + 6)
+            : rowExtent * 6;
+        final count = (maxH / rowExtent).floor().clamp(1, 6);
+        return AdminShimmer(
+          child: ClipRect(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children:
+                    List.generate(count, (_) => const _NotifSkeletonRow()),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

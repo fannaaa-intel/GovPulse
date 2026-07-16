@@ -1,13 +1,18 @@
 import 'dart:async';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_player/video_player.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/deeplink_highlight.dart';
+import '../../../core/widgets/media_source_badge.dart';
+import '../../../core/widgets/ai_detection_badge.dart';
 import '../theme/admin_ui.dart';
 import '../providers/admin_identity_reveal_provider.dart';
 import '../providers/admin_suggestions_provider.dart';
 import '../widgets/admin_detail_screen.dart';
 import '../widgets/admin_moderation.dart';
+import '../widgets/admin_skeleton.dart';
 import '../widgets/admin_submission_ui.dart';
 import '../widgets/revealable_submitter.dart';
 import '../widgets/admin_snackbar.dart';
@@ -105,16 +110,21 @@ class _CategoryIconBox extends StatelessWidget {
 // ═════════════════════════════════════════════════════════════════════════════
 
 class AdminSuggestionsPage extends ConsumerStatefulWidget {
-  const AdminSuggestionsPage({super.key});
+  /// A suggestion id to scroll to and flash once, when arriving from a
+  /// notification. Null for a normal open.
+  final String? highlightId;
+  const AdminSuggestionsPage({super.key, this.highlightId});
 
   @override
   ConsumerState<AdminSuggestionsPage> createState() =>
       _AdminSuggestionsPageState();
 }
 
-class _AdminSuggestionsPageState extends ConsumerState<AdminSuggestionsPage> {
+class _AdminSuggestionsPageState extends ConsumerState<AdminSuggestionsPage>
+    with DeepLinkHighlightMixin {
   final _searchCtrl = TextEditingController();
   Timer? _debounce;
+
 
   @override
   void dispose() {
@@ -216,6 +226,9 @@ class _AdminSuggestionsPageState extends ConsumerState<AdminSuggestionsPage> {
     final filters = notifier.filters;
     final pad = MediaQuery.of(context).size.width < 600 ? 16.0 : 24.0;
 
+    // Rows exist only once the fetch resolves — flash the deep-link target then.
+    if (async.hasValue) flashHighlightOnce(widget.highlightId);
+
     return RefreshIndicator(
       onRefresh: () => ref.read(adminSuggestionsProvider.notifier).refresh(),
       child: SingleChildScrollView(
@@ -245,6 +258,8 @@ class _AdminSuggestionsPageState extends ConsumerState<AdminSuggestionsPage> {
                 _Results(
                   async: async,
                   onOpen: _openDetail,
+                  keyFor: highlightKey,
+                  isHighlighted: isHighlighted,
                   onRetry: () =>
                       ref.read(adminSuggestionsProvider.notifier).refresh(),
                 ),
@@ -385,10 +400,17 @@ class _Results extends StatelessWidget {
   final AsyncValue<List<AdminSuggestion>> async;
   final void Function(AdminSuggestion) onOpen;
   final VoidCallback onRetry;
+
+  /// Deep-link plumbing: the page owns the highlight state (via
+  /// [DeepLinkHighlightMixin]) and hands down a key + flag per row.
+  final GlobalKey Function(String id) keyFor;
+  final bool Function(String id) isHighlighted;
   const _Results({
     required this.async,
     required this.onOpen,
     required this.onRetry,
+    required this.keyFor,
+    required this.isHighlighted,
   });
 
   @override
@@ -417,7 +439,12 @@ class _Results extends StatelessWidget {
                   children: [
                     const _TableHeader(),
                     for (final s in items)
-                      _TableRow(suggestion: s, onOpen: () => onOpen(s)),
+                      _TableRow(
+                        key: keyFor(s.id),
+                        suggestion: s,
+                        onOpen: () => onOpen(s),
+                        highlighted: isHighlighted(s.id),
+                      ),
                   ],
                 );
               }
@@ -426,7 +453,12 @@ class _Results extends StatelessWidget {
                 child: Column(
                   children: [
                     for (final s in items)
-                      _Card(suggestion: s, onOpen: () => onOpen(s)),
+                      _Card(
+                        key: keyFor(s.id),
+                        suggestion: s,
+                        onOpen: () => onOpen(s),
+                        highlighted: isHighlighted(s.id),
+                      ),
                   ],
                 ),
               );
@@ -490,18 +522,33 @@ class _HCell extends StatelessWidget {
 class _TableRow extends StatelessWidget {
   final AdminSuggestion suggestion;
   final VoidCallback onOpen;
-  const _TableRow({required this.suggestion, required this.onOpen});
+
+  /// Set when this row is the deep-link target: it flashes, then fades back.
+  final bool highlighted;
+  const _TableRow({
+    super.key,
+    required this.suggestion,
+    required this.onOpen,
+    this.highlighted = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     final s = suggestion;
     return InkWell(
       onTap: onOpen,
-      child: Container(
-        decoration: BoxDecoration(
-          color: s.isAnonymous ? kAnonColor.withValues(alpha: 0.035) : null,
-          border: const Border(bottom: BorderSide(color: AdminUi.border)),
-        ),
+      child: AnimatedContainer(
+        duration: kHighlightFade,
+        decoration: highlighted
+            ? highlightRowDecoration(
+                accent: AppColors.primaryBlue,
+                divider: const BorderSide(color: AdminUi.border),
+              )
+            : BoxDecoration(
+                color:
+                    s.isAnonymous ? kAnonColor.withValues(alpha: 0.035) : null,
+                border: const Border(bottom: BorderSide(color: AdminUi.border)),
+              ),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
           children: [
@@ -605,7 +652,13 @@ class _MediaCount extends StatelessWidget {
 class _Card extends StatelessWidget {
   final AdminSuggestion suggestion;
   final VoidCallback onOpen;
-  const _Card({required this.suggestion, required this.onOpen});
+  final bool highlighted;
+  const _Card({
+    super.key,
+    required this.suggestion,
+    required this.onOpen,
+    this.highlighted = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -613,6 +666,7 @@ class _Card extends StatelessWidget {
     return SubmissionListCard(
       isAnonymous: s.isAnonymous,
       onTap: onOpen,
+      highlighted: highlighted,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -695,6 +749,11 @@ class _SuggestionDetailDialogState
   String? _response;
   late Future<List<SuggestionMedia>> _mediaFuture;
   bool _busy = false;
+
+  /// Which PANE is showing when the layout is too narrow to seat both side by
+  /// side: 0 = Suggestion Details, 1 = Suggestion Status. Details leads — it's
+  /// what the citizen actually wrote, and you read it before you reply to it.
+  int _paneTab = 0;
 
   @override
   void initState() {
@@ -784,95 +843,42 @@ class _SuggestionDetailDialogState
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
+  /// Left pane — where this suggestion stands, and the reply that moves it.
+  ///
+  /// Deliberately NOT the report's stepper: a suggestion has no multi-stage
+  /// workflow to walk through. It is either waiting on the LGU or it has been
+  /// answered, so the stage card plus the reply composer say everything the
+  /// four-step rail would, without inventing stages that don't exist.
+  Widget _statusPane() {
     final s = widget.suggestion;
-    final size = MediaQuery.of(context).size;
-    final narrow = size.width < 640;
+    final replied = _status == SuggestionStatus.responded;
+    final accent = _statusColor(_status);
 
-    // Rich header — X only in the wide dialog; the narrow page uses the chevron.
-    Widget richHeader({required bool showClose}) => Padding(
-          padding: EdgeInsets.fromLTRB(20, showClose ? 18 : 12, 12, 12),
-          child: Row(
-            children: [
-              _CategoryIconBox(s.categoryKey, size: 44),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(s.category,
-                        style: const TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w700,
-                            color: AdminUi.textPrimary)),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Text(s.shortId,
-                            style: const TextStyle(
-                                fontSize: 12, color: AdminUi.textMuted)),
-                        const SizedBox(width: 8),
-                        StatusPill(
-                          label: suggestionStatusLabel(_status),
-                          color: _statusColor(_status),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              if (showClose)
-                IconButton(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close_rounded),
-                  color: AdminUi.textMuted,
-                ),
-            ],
-          ),
-        );
-
-    final scrollContent = SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
+    return _Pane(
+      title: 'Suggestion Status',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AdminModerationBar(
-            isDismissed: s.isDismissed,
-            reason: s.dismissedReason,
-            busy: _busy,
-            onDismiss: _dismiss,
-            onRestore: _restore,
+          _StatusCard(
+            chip: suggestionStatusLabel(_status),
+            headline: replied
+                ? 'You\'ve replied to this suggestion.'
+                : 'This suggestion is awaiting a reply.',
+            blurb: replied
+                ? 'The citizen has been notified of your response. The internal '
+                      'note below stays private to the console.'
+                : 'It\'s still on the review desk. Send a reply and the citizen '
+                      'is notified — or keep a private note for the team.',
+            accent: accent,
+            facts: [
+              (label: 'Submitted on', value: adminLongDateTime(s.createdAt)),
+              if (replied && _respondedAt != null)
+                (label: 'Replied on', value: adminLongDateTime(_respondedAt))
+              else
+                (label: 'Category', value: s.category),
+            ],
           ),
-          const SizedBox(height: 16),
-          RevealableSubmitter(
-            source: RevealSource.suggestion,
-            submissionId: s.id,
-            isAnonymous: s.isAnonymous,
-            name: s.submitterName,
-            photoUrl: s.submitterPhotoUrl,
-            role: s.submitterRole,
-          ),
-          const SizedBox(height: 20),
-          _sectionTitle('DETAILS'),
-          const SizedBox(height: 8),
-          Text(
-            s.details.trim().isEmpty ? '—' : s.details,
-            style: const TextStyle(
-              fontSize: 13.5,
-              height: 1.5,
-              color: AdminUi.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 20),
-          _sectionTitle('LOCATION'),
-          const SizedBox(height: 8),
-          _LocationBlock(suggestion: s),
-          const SizedBox(height: 20),
-          _sectionTitle('ATTACHMENTS'),
-          const SizedBox(height: 10),
-          _MediaGallery(future: _mediaFuture),
-          const SizedBox(height: 22),
+          const SizedBox(height: 18),
           RespondPanel(
             isAnonymous: s.isAnonymous,
             respondedAt: _respondedAt,
@@ -885,50 +891,630 @@ class _SuggestionDetailDialogState
         ],
       ),
     );
+  }
 
-    // Narrow → full-screen page.
-    if (narrow) {
-      return AdminDetailScaffold(
-        title: 'Suggestion details',
-        child: Column(
-          children: [
-            richHeader(showClose: false),
-            const Divider(height: 1, color: AdminUi.border),
-            Expanded(child: scrollContent),
-          ],
-        ),
-      );
-    }
-
-    // Wide → centered dialog card.
-    return Dialog(
-      backgroundColor: AdminUi.surface,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 640, maxHeight: 720),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            richHeader(showClose: true),
-            const Divider(height: 1, color: AdminUi.border),
-            Flexible(child: scrollContent),
-          ],
-        ),
+  /// Right pane — what was suggested, and by whom. Mirrors the report details
+  /// pane; there's no action block because a suggestion's only actions are the
+  /// reply (left pane) and dismissal (the moderation bar up top).
+  Widget _detailsPane() {
+    final s = widget.suggestion;
+    return _Pane(
+      title: 'Suggestion Details',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AdminModerationBar(
+            isDismissed: s.isDismissed,
+            reason: s.dismissedReason,
+            busy: _busy,
+            onDismiss: _dismiss,
+            onRestore: _restore,
+          ),
+          const SizedBox(height: 14),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _HeroThumb(future: _mediaFuture, categoryKey: s.categoryKey),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _KvRow(
+                      label: 'Status',
+                      trailing: StatusPill(
+                        label: suggestionStatusLabel(_status),
+                        color: _statusColor(_status),
+                      ),
+                    ),
+                    _KvRow(label: 'ID', value: '#SUG-${s.shortId}'),
+                    _KvRow(
+                      label: 'Date Submitted',
+                      value: adminShortDate(s.createdAt),
+                    ),
+                    _KvRow(
+                      label: 'Time Submitted',
+                      value: adminClockTime(s.createdAt),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          const Divider(height: 1, color: AdminUi.border),
+          const SizedBox(height: 18),
+          _IconSection(
+            icon: _categoryIcon(s.categoryKey),
+            title: 'Category',
+            child: Text(
+              s.category,
+              style: const TextStyle(
+                fontSize: 13,
+                height: 1.4,
+                color: AdminUi.textSecondary,
+              ),
+            ),
+          ),
+          _IconSection(
+            icon: Icons.location_on_rounded,
+            title: 'Location',
+            child: _LocationBlock(suggestion: s),
+          ),
+          _IconSection(
+            icon: Icons.person_rounded,
+            title: 'Suggested By',
+            child: RevealableSubmitter(
+              source: RevealSource.suggestion,
+              submissionId: s.id,
+              isAnonymous: s.isAnonymous,
+              name: s.submitterName,
+              photoUrl: s.submitterPhotoUrl,
+              role: s.submitterRole,
+              subject: 'suggester',
+            ),
+          ),
+          _IconSection(
+            icon: Icons.description_rounded,
+            title: 'Details',
+            child: Text(
+              s.details.trim().isEmpty ? '—' : s.details,
+              style: const TextStyle(
+                fontSize: 13,
+                height: 1.5,
+                color: AdminUi.textSecondary,
+              ),
+            ),
+          ),
+          _IconSection(
+            icon: Icons.attach_file_rounded,
+            title: 'Attachments',
+            isLast: true,
+            child: _MediaGallery(
+              future: _mediaFuture,
+              placeholderCount: s.mediaCount,
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _sectionTitle(String text) => Text(
-        text,
-        style: const TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.5,
-          color: AdminUi.textMuted,
+  @override
+  Widget build(BuildContext context) {
+    final narrow = MediaQuery.of(context).size.width < kAdminDetailNarrowBelow;
+
+    // One pane at a time on a phone, or in a dialog too narrow for two columns.
+    // Stacking both would make a small screen scroll the length of the pair.
+    Widget paneTabs() => AdminSegmentedTabs(
+      labels: const ['Suggestion Details', 'Suggestion Status'],
+      selected: _paneTab,
+      onSelect: (i) => setState(() => _paneTab = i),
+    );
+
+    Widget activePane() => SingleChildScrollView(
+      padding: const EdgeInsets.all(14),
+      child: _paneTab == 0 ? _detailsPane() : _statusPane(),
+    );
+
+    if (narrow) {
+      return AdminDetailScaffold(
+        title: 'Suggestion details',
+        child: Container(
+          color: AdminUi.pageBg,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
+                child: paneTabs(),
+              ),
+              Expanded(child: activePane()),
+            ],
+          ),
         ),
       );
+    }
+
+    return Dialog(
+      backgroundColor: AdminUi.pageBg,
+      // Tight vertical inset: the panes are long, and every pixel given back
+      // here is a pixel the admin doesn't have to scroll.
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1120, maxHeight: 900),
+        child: LayoutBuilder(
+          builder: (context, c) {
+            if (c.maxWidth < _kTwoPaneFrom) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
+                    child: Row(
+                      children: [
+                        Expanded(child: paneTabs()),
+                        const SizedBox(width: 10),
+                        const _PaneCloseButton(),
+                      ],
+                    ),
+                  ),
+                  Flexible(child: activePane()),
+                ],
+              );
+            }
+            return Stack(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: AdminTwoPaneRow(
+                    main: _statusPane(),
+                    side: _detailsPane(),
+                  ),
+                ),
+                // Pinned rather than scrolled with the pane — the way out stays
+                // put however far down you are.
+                const Positioned(top: 22, right: 22, child: _PaneCloseButton()),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
 }
 
+/// Width at which the detail splits into two columns. Matches the reports
+/// console so both consoles break at the same point.
+const double _kTwoPaneFrom = 900;
+
+/// Test hook for the status card that heads the detail's left pane — the piece
+/// with the width-dependent illustration and fact strip.
+Widget suggestionStatusCardForTesting({
+  required String chip,
+  required String headline,
+  required String blurb,
+  required Color accent,
+  List<({String label, String value})> facts = const [],
+}) => _StatusCard(
+  chip: chip,
+  headline: headline,
+  blurb: blurb,
+  accent: accent,
+  facts: facts,
+);
+
+// ── Detail building blocks ───────────────────────────────────────────────────
+
+/// A titled white card — one of the two panes of the suggestion detail.
+class _Pane extends StatelessWidget {
+  final String title;
+  final Widget child;
+  const _Pane({required this.title, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AdminUi.surface,
+        borderRadius: BorderRadius.circular(AdminUi.cardRadius),
+        border: Border.all(color: AdminUi.border),
+        boxShadow: AdminUi.cardShadow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: AdminUi.textPrimary,
+              letterSpacing: -0.4,
+            ),
+          ),
+          const SizedBox(height: 16),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+/// The status headline card at the top of the left pane — the suggestion's
+/// equivalent of the report's stage card, illustrated with the suggestion mark.
+class _StatusCard extends StatelessWidget {
+  final String chip;
+  final String headline;
+  final String blurb;
+  final Color accent;
+  final List<({String label, String value})> facts;
+  const _StatusCard({
+    required this.chip,
+    required this.headline,
+    required this.blurb,
+    required this.accent,
+    this.facts = const [],
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(AdminUi.cardRadius),
+        border: Border.all(color: accent.withValues(alpha: 0.20)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 7,
+                height: 7,
+                decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                chip,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  color: accent,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          LayoutBuilder(
+            builder: (context, c) {
+              final copy = Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    headline,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      height: 1.25,
+                      fontWeight: FontWeight.w800,
+                      color: AdminUi.textPrimary,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    blurb,
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      height: 1.45,
+                      color: AdminUi.textSecondary,
+                    ),
+                  ),
+                ],
+              );
+
+              // Below ~380px the illustration would squeeze the headline into a
+              // ragged column, so it drops out and the copy takes the full row.
+              if (c.maxWidth < 380) return copy;
+              return Row(
+                children: [
+                  Expanded(child: copy),
+                  const SizedBox(width: 12),
+                  Image.asset(
+                    'assets/images/suggestion/suggestion.webp',
+                    width: (c.maxWidth * 0.22).clamp(72.0, 116.0),
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                  ),
+                ],
+              );
+            },
+          ),
+          if (facts.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            _FactStrip(facts: facts, accent: accent),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// The white inset strip of label/value pairs at the foot of the status card.
+/// Side by side when there's room, stacked when there isn't, so a long
+/// timestamp never gets clipped.
+class _FactStrip extends StatelessWidget {
+  final List<({String label, String value})> facts;
+  final Color accent;
+  const _FactStrip({required this.facts, required this.accent});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget fact(({String label, String value}) f) => Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          f.label,
+          style: const TextStyle(fontSize: 11, color: AdminUi.textMuted),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          f.value,
+          style: const TextStyle(
+            fontSize: 12.5,
+            height: 1.35,
+            fontWeight: FontWeight.w700,
+            color: AdminUi.textPrimary,
+          ),
+        ),
+      ],
+    );
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AdminUi.surface,
+        borderRadius: BorderRadius.circular(AdminUi.controlRadius),
+        border: Border.all(color: accent.withValues(alpha: 0.18)),
+      ),
+      child: LayoutBuilder(
+        builder: (context, c) {
+          // Each fact needs ~150px to seat a date on two lines; under that the
+          // row becomes a stack.
+          if (c.maxWidth >= facts.length * 150) {
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (var i = 0; i < facts.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 14),
+                  Expanded(child: fact(facts[i])),
+                ],
+              ],
+            );
+          }
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (var i = 0; i < facts.length; i++) ...[
+                if (i > 0) const SizedBox(height: 10),
+                fact(facts[i]),
+              ],
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// Square preview of the suggestion's first photo, beside the id/date block.
+/// Falls back to the category illustration when there's no image to show.
+class _HeroThumb extends StatelessWidget {
+  final Future<List<SuggestionMedia>> future;
+  final String categoryKey;
+  const _HeroThumb({required this.future, required this.categoryKey});
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<SuggestionMedia>>(
+      future: future,
+      builder: (context, snap) {
+        final media = snap.data ?? const <SuggestionMedia>[];
+        final photos = media.where((m) => !m.isVideo);
+        final url = photos.isEmpty ? null : photos.first.url;
+        final videos = media.where((m) => m.isVideo).toList();
+
+        Widget inner;
+        if (snap.connectionState != ConnectionState.done) {
+          // Shimmer, not a spinner: the box is already the image's final size,
+          // so the placeholder reads as the image arriving rather than as a
+          // control sitting in a hole.
+          inner = const AdminShimmer(
+            child: ColoredBox(color: kSkeletonBase, child: SizedBox.expand()),
+          );
+        } else if (url == null && videos.isNotEmpty) {
+          // Video-only: there IS media here, so the category illustration would
+          // read as "nothing attached". Show a play tile that opens the clip.
+          inner = GestureDetector(
+            onTap: () => showDialog(
+              context: context,
+              barrierColor: Colors.black87,
+              builder: (_) => _NetworkVideoDialog(url: videos.first.url),
+            ),
+            child: const Stack(
+              fit: StackFit.expand,
+              children: [
+                ColoredBox(color: Color(0xFF1F2937)),
+                Center(
+                  child: Icon(
+                    Icons.play_circle_fill_rounded,
+                    color: Colors.white70,
+                    size: 32,
+                  ),
+                ),
+              ],
+            ),
+          );
+        } else if (url == null) {
+          inner = _CategoryIconBox(categoryKey, size: 88);
+        } else {
+          inner = GestureDetector(
+            onTap: () => showDialog(
+              context: context,
+              barrierColor: Colors.black87,
+              builder: (_) => _FullscreenImageDialog(url: url),
+            ),
+            child: SkeletonNetworkImage(
+              url: url,
+              errorChild: _CategoryIconBox(categoryKey, size: 88),
+            ),
+          );
+        }
+
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: Container(
+            width: 88,
+            height: 88,
+            color: AdminUi.subtle,
+            child: inner,
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// "Label: value" line in the details pane's id block. Pass [value] for plain
+/// text or [trailing] for a widget (the status pill).
+class _KvRow extends StatelessWidget {
+  final String label;
+  final String? value;
+  final Widget? trailing;
+  const _KvRow({required this.label, this.value, this.trailing});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '$label: ',
+            style: const TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+              color: AdminUi.textPrimary,
+            ),
+          ),
+          Expanded(
+            child:
+                trailing ??
+                Text(
+                  value ?? '—',
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    height: 1.35,
+                    color: AdminUi.textSecondary,
+                  ),
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// An icon + heading with its content indented beneath — the repeating unit of
+/// the details pane (Category, Location, Suggested By, Details, Attachments).
+class _IconSection extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final Widget child;
+  final bool isLast;
+  const _IconSection({
+    required this.icon,
+    required this.title,
+    required this.child,
+    this.isLast = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: isLast ? 0 : 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 15, color: AppColors.primaryBlue),
+              const SizedBox(width: 7),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: AdminUi.textPrimary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Padding(padding: const EdgeInsets.only(left: 22), child: child),
+        ],
+      ),
+    );
+  }
+}
+
+/// The dialog's way out, styled to sit on a pane's top-right corner.
+class _PaneCloseButton extends StatelessWidget {
+  const _PaneCloseButton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AdminUi.subtle,
+      shape: const CircleBorder(),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => Navigator.pop(context),
+        child: Tooltip(
+          message: 'Close',
+          child: Container(
+            width: 32,
+            height: 32,
+            alignment: Alignment.center,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.fromBorderSide(BorderSide(color: AdminUi.border)),
+            ),
+            child: const Icon(
+              Icons.close_rounded,
+              size: 18,
+              color: AdminUi.textSecondary,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The suggested location as one line — "Brgy. Maura, Zone 1" — with the raw
+/// coordinates beneath when the citizen pinned one. Sits under the Location
+/// heading in the details pane, which already supplies the pin icon, so this
+/// stays plain text rather than a box of its own.
 class _LocationBlock extends StatelessWidget {
   final AdminSuggestion suggestion;
   const _LocationBlock({required this.suggestion});
@@ -936,48 +1522,40 @@ class _LocationBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = suggestion;
-    final rows = <Widget>[];
-    void add(IconData icon, String value) {
-      rows.add(Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, size: 16, color: AppColors.primaryBlue),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(value,
-                  style: const TextStyle(
-                      fontSize: 13, color: AdminUi.textPrimary)),
+    final parts = [
+      if (s.barangay != null && s.barangay!.isNotEmpty) s.barangay!,
+      if (s.address != null && s.address!.isNotEmpty) s.address!,
+    ];
+    if (parts.isEmpty && !s.hasLocation) {
+      return const Text(
+        'No location provided.',
+        style: TextStyle(fontSize: 13, color: AdminUi.textMuted),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (parts.isNotEmpty)
+          Text(
+            parts.join(', '),
+            style: const TextStyle(
+              fontSize: 13,
+              height: 1.4,
+              color: AdminUi.textSecondary,
             ),
-          ],
-        ),
-      ));
-    }
-
-    final barangay =
-        (s.barangay == null || s.barangay!.isEmpty) ? null : s.barangay!;
-    final address =
-        (s.address == null || s.address!.isEmpty) ? null : s.address!;
-    if (barangay != null) add(Icons.location_city_rounded, barangay);
-    if (address != null) add(Icons.signpost_rounded, address);
-    if (s.hasLocation) {
-      add(Icons.my_location_rounded,
-          '${s.latitude!.toStringAsFixed(6)}, ${s.longitude!.toStringAsFixed(6)}');
-    }
-    if (rows.isEmpty) {
-      return const Text('No location provided.',
-          style: TextStyle(fontSize: 13, color: AdminUi.textMuted));
-    }
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AdminUi.subtle,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AdminUi.border),
-      ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: rows),
+          ),
+        if (s.hasLocation) ...[
+          if (parts.isNotEmpty) const SizedBox(height: 4),
+          Text(
+            '${s.latitude!.toStringAsFixed(6)}, ${s.longitude!.toStringAsFixed(6)}',
+            style: const TextStyle(
+              fontSize: 12,
+              height: 1.4,
+              color: AdminUi.textMuted,
+            ),
+          ),
+        ],
+      ],
     );
   }
 }
@@ -986,34 +1564,53 @@ class _LocationBlock extends StatelessWidget {
 
 class _MediaGallery extends StatelessWidget {
   final Future<List<SuggestionMedia>> future;
-  const _MediaGallery({required this.future});
+
+  /// How many thumbs to shape the skeleton with. The list row already knows the
+  /// media count, so the placeholder grid matches the real one and the pane
+  /// doesn't reflow when the signed URLs land.
+  final int placeholderCount;
+  const _MediaGallery({required this.future, this.placeholderCount = 0});
 
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<List<SuggestionMedia>>(
       future: future,
       builder: (context, snap) {
-        if (snap.connectionState != ConnectionState.done) {
-          return const SizedBox(
-            height: 90,
-            child: Center(
-              child: SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            ),
-          );
-        }
         final media = snap.data ?? const <SuggestionMedia>[];
-        if (media.isEmpty) {
+        final loading = snap.connectionState != ConnectionState.done;
+        if (loading && placeholderCount == 0) return const SizedBox.shrink();
+        if (!loading && media.isEmpty) {
           return const Text('No attachments.',
               style: TextStyle(fontSize: 13, color: AdminUi.textMuted));
         }
-        return Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: [for (final m in media) _MediaThumb(item: m)],
+        // Tiles size to the pane rather than a hardcoded 92, so the grid ends
+        // flush on a narrow details column and stays tappable on a phone. The
+        // skeleton uses the same maths, so nothing reflows when the URLs land.
+        return LayoutBuilder(
+          builder: (context, c) {
+            final tile = attachmentTileSize(c.maxWidth);
+            if (loading) {
+              // One shimmer over the whole group, so the sweep crosses the grid
+              // as a single band rather than each tile animating on its own.
+              return AdminShimmer(
+                child: Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    for (var i = 0; i < placeholderCount; i++)
+                      SkeletonBox(width: tile, height: tile, radius: 10),
+                  ],
+                ),
+              );
+            }
+            return Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                for (final m in media) _MediaThumb(item: m, size: tile),
+              ],
+            );
+          },
         );
       },
     );
@@ -1022,7 +1619,11 @@ class _MediaGallery extends StatelessWidget {
 
 class _MediaThumb extends StatelessWidget {
   final SuggestionMedia item;
-  const _MediaThumb({required this.item});
+
+  /// Side of the square tile. The gallery sizes this to the pane it's in — see
+  /// [attachmentTileSize].
+  final double size;
+  const _MediaThumb({required this.item, this.size = 92});
 
   @override
   Widget build(BuildContext context) {
@@ -1045,36 +1646,55 @@ class _MediaThumb extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(10),
         child: Container(
-          width: 92,
-          height: 92,
+          width: size,
+          height: size,
           color: AdminUi.subtle,
           child: item.isVideo
               ? Stack(
                   fit: StackFit.expand,
-                  children: const [
-                    ColoredBox(color: Color(0xFF1F2937)),
-                    Center(
+                  children: [
+                    const ColoredBox(color: Color(0xFF1F2937)),
+                    const Center(
                       child: Icon(Icons.play_circle_fill_rounded,
                           color: Colors.white70, size: 34),
                     ),
-                    Positioned(
+                    const Positioned(
                       left: 5,
                       bottom: 5,
                       child: Icon(Icons.videocam_rounded,
                           size: 14, color: Colors.white70),
+                    ),
+                    Positioned(
+                      top: 5,
+                      left: 5,
+                      child: MediaSourceBadge(verified: item.isGpsVerified),
+                    ),
+                    // AI-generated-image flag (top-right, opposite the source
+                    // badge). Compact on the small thumb to avoid collision.
+                    Positioned(
+                      top: 5,
+                      right: 5,
+                      child: AiDetectionBadge(
+                        score: item.aiScore,
+                        status: item.aiStatus,
+                        compact: true,
+                      ),
                     ),
                   ],
                 )
               : Stack(
                   fit: StackFit.expand,
                   children: [
-                    Image.network(
-                      item.url,
+                    // Shimmers while it loads and keeps a disk cache, so a
+                    // reopened suggestion doesn't re-download its photos.
+                    SkeletonNetworkImage(
+                      url: item.url,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => const Icon(
-                          Icons.broken_image_rounded,
-                          color: AdminUi.textMuted,
-                          size: 22),
+                      errorChild: const ColoredBox(
+                        color: AdminUi.subtle,
+                        child: Icon(Icons.broken_image_rounded,
+                            color: AdminUi.textMuted, size: 22),
+                      ),
                     ),
                     Positioned(
                       right: 5,
@@ -1087,6 +1707,22 @@ class _MediaThumb extends StatelessWidget {
                         ),
                         child: const Icon(Icons.zoom_in_rounded,
                             size: 13, color: Colors.white),
+                      ),
+                    ),
+                    Positioned(
+                      top: 5,
+                      left: 5,
+                      child: MediaSourceBadge(verified: item.isGpsVerified),
+                    ),
+                    // AI-generated-image flag (top-right, opposite the source
+                    // badge). Compact on the small thumb to avoid collision.
+                    Positioned(
+                      top: 5,
+                      right: 5,
+                      child: AiDetectionBadge(
+                        score: item.aiScore,
+                        status: item.aiStatus,
+                        compact: true,
                       ),
                     ),
                   ],
@@ -1110,7 +1746,19 @@ class _FullscreenImageDialog extends StatelessWidget {
         children: [
           Center(
             child: InteractiveViewer(
-              child: Image.network(url, fit: BoxFit.contain),
+              // Cached: the thumb already warmed this URL, so opening the
+              // viewer shows the photo instead of re-fetching it.
+              child: CachedNetworkImage(
+                imageUrl: url,
+                fit: BoxFit.contain,
+                placeholder: (_, _) =>
+                    const CircularProgressIndicator(color: Colors.white),
+                errorWidget: (_, _, _) => const Icon(
+                  Icons.broken_image_rounded,
+                  color: Colors.white54,
+                  size: 40,
+                ),
+              ),
             ),
           ),
           Positioned(

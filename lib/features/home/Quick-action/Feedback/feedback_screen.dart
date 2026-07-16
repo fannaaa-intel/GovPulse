@@ -8,6 +8,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/Home/Newsfeed/rate_limit_dialogs.dart';
 import '../../../../core/widgets/app_snackbar.dart';
+import '../../../../core/services/gps_stamp_service.dart';
+import '../../../../core/widgets/reveal_loading.dart';
 
 class FeedbackScreen extends StatefulWidget {
   final String username;
@@ -55,6 +57,24 @@ class _FeedbackScreenState extends State<FeedbackScreen>
   DateTime _visitDate = DateTime.now();
   final List<XFile> _photos = [];
   final Map<String, Uint8List> _photoCache = {};
+
+  /// Paths of camera-captured photos carrying a baked-in GPS stamp. Everything
+  /// else (gallery photos) is an unverified upload. Written to `photo_sources`
+  /// on submit, aligned index-for-index with the uploaded photo URLs.
+  final Set<String> _gpsVerifiedPaths = {};
+
+  /// Paths of photos still being processed — camera photos baking a GPS stamp,
+  /// or gallery photos decoding. Their tile shows an in-place bottom-to-top
+  /// reveal and Submit is guarded until they finish.
+  final Set<String> _processingPaths = {};
+
+  /// Paths whose work has just finished: the tile's reveal is still mounted but
+  /// now plays its closing sweep to the very top + fade-out. Cleared (together
+  /// with [_processingPaths]) once the reveal reports it has finished.
+  final Set<String> _completedPaths = {};
+
+  /// Minimum time a tile's reveal stays visible so quick items still animate.
+  static const Duration _minReveal = Duration(milliseconds: 500);
   bool _isAnonymous = false;
   bool _isSubmitting = false;
   bool _consentInEnglish = true;
@@ -460,10 +480,27 @@ class _FeedbackScreenState extends State<FeedbackScreen>
         maxWidth: 1200,
       );
       if (file == null || !mounted) return;
+
+      // Live camera capture → add instantly and bake the GPS stamp in the
+      // background (the tile shows a bottom-to-top reveal meanwhile). Gallery
+      // photos are added as-is (they may be old / from elsewhere — no location
+      // to verify).
+      if (source == ImageSource.camera) {
+        _addCameraPhoto(file);
+        return;
+      }
+
       final bytes = await file.readAsBytes();
+      if (!mounted) return;
       setState(() {
         _photos.add(file);
         _photoCache[file.path] = bytes;
+        _processingPaths.add(file.path);
+      });
+      Future<void>.delayed(_minReveal).whenComplete(() {
+        if (!mounted) return;
+        // Keep the reveal mounted; let it sweep to the top, then it clears itself.
+        setState(() => _completedPaths.add(file.path));
       });
     } catch (e) {
       if (mounted) {
@@ -473,6 +510,42 @@ class _FeedbackScreenState extends State<FeedbackScreen>
         );
       }
     }
+  }
+
+  /// Adds a freshly captured camera photo immediately (original preview under a
+  /// reveal animation), then bakes the GPS stamp in the background and swaps in
+  /// the stamped file when ready.
+  Future<void> _addCameraPhoto(XFile original) async {
+    final originalBytes = await original.readAsBytes();
+    if (!mounted) return;
+    setState(() {
+      _photos.add(original);
+      _photoCache[original.path] = originalBytes;
+      _processingPaths.add(original.path);
+    });
+
+    GpsStampService.stampPhoto(original).then((result) async {
+      final finalFile = result.file;
+      final bytes = await finalFile.readAsBytes();
+      if (!mounted) return;
+      setState(() {
+        final idx = _photos.indexWhere((f) => f.path == original.path);
+        if (idx == -1) {
+          _processingPaths.remove(original.path); // removed while processing
+          _photoCache.remove(original.path);
+          return;
+        }
+        _photos[idx] = finalFile;
+        _photoCache.remove(original.path);
+        _photoCache[finalFile.path] = bytes;
+        if (result.stamped) _gpsVerifiedPaths.add(finalFile.path);
+        // Hand the still-mounted reveal over to the stamped file's path and let
+        // it play its closing sweep to the top.
+        _processingPaths.remove(original.path);
+        _processingPaths.add(finalFile.path);
+        _completedPaths.add(finalFile.path);
+      });
+    });
   }
 
   // ── Submit ────────────────────────────────────────────────────────────────────
@@ -489,14 +562,20 @@ class _FeedbackScreenState extends State<FeedbackScreen>
       _showValidationDialog('Please rate your overall experience.');
       return;
     }
+    if (_processingPaths.isNotEmpty) {
+      _showValidationDialog('Please wait for your photo to finish processing.');
+      return;
+    }
 
     setState(() => _isSubmitting = true);
     try {
       final supabase = Supabase.instance.client;
       final userId = supabase.auth.currentUser?.id;
 
-      // Upload photos
+      // Upload photos. `photoSources` stays aligned index-for-index with
+      // `photoUrls` so the admin can label each one (camera = GPS-stamped).
       final List<String> photoUrls = [];
+      final List<String> photoSources = [];
       for (final photo in _photos) {
         final bytes = _photoCache[photo.path] ?? await photo.readAsBytes();
         final ext = photo.path.split('.').last.toLowerCase();
@@ -513,6 +592,9 @@ class _FeedbackScreenState extends State<FeedbackScreen>
             );
         photoUrls.add(
           supabase.storage.from('feedback-assets').getPublicUrl(path),
+        );
+        photoSources.add(
+          _gpsVerifiedPaths.contains(photo.path) ? 'camera' : 'upload',
         );
       }
 
@@ -534,6 +616,7 @@ class _FeedbackScreenState extends State<FeedbackScreen>
             '${_visitDate.month.toString().padLeft(2, '0')}-'
             '${_visitDate.day.toString().padLeft(2, '0')}',
         'photo_urls': photoUrls,
+        'photo_sources': photoSources,
         'is_anonymous': _isAnonymous,
       };
 
@@ -553,7 +636,40 @@ class _FeedbackScreenState extends State<FeedbackScreen>
       final comment = _commentCtrl.text.trim();
       if (comment.isNotEmpty) payload['comment'] = comment;
 
-      await supabase.from('feedbacks').insert(payload);
+      // Capture the inserted row id so per-photo AI checks can target it.
+      Map<String, dynamic> insertedFeedback;
+      try {
+        insertedFeedback =
+            await supabase.from('feedbacks').insert(payload).select('id').single();
+      } on PostgrestException catch (e) {
+        // `photo_sources` column may not be migrated yet — retry without it so
+        // submitting feedback never breaks (media_source_column.sql).
+        if (e.message.toLowerCase().contains('photo_sources')) {
+          payload.remove('photo_sources');
+          insertedFeedback = await supabase
+              .from('feedbacks')
+              .insert(payload)
+              .select('id')
+              .single();
+        } else {
+          rethrow;
+        }
+      }
+
+      // Fire-and-forget AI-generated-image check, once per photo. NOT awaited —
+      // it must never delay the success toast/navigation, and a failure (or an
+      // un-migrated DB / down detector) leaves the submission untouched. Feedback
+      // photos are already public, so we pass the URL. `index` is 1-BASED because
+      // Postgres arrays start at 1 (see update_feedback_photo_ai).
+      final feedbackId = insertedFeedback['id'];
+      for (int i = 0; i < photoUrls.length; i++) {
+        supabase.functions.invoke('check-ai-image', body: {
+          'table': 'feedbacks',
+          'feedbackId': feedbackId,
+          'index': i + 1,
+          'publicUrl': photoUrls[i],
+        }).ignore(); // swallow errors — never disturb the submission flow
+      }
 
       if (!mounted) return;
       showAppSnackBar(
@@ -859,6 +975,16 @@ class _FeedbackScreenState extends State<FeedbackScreen>
           backgroundColor: const Color(0xFFF3F4F6),
           body: ResponsivePageBody(
             maxWidth: 640,
+            shellTitle: 'Send Feedback',
+            shellSubtitle:
+                'Rate and review LGU services so they keep getting better.',
+            shellIcon: Icons.rate_review_outlined,
+            shellHighlights: const [
+              (Icons.star_border_rounded, 'Rate a service'),
+              (Icons.comment_outlined, 'Add a comment'),
+              (Icons.thumb_up_alt_outlined, 'Be heard'),
+            ],
+            shellContentWidth: 600,
             child: SafeArea(
               child: Column(
                 children: [
@@ -1539,8 +1665,9 @@ class _FeedbackScreenState extends State<FeedbackScreen>
         if (_photos.isNotEmpty)
           Row(
             children: [
-              ..._photos.asMap().entries.map(
-                (entry) => Padding(
+              ..._photos.asMap().entries.map((entry) {
+                final processing = _processingPaths.contains(entry.value.path);
+                return Padding(
                   padding: EdgeInsets.only(right: width * 0.025),
                   child: Stack(
                     children: [
@@ -1563,32 +1690,51 @@ class _FeedbackScreenState extends State<FeedbackScreen>
                                 ),
                               ),
                       ),
-                      Positioned(
-                        top: 3,
-                        right: 3,
-                        child: GestureDetector(
-                          onTap: () => setState(() {
-                            _photoCache.remove(_photos[entry.key].path);
-                            _photos.removeAt(entry.key);
-                          }),
-                          child: Container(
-                            padding: const EdgeInsets.all(2),
-                            decoration: const BoxDecoration(
-                              color: _kRed,
-                              shape: BoxShape.circle,
+                      // Bottom-to-top reveal while the GPS stamp bakes; it fills
+                      // to the top the moment processing completes.
+                      if (processing)
+                        Positioned.fill(
+                          child: RevealLoading(
+                            borderRadius: BorderRadius.circular(width * 0.025),
+                            completed: _completedPaths.contains(
+                              entry.value.path,
                             ),
-                            child: Icon(
-                              Icons.close_rounded,
-                              size: width * 0.04,
-                              color: Colors.white,
+                            onFinished: () {
+                              if (!mounted) return;
+                              setState(() {
+                                _processingPaths.remove(entry.value.path);
+                                _completedPaths.remove(entry.value.path);
+                              });
+                            },
+                          ),
+                        ),
+                      if (!processing)
+                        Positioned(
+                          top: 3,
+                          right: 3,
+                          child: GestureDetector(
+                            onTap: () => setState(() {
+                              _photoCache.remove(_photos[entry.key].path);
+                              _photos.removeAt(entry.key);
+                            }),
+                            child: Container(
+                              padding: const EdgeInsets.all(2),
+                              decoration: const BoxDecoration(
+                                color: _kRed,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                Icons.close_rounded,
+                                size: width * 0.04,
+                                color: Colors.white,
+                              ),
                             ),
                           ),
                         ),
-                      ),
                     ],
                   ),
-                ),
-              ),
+                );
+              }),
               if (_photos.length < 3)
                 GestureDetector(
                   onTap: _pickPhoto,
@@ -1779,7 +1925,9 @@ class _FeedbackScreenState extends State<FeedbackScreen>
       child: SizedBox(
         width: double.infinity,
         child: ElevatedButton(
-          onPressed: _isSubmitting ? null : _submit,
+          onPressed: (_isSubmitting || _processingPaths.isNotEmpty)
+              ? null
+              : _submit,
           style: ElevatedButton.styleFrom(
             backgroundColor: AppColors.green,
             disabledBackgroundColor: _kGrayBorder,
@@ -1800,7 +1948,9 @@ class _FeedbackScreenState extends State<FeedbackScreen>
                   ),
                 )
               : Text(
-                  'Submit Feedback',
+                  _processingPaths.isNotEmpty
+                      ? 'Finishing photo…'
+                      : 'Submit Feedback',
                   style: TextStyle(
                     fontSize: width * 0.042,
                     fontWeight: FontWeight.w700,
