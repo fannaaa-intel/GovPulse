@@ -15,6 +15,7 @@ import '../widgets/admin_skeleton.dart';
 import '../widgets/admin_submission_ui.dart';
 import '../widgets/revealable_submitter.dart';
 import '../widgets/admin_snackbar.dart';
+import '../../../core/widgets/app_dialog.dart';
 
 const List<String> _kFeedbackTemplates = [
   'Thank you for your feedback.',
@@ -805,6 +806,15 @@ class _FeedbackDetailDialogState extends ConsumerState<_FeedbackDetailDialog> {
   /// what the citizen rated and wrote before you reply to it.
   int _paneTab = 0;
 
+  /// The feedback as it stands NOW. The dialog opens on a snapshot from the
+  /// list but stays open across a restore, which rewrites the row — so the
+  /// render paths read through this rather than keep describing the feedback as
+  /// it was before the tap. Falls back to the snapshot only if the row has left
+  /// the store entirely.
+  AdminFeedback get feedback =>
+      ref.read(adminFeedbackProvider.notifier).byId(widget.feedback.id) ??
+      widget.feedback;
+
   @override
   void initState() {
     super.initState();
@@ -874,12 +884,15 @@ class _FeedbackDetailDialogState extends ConsumerState<_FeedbackDetailDialog> {
     }
   }
 
+  /// Undo a dismissal. Unlike dismissing, this brings the feedback back rather
+  /// than finishing with it, so the dialog stays open and re-renders as the
+  /// ordinary feedback — the dismissed banner gone.
   Future<void> _restore() async {
     setState(() => _busy = true);
     try {
       await ref.read(adminFeedbackProvider.notifier).restore(widget.feedback.id);
       if (!mounted) return;
-      Navigator.pop(context);
+      setState(() => _busy = false);
       showAdminSnackBar(context, 'Feedback restored.', type: AdminSnackType.success);
     } catch (e) {
       if (!mounted) return;
@@ -895,7 +908,7 @@ class _FeedbackDetailDialogState extends ConsumerState<_FeedbackDetailDialog> {
   /// status card plus the reply composer say everything the four-step rail
   /// would, without inventing stages that don't exist.
   Widget _statusPane() {
-    final f = widget.feedback;
+    final f = feedback;
     final replied = _status == FeedbackStatus.responded;
     final accent = _statusColor(_status);
 
@@ -942,7 +955,7 @@ class _FeedbackDetailDialogState extends ConsumerState<_FeedbackDetailDialog> {
   /// there's no action block because feedback's only actions are the reply
   /// (left pane) and dismissal (the moderation bar up top).
   Widget _detailsPane() {
-    final f = widget.feedback;
+    final f = feedback;
     final aspects = <MapEntry<String, int>>[
       if (f.aspectStaff != null) MapEntry('Staff attitude', f.aspectStaff!),
       if (f.aspectWait != null) MapEntry('Wait time', f.aspectWait!),
@@ -1431,7 +1444,7 @@ class _HeroThumb extends StatelessWidget {
       inner = _OfficeIconBox(officeId, size: 88);
     } else {
       inner = GestureDetector(
-        onTap: () => showDialog(
+        onTap: () => showAppDialog(
           context: context,
           barrierColor: Colors.black87,
           builder: (_) => _FullscreenImageDialog(url: u),
@@ -1685,7 +1698,7 @@ class _PhotoThumb extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => showDialog(
+      onTap: () => showAppDialog(
         context: context,
         barrierColor: Colors.black87,
         builder: (_) => _FullscreenImageDialog(url: url),

@@ -16,6 +16,7 @@ import '../widgets/admin_skeleton.dart';
 import '../widgets/admin_submission_ui.dart';
 import '../widgets/revealable_submitter.dart';
 import '../widgets/admin_snackbar.dart';
+import '../../../core/widgets/app_dialog.dart';
 
 const List<String> _kSuggestionTemplates = [
   'Thank you for your suggestion — we\'ve noted it.',
@@ -755,6 +756,15 @@ class _SuggestionDetailDialogState
   /// what the citizen actually wrote, and you read it before you reply to it.
   int _paneTab = 0;
 
+  /// The suggestion as it stands NOW. The dialog opens on a snapshot from the
+  /// list but stays open across a restore, which rewrites the row — so the
+  /// render paths read through this rather than keep describing the suggestion
+  /// as it was before the tap. Falls back to the snapshot only if the row has
+  /// left the store entirely.
+  AdminSuggestion get suggestion =>
+      ref.read(adminSuggestionsProvider.notifier).byId(widget.suggestion.id) ??
+      widget.suggestion;
+
   @override
   void initState() {
     super.initState();
@@ -829,12 +839,15 @@ class _SuggestionDetailDialogState
     }
   }
 
+  /// Undo a dismissal. Unlike dismissing, this brings the suggestion back
+  /// rather than finishing with it, so the dialog stays open and re-renders as
+  /// the ordinary suggestion — the dismissed banner gone.
   Future<void> _restore() async {
     setState(() => _busy = true);
     try {
       await ref.read(adminSuggestionsProvider.notifier).restore(widget.suggestion.id);
       if (!mounted) return;
-      Navigator.pop(context);
+      setState(() => _busy = false);
       showAdminSnackBar(context, 'Suggestion restored.', type: AdminSnackType.success);
     } catch (e) {
       if (!mounted) return;
@@ -850,7 +863,7 @@ class _SuggestionDetailDialogState
   /// answered, so the stage card plus the reply composer say everything the
   /// four-step rail would, without inventing stages that don't exist.
   Widget _statusPane() {
-    final s = widget.suggestion;
+    final s = suggestion;
     final replied = _status == SuggestionStatus.responded;
     final accent = _statusColor(_status);
 
@@ -897,7 +910,7 @@ class _SuggestionDetailDialogState
   /// pane; there's no action block because a suggestion's only actions are the
   /// reply (left pane) and dismissal (the moderation bar up top).
   Widget _detailsPane() {
-    final s = widget.suggestion;
+    final s = suggestion;
     return _Pane(
       title: 'Suggestion Details',
       child: Column(
@@ -1344,7 +1357,7 @@ class _HeroThumb extends StatelessWidget {
           // Video-only: there IS media here, so the category illustration would
           // read as "nothing attached". Show a play tile that opens the clip.
           inner = GestureDetector(
-            onTap: () => showDialog(
+            onTap: () => showAppDialog(
               context: context,
               barrierColor: Colors.black87,
               builder: (_) => _NetworkVideoDialog(url: videos.first.url),
@@ -1367,7 +1380,7 @@ class _HeroThumb extends StatelessWidget {
           inner = _CategoryIconBox(categoryKey, size: 88);
         } else {
           inner = GestureDetector(
-            onTap: () => showDialog(
+            onTap: () => showAppDialog(
               context: context,
               barrierColor: Colors.black87,
               builder: (_) => _FullscreenImageDialog(url: url),
@@ -1630,13 +1643,13 @@ class _MediaThumb extends StatelessWidget {
     return GestureDetector(
       onTap: () {
         if (item.isVideo) {
-          showDialog(
+          showAppDialog(
             context: context,
             barrierColor: Colors.black87,
             builder: (_) => _NetworkVideoDialog(url: item.url),
           );
         } else {
-          showDialog(
+          showAppDialog(
             context: context,
             barrierColor: Colors.black87,
             builder: (_) => _FullscreenImageDialog(url: item.url),

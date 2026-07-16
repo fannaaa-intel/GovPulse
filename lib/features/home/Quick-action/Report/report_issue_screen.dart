@@ -15,6 +15,9 @@ import 'dart:async';
 import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/services/gps_stamp_service.dart';
 import '../../../../core/widgets/reveal_loading.dart';
+import '../../../../core/widgets/Home/Newsfeed/news_feed_helpers.dart'
+    show formatTimeAgo;
+import '../../../../core/widgets/app_dialog.dart';
 
 // ── Aparri bounding box — must match location_picker_screen.dart ──────────
 const double _riMinLat = 18.2750;
@@ -27,6 +30,54 @@ bool _withinAparri(double lat, double lng) =>
     lat <= _riMaxLat &&
     lng >= _riMinLng &&
     lng <= _riMaxLng;
+
+// ── Duplicate detection ──────────────────────────────────────────────────────
+
+/// Sentinel returned by the "already reported?" dialog when the citizen says
+/// their issue is a genuinely different one — distinguishes "file it as new"
+/// from dismissing the dialog, which leaves the draft untouched instead.
+const String _kMineIsDifferent = 'different';
+
+/// An open report of the same category already filed near the citizen's pin.
+///
+/// Deliberately carries no reporter identity: `nearby_open_reports` returns the
+/// ISSUE only (what/where/when/how many agree), never user_id or is_anonymous,
+/// so this prompt cannot expose who filed what.
+class _NearbyReport {
+  final String id;
+  final String shortRef;
+  final String remarks;
+  final String? barangay;
+  final int confirmCount;
+  final int distanceM;
+  final DateTime? createdAt;
+
+  const _NearbyReport({
+    required this.id,
+    required this.shortRef,
+    required this.remarks,
+    required this.barangay,
+    required this.confirmCount,
+    required this.distanceM,
+    required this.createdAt,
+  });
+
+  factory _NearbyReport.fromRow(Map<String, dynamic> r) => _NearbyReport(
+    id: r['id'] as String,
+    shortRef: (r['short_ref'] as String?) ?? '',
+    remarks: (r['remarks'] as String?) ?? '',
+    barangay: r['barangay'] as String?,
+    confirmCount: (r['confirm_count'] as int?) ?? 0,
+    distanceM: (r['distance_m'] as num?)?.round() ?? 0,
+    createdAt: DateTime.tryParse(r['created_at']?.toString() ?? '')?.toLocal(),
+  );
+
+  /// The original reporter plus everyone who has confirmed since.
+  int get reporterCount => confirmCount + 1;
+
+  String get distanceLabel =>
+      distanceM < 1000 ? '$distanceM m away' : '${(distanceM / 1000).toStringAsFixed(1)} km away';
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1473,7 +1524,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
   }
 
   void _previewImage(BuildContext context, XFile file, double width) {
-    showDialog(
+    showAppDialog(
       context: context,
       barrierColor: Colors.black87,
       builder: (ctx) => Dialog(
@@ -1509,7 +1560,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
   }
 
   void _previewVideo(BuildContext context, XFile file, double width) {
-    showDialog(
+    showAppDialog(
       context: context,
       barrierColor: Colors.black87,
       builder: (ctx) => _VideoPreviewDialog(file: file, width: width),
@@ -1690,7 +1741,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
 
   // ── Anonymous consent dialog ────────────────────────────────────────────────
   void _showAnonymousConsentDialog() {
-    showDialog(
+    showAppDialog(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
@@ -2033,6 +2084,29 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
     return null;
   }
 
+  /// Open reports of the same category already filed within the dedupe radius
+  /// (report_duplicates.sql). Empty on any failure — including the migration not
+  /// being applied yet — because a "someone already reported this" hint must
+  /// never be what stops a citizen from reporting.
+  Future<List<_NearbyReport>> _fetchNearbyReports() async {
+    try {
+      final rows = await Supabase.instance.client.rpc(
+        'nearby_open_reports',
+        params: {
+          'p_category': _selectedCategory,
+          'p_lat': _pickedLatLng!.latitude,
+          'p_lng': _pickedLatLng!.longitude,
+          'p_limit': 3,
+        },
+      );
+      return List<Map<String, dynamic>>.from(rows as List)
+          .map(_NearbyReport.fromRow)
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
   Future<void> _submitReport() async {
     // ── 1. Validate ──────────────────────────────────────────────────────────
     final error = _validate();
@@ -2042,6 +2116,25 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
     }
 
     setState(() => _isSubmitting = true);
+
+    // ── 2. Already reported here? ────────────────────────────────────────────
+    // Checked BEFORE the media upload, so confirming an existing report doesn't
+    // cost the citizen an upload they didn't need. Confirming still files their
+    // own report (linked via duplicate_of) rather than discarding it — they keep
+    // their own record and their own status notifications, and their photos ride
+    // along as extra evidence on the same issue.
+    String? duplicateOf;
+    final nearby = await _fetchNearbyReports();
+    if (nearby.isNotEmpty) {
+      if (!mounted) return;
+      final choice = await _showNearbyReportsDialog(nearby);
+      if (choice == null) {
+        // Backed out to re-check their pin — leave the draft exactly as it was.
+        if (mounted) setState(() => _isSubmitting = false);
+        return;
+      }
+      if (choice != _kMineIsDifferent) duplicateOf = choice;
+    }
 
     try {
       final supabase = Supabase.instance.client;
@@ -2091,6 +2184,10 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
             'remarks': _remarksCtrl.text.trim(),
             'is_anonymous': _submitAnonymously,
             'status': 'pending',
+            // Only sent when the citizen confirmed an existing report — which
+            // can only happen if the lookup RPC answered, so the column is
+            // guaranteed to exist by then.
+            'duplicate_of': ?duplicateOf,
           })
           .select('id')
           .single();
@@ -2146,7 +2243,9 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
       if (mounted) {
         showAppSnackBar(
           context,
-          "Report submitted successfully.",
+          duplicateOf == null
+              ? "Report submitted successfully."
+              : "Thanks — your confirmation was added to the existing report.",
           type: AppSnackType.success,
         );
         Navigator.pop(context);
@@ -2186,9 +2285,219 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
     }
   }
 
+  // ── "Already reported?" dialog ───────────────────────────────────────────────
+  /// Returns the id of the report the citizen chose to confirm,
+  /// [_kMineIsDifferent] to file theirs as a new issue, or null if they backed
+  /// out to re-check their pin.
+  ///
+  /// Framed as a question, never a refusal: the citizen is always allowed to
+  /// file. Getting this wrong in the strict direction (blocking a real report
+  /// because it looked like a duplicate) is far more costly than a duplicate.
+  Future<String?> _showNearbyReportsDialog(List<_NearbyReport> nearby) {
+    return showAppDialog<String>(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryBlue.withValues(alpha: 0.10),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.where_to_vote_outlined,
+                    color: AppColors.primaryBlue,
+                    size: 32,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                nearby.length == 1
+                    ? 'Already reported here?'
+                    : 'Already reported nearby?',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF1F2937),
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Confirming an existing report helps us prioritise it — the more '
+                'people confirm, the higher it moves up the queue.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Color(0xFF6B7280),
+                  height: 1.55,
+                ),
+              ),
+              const SizedBox(height: 16),
+              // Bounded so three long-remark cards can never push the actions
+              // off a small screen.
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 260),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (final n in nearby) ...[
+                        _nearbyReportCard(ctx, n),
+                        const SizedBox(height: 10),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 6),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  onPressed: () => Navigator.pop(ctx, _kMineIsDifferent),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Color(0xFFD1D5DB)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  child: const Text(
+                    'No — mine is a different issue',
+                    style: TextStyle(
+                      color: Color(0xFF374151),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, null),
+                child: const Text(
+                  'Go back and check my pin',
+                  style: TextStyle(
+                    color: Color(0xFF6B7280),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// One tappable existing-report card — tapping it confirms that report.
+  Widget _nearbyReportCard(BuildContext ctx, _NearbyReport n) {
+    final meta = [
+      n.distanceLabel,
+      if (n.createdAt != null) formatTimeAgo(n.createdAt!),
+      if (n.barangay != null && n.barangay!.isNotEmpty) n.barangay!,
+    ].join(' · ');
+
+    return InkWell(
+      onTap: () => Navigator.pop(ctx, n.id),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          border: Border.all(color: const Color(0xFFE5E7EB)),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(
+                  'RPT-${n.shortRef}',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF6B7280),
+                    letterSpacing: 0.4,
+                  ),
+                ),
+                const Spacer(),
+                if (n.reporterCount > 1)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryBlue.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      '${n.reporterCount} reports',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.primaryBlue,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              n.remarks.isEmpty ? 'No description given.' : n.remarks,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 13,
+                height: 1.4,
+                color: Color(0xFF1F2937),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              meta,
+              style: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF)),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Text(
+                  'This is my issue — confirm it',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.primaryBlue,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(
+                  Icons.arrow_forward_rounded,
+                  size: 14,
+                  color: AppColors.primaryBlue,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   // ── Validation dialog ────────────────────────────────────────────────────────
   void _showValidationDialog(String message) {
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (ctx) => Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),

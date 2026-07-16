@@ -18,7 +18,27 @@
       "Bash(awk 'NR>=884 && NR<=980' lib/features/admin/pages/admin_reports_page.dart)",
       "PowerShell(flutter analyze lib/features/admin/pages/admin_events_page.dart)",
       "Bash(sed -n '/^Future<void> _reportEventSave\\(/,/^}/p')",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "PowerShell(flutter analyze lib/features/admin/pages/admin_events_page.dart lib/features/admin/widgets/admin_detail_screen.dart)",
+      "Bash(timeout 60 flutter devices)",
+      "PowerShell(flutter analyze lib/features/admin/widgets/admin_detail_screen.dart)",
+      "PowerShell(flutter analyze lib/features/admin/pages/admin_reports_page.dart lib/features/admin/providers/admin_reports_provider.dart)",
+      "PowerShell(flutter analyze lib/features/admin)",
+      "PowerShell(flutter analyze lib)",
+      "PowerShell(flutter test)",
+      "Bash(grep -n \"computeMaxIntrinsicHeight\\\\|computeMinIntrinsicHeight\\\\|class _RenderSingleChildViewport\" /c/flutter/packages/flutter/lib/src/widgets/single_child_scroll_view.dart | head -20)",
+      "Read(//c/flutter/packages/flutter/lib/src/widgets/**)",
+      "Bash(sed -n '455,495p' /c/flutter/packages/flutter/lib/src/widgets/single_child_scroll_view.dart)",
+      "Bash(git diff *)",
+      "PowerShell(flutter test test/admin_outlook_render_test.dart -r expanded)",
+      "PowerShell(flutter analyze lib/features/admin/utils)",
+      "Bash(sort -t: -k2 -rn)",
+      "Bash(python \"C:/Users/DELL/AppData/Local/Temp/claude/c--Users-DELL-govpulse/e65cad6b-f047-432b-a596-5f3c04dcf410/scratchpad/migrate_dialogs.py\")",
+      "PowerShell(flutter test test/app_dialog_test.dart -r expanded)",
+      "Bash(git rm *)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\DELL\\.claude\\projects\\c--Users-DELL-govpulse\\memory"
     ]
   }
 }

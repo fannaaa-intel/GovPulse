@@ -36,6 +36,7 @@ import '../pages/admin_settings_page.dart';
 import '../pages/admin_users_page.dart';
 import '../pages/admin_team_page.dart';
 import '../pages/community_updates_page.dart';
+import '../../../core/widgets/app_dialog.dart';
 
 class AdminDashboardScreen extends ConsumerStatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -256,7 +257,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
     final shouldLogout = await showLogoutConfirmDialog(context);
     if (!shouldLogout || !mounted) return;
 
-    showDialog(
+    showAppDialog(
       context: context,
       barrierDismissible: false,
       builder: (_) => const Center(

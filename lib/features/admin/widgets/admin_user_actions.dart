@@ -7,6 +7,7 @@ import '../../staff/data/staff_departments.dart';
 import '../providers/admin_users_provider.dart';
 import '../theme/admin_ui.dart';
 import 'admin_snackbar.dart';
+import '../../../core/widgets/app_dialog.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  Shared user-management action flows + modal kit
@@ -222,7 +223,7 @@ Future<T?> showAdminModal<T>(BuildContext context, Widget child) {
       ),
     );
   }
-  return showDialog<T>(
+  return showAppDialog<T>(
     context: context,
     barrierColor: Colors.black.withValues(alpha: 0.45),
     builder: (_) => Center(

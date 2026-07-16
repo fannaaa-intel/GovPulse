@@ -22,6 +22,7 @@ import 'package:http/http.dart' as http;
 // Screens navigated to from here — imported so PageRouteBuilder can reference them.
 import '../auth/facebook_username_screen.dart';
 import '../guest/screen/guest.dart';
+import '../../core/widgets/app_dialog.dart';
 
 // Route observer — declare once at app level and pass to MaterialApp's navigatorObservers.
 // If you already have one, just reuse it here instead.
@@ -358,7 +359,7 @@ class _SignupScreenState extends State<SignupScreen>
       Map<String, dynamic>? result;
 
       if (kIsWeb) {
-        result = await showDialog<Map<String, dynamic>>(
+        result = await showAppDialog<Map<String, dynamic>>(
           context: context,
           barrierDismissible: false,
           barrierColor: Colors.black.withValues(alpha: 0.45),

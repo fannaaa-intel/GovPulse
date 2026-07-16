@@ -8,6 +8,7 @@ import '../../../core/theme/app_colors.dart';
 import '../theme/admin_ui.dart';
 import '../widgets/admin_dialog_back.dart';
 import '../widgets/admin_snackbar.dart';
+import '../../../core/widgets/app_dialog.dart';
 
 /// Dedicated admin change-password flow (send code → verify → new password),
 /// styled for the console. Responsive: centred dialog on web/desktop/tablet
@@ -16,7 +17,7 @@ import '../widgets/admin_snackbar.dart';
 void showAdminChangePassword(BuildContext context) {
   final wide = MediaQuery.of(context).size.width >= 900;
   if (wide) {
-    showDialog(
+    showAppDialog(
       context: context,
       barrierColor: Colors.black54,
       barrierDismissible: false,

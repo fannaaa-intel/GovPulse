@@ -172,8 +172,21 @@ class PushService {
     final n = m.notification;
     final title = n?.title ?? (m.data['title'] as String?) ?? 'Notification';
     final body = n?.body ?? (m.data['subtitle'] as String?) ?? '';
+
+    // One tray slot per notification ROW, keyed on the row id that send-push
+    // puts in `data.notification_id`.
+    //
+    // This used to key on the title, which was wrong in both directions: two
+    // different reports that both say "Report closed" collapsed into a single
+    // entry (the second silently replacing the first), while a duplicate
+    // delivery of the SAME row could still stack. The row id gives distinct
+    // notifications distinct slots and makes a repeat delivery idempotent.
+    // Falls back to the title only when no id came through.
+    final rowId = m.data['notification_id'] as String?;
+    final key = (rowId != null && rowId.isNotEmpty) ? rowId : title;
+
     await _local.show(
-      title.hashCode & 0x7fffffff,
+      key.hashCode & 0x7fffffff,
       title,
       body,
       NotificationDetails(

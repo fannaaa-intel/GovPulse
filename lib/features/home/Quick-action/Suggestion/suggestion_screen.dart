@@ -14,6 +14,7 @@ import '../../../../core/widgets/Home/Newsfeed/rate_limit_dialogs.dart';
 import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/services/gps_stamp_service.dart';
 import '../../../../core/widgets/reveal_loading.dart';
+import '../../../../core/widgets/app_dialog.dart';
 
 // ── Video preview dialog (same as Report) ─────────────────────────────────────
 class _VideoPreviewDialog extends StatefulWidget {
@@ -1295,7 +1296,7 @@ class _SuggestionScreenState extends State<SuggestionScreen>
   }
 
   void _previewImage(BuildContext context, XFile file, double width) {
-    showDialog(
+    showAppDialog(
       context: context,
       barrierColor: Colors.black87,
       builder: (ctx) => Dialog(
@@ -1331,7 +1332,7 @@ class _SuggestionScreenState extends State<SuggestionScreen>
   }
 
   void _previewVideo(BuildContext context, XFile file, double width) {
-    showDialog(
+    showAppDialog(
       context: context,
       barrierColor: Colors.black87,
       builder: (ctx) => _VideoPreviewDialog(file: file, width: width),
@@ -1512,7 +1513,7 @@ class _SuggestionScreenState extends State<SuggestionScreen>
 
   // ── Anonymous consent dialog (identical to Report) ─────────────────────────
   void _showAnonymousConsentDialog() {
-    showDialog(
+    showAppDialog(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
@@ -2083,7 +2084,7 @@ class _SuggestionScreenState extends State<SuggestionScreen>
   // ── Dialogs ─────────────────────────────────────────────────────────────────
 
   void _showValidationDialog(String message) {
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (ctx) => Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),

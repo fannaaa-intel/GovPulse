@@ -167,9 +167,13 @@ class HomeProfileCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Use the caller-supplied width when given; fall back to the raw screen
-    // width so existing callers (mobile) keep working unchanged.
-    final width = this.width ?? MediaQuery.of(context).size.width;
+    // Use the caller-supplied width when given; otherwise fall back to the
+    // screen width, clamped to the same 480 design width the callers pass. The
+    // card is laid out inside a 480 column either way, so an unclamped fallback
+    // would only mis-proportion it — noticeably so on a landscape phone, where
+    // raw width is roughly double.
+    final width =
+        this.width ?? MediaQuery.of(context).size.width.clamp(0.0, 480.0);
     final badge = _statusBadge;
     final isVerified = verifStatus == VerifStatus.verified;
 

@@ -9,6 +9,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/deeplink_highlight.dart';
 import '../../../../core/widgets/loading/loading_overlay.dart';
 import '../../my_report/my_reports_screen.dart' show ReportItem;
+import '../../../../core/widgets/app_dialog.dart';
 // ── Private config classes ────────────────────────────────────────────────────
 
 class _CatCfg {
@@ -3109,7 +3110,7 @@ class _MediaStrip extends StatelessWidget {
       children: [
         for (final m in media)
           GestureDetector(
-            onTap: () => showDialog(
+            onTap: () => showAppDialog(
               context: context,
               barrierColor: Colors.black87,
               builder: (_) => m.isVideo

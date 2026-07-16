@@ -7,6 +7,7 @@ import '../providers/admin_profile_provider.dart';
 import '../theme/admin_ui.dart';
 import 'admin_snackbar.dart';
 import 'admin_submission_ui.dart';
+import '../../../core/widgets/app_dialog.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  RevealableSubmitter — SubmitterBlock + guarded de-anonymization
@@ -79,7 +80,7 @@ class _RevealableSubmitterState extends ConsumerState<RevealableSubmitter> {
         ),
       );
     } else {
-      identity = await showDialog<RevealedIdentity>(
+      identity = await showAppDialog<RevealedIdentity>(
         context: context,
         barrierDismissible: false,
         builder: (_) => Dialog(

@@ -11,6 +11,7 @@ import '../widgets/admin_skeleton.dart';
 import '../widgets/admin_submission_ui.dart';
 import '../widgets/admin_snackbar.dart';
 import '../../home/screen/notification_popup.dart';
+import '../../../core/widgets/app_dialog.dart';
 
 class AdminVerificationPage extends ConsumerStatefulWidget {
   /// A submission id to scroll to and flash once, when arriving from a
@@ -975,7 +976,7 @@ class _VerificationDetailDialogState
     required Color confirmColor,
     Widget? extra,
   }) {
-    return showDialog<bool>(
+    return showAppDialog<bool>(
       context: context,
       barrierColor: Colors.black54,
       builder: (ctx) => AlertDialog(
@@ -2023,7 +2024,7 @@ class _DocThumb extends ConsumerWidget {
   }
 
   void _openFullscreen(BuildContext context, String url) {
-    showDialog(
+    showAppDialog(
       context: context,
       barrierColor: Colors.black87,
       builder: (_) => Dialog(

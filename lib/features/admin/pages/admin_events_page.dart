@@ -15,10 +15,10 @@ import '../../../core/widgets/modal/media_picker_sheet.dart';
 import '../providers/admin_events_provider.dart';
 import '../theme/admin_ui.dart';
 import '../widgets/admin_detail_screen.dart';
-import '../widgets/admin_dialog_back.dart';
 import '../widgets/admin_skeleton.dart';
 import '../widgets/admin_submission_ui.dart';
 import '../widgets/admin_snackbar.dart';
+import '../../../core/widgets/app_dialog.dart';
 
 // ── Category presets ──────────────────────────────────────────────────────────
 // The citizen app filters by these categories; each carries a signature colour
@@ -909,12 +909,45 @@ class _EventDetailDialog extends ConsumerStatefulWidget {
 class _EventDetailDialogState extends ConsumerState<_EventDetailDialog> {
   bool _busy = false;
 
+  /// Featured is the one control here that isn't a decision about the event —
+  /// it's a preference you flip and keep looking. So it's held locally and
+  /// driven optimistically: the switch answers instantly, the dialog stays put,
+  /// and a failed write rolls the switch back.
+  late bool _featured = widget.event.isFeatured;
+  bool _featuring = false;
+
   /// Which PANE is showing when the layout is too narrow to seat both side by
   /// side: 0 = Event Status, 1 = Event Details. Status leads — the cover and
   /// the publish decision are why you opened this.
   int _paneTab = 0;
 
   EventModel get e => widget.event;
+
+  /// Unlike [_run], this leaves the dialog open — flipping Featured isn't a way
+  /// out of the event.
+  Future<void> _toggleFeatured(bool v) async {
+    setState(() {
+      _featured = v;
+      _featuring = true;
+    });
+    try {
+      await ref.read(adminEventsProvider.notifier).setFeatured(e.id, v);
+      if (!mounted) return;
+      setState(() => _featuring = false);
+      showAdminSnackBar(
+        context,
+        v ? 'Marked as featured.' : 'Unfeatured.',
+        type: AdminSnackType.success,
+      );
+    } catch (err) {
+      if (!mounted) return;
+      setState(() {
+        _featured = !v;
+        _featuring = false;
+      });
+      showAdminSnackBar(context, 'Failed: $err', type: AdminSnackType.error);
+    }
+  }
 
   Future<void> _run(Future<void> Function() action, String done) async {
     setState(() => _busy = true);
@@ -931,7 +964,7 @@ class _EventDetailDialogState extends ConsumerState<_EventDetailDialog> {
   }
 
   Future<void> _confirmDelete() async {
-    final ok = await showDialog<bool>(
+    final ok = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete event?'),
@@ -1102,7 +1135,6 @@ class _EventDetailDialogState extends ConsumerState<_EventDetailDialog> {
   /// through. It's waiting on a reviewer, published, or rejected.
   Widget _statusPane() {
     final accent = _statusColor(e.status);
-    final notifier = ref.read(adminEventsProvider.notifier);
 
     final String headline;
     final String blurb;
@@ -1161,14 +1193,9 @@ class _EventDetailDialogState extends ConsumerState<_EventDetailDialog> {
                   ),
                 ),
                 Switch(
-                  value: e.isFeatured,
+                  value: _featured,
                   activeThumbColor: AppColors.primaryBlue,
-                  onChanged: _busy
-                      ? null
-                      : (v) => _run(
-                          () => notifier.setFeatured(e.id, v),
-                          v ? 'Marked as featured.' : 'Unfeatured.',
-                        ),
+                  onChanged: _busy || _featuring ? null : _toggleFeatured,
                 ),
               ],
             ),
@@ -1340,8 +1367,19 @@ class _EventDetailDialogState extends ConsumerState<_EventDetailDialog> {
           onTap: _busy
               ? null
               : () {
+                  // The form must open on the event as it stands NOW: flipping
+                  // Featured here already wrote to the row, and handing it the
+                  // snapshot this dialog opened with would let Save changes put
+                  // the old flag back.
+                  final fresh =
+                      ref
+                          .read(adminEventsProvider)
+                          .valueOrNull
+                          ?.where((x) => x.id == e.id)
+                          .firstOrNull ??
+                      e;
                   Navigator.pop(context);
-                  showEventForm(context, existing: e);
+                  showEventForm(context, existing: fresh);
                 },
         ),
         _ActionButton(
@@ -1911,33 +1949,16 @@ class _PaneCloseButton extends StatelessWidget {
   }
 }
 
+/// Presented exactly like the event detail — same shell, same breakpoint, same
+/// pane — so editing an event looks like the event you tapped to get here,
+/// rather than a second, unrelated kind of card.
 void showEventForm(BuildContext context, {EventModel? existing}) {
-  final wide = MediaQuery.of(context).size.width >= 900;
-  if (wide) {
-    showDialog(
-      context: context,
-      barrierColor: Colors.black54,
-      barrierDismissible: false,
-      builder: (_) => Dialog(
-        backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 560, maxHeight: 720),
-          child: _EventFormDialog(existing: existing),
-        ),
-      ),
-    );
-  } else {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        fullscreenDialog: true,
-        builder: (_) => Scaffold(
-          backgroundColor: AdminUi.surface,
-          body: SafeArea(child: _EventFormDialog(existing: existing)),
-        ),
-      ),
-    );
-  }
+  showAdminDetail(
+    context,
+    // The form holds unsaved input; only Cancel / the X may close it.
+    barrierDismissible: false,
+    builder: (_) => _EventFormDialog(existing: existing),
+  );
 }
 
 Future<void> _reportEventSave(Future<void> op, BuildContext ctx) async {
@@ -2060,7 +2081,7 @@ class _EventFormDialogState extends ConsumerState<_EventFormDialog> {
     // picker — a slide-up sheet would detach from the card. On the full-screen
     // mobile form, offer the Camera / Gallery sheet (same as the community
     // composer). Camera is hidden implicitly on web since it can't be chosen.
-    final floating = MediaQuery.of(context).size.width >= 900;
+    final floating = !adminDetailIsNarrow(context);
     try {
       XFile? picked;
       if (floating) {
@@ -2219,198 +2240,202 @@ class _EventFormDialogState extends ConsumerState<_EventFormDialog> {
 
   @override
   Widget build(BuildContext context) {
-    // Web/tablet shows this as a floating dialog → use an X (exit); phones show
-    // it full-screen → use a back chevron, like the citizen sub-screens.
-    final wide = MediaQuery.of(context).size.width >= 900;
-    return Material(
-      color: AdminUi.surface,
-      borderRadius: BorderRadius.circular(16),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: EdgeInsets.fromLTRB(wide ? 18 : 12, 12, 8, 12),
-            child: Row(
-              children: [
-                if (!wide) ...[
-                  AdminDialogBack(onTap: () => Navigator.pop(context)),
-                  const SizedBox(width: 12),
-                ],
-                Expanded(
-                  child: Text(
-                    _isEdit ? 'Edit event' : 'New event',
-                    style: const TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w700,
-                      color: AdminUi.textPrimary,
-                    ),
-                  ),
-                ),
-                if (wide)
-                  IconButton(
-                    icon: const Icon(Icons.close_rounded,
-                        color: AdminUi.textMuted),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-              ],
-            ),
+    final narrow = adminDetailIsNarrow(context);
+
+    if (narrow) {
+      return AdminDetailScaffold(
+        title: _isEdit ? 'Edit event' : 'New event',
+        child: Container(
+          color: AdminUi.pageBg,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(14),
+            child: _formPane(),
           ),
-          const Divider(height: 1, color: AdminUi.border),
-          Flexible(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildImagePicker(),
-                    const SizedBox(height: 16),
-                    _field(_title, 'Title', hint: 'Event name', required: true),
-                    const SizedBox(height: 12),
-                    _buildCategoryPicker(),
-                    const SizedBox(height: 12),
-                    _buildBarangayPicker(),
-                    const SizedBox(height: 12),
-                    _buildDateTimeRow(),
-                    const SizedBox(height: 12),
-                    _field(
-                      _description,
-                      'Description',
-                      hint: 'What is this event about?',
-                      maxLines: 3,
-                    ),
-                    const SizedBox(height: 12),
-                    _field(
-                      _expect,
-                      'What to expect',
-                      hint: 'Optional',
-                      maxLines: 2,
-                    ),
-                    const SizedBox(height: 12),
-                    _field(
-                      _requirements,
-                      'Requirements',
-                      hint: 'Optional',
-                      maxLines: 2,
-                    ),
-                    const SizedBox(height: 12),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: AdminUi.subtle,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: AdminUi.border),
-                      ),
-                      child: SwitchListTile(
-                        value: _featured,
-                        activeThumbColor: AppColors.primaryBlue,
-                        onChanged: (v) => setState(() => _featured = v),
-                        title: const Text(
-                          'Feature this event',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: AdminUi.textPrimary,
-                          ),
-                        ),
-                        subtitle: const Text(
-                          'Highlighted at the top of the citizen feed',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: AdminUi.textMuted,
-                          ),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                        ),
-                      ),
-                    ),
-                    if (_error != null) ...[
-                      const SizedBox(height: 12),
-                      Text(
-                        _error!,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: AppColors.red,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
+        ),
+      );
+    }
+
+    return Dialog(
+      backgroundColor: AdminUi.pageBg,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: ConstrainedBox(
+        // One column, so it stops well short of the detail's two-pane width —
+        // a form read across 1120px would be a tiring line length.
+        constraints: const BoxConstraints(maxWidth: 640, maxHeight: 900),
+        child: Stack(
+          children: [
+            SingleChildScrollView(
+              padding: const EdgeInsets.all(14),
+              child: _formPane(),
+            ),
+            // Pinned, like the detail's — the way out stays put however far
+            // down the form you are.
+            const Positioned(top: 22, right: 22, child: _PaneCloseButton()),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// The form as ONE pane, built from the same pieces as the detail's panes
+  /// (_Pane, _IconSection, _ActionButton) and under the same section headings —
+  /// Cover Photo / Event / Location / Description / Featured — so the editor
+  /// reads as the detail with its values made editable.
+  Widget _formPane() {
+    return _Pane(
+      title: _isEdit ? 'Edit Event' : 'New Event',
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _IconSection(
+              icon: Icons.image_rounded,
+              title: 'Cover Photo',
+              child: _buildImagePicker(),
+            ),
+            _IconSection(
+              icon: Icons.event_rounded,
+              title: 'Event',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _field(_title, hint: 'Event name', required: true),
+                  const SizedBox(height: 10),
+                  _buildCategoryPicker(),
+                ],
               ),
             ),
-          ),
-          const Divider(height: 1, color: AdminUi.border),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-            child: Row(
-              children: [
-                Expanded(
-                  child: SizedBox(
-                    height: 52,
-                    child: OutlinedButton(
-                      onPressed: _saving ? null : () => Navigator.pop(context),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AdminUi.textSecondary,
-                        side: const BorderSide(color: AdminUi.border),
-                        textStyle: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                      ),
-                      child: const Text('Cancel'),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: SizedBox(
-                    height: 52,
-                    child: FilledButton.icon(
-                      onPressed: _saving ? null : _save,
-                      icon: _saving
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2.4,
-                                color: Colors.white,
-                              ),
-                            )
-                          : Icon(
-                              _isEdit
-                                  ? Icons.save_rounded
-                                  : Icons.publish_rounded,
-                              size: 20,
-                            ),
-                      label: Text(_isEdit ? 'Save changes' : 'Publish'),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: AppColors.primaryBlue,
-                        foregroundColor: Colors.white,
-                        elevation: 2,
-                        shadowColor: AppColors.primaryBlue.withValues(
-                          alpha: 0.4,
-                        ),
-                        textStyle: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+            _IconSection(
+              icon: Icons.location_on_rounded,
+              title: 'Location',
+              child: _buildBarangayPicker(),
             ),
-          ),
-        ],
+            _IconSection(
+              icon: Icons.schedule_rounded,
+              title: 'Date & Time',
+              child: _buildDateTimeRow(),
+            ),
+            _IconSection(
+              icon: Icons.description_rounded,
+              title: 'Description',
+              child: _field(
+                _description,
+                hint: 'What is this event about?',
+                maxLines: 3,
+              ),
+            ),
+            _IconSection(
+              icon: Icons.checklist_rounded,
+              title: 'What to expect',
+              child: _field(_expect, hint: 'Optional', maxLines: 2),
+            ),
+            _IconSection(
+              icon: Icons.rule_rounded,
+              title: 'Requirements',
+              child: _field(_requirements, hint: 'Optional', maxLines: 2),
+            ),
+            _IconSection(
+              icon: Icons.star_rounded,
+              title: 'Featured',
+              isLast: true,
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Pin this event to the top of the community feed.',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        height: 1.4,
+                        color: AdminUi.textSecondary,
+                      ),
+                    ),
+                  ),
+                  Switch(
+                    value: _featured,
+                    activeThumbColor: AppColors.primaryBlue,
+                    onChanged: _saving
+                        ? null
+                        : (v) => setState(() => _featured = v),
+                  ),
+                ],
+              ),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 14),
+              Text(
+                _error!,
+                style: const TextStyle(fontSize: 12, color: AppColors.red),
+              ),
+            ],
+            const SizedBox(height: 18),
+            const Divider(height: 1, color: AdminUi.border),
+            const SizedBox(height: 16),
+            _actionSection(),
+          ],
+        ),
       ),
+    );
+  }
+
+  /// Mirrors the detail pane's Action block, down to the stack-when-cramped
+  /// rule, so the buttons you leave the detail by and the buttons you leave the
+  /// form by are the same buttons.
+  Widget _actionSection() {
+    final buttons = <Widget>[
+      _ActionButton(
+        label: _isEdit ? 'Save changes' : 'Publish',
+        icon: _isEdit ? Icons.save_rounded : Icons.publish_rounded,
+        color: AppColors.primaryBlue,
+        busy: _saving,
+        onTap: _saving ? null : _save,
+      ),
+      _ActionButton(
+        label: 'Cancel',
+        icon: Icons.close_rounded,
+        color: AdminUi.textSecondary,
+        outlined: true,
+        onTap: _saving ? null : () => Navigator.pop(context),
+      ),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Action',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: AdminUi.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 10),
+        LayoutBuilder(
+          builder: (context, c) {
+            if (c.maxWidth < 300) {
+              return Column(
+                children: [
+                  for (var i = 0; i < buttons.length; i++) ...[
+                    if (i > 0) const SizedBox(height: 10),
+                    buttons[i],
+                  ],
+                ],
+              );
+            }
+            return Row(
+              children: [
+                for (var i = 0; i < buttons.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 10),
+                  Expanded(child: buttons[i]),
+                ],
+              ],
+            );
+          },
+        ),
+      ],
     );
   }
 
@@ -2420,7 +2445,9 @@ class _EventFormDialogState extends ConsumerState<_EventFormDialog> {
     return GestureDetector(
       onTap: _pickImage,
       child: Container(
-        height: 140,
+        // Same height as the detail's Cover Photo, so the picture doesn't
+        // resize when you move between viewing and editing.
+        height: 190,
         width: double.infinity,
         decoration: BoxDecoration(
           color: AdminUi.subtle,
@@ -2553,14 +2580,14 @@ class _EventFormDialogState extends ConsumerState<_EventFormDialog> {
   Widget _buildDateTimeRow() {
     final date = _pickerField(
       _dateText,
-      'Date',
+      label: 'Date',
       hint: 'Choose date',
       icon: Icons.calendar_today_rounded,
       onTap: _pickDate,
     );
     final time = _pickerField(
       _time,
-      'Time',
+      label: 'Time',
       hint: 'Choose time',
       icon: Icons.access_time_rounded,
       onTap: _pickTime,
@@ -2589,7 +2616,6 @@ class _EventFormDialogState extends ConsumerState<_EventFormDialog> {
   /// with the barangay filters citizens and staff already browse by.
   Widget _buildBarangayPicker() => _pickerField(
     _locationText,
-    'Location',
     hint: 'Select barangay',
     icon: Icons.location_on_rounded,
     onTap: _pickBarangay,
@@ -2599,10 +2625,10 @@ class _EventFormDialogState extends ConsumerState<_EventFormDialog> {
   Future<void> _pickBarangay() async {
     // Same rule as the cover-image picker: the wide layout floats this form in
     // a dialog, where a slide-up sheet would detach from the card.
-    final wide = MediaQuery.of(context).size.width >= 900;
+    final wide = !adminDetailIsNarrow(context);
     final String? selected;
     if (wide) {
-      selected = await showDialog<String>(
+      selected = await showAppDialog<String>(
         context: context,
         builder: (_) => _BarangayPickerDialog(current: _barangay),
       );
@@ -2626,15 +2652,15 @@ class _EventFormDialogState extends ConsumerState<_EventFormDialog> {
   /// border and error styling are the ones [_field] already produces — the two
   /// cannot drift apart.
   Widget _pickerField(
-    TextEditingController ctrl,
-    String label, {
+    TextEditingController ctrl, {
+    String? label,
     required String hint,
     required IconData icon,
     required VoidCallback onTap,
     IconData? trailing,
   }) => _field(
     ctrl,
-    label,
+    label: label,
     hint: hint,
     required: true,
     readOnly: true,
@@ -2643,9 +2669,12 @@ class _EventFormDialogState extends ConsumerState<_EventFormDialog> {
     trailing: trailing,
   );
 
+  /// [label] is omitted when the enclosing [_IconSection] heading already names
+  /// the field — only Date and Time, which share a row, still caption
+  /// themselves.
   Widget _field(
-    TextEditingController ctrl,
-    String label, {
+    TextEditingController ctrl, {
+    String? label,
     String? hint,
     int maxLines = 1,
     bool required = false,
@@ -2657,15 +2686,17 @@ class _EventFormDialogState extends ConsumerState<_EventFormDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: AdminUi.textSecondary,
+        if (label != null) ...[
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AdminUi.textSecondary,
+            ),
           ),
-        ),
-        const SizedBox(height: 8),
+          const SizedBox(height: 8),
+        ],
         TextFormField(
           controller: ctrl,
           maxLines: maxLines,

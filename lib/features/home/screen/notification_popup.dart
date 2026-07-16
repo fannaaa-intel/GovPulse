@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:math' as math;
 import '../settings/my-submission/my_submissions_screen.dart'
@@ -110,61 +109,11 @@ class NotificationService {
   static SupabaseClient get _db => Supabase.instance.client;
   static String? get _uid => _db.auth.currentUser?.id;
 
-  // ── Local (phone) notifications ────────────────────────────────────────────
-  static final FlutterLocalNotificationsPlugin _local =
-      FlutterLocalNotificationsPlugin();
-  static bool _localReady = false;
-
-  /// Initialise the local-notifications plugin once and request the runtime
-  /// permission (required on Android 13+ and on iOS).
-  static Future<void> _ensureLocalReady() async {
-    if (_localReady) return;
-    const init = InitializationSettings(
-      android: AndroidInitializationSettings('@mipmap/ic_launcher'),
-      iOS: DarwinInitializationSettings(
-        requestAlertPermission: true,
-        requestBadgePermission: true,
-        requestSoundPermission: true,
-      ),
-    );
-    await _local.initialize(init);
-
-    // Android 13+ (API 33) POST_NOTIFICATIONS runtime permission.
-    await _local
-        .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin
-        >()
-        ?.requestNotificationsPermission();
-
-    _localReady = true;
-  }
-
-  /// Mirror an in-app notification to the device's notification tray so the
-  /// user is notified on the phone as well as inside the app.
-  static Future<void> _showOnPhone(AppNotification n) async {
-    try {
-      await _ensureLocalReady();
-      const details = NotificationDetails(
-        android: AndroidNotificationDetails(
-          'general_channel',
-          'Notifications',
-          channelDescription: 'Aparri app notifications',
-          importance: Importance.max,
-          priority: Priority.high,
-          icon: '@mipmap/ic_launcher',
-        ),
-        iOS: DarwinNotificationDetails(),
-      );
-      await _local.show(
-        n.title.hashCode & 0x7fffffff, // stable-ish id per title
-        n.title,
-        n.subtitle,
-        details,
-      );
-    } catch (e) {
-      debugPrint('NotificationService._showOnPhone error: $e');
-    }
-  }
+  // The device's notification tray is PushService's job, not this service's.
+  // This class owns the in-app list + badge; a row inserted here reaches the
+  // phone via push_on_notification → send-push → FCM. It deliberately keeps no
+  // local-notifications plugin of its own — two independent things showing the
+  // same tray notification is how the same alert ends up on screen twice.
 
   static Future<void> load() async {
     final uid = _uid;
@@ -217,7 +166,11 @@ class NotificationService {
           .single();
       notifications.insert(0, AppNotification.fromRow(row));
       _sync();
-      await _showOnPhone(n); // mirror to the phone's notification tray
+      // NOT mirrored to the tray from here. This insert already fires the
+      // push_on_notification trigger → send-push → FCM, which PushService shows
+      // in the foreground — so showing a local copy too meant the same
+      // notification twice. It also bypassed the user's push master-switch,
+      // which send-push honours and a raw local .show() cannot.
       debugPrint(
         'NotificationService: inserted "${n.title}" (type: ${n.type})',
       );

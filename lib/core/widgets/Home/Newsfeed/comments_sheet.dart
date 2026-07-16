@@ -8,6 +8,17 @@ import 'comment_item.dart';
 import 'edit_comment_sheet.dart';
 import '../../app_snackbar.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import '../../app_dialog.dart';
+
+/// The width this sheet's `width * 0.xx` sizing is proportioned against.
+///
+/// Clamped to the same 480 the rest of the citizen app uses. These sheets are
+/// full-bleed, so on a landscape phone the raw viewport width (~844) would
+/// scale every icon, radius and pad to roughly double — against a screen that
+/// is only ~390dp tall. The sheet still spans the display; only its proportions
+/// stop chasing the display's width.
+double _sizingWidth(BuildContext context) =>
+    MediaQuery.of(context).size.width.clamp(0.0, 480.0);
 
 class CommentsSheet extends StatefulWidget {
   final Map<String, dynamic> post;
@@ -307,7 +318,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
   Future<void> _handleEditComment(Map<String, dynamic> entry) async {
     final id = entry['id'] as String;
     final currentText = (entry['text'] as String?) ?? '';
-    final width = MediaQuery.of(context).size.width;
+    final width = _sizingWidth(context);
 
     final newText = await showModalBottomSheet<String>(
       context: context,
@@ -370,7 +381,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
 
   Future<void> _handleDeleteComment(Map<String, dynamic> entry) async {
     final id = entry['id'] as String;
-    final width = MediaQuery.of(context).size.width;
+    final width = _sizingWidth(context);
 
     final confirmed = await showModalBottomSheet<bool>(
       context: context,
@@ -500,7 +511,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
 
     final loaderNavigator = Navigator.of(context);
 
-    showDialog(
+    showAppDialog(
       context: context,
       useRootNavigator: false,
       barrierDismissible: false,
@@ -564,7 +575,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final width = MediaQuery.of(context).size.width;
+    final width = _sizingWidth(context);
     final comments = _getComments();
 
     final freshPost = CommunityPostsProvider.instance.sortedPosts.firstWhere(

@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import '../../../theme/app_colors.dart';
+import '../../app_dialog.dart';
 
 void showRateLimitDialog(BuildContext context, String message) {
-  showDialog(
+  showAppDialog(
     context: context,
     builder: (ctx) => Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -72,7 +73,7 @@ void showRateLimitDialog(BuildContext context, String message) {
 }
 
 void showFriendlyErrorDialog(BuildContext context, String message) {
-  showDialog(
+  showAppDialog(
     context: context,
     builder: (ctx) => Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),

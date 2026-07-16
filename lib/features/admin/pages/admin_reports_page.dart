@@ -12,7 +12,7 @@ import '../../../core/widgets/ai_detection_badge.dart';
 import '../../staff/data/staff_departments.dart';
 import '../theme/admin_ui.dart';
 import '../providers/admin_reports_provider.dart';
-import '../utils/report_export.dart';
+import '../utils/report_pdf.dart';
 import '../widgets/admin_detail_screen.dart';
 import '../widgets/admin_moderation.dart';
 import '../providers/admin_identity_reveal_provider.dart';
@@ -21,6 +21,7 @@ import '../widgets/report_status_tracker.dart';
 import '../widgets/revealable_submitter.dart';
 import '../widgets/admin_skeleton.dart';
 import '../widgets/admin_snackbar.dart';
+import '../../../core/widgets/app_dialog.dart';
 
 // ── Category visuals — the same webp illustrations the citizen form uses ──────
 String _categoryAsset(String key) {
@@ -799,6 +800,7 @@ class _TableRow extends StatelessWidget {
                       color: _statusColor(r.status),
                     ),
                     if (r.isOverdue) _OverdueChip(r.ageDays),
+                    if (r.isCorroborated) _ConfirmedChip(r.reporterCount),
                   ],
                 ),
               ),
@@ -868,7 +870,7 @@ class _EndorsedBadge extends StatelessWidget {
 /// [showAdminDismissDialog] (spam soft-hide) — this is a legitimate closure with
 /// a citizen-facing explanation and a notification. Returns the note, or null.
 Future<String?> showRejectReportDialog(BuildContext context) {
-  return showDialog<String>(
+  return showAppDialog<String>(
     context: context,
     barrierColor: Colors.black54,
     builder: (_) => const _RejectReasonDialog(),
@@ -1405,6 +1407,47 @@ class _OverdueChip extends StatelessWidget {
   }
 }
 
+/// "N reports" — this issue was independently reported by more than one citizen.
+///
+/// Deliberately blue, not orange: corroboration is a PRIORITY signal, not a
+/// problem. Five people reporting one pothole means it's a bad pothole, and this
+/// chip is what makes that visible next to AI urgency.
+class _ConfirmedChip extends StatelessWidget {
+  final int reporterCount;
+  const _ConfirmedChip(this.reporterCount);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppColors.primaryBlue.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: AppColors.primaryBlue.withValues(alpha: 0.30)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.groups_rounded,
+            size: 11,
+            color: AppColors.primaryBlue,
+          ),
+          const SizedBox(width: 3),
+          Text(
+            '$reporterCount reports',
+            style: const TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w700,
+              color: AppColors.primaryBlue,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _MediaCount extends StatelessWidget {
   final int count;
   const _MediaCount(this.count);
@@ -1479,7 +1522,7 @@ class _Card extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           ReportProgressLabel(stages: buildReportStages(r, r.status)),
-          if (r.isEndorsed || r.isOverdue) ...[
+          if (r.isEndorsed || r.isOverdue || r.isCorroborated) ...[
             const SizedBox(height: 8),
             Wrap(
               spacing: 6,
@@ -1487,6 +1530,7 @@ class _Card extends StatelessWidget {
               children: [
                 if (r.isEndorsed) _EndorsedBadge(r.endorsedToDepartment!),
                 if (r.isOverdue) _OverdueChip(r.ageDays),
+                if (r.isCorroborated) _ConfirmedChip(r.reporterCount),
               ],
             ),
           ],
@@ -1536,6 +1580,11 @@ class _ReportDetailDialog extends ConsumerStatefulWidget {
 class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
   late ReportStatus _status;
   late Future<List<ReportMedia>> _mediaFuture;
+
+  /// Open reports that might be the same issue. Loaded once alongside the media
+  /// so the pane doesn't refetch on every rebuild.
+  late Future<List<DuplicateCandidate>> _dupFuture;
+
   bool _busy = false;
 
   /// Which tab of the status pane is showing: 0 = Timeline, 1 = Report History.
@@ -1547,6 +1596,18 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
   /// screen, the same trick the dashboard uses.
   int _paneTab = 0;
 
+  /// The report as it stands NOW.
+  ///
+  /// The dialog opens on a snapshot from the list, but it also STAYS OPEN across
+  /// the actions taken here — reject, reopen, restore — each of which rewrites
+  /// the row. Rendering from the snapshot would leave the panes describing the
+  /// report as it was before the tap (no rejection reason, still assigned), so
+  /// every render path reads through this instead. Falls back to the snapshot
+  /// only if the row has left the store entirely.
+  AdminReport get report =>
+      ref.read(adminReportsProvider.notifier).byId(widget.report.id) ??
+      widget.report;
+
   @override
   void initState() {
     super.initState();
@@ -1554,6 +1615,68 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
     _mediaFuture = ref
         .read(adminReportsProvider.notifier)
         .fetchMedia(widget.report.id);
+    // Only worth asking on the triage desk: that's where a duplicate should be
+    // caught, before an office starts work on a twin of a job it already has.
+    _dupFuture = widget.report.needsTriage && !widget.report.isDismissed
+        ? ref
+              .read(adminReportsProvider.notifier)
+              .fetchDuplicateCandidates(widget.report.id)
+        : Future.value(const []);
+  }
+
+  /// Links this report to [c] as a confirmation of the same issue. Asks first —
+  /// a merge takes a report off the queue, so it should never be one stray tap.
+  Future<void> _merge(DuplicateCandidate c) async {
+    final ok = await showAppDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          'Same issue?',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+        ),
+        content: Text(
+          'RPT-${widget.report.shortId} will be linked to RPT-${c.shortRef} as a '
+          'confirmation and will leave the queue. The citizen keeps their report '
+          'and is told it matched an existing one — nothing is deleted, and you '
+          'can undo this from their report.',
+          style: const TextStyle(
+            fontSize: 13,
+            height: 1.5,
+            color: AdminUi.textSecondary,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Link as duplicate'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    setState(() => _busy = true);
+    try {
+      await ref
+          .read(adminReportsProvider.notifier)
+          .merge(widget.report.id, c.id);
+      if (!mounted) return;
+      Navigator.pop(context);
+      showAdminSnackBar(
+        context,
+        'Linked to RPT-${c.shortRef} — the citizen was notified.',
+        type: AdminSnackType.success,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      showAdminSnackBar(context, 'Could not link: $e', type: AdminSnackType.error);
+    }
   }
 
   Future<void> _dismiss() async {
@@ -1582,12 +1705,15 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
     }
   }
 
+  /// Undo a dismissal. Like [_reopen], this brings the report back rather than
+  /// finishing with it, so the dialog stays open and re-renders as the ordinary
+  /// report — the dismissed banner gone, its actions returned.
   Future<void> _restore() async {
     setState(() => _busy = true);
     try {
       await ref.read(adminReportsProvider.notifier).restore(widget.report.id);
       if (!mounted) return;
-      Navigator.pop(context);
+      setState(() => _busy = false);
       showAdminSnackBar(
         context,
         'Report restored.',
@@ -1642,7 +1768,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
     );
 
     if (wide) {
-      return showDialog<T>(
+      return showAppDialog<T>(
         context: context,
         builder: (ctx) => Dialog(
           backgroundColor: AdminUi.surface,
@@ -1744,10 +1870,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
     try {
       await ref.read(adminReportsProvider.notifier).accept(r.id, picked);
       if (!mounted) return;
-      setState(() {
-        _busy = false;
-        _status = ReportStatus.underReview;
-      });
+      // No re-render on the way out — same reasoning as [_reject].
       Navigator.pop(context);
       showAdminSnackBar(
         context,
@@ -1778,10 +1901,13 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
       // report was already being worked, so [r] is passed for that check.
       await ref.read(adminReportsProvider.notifier).reject(r.id, note);
       if (!mounted) return;
-      setState(() {
-        _busy = false;
-        _status = ReportStatus.rejected;
-      });
+      // Deliberately NOT re-rendering into the rejected state on the way out.
+      // Repainting the stepper red and swapping the buttons to "Reopen" one
+      // frame before the pop means the card that fades away is not the card you
+      // were looking at — it reads as a glitch rather than an exit. Dismissing
+      // simply pops, which is why it already feels smooth; rejecting now does
+      // the same. The rejected state IS rendered — for anyone who opens the
+      // report again.
       Navigator.pop(context);
       showAdminSnackBar(
         context,
@@ -1800,6 +1926,11 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
   }
 
   /// Reopen a mistakenly-rejected report — back to the triage desk.
+  ///
+  /// Stays open, unlike reject / dismiss: reopening isn't finishing with the
+  /// report, it's putting it back on the desk. The panes re-render as the
+  /// triage view — Accept / Reject, no rejection reason — which is exactly what
+  /// you'd see if you closed this and opened the report again.
   Future<void> _reopen() async {
     setState(() => _busy = true);
     try {
@@ -1808,8 +1939,12 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
       setState(() {
         _busy = false;
         _status = ReportStatus.pending;
+        // Back on the triage desk is the one place duplicates matter, and the
+        // lookup was skipped on open because the report was rejected then.
+        _dupFuture = ref
+            .read(adminReportsProvider.notifier)
+            .fetchDuplicateCandidates(widget.report.id);
       });
-      Navigator.pop(context);
       showAdminSnackBar(
         context,
         'Report reopened for triage.',
@@ -1826,13 +1961,27 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
     }
   }
 
-  /// Single-report CSV, for the detail's "Download Report" action. Reuses the
-  /// same exporter the overview's bulk export uses, so the columns match.
+  /// "Download Report" → the full printed dossier for this one report.
+  ///
+  /// Was a one-row CSV, which was the wrong artefact: a spreadsheet answers
+  /// "how do these hundreds of reports compare", and nobody downloads ONE
+  /// report to ask that. They download it to attach it to something — an
+  /// endorsement, a reply, a case file — where a single row answers nothing the
+  /// reader will ask.
+  ///
+  /// The attachments and work log are fetched here rather than in the exporter
+  /// so the button can show its spinner while they load. Media is already
+  /// cached by the pane, so this is usually just the notes.
   Future<void> _download() async {
-    final r = widget.report;
+    final r = report;
+    setState(() => _busy = true);
     try {
-      await exportReportsCsv(filename: 'report_${r.shortId}.csv', reports: [r]);
+      final notifier = ref.read(adminReportsProvider.notifier);
+      final media = await notifier.fetchMedia(r.id);
+      final notes = await notifier.fetchNotes(r.id);
+      await exportReportPdf(report: r, media: media, notes: notes);
       if (!mounted) return;
+      setState(() => _busy = false);
       showAdminSnackBar(
         context,
         'Report downloaded.',
@@ -1840,6 +1989,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
       );
     } catch (e) {
       if (!mounted) return;
+      setState(() => _busy = false);
       showAdminSnackBar(
         context,
         'Could not download: $e',
@@ -1851,7 +2001,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
   /// The facts behind the acceptance, shown in the stage card's inset strip and
   /// in the timeline's first step: when it was accepted, by whom, and to where.
   List<({String label, String value})> _acceptanceFacts() {
-    final r = widget.report;
+    final r = report;
     if (r.isEndorsed) {
       return [
         (label: 'Endorsed on', value: adminLongDateTime(r.endorsedAt)),
@@ -1877,7 +2027,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
   /// Copy + colour for the illustrated stage card — the "where does this report
   /// stand right now" answer, derived from the same lifecycle the stepper uses.
   ({String chip, String headline, String blurb, Color accent}) _stageCopy() {
-    final r = widget.report;
+    final r = report;
     final owner = r.isEndorsed
         ? r.endorsedToDepartment
         : r.assignedToDepartment;
@@ -1941,7 +2091,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
   /// tabs. Read-only: status is driven by triage and the owning office, never by
   /// an admin nudging raw states here.
   Widget _statusPane() {
-    final r = widget.report;
+    final r = report;
     final stages = buildReportStages(
       r,
       _status,
@@ -1994,7 +2144,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
   /// empty until a department owns the report, so say so rather than showing a
   /// composer that has nobody to talk to.
   Widget _historyTab() {
-    final r = widget.report;
+    final r = report;
     if (!r.isAssigned && !r.isEndorsed) {
       return const _EmptyNote(
         icon: Icons.history_rounded,
@@ -2020,8 +2170,209 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
   }
 
   /// Right pane — what was reported, and the actions available on it.
+  /// "This may already be reported" strip — triage desk only.
+  ///
+  /// A suggestion, never an action: it proposes, the admin disposes. Renders
+  /// nothing while loading, when there's no candidate, or when
+  /// report_duplicates.sql hasn't been applied — so it can never make the pane
+  /// jump on open or break a detail view.
+  Widget _duplicateSuggestion() {
+    return FutureBuilder<List<DuplicateCandidate>>(
+      future: _dupFuture,
+      builder: (context, snap) {
+        final list = snap.data ?? const <DuplicateCandidate>[];
+        if (list.isEmpty) return const SizedBox.shrink();
+        return Container(
+          margin: const EdgeInsets.only(top: 12),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppColors.orange.withValues(alpha: 0.06),
+            border: Border.all(color: AppColors.orange.withValues(alpha: 0.35)),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.copy_all_rounded,
+                    size: 15,
+                    color: AppColors.orange,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    list.length == 1
+                        ? 'This may already be reported'
+                        : 'This may match ${list.length} existing reports',
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w800,
+                      color: AdminUi.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Same category, filed nearby, still open. Linking keeps one '
+                'ticket and counts the rest as confirmations.',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  height: 1.45,
+                  color: AdminUi.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 10),
+              for (final c in list) _duplicateCandidateRow(c),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _duplicateCandidateRow(DuplicateCandidate c) {
+    final meta = [
+      c.distanceLabel,
+      adminShortDate(c.createdAt),
+      reportStatusLabel(c.status),
+      if (c.reporterCount > 1) '${c.reporterCount} reports',
+    ].join(' · ');
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'RPT-${c.shortRef} — ${c.remarks.trim().isEmpty ? 'No description' : c.remarks}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: AdminUi.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  meta,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AdminUi.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          TextButton(
+            onPressed: _busy ? null : () => _merge(c),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.orange,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              minimumSize: const Size(0, 32),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: const Text(
+              'Link',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The other citizens who reported this same issue. Their reports are real
+  /// rows — this is the only place they're reachable, since a confirmation has
+  /// no queue row of its own — so unlinking one lives here too.
+  Widget _confirmationsBlock(AdminReport r) {
+    final linked = ref
+        .read(adminReportsProvider.notifier)
+        .confirmationsOf(r.id);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '${r.reporterCount} citizens reported this issue — '
+          '${r.confirmCount} confirmed the original.',
+          style: const TextStyle(
+            fontSize: 13,
+            height: 1.5,
+            color: AdminUi.textSecondary,
+          ),
+        ),
+        const SizedBox(height: 10),
+        for (final d in linked)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'RPT-${d.shortId} · ${adminShortDate(d.createdAt)}'
+                    '${d.remarks.trim().isEmpty ? '' : ' · ${d.remarks.trim()}'}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AdminUi.textSecondary,
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: _busy ? null : () => _unmerge(d),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.red,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: const Size(0, 28),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: const Text(
+                    'Unlink',
+                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// Splits a confirmation back out into its own ticket — the escape hatch for a
+  /// wrong merge, which is what lets the merge itself be a low-stakes decision.
+  Future<void> _unmerge(AdminReport d) async {
+    setState(() => _busy = true);
+    try {
+      await ref.read(adminReportsProvider.notifier).unmerge(d.id);
+      if (!mounted) return;
+      Navigator.pop(context);
+      showAdminSnackBar(
+        context,
+        'RPT-${d.shortId} is a separate report again — find it under Needs triage.',
+        type: AdminSnackType.success,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      showAdminSnackBar(
+        context,
+        'Could not unlink: $e',
+        type: AdminSnackType.error,
+      );
+    }
+  }
+
   Widget _detailsPane() {
-    final r = widget.report;
+    final r = report;
     return _Pane(
       title: 'Report Details',
       child: Column(
@@ -2034,6 +2385,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
             onDismiss: _dismiss,
             onRestore: _restore,
           ),
+          _duplicateSuggestion(),
           const SizedBox(height: 14),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -2056,6 +2408,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
                             color: _statusColor(_status),
                           ),
                           if (r.isOverdue) _OverdueChip(r.ageDays),
+                          if (r.isCorroborated) _ConfirmedChip(r.reporterCount),
                         ],
                       ),
                     ),
@@ -2121,12 +2474,19 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
           _IconSection(
             icon: Icons.attach_file_rounded,
             title: 'Attachments',
-            isLast: true,
+            isLast: !r.isCorroborated,
             child: _MediaGallery(
               future: _mediaFuture,
               placeholderCount: r.mediaCount,
             ),
           ),
+          if (r.isCorroborated)
+            _IconSection(
+              icon: Icons.groups_rounded,
+              title: 'Confirmations',
+              isLast: true,
+              child: _confirmationsBlock(r),
+            ),
           const SizedBox(height: 18),
           const Divider(height: 1, color: AdminUi.border),
           const SizedBox(height: 16),
@@ -2140,7 +2500,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
   /// driven by where the report actually is: only a report still on the triage
   /// desk can be accepted, only a rejected one can be reopened, and so on.
   Widget _actionSection() {
-    final r = widget.report;
+    final r = report;
     final rejected = _status == ReportStatus.rejected;
     final resolved = _status == ReportStatus.resolved;
 
@@ -2439,7 +2799,7 @@ class _HeroThumb extends StatelessWidget {
           // Video-only: there IS media here, so the category illustration would
           // read as "nothing attached". Show a play tile that opens the clip.
           inner = GestureDetector(
-            onTap: () => showDialog(
+            onTap: () => showAppDialog(
               context: context,
               barrierColor: Colors.black87,
               builder: (_) => _NetworkVideoDialog(url: videos.first.url),
@@ -2462,7 +2822,7 @@ class _HeroThumb extends StatelessWidget {
           inner = _CategoryIconBox(categoryKey, size: 88);
         } else {
           inner = GestureDetector(
-            onTap: () => showDialog(
+            onTap: () => showAppDialog(
               context: context,
               barrierColor: Colors.black87,
               builder: (_) => _FullscreenImageDialog(url: url),
@@ -2812,13 +3172,13 @@ class _MediaThumb extends StatelessWidget {
     return GestureDetector(
       onTap: () {
         if (item.isVideo) {
-          showDialog(
+          showAppDialog(
             context: context,
             barrierColor: Colors.black87,
             builder: (_) => _NetworkVideoDialog(url: item.url),
           );
         } else {
-          showDialog(
+          showAppDialog(
             context: context,
             barrierColor: Colors.black87,
             builder: (_) => _FullscreenImageDialog(url: item.url),

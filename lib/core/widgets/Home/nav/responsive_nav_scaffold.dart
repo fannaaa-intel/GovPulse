@@ -3,13 +3,13 @@
 // Shared responsive chrome for the five top-level nav destinations
 // (Home, My Reports, NewsFeed, Emergency, Settings).
 //
-// It reproduces the exact three-band behaviour that `home_screen.dart` uses
-// inline, so every nav screen behaves identically instead of each re-inventing
-// it:
+// The three-band rule itself lives in `nav_band.dart`, shared with
+// `home_screen.dart` so every nav screen behaves identically instead of each
+// re-inventing it:
 //
-//   • phone   (native, width < 600)  → bottom app nav  (AppBottomNav)
-//   • drawer  (tablet / narrow web)  → side nav drawer (HomeNavDrawer) + slim app bar
-//   • topNav  (width >= 900)         → horizontal top nav (HomeTopNav)
+//   • phone   (native, shortest side < 600) → bottom app nav  (AppBottomNav)
+//   • drawer  (tablet / narrow web)         → side nav drawer (HomeNavDrawer) + slim app bar
+//   • topNav  (width >= 900)                → horizontal top nav (HomeTopNav)
 //
 // Usage — wrap whatever used to be inside `Scaffold.body`:
 //
@@ -26,7 +26,6 @@
 // omit them and the header degrades gracefully. Notifications + logout are
 // owned here so plain StatefulWidget screens don't have to wire them up.
 
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -46,25 +45,10 @@ import '../home_enums.dart';
 import 'app_bottom_nav.dart';
 import 'home_nav_drawer.dart';
 import 'home_top_nav.dart';
+import 'nav_band.dart';
+import '../../app_dialog.dart';
 
-/// Which navigation chrome to show for a given viewport width.
-enum NavBand { phone, drawer, topNav }
-
-/// Width at/above which the horizontal top nav is shown (matches Home).
-const double kNavTopBreakpoint = 900;
-
-/// Width below which native mobile uses the bottom nav (matches Home).
-const double kNavMobileBreakpoint = 600;
-
-/// Mirror of the band logic in `home_screen.dart` (kIsWeb aware):
-///   useMobile = !kIsWeb && width < 600
-///   useTopNav = width >= 900
-///   else      → drawer
-NavBand resolveNavBand(double width) {
-  if (width >= kNavTopBreakpoint) return NavBand.topNav;
-  if (!kIsWeb && width < kNavMobileBreakpoint) return NavBand.phone;
-  return NavBand.drawer;
-}
+export 'nav_band.dart' show NavBand, resolveNavBand, kNavTopBreakpoint;
 
 class ResponsiveNavScaffold extends ConsumerWidget {
   /// 0 Home · 1 My Reports · 2 NewsFeed · 3 Emergency · 4 Settings
@@ -240,7 +224,7 @@ class ResponsiveNavScaffold extends ConsumerWidget {
 
     if (!shouldLogout || !context.mounted) return;
 
-    showDialog(
+    showAppDialog(
       context: context,
       barrierDismissible: false,
       builder: (_) => const Center(
@@ -366,7 +350,8 @@ class ResponsiveNavScaffold extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final width = MediaQuery.of(context).size.width;
+    final size = MediaQuery.of(context).size;
+    final width = size.width;
 
     if (!showNav) {
       return Scaffold(
@@ -376,7 +361,7 @@ class ResponsiveNavScaffold extends ConsumerWidget {
       );
     }
 
-    final band = resolveNavBand(width);
+    final band = resolveNavBand(size);
 
     // Display fields (name / avatar / verify badge) are global to the signed-in
     // user, so prefer anything the screen passed explicitly but fall back to the

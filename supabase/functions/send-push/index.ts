@@ -136,7 +136,18 @@ Deno.serve(async (req) => {
       .select("token")
       .eq("user_id", row.user_id);
     if (error) throw error;
-    if (!tokens || tokens.length === 0) {
+
+    // Dedupe before sending. A device can accumulate more than one row for the
+    // SAME token (a register that inserts rather than upserts, no unique index
+    // on token, a reinstall), and every extra row is another identical push
+    // landing on the same phone — which is exactly what a user sees as a
+    // "duplicated notification". Sending is not idempotent, so this is deduped
+    // here rather than trusted to the table's shape.
+    const unique = [...new Set(
+      (tokens ?? []).map((t: { token: string }) => t.token).filter(Boolean),
+    )];
+
+    if (unique.length === 0) {
       return new Response(JSON.stringify({ sent: 0, reason: "no devices" }), {
         headers: { "Content-Type": "application/json" },
       });
@@ -157,8 +168,18 @@ Deno.serve(async (req) => {
     let sent = 0;
     const dead: string[] = [];
 
+    // Collapse key: one notification ROW should only ever occupy one slot in the
+    // tray. Tagging by row id means a second delivery of the same row REPLACES
+    // the first instead of stacking beside it, so a duplicate at any layer above
+    // (a second webhook wired to this function, a retry, two live tokens for one
+    // phone) can no longer show the user two copies.
+    //
+    // Only applied when the row actually has an id: an empty tag is a tag, and
+    // would collapse every unrelated notification into a single entry.
+    const collapseId = row.id ? String(row.id) : null;
+
     await Promise.allSettled(
-      tokens.map(async (t: { token: string }) => {
+      unique.map(async (token: string) => {
         const res = await fetch(endpoint, {
           method: "POST",
           headers: {
@@ -167,7 +188,7 @@ Deno.serve(async (req) => {
           },
           body: JSON.stringify({
             message: {
-              token: t.token,
+              token,
               notification: { title, body },
               data,
               android: {
@@ -175,9 +196,13 @@ Deno.serve(async (req) => {
                 notification: {
                   channel_id: "general_channel",
                   default_sound: true,
+                  ...(collapseId ? { tag: collapseId } : {}),
                 },
               },
               apns: {
+                ...(collapseId
+                  ? { headers: { "apns-collapse-id": collapseId } }
+                  : {}),
                 payload: { aps: { sound: "default", badge: 1 } },
               },
             },
@@ -193,7 +218,7 @@ Deno.serve(async (req) => {
             errBody.includes("UNREGISTERED") ||
             errBody.includes("INVALID_ARGUMENT")
           ) {
-            dead.push(t.token);
+            dead.push(token);
           }
         }
       }),

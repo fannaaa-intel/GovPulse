@@ -11,13 +11,14 @@ import '../providers/admin_profile_provider.dart';
 import '../theme/admin_ui.dart';
 import '../widgets/admin_dialog_back.dart';
 import '../widgets/admin_snackbar.dart';
+import '../../../core/widgets/app_dialog.dart';
 
 /// Opens the admin profile editor — a centred dialog on web/desktop/tablet
 /// (≥ 900px) and a full-screen page on phones, matching the rest of the console.
 void showAdminProfileEditor(BuildContext context) {
   final wide = MediaQuery.of(context).size.width >= 900;
   if (wide) {
-    showDialog(
+    showAppDialog(
       context: context,
       barrierColor: Colors.black54,
       barrierDismissible: false,

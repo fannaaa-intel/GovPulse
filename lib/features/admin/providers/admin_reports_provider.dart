@@ -118,6 +118,15 @@ class AdminReport {
   /// Reason captured when a report is rejected at triage (shown to the citizen).
   final String? rejectionNote;
 
+  /// Non-null when this report confirms another one (report_duplicates.sql).
+  /// Duplicates are NOT their own ticket — they're held out of every queue
+  /// bucket and surface only as a confirmation count on the canonical report.
+  final String? duplicateOf;
+
+  /// On a canonical report: how many OTHER reports confirm it. Maintained by a
+  /// DB trigger; see [reporterCount] for the number to actually show a human.
+  final int confirmCount;
+
   const AdminReport({
     required this.id,
     required this.shortId,
@@ -141,9 +150,24 @@ class AdminReport {
     this.assignedAt,
     this.assignedByName,
     this.rejectionNote,
+    this.duplicateOf,
+    this.confirmCount = 0,
   });
 
   bool get isDismissed => dismissedAt != null;
+
+  /// This report confirms another — it belongs to that report's ticket, not its
+  /// own row in the queue.
+  bool get isDuplicate => duplicateOf != null;
+
+  /// Citizens who reported this issue: the original reporter plus every
+  /// confirmation. This is the number to show — "1 report" for an unconfirmed
+  /// one reads correctly, where a bare confirmCount of 0 would not.
+  int get reporterCount => confirmCount + 1;
+
+  /// Independently reported by more than one citizen — corroborated, and worth
+  /// surfacing next to AI urgency as a priority signal.
+  bool get isCorroborated => confirmCount > 0;
 
   bool get isEndorsed =>
       endorsedToDepartment != null && endorsedToDepartment!.trim().isNotEmpty;
@@ -212,6 +236,75 @@ class ReportMedia {
   bool get isGpsVerified => source == 'camera';
 }
 
+/// One entry of a report's INTERNAL work log (`report_notes`) — the running
+/// conversation between the admin and the office handling the report. Never
+/// shown to the citizen; RLS enforces that, this is only how the console and
+/// the printed dossier read it back.
+class ReportNote {
+  final String authorRole; // 'admin' | 'staff'
+  final String authorName;
+  final String body;
+  final DateTime? createdAt;
+
+  const ReportNote({
+    required this.authorRole,
+    required this.authorName,
+    required this.body,
+    required this.createdAt,
+  });
+}
+
+/// An open report the DB thinks might be the same real-world issue as the one
+/// the admin is looking at (`report_duplicate_candidates`). A SUGGESTION only —
+/// nothing merges until an admin says so, because a wrong merge silently buries
+/// a real report where a missed one just costs a little triage time.
+class DuplicateCandidate {
+  final String id;
+  final String shortRef;
+  final String remarks;
+  final String? barangay;
+  final ReportStatus status;
+  final int confirmCount;
+  final int distanceM;
+  final DateTime? createdAt;
+
+  const DuplicateCandidate({
+    required this.id,
+    required this.shortRef,
+    required this.remarks,
+    required this.barangay,
+    required this.status,
+    required this.confirmCount,
+    required this.distanceM,
+    required this.createdAt,
+  });
+
+  factory DuplicateCandidate.fromRow(Map<String, dynamic> r) =>
+      DuplicateCandidate(
+        id: r['id'] as String,
+        shortRef: (r['short_ref'] as String?) ?? '',
+        remarks: (r['remarks'] as String?) ?? '',
+        barangay: r['barangay'] as String?,
+        status: reportStatusFromDb(r['status'] as String?),
+        confirmCount: (r['confirm_count'] as int?) ?? 0,
+        distanceM: (r['distance_m'] as num?)?.round() ?? 0,
+        createdAt: _parseTs(r['created_at']),
+      );
+
+  int get reporterCount => confirmCount + 1;
+
+  String get distanceLabel => distanceM < 1000
+      ? '$distanceM m away'
+      : '${(distanceM / 1000).toStringAsFixed(1)} km away';
+}
+
+DateTime? _parseTs(dynamic v) {
+  if (v == null) return null;
+  if (v is DateTime) return v.toLocal();
+  if (v is String) return DateTime.tryParse(v)?.toLocal();
+  return null;
+}
+
 // ── Filters ──────────────────────────────────────────────────────────────────
 
 /// Mutually-exclusive views of the queue.
@@ -247,6 +340,12 @@ enum ReportBucket {
 /// needsTriage / working / resolved piles; what it excludes is work that isn't
 /// the LGU's any more (endorsed out) or isn't real (dismissed spam).
 bool reportInBucket(AdminReport r, ReportBucket bucket) {
+  // A merged duplicate is not a ticket — it's a confirmation on someone else's.
+  // Held out of EVERY bucket (including dismissed) so collapsing duplicates
+  // actually shortens the admin's queue, which is the whole point. It stays a
+  // live row with its own reporter and notifications; it just isn't work.
+  if (r.isDuplicate) return false;
+
   switch (bucket) {
     case ReportBucket.dismissed:
       return r.isDismissed;
@@ -413,8 +512,13 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
   ReportFilters _filters = const ReportFilters();
   ReportFilters get filters => _filters;
 
-  int get totalCount => _all.length;
-  int get anonymousCount => _all.where((r) => r.isAnonymous).length;
+  /// Header stats count TICKETS, so merged confirmations are excluded — the same
+  /// rule the buckets use. Otherwise collapsing five reports into one would
+  /// shorten the list while the total above it stubbornly still said five.
+  Iterable<AdminReport> get _tickets => _all.where((r) => !r.isDuplicate);
+
+  int get totalCount => _tickets.length;
+  int get anonymousCount => _tickets.where((r) => r.isAnonymous).length;
 
   @override
   Future<List<AdminReport>> build() async {
@@ -456,8 +560,22 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
 
   int bucketCount(ReportBucket bucket) => _inBucket(bucket).length;
 
+  /// The reports linked to [canonicalId] as confirmations of the same issue.
+  ///
+  /// Read straight out of the already-fetched set rather than re-queried —
+  /// duplicates are held out of the BUCKETS, not out of [_all], precisely so
+  /// they stay reachable here. This is the only way into a merged report, since
+  /// by design it has no row of its own in any queue.
+  List<AdminReport> confirmationsOf(String canonicalId) =>
+      _all.where((r) => r.duplicateOf == canonicalId).toList()
+        ..sort((a, b) {
+          final at = a.createdAt?.millisecondsSinceEpoch ?? 0;
+          final bt = b.createdAt?.millisecondsSinceEpoch ?? 0;
+          return at.compareTo(bt);
+        });
+
   /// Active reports (not spam, not endorsed out) that have aged past their SLA.
-  int get overdueCount => _all
+  int get overdueCount => _tickets
       .where((r) => !r.isDismissed && !r.isEndorsed && r.isOverdue)
       .length;
 
@@ -589,6 +707,17 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
     ]);
   }
 
+  /// The report as it stands in the store, whatever the current filters happen
+  /// to show. The detail dialog stays open across actions that move a report
+  /// out of the visible bucket — reject, reopen, dismiss, restore — so it can't
+  /// read itself back out of the filtered [state].
+  AdminReport? byId(String id) {
+    for (final r in _all) {
+      if (r.id == id) return r;
+    }
+    return null;
+  }
+
   /// Writes an update, and if it fails because the report_triage_gate migration
   /// hasn't been applied yet, retries without the not-yet-existing columns so
   /// the core status change still lands.
@@ -620,6 +749,87 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
           'dismissed_reason': reason,
         })
         .eq('id', id);
+    await _reload();
+  }
+
+  /// A report's internal work log, oldest first — what the office and the admin
+  /// said to each other while handling it.
+  ///
+  /// Returns empty rather than throwing when `report_notes` doesn't exist: the
+  /// table ships in an optional migration, and a console (or a printed dossier)
+  /// must not break because it hasn't been applied. Same rule [fetchMedia]
+  /// follows for its optional columns.
+  Future<List<ReportNote>> fetchNotes(String reportId) async {
+    try {
+      final rows = List<Map<String, dynamic>>.from(
+        await _db
+            .from('report_notes')
+            .select('author_role, author_name, body, created_at')
+            .eq('report_id', reportId)
+            .order('created_at', ascending: true),
+      );
+      return [
+        for (final r in rows)
+          ReportNote(
+            authorRole: (r['author_role'] as String?) ?? 'staff',
+            authorName: (r['author_name'] as String?) ?? 'Staff',
+            body: (r['body'] as String?) ?? '',
+            createdAt: DateTime.tryParse(r['created_at'].toString())?.toLocal(),
+          ),
+      ];
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// Open reports that might be the same real-world issue as [reportId].
+  /// Empty when report_duplicates.sql hasn't been applied — the suggestion is
+  /// an aid, so its absence must never break the detail view.
+  Future<List<DuplicateCandidate>> fetchDuplicateCandidates(
+    String reportId,
+  ) async {
+    try {
+      final rows = await _db.rpc(
+        'report_duplicate_candidates',
+        params: {'p_report_id': reportId},
+      );
+      return List<Map<String, dynamic>>.from(rows as List)
+          .map(DuplicateCandidate.fromRow)
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// Links [id] to [canonicalId] as a confirmation of the same issue.
+  ///
+  /// Never deletes or rejects: [id] stays a real report with its own reporter,
+  /// who is notified it was linked and keeps receiving status updates from the
+  /// canonical ticket's progress. A DB trigger bumps the canonical's
+  /// confirm_count. Reversible via [unmerge].
+  Future<void> merge(String id, String canonicalId) async {
+    await _db
+        .from('reports')
+        .update({
+          'duplicate_of': canonicalId,
+          // A confirmation isn't work. Release it from whatever office holds it
+          // so it stops sitting in a staff inbox — the canonical report carries
+          // the actual job now.
+          'assigned_to_department': null,
+          'assigned_at': null,
+          'endorsed_to_department': null,
+          'endorsed_at': null,
+        })
+        .eq('id', id);
+    await _reload();
+  }
+
+  /// Undo a merge — the report becomes its own ticket again and returns to the
+  /// queue. It comes back UNOWNED (merging released its office), so it lands on
+  /// the triage desk to be routed afresh rather than silently re-entering an
+  /// inbox nobody is expecting it in.
+  Future<void> unmerge(String id) async {
+    await _db.from('reports').update({'duplicate_of': null}).eq('id', id);
     await _reload();
   }
 
@@ -678,10 +888,13 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
     const triage =
         'assigned_to_department, assigned_at, assigned_by, rejection_note';
     const moderation = 'dismissed_at, dismissed_reason';
+    const dedupe = 'duplicate_of, confirm_count';
     // Optional columns come from separate migrations (spam_moderation,
-    // staff_portal, report_triage_gate). Try the fullest set first and degrade
-    // one migration at a time so the list never breaks if one hasn't been run.
+    // staff_portal, report_triage_gate, report_duplicates). Try the fullest set
+    // first and degrade one migration at a time so the list never breaks if one
+    // hasn't been run.
     final attempts = [
+      '$core, $endorse, $triage, $moderation, $dedupe',
       '$core, $endorse, $triage, $moderation',
       '$core, $endorse, $triage',
       '$core, $endorse, $moderation',
@@ -767,6 +980,8 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
         assignedAt: _parseTs(r['assigned_at']),
         assignedByName: profiles[r['assigned_by']]?['name'] as String?,
         rejectionNote: _nullIfBlank(r['rejection_note']),
+        duplicateOf: _nullIfBlank(r['duplicate_of']),
+        confirmCount: (r['confirm_count'] as int?) ?? 0,
       );
     }).toList();
   }
@@ -837,13 +1052,6 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
     if (v is! String) return null;
     final t = v.trim();
     return t.isEmpty ? null : t;
-  }
-
-  static DateTime? _parseTs(dynamic v) {
-    if (v == null) return null;
-    if (v is DateTime) return v.toLocal();
-    if (v is String) return DateTime.tryParse(v)?.toLocal();
-    return null;
   }
 }
 

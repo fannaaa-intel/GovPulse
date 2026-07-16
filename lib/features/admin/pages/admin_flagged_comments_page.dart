@@ -6,10 +6,11 @@ import '../../../core/theme/app_colors.dart';
 import '../providers/admin_flagged_comments_provider.dart';
 import '../theme/admin_ui.dart';
 import '../widgets/admin_snackbar.dart';
+import '../../../core/widgets/app_dialog.dart';
 
 /// Opens the flagged / held community-comments review queue.
 void showFlaggedCommentsReview(BuildContext context) {
-  showDialog(
+  showAppDialog(
     context: context,
     barrierColor: Colors.black54,
     builder: (_) => Dialog(

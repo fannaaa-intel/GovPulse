@@ -5,6 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:video_player/video_player.dart';
 
 import '../theme/app_colors.dart';
+import 'app_dialog.dart';
 
 /// Completion ("after") photos & videos an LGU office / admin attaches when a
 /// report is marked RESOLVED. Shown to the citizen on their resolved report so
@@ -366,7 +367,7 @@ class _Thumb extends StatelessWidget {
       children: [
         GestureDetector(
           onTap: () {
-            showDialog(
+            showAppDialog(
               context: context,
               barrierColor: Colors.black87,
               builder: (_) => item.isVideo

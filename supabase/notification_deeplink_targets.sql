@@ -79,10 +79,24 @@ begin
 end;
 $$;
 
+-- ⚠ SUPERSEDED — do not re-enable. report_triage_gate.sql §5 DROPS this trigger
+-- on purpose: under the triage gate a newly filed report is `pending` and
+-- invisible to staff (RLS shows them only assigned/endorsed rows), so this ping
+-- deep-links staff to a report they cannot open, and the real ping already
+-- fires on routing (trg_notify_staff_report_assigned / _endorsed).
+--
+-- This file ran AFTER the triage gate and silently resurrected it — staff were
+-- getting the dead-end ping in production until 2026-07-16. Left commented,
+-- not deleted, so the history stays readable. The function above is still
+-- replaced (harmless, and keeps this file re-runnable); only the trigger is off.
+-- If you genuinely need it back, the triage gate's staff RLS has to change too.
+-- See fix_staff_new_report_ping.sql.
+--
+-- drop trigger if exists trg_notify_staff_new_report on public.reports;
+-- create trigger trg_notify_staff_new_report
+--   after insert on public.reports
+--   for each row execute function public.notify_staff_new_report();
 drop trigger if exists trg_notify_staff_new_report on public.reports;
-create trigger trg_notify_staff_new_report
-  after insert on public.reports
-  for each row execute function public.notify_staff_new_report();
 
 -- ── §2  Report endorsed to another department → that department's staff ──────
 -- Verbatim from staff_notifications.sql §4, + reference_id = new.id.

@@ -8,6 +8,7 @@ import 'package:geolocator/geolocator.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/app_snackbar.dart';
+import '../../../../core/widgets/app_dialog.dart';
 
 // ── Aparri bounding box (expanded to cover all 42 official barangays) ─────
 const double _aparriMinLat = 18.2750;
@@ -473,7 +474,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
 
   // ── Dialogs ────────────────────────────────────────────────────────────────
   void _showPermissionDialog() {
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (ctx) => Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),

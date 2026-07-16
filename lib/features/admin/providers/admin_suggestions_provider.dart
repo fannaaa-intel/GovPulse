@@ -238,6 +238,17 @@ class AdminSuggestionsNotifier extends AsyncNotifier<List<AdminSuggestion>> {
 
   int get dismissedCount => _all.where((s) => s.isDismissed).length;
 
+  /// The suggestion as it stands in the store, whatever the current filters
+  /// happen to show. The detail dialog stays open across a restore, which moves
+  /// the row straight out of the "Show dismissed" slice it was opened from — so
+  /// it can't read itself back out of the filtered [state].
+  AdminSuggestion? byId(String id) {
+    for (final s in _all) {
+      if (s.id == id) return s;
+    }
+    return null;
+  }
+
   void _publish() {
     state = AsyncValue.data(_view());
   }
