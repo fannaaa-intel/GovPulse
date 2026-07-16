@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'
+    show HardwareKeyboard, KeyDownEvent, LogicalKeyboardKey;
 import '../../../../core/theme/app_colors.dart';
 
 const _kTextPri = Color(0xFF111827);
@@ -47,7 +49,18 @@ class ChatInputBar extends StatelessWidget {
                 borderRadius: BorderRadius.circular(width * 0.055),
                 border: Border.all(color: AppColors.stroke, width: 1),
               ),
-              child: TextField(
+              child: Focus(
+                onKeyEvent: (node, event) {
+                  // Enter sends; Shift+Enter inserts a newline.
+                  if (event is KeyDownEvent &&
+                      event.logicalKey == LogicalKeyboardKey.enter &&
+                      !HardwareKeyboard.instance.isShiftPressed) {
+                    onSend();
+                    return KeyEventResult.handled;
+                  }
+                  return KeyEventResult.ignored;
+                },
+                child: TextField(
                 key: _chatInputFieldKey,
                 controller: controller,
                 focusNode: focusNode,
@@ -76,6 +89,7 @@ class ChatInputBar extends StatelessWidget {
                     vertical: width * 0.024,
                   ),
                 ),
+              ),
               ),
             ),
           ),

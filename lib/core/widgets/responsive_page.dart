@@ -16,7 +16,9 @@
 //     ),
 //   );
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/widgets.dart';
+import 'web/settings_web_shell.dart';
 
 class ResponsivePageBody extends StatelessWidget {
   final Widget child;
@@ -25,15 +27,46 @@ class ResponsivePageBody extends StatelessWidget {
   /// measure for text-heavy pages; forms can pass something narrower.
   final double maxWidth;
 
+  // ── Optional WEB shell (Settings sub-pages) ─────────────────────────────────
+  // When [shellTitle] is set and the viewport is at/above [shellBreakpoint], the
+  // page is shown as a brand/context panel + content (SettingsWebShell) so it
+  // fills the width like a real web app. Below the breakpoint (and on the mobile
+  // app) it falls back to the normal centered-column behaviour, untouched.
+  final String? shellTitle;
+  final String? shellSubtitle;
+  final IconData? shellIcon;
+  final List<(IconData, String)> shellHighlights;
+  final double shellContentWidth;
+  final double shellBreakpoint;
+
   const ResponsivePageBody({
     super.key,
     required this.child,
     this.maxWidth = 820,
+    this.shellTitle,
+    this.shellSubtitle,
+    this.shellIcon,
+    this.shellHighlights = const [],
+    this.shellContentWidth = 520,
+    this.shellBreakpoint = 900,
   });
 
   @override
   Widget build(BuildContext context) {
     final mq = MediaQuery.of(context);
+
+    if (kIsWeb && shellTitle != null && mq.size.width >= shellBreakpoint) {
+      return SettingsWebShell(
+        title: shellTitle!,
+        subtitle: shellSubtitle ?? '',
+        icon: shellIcon ?? const IconData(0xe33c, fontFamily: 'MaterialIcons'),
+        highlights: shellHighlights,
+        contentWidth: shellContentWidth,
+        breakpoint: shellBreakpoint,
+        child: child,
+      );
+    }
+
     if (mq.size.width <= maxWidth) return child;
 
     return Row(

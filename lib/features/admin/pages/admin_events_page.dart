@@ -7,14 +7,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 
+import '../../../core/constants/aparri_barangays.dart';
 import '../../../core/services/events_service.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/event_status_pill.dart';
 import '../../../core/widgets/modal/media_picker_sheet.dart';
 import '../providers/admin_events_provider.dart';
 import '../theme/admin_ui.dart';
 import '../widgets/admin_detail_screen.dart';
 import '../widgets/admin_dialog_back.dart';
 import '../widgets/admin_skeleton.dart';
+import '../widgets/admin_submission_ui.dart';
 import '../widgets/admin_snackbar.dart';
 
 // ── Category presets ──────────────────────────────────────────────────────────
@@ -757,6 +760,12 @@ class _TableRow extends StatelessWidget {
                         color: AdminUi.textMuted,
                       ),
                     ),
+                    const SizedBox(height: 4),
+                    EventStatusPill(
+                      eventDate: event.eventDate,
+                      eventTime: event.eventTime,
+                      fontSize: 10,
+                    ),
                   ],
                 ),
               ),
@@ -839,14 +848,21 @@ class _EventCard extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: 4),
-                      Row(
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           _CategoryChip(
                             category: event.category,
                             colorHex: event.categoryColor,
                           ),
-                          const SizedBox(width: 6),
                           _StatusPill(event.status),
+                          EventStatusPill(
+                            eventDate: event.eventDate,
+                            eventTime: event.eventTime,
+                            fontSize: 10,
+                          ),
                         ],
                       ),
                       const SizedBox(height: 6),
@@ -892,6 +908,11 @@ class _EventDetailDialog extends ConsumerStatefulWidget {
 
 class _EventDetailDialogState extends ConsumerState<_EventDetailDialog> {
   bool _busy = false;
+
+  /// Which PANE is showing when the layout is too narrow to seat both side by
+  /// side: 0 = Event Status, 1 = Event Details. Status leads — the cover and
+  /// the publish decision are why you opened this.
+  int _paneTab = 0;
 
   EventModel get e => widget.event;
 
@@ -990,42 +1011,38 @@ class _EventDetailDialogState extends ConsumerState<_EventDetailDialog> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final narrow = adminDetailIsNarrow(context);
-    final width = MediaQuery.of(context).size.width.clamp(0.0, 620.0);
-    final notifier = ref.read(adminEventsProvider.notifier);
-
-    // Cover banner (tap to view full image). The web dialog shows an X to
-    // dismiss; the narrow full-screen page relies on the scaffold's chevron.
-    final coverImage = Stack(
-      children: [
-        ClipRRect(
-          borderRadius: BorderRadius.vertical(
-            top: Radius.circular(narrow ? 0 : 16),
-          ),
-          child: SizedBox(
-            height: narrow ? 200 : 150,
-            width: double.infinity,
-            child: e.imageUrl == null || e.imageUrl!.isEmpty
-                ? Container(
-                    color: AdminUi.subtle,
-                    child: const Icon(
-                      Icons.event_rounded,
-                      size: 40,
-                      color: AdminUi.textMuted,
-                    ),
-                  )
-                : GestureDetector(
-                    onTap: () => _showFullImage(e.imageUrl!),
-                    child: MouseRegion(
-                      cursor: SystemMouseCursors.click,
-                      child: CachedNetworkImage(
-                        imageUrl: e.imageUrl!,
+  /// The cover photo, sized to fill whatever box it's given. Tapping opens the
+  /// full, uncropped image.
+  Widget _cover({required double height, BorderRadius? radius}) {
+    final url = e.imageUrl;
+    final has = url != null && url.isNotEmpty;
+    return ClipRRect(
+      borderRadius: radius ?? BorderRadius.circular(10),
+      child: SizedBox(
+        height: height,
+        width: double.infinity,
+        child: !has
+            ? Container(
+                color: AdminUi.subtle,
+                child: const Icon(
+                  Icons.event_rounded,
+                  size: 40,
+                  color: AdminUi.textMuted,
+                ),
+              )
+            : GestureDetector(
+                onTap: () => _showFullImage(url),
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      // Shimmers while it loads and stays cached, so flipping
+                      // between events doesn't re-download a cover.
+                      SkeletonNetworkImage(
+                        url: url,
                         fit: BoxFit.cover,
-                        placeholder: (_, _) =>
-                            Container(color: AdminUi.subtle),
-                        errorWidget: (_, _, _) => Container(
+                        errorChild: Container(
                           color: AdminUi.subtle,
                           child: const Icon(
                             Icons.broken_image_rounded,
@@ -1034,339 +1051,124 @@ class _EventDetailDialogState extends ConsumerState<_EventDetailDialog> {
                           ),
                         ),
                       ),
-                    ),
-                  ),
-          ),
-        ),
-        // "Tap to view full image" hint — the banner is a cropped preview;
-        // tapping opens the complete, uncropped photo.
-        if (e.imageUrl != null && e.imageUrl!.isNotEmpty)
-          Positioned(
-            bottom: 8,
-            right: 10,
-            child: IgnorePointer(
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.45),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.zoom_out_map_rounded,
-                      color: Colors.white,
-                      size: 13,
-                    ),
-                    SizedBox(width: 4),
-                    Text(
-                      'View',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
+                      // The banner is a cropped preview; tapping opens the
+                      // complete photo.
+                      Positioned(
+                        bottom: 8,
+                        right: 10,
+                        child: IgnorePointer(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.45),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.zoom_out_map_rounded,
+                                  color: Colors.white,
+                                  size: 13,
+                                ),
+                                SizedBox(width: 4),
+                                Text(
+                                  'View',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        if (!narrow)
-          Positioned(
-            top: 8,
-            right: 8,
-            child: Material(
-              color: Colors.black.withValues(alpha: 0.35),
-              shape: const CircleBorder(),
-              child: IconButton(
-                icon: const Icon(
-                  Icons.close_rounded,
-                  color: Colors.white,
-                ),
-                iconSize: 18,
-                onPressed: () => Navigator.pop(context),
-              ),
-            ),
-          ),
-        Positioned(top: 10, left: 12, child: _StatusPill(e.status)),
-      ],
-    );
-
-    final scrollContent = SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  e.title,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: AdminUi.textPrimary,
+                    ],
                   ),
                 ),
               ),
-              _CategoryChip(
-                category: e.category,
-                colorHex: e.categoryColor,
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          _InfoTile(
-            icon: Icons.location_on_rounded,
-            label: 'Location',
-            value: e.location,
-          ),
-          _InfoTile(
-            icon: Icons.calendar_today_rounded,
-            label: 'Date',
-            value: _shortDate(e.eventDate),
-          ),
-          _InfoTile(
-            icon: Icons.access_time_rounded,
-            label: 'Time',
-            value: e.eventTime,
-          ),
-          if ((e.description ?? '').isNotEmpty)
-            _Section(title: 'Description', body: e.description!),
-          if ((e.whatToExpect ?? '').isNotEmpty)
-            _Section(title: 'What to expect', body: e.whatToExpect!),
-          if ((e.requirements ?? '').isNotEmpty)
-            _Section(title: 'Requirements', body: e.requirements!),
-          const SizedBox(height: 8),
-          // Featured toggle
-          Row(
-            children: [
-              const Icon(
-                Icons.star_rounded,
-                size: 18,
-                color: AppColors.orange,
-              ),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Text(
-                  'Featured event',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: AdminUi.textPrimary,
-                  ),
-                ),
-              ),
-              Switch(
-                value: e.isFeatured,
-                activeThumbColor: AppColors.primaryBlue,
-                onChanged: _busy
-                    ? null
-                    : (v) => _run(
-                        () => notifier.setFeatured(e.id, v),
-                        v ? 'Marked as featured.' : 'Unfeatured.',
-                      ),
-              ),
-            ],
-          ),
-        ],
       ),
     );
+  }
 
-    final footer = Padding(
-      padding: const EdgeInsets.all(12),
-      child: Row(
-        children: [
-          if (e.status == EventStatus.pending) ...[
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: _busy
-                    ? null
-                    : () => _run(
-                        () => notifier.reject(e.id),
-                        'Event rejected.',
-                      ),
-                icon: const Icon(Icons.close_rounded, size: 18),
-                label: const Text('Reject'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.red,
-                  side: const BorderSide(color: AppColors.red),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: _busy
-                    ? null
-                    : () => _run(
-                        () => notifier.approve(e.id),
-                        'Event published.',
-                      ),
-                icon: const Icon(Icons.check_rounded, size: 18),
-                label: const Text('Publish'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.green,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-              ),
-            ),
-          ] else ...[
-            IconButton(
-              onPressed: _busy ? null : _confirmDelete,
-              icon: const Icon(Icons.delete_outline_rounded),
-              color: AppColors.red,
-              tooltip: 'Delete',
-            ),
-            const Spacer(),
-            ElevatedButton.icon(
-              onPressed: _busy
-                  ? null
-                  : () {
-                      Navigator.pop(context);
-                      showEventForm(context, existing: e);
-                    },
-              icon: const Icon(Icons.edit_rounded, size: 18),
-              label: const Text('Edit'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primaryBlue,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 18,
-                  vertical: 12,
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
+  /// Left pane — where this event stands, and the cover the community will see.
+  ///
+  /// Deliberately NOT the report's stepper: an event has no stages to walk
+  /// through. It's waiting on a reviewer, published, or rejected.
+  Widget _statusPane() {
+    final accent = _statusColor(e.status);
+    final notifier = ref.read(adminEventsProvider.notifier);
 
-    // Narrow → full-screen slide-up page (chevron header + slide-up body),
-    // matching the reports / suggestions / feedback details. Wide → dialog card.
-    if (narrow) {
-      return AdminDetailScaffold(
-        title: 'Event details',
-        child: Column(
-          children: [
-            coverImage,
-            Expanded(child: scrollContent),
-            const Divider(height: 1, color: AdminUi.border),
-            SafeArea(top: false, child: footer),
-          ],
-        ),
-      );
+    final String headline;
+    final String blurb;
+    switch (e.status) {
+      case EventStatus.pending:
+        headline = 'This event is awaiting review.';
+        blurb = 'Check the details, then publish it to the community feed or '
+            'reject it.';
+        break;
+      case EventStatus.approved:
+        headline = 'This event is published.';
+        blurb = 'It\'s live on the community feed and citizens can see it.';
+        break;
+      case EventStatus.rejected:
+        headline = 'This event was rejected.';
+        blurb = 'It isn\'t visible to the community. You can still edit it and '
+            'publish it again.';
+        break;
     }
 
-    return Dialog(
-      backgroundColor: AdminUi.surface,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: width, maxHeight: 660),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            coverImage,
-            Flexible(child: scrollContent),
-            const Divider(height: 1, color: AdminUi.border),
-            footer,
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _Section extends StatelessWidget {
-  final String title;
-  final String body;
-  const _Section({required this.title, required this.body});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 14),
+    return _Pane(
+      title: 'Event Status',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title.toUpperCase(),
-            style: const TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.5,
-              color: AdminUi.textMuted,
-            ),
+          _StatusCard(
+            chip: _statusLabel(e.status),
+            headline: headline,
+            blurb: blurb,
+            accent: accent,
+            facts: [
+              (label: 'Event date', value: _shortDate(e.eventDate)),
+              (label: 'Event time', value: e.eventTime),
+            ],
           ),
-          const SizedBox(height: 6),
-          Text(
-            body,
-            style: const TextStyle(
-              fontSize: 13,
-              height: 1.5,
-              color: AdminUi.textSecondary,
-            ),
+          const SizedBox(height: 18),
+          _IconSection(
+            icon: Icons.image_rounded,
+            title: 'Cover Photo',
+            child: _cover(height: 190),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _InfoTile extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-  const _InfoTile({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        children: [
-          Container(
-            width: 34,
-            height: 34,
-            decoration: BoxDecoration(
-              color: AdminUi.subtle,
-              borderRadius: BorderRadius.circular(9),
-              border: Border.all(color: AdminUi.border),
-            ),
-            child: Icon(icon, size: 17, color: AppColors.primaryBlue),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          _IconSection(
+            icon: Icons.star_rounded,
+            title: 'Featured',
+            isLast: true,
+            child: Row(
               children: [
-                Text(
-                  label,
-                  style: const TextStyle(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w500,
-                    color: AdminUi.textMuted,
+                const Expanded(
+                  child: Text(
+                    'Pin this event to the top of the community feed.',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      height: 1.4,
+                      color: AdminUi.textSecondary,
+                    ),
                   ),
                 ),
-                const SizedBox(height: 1),
-                Text(
-                  value.isEmpty ? '—' : value,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: AdminUi.textPrimary,
-                  ),
+                Switch(
+                  value: e.isFeatured,
+                  activeThumbColor: AppColors.primaryBlue,
+                  onChanged: _busy
+                      ? null
+                      : (v) => _run(
+                          () => notifier.setFeatured(e.id, v),
+                          v ? 'Marked as featured.' : 'Unfeatured.',
+                        ),
                 ),
               ],
             ),
@@ -1375,13 +1177,740 @@ class _InfoTile extends StatelessWidget {
       ),
     );
   }
+
+  /// Right pane — what the event actually is, and the decision buttons.
+  /// Mirrors the report details pane, including its Action block at the foot.
+  Widget _detailsPane() {
+    return _Pane(
+      title: 'Event Details',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(width: 88, child: _cover(height: 88)),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _KvRow(label: 'Status', trailing: _StatusPill(e.status)),
+                    _KvRow(label: 'ID', value: '#EVT-${_shortIdOf(e.id)}'),
+                    _KvRow(label: 'Date', value: _shortDate(e.eventDate)),
+                    _KvRow(label: 'Time', value: e.eventTime),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          const Divider(height: 1, color: AdminUi.border),
+          const SizedBox(height: 18),
+          _IconSection(
+            icon: Icons.event_rounded,
+            title: 'Event',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  e.title,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    height: 1.3,
+                    fontWeight: FontWeight.w700,
+                    color: AdminUi.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    _CategoryChip(
+                      category: e.category,
+                      colorHex: e.categoryColor,
+                    ),
+                    EventStatusPill(
+                      eventDate: e.eventDate,
+                      eventTime: e.eventTime,
+                      fontSize: 11,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          _IconSection(
+            icon: Icons.location_on_rounded,
+            title: 'Location',
+            child: Text(
+              e.location.trim().isEmpty ? '—' : e.location,
+              style: const TextStyle(
+                fontSize: 13,
+                height: 1.4,
+                color: AdminUi.textSecondary,
+              ),
+            ),
+          ),
+          _IconSection(
+            icon: Icons.description_rounded,
+            title: 'Description',
+            isLast: (e.whatToExpect ?? '').isEmpty &&
+                (e.requirements ?? '').isEmpty,
+            child: Text(
+              (e.description ?? '').trim().isEmpty ? '—' : e.description!,
+              style: const TextStyle(
+                fontSize: 13,
+                height: 1.5,
+                color: AdminUi.textSecondary,
+              ),
+            ),
+          ),
+          if ((e.whatToExpect ?? '').isNotEmpty)
+            _IconSection(
+              icon: Icons.checklist_rounded,
+              title: 'What to expect',
+              isLast: (e.requirements ?? '').isEmpty,
+              child: Text(
+                e.whatToExpect!,
+                style: const TextStyle(
+                  fontSize: 13,
+                  height: 1.5,
+                  color: AdminUi.textSecondary,
+                ),
+              ),
+            ),
+          if ((e.requirements ?? '').isNotEmpty)
+            _IconSection(
+              icon: Icons.rule_rounded,
+              title: 'Requirements',
+              isLast: true,
+              child: Text(
+                e.requirements!,
+                style: const TextStyle(
+                  fontSize: 13,
+                  height: 1.5,
+                  color: AdminUi.textSecondary,
+                ),
+              ),
+            ),
+          const SizedBox(height: 18),
+          const Divider(height: 1, color: AdminUi.border),
+          const SizedBox(height: 16),
+          _actionSection(),
+        ],
+      ),
+    );
+  }
+
+  /// Which buttons appear is driven by where the event actually is: only one
+  /// still on the desk can be published or rejected; a decided one can be
+  /// edited or removed.
+  Widget _actionSection() {
+    final notifier = ref.read(adminEventsProvider.notifier);
+    final pending = e.status == EventStatus.pending;
+
+    final buttons = <Widget>[
+      if (pending) ...[
+        _ActionButton(
+          label: 'Publish',
+          icon: Icons.check_rounded,
+          color: AppColors.green,
+          busy: _busy,
+          onTap: _busy
+              ? null
+              : () => _run(() => notifier.approve(e.id), 'Event published.'),
+        ),
+        _ActionButton(
+          label: 'Reject',
+          icon: Icons.close_rounded,
+          color: AppColors.red,
+          outlined: true,
+          onTap: _busy
+              ? null
+              : () => _run(() => notifier.reject(e.id), 'Event rejected.'),
+        ),
+      ] else ...[
+        _ActionButton(
+          label: 'Edit Event',
+          icon: Icons.edit_rounded,
+          color: AppColors.primaryBlue,
+          onTap: _busy
+              ? null
+              : () {
+                  Navigator.pop(context);
+                  showEventForm(context, existing: e);
+                },
+        ),
+        _ActionButton(
+          label: 'Delete Event',
+          icon: Icons.delete_outline_rounded,
+          color: AppColors.red,
+          outlined: true,
+          onTap: _busy ? null : _confirmDelete,
+        ),
+      ],
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Action',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: AdminUi.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 10),
+        LayoutBuilder(
+          builder: (context, c) {
+            // Side by side needs room for both labels; below that they stack
+            // rather than ellipsing into "Delete Ev…".
+            if (c.maxWidth < 300) {
+              return Column(
+                children: [
+                  for (var i = 0; i < buttons.length; i++) ...[
+                    if (i > 0) const SizedBox(height: 10),
+                    buttons[i],
+                  ],
+                ],
+              );
+            }
+            return Row(
+              children: [
+                for (var i = 0; i < buttons.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 10),
+                  Expanded(child: buttons[i]),
+                ],
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final narrow = adminDetailIsNarrow(context);
+
+    // One pane at a time on a phone, or in a dialog too narrow for two columns.
+    // Status leads: the cover and the publish decision are why you opened this.
+    Widget paneTabs() => AdminSegmentedTabs(
+      labels: const ['Event Status', 'Event Details'],
+      selected: _paneTab,
+      onSelect: (i) => setState(() => _paneTab = i),
+    );
+
+    Widget activePane() => SingleChildScrollView(
+      padding: const EdgeInsets.all(14),
+      child: _paneTab == 0 ? _statusPane() : _detailsPane(),
+    );
+
+    if (narrow) {
+      return AdminDetailScaffold(
+        title: 'Event details',
+        child: Container(
+          color: AdminUi.pageBg,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
+                child: paneTabs(),
+              ),
+              Expanded(child: activePane()),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Dialog(
+      backgroundColor: AdminUi.pageBg,
+      // Tight vertical inset: the panes are long, and every pixel given back
+      // here is a pixel the admin doesn't have to scroll.
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1120, maxHeight: 900),
+        child: LayoutBuilder(
+          builder: (context, c) {
+            if (c.maxWidth < _kTwoPaneFrom) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
+                    child: Row(
+                      children: [
+                        Expanded(child: paneTabs()),
+                        const SizedBox(width: 10),
+                        const _PaneCloseButton(),
+                      ],
+                    ),
+                  ),
+                  Flexible(child: activePane()),
+                ],
+              );
+            }
+            return Stack(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: AdminTwoPaneRow(
+                    main: _statusPane(),
+                    side: _detailsPane(),
+                  ),
+                ),
+                // Pinned rather than scrolled with the pane — the way out stays
+                // put however far down you are.
+                const Positioned(top: 22, right: 22, child: _PaneCloseButton()),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
 }
 
-// ══ Create / edit form ════════════════════════════════════════════════════════
-//
-// Responsive, mirroring the community composer: a centred modal dialog on wide
-// screens (web / desktop / tablet ≥ 900px) and a full-screen page on phones —
-// where a floating card feels cramped and the keyboard would cover it.
+/// Width at which the detail splits into two columns. Matches the reports,
+/// suggestions, feedback and verification consoles so every detail breaks at
+/// the same point.
+const double _kTwoPaneFrom = 900;
+
+/// Short, human-readable handle for an event — the id has no server-side short
+/// form, so the first block of the uuid stands in.
+String _shortIdOf(String id) {
+  final clean = id.replaceAll('-', '');
+  return (clean.length >= 8 ? clean.substring(0, 8) : clean).toUpperCase();
+}
+
+/// Test hook for the status card that heads the detail's left pane — the piece
+/// with the width-dependent illustration and fact strip.
+Widget eventStatusCardForTesting({
+  required String chip,
+  required String headline,
+  required String blurb,
+  required Color accent,
+  List<({String label, String value})> facts = const [],
+}) => _StatusCard(
+  chip: chip,
+  headline: headline,
+  blurb: blurb,
+  accent: accent,
+  facts: facts,
+);
+
+// ── Detail building blocks ───────────────────────────────────────────────────
+
+/// A titled white card — one of the two panes of the event detail.
+class _Pane extends StatelessWidget {
+  final String title;
+  final Widget child;
+  const _Pane({required this.title, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AdminUi.surface,
+        borderRadius: BorderRadius.circular(AdminUi.cardRadius),
+        border: Border.all(color: AdminUi.border),
+        boxShadow: AdminUi.cardShadow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: AdminUi.textPrimary,
+              letterSpacing: -0.4,
+            ),
+          ),
+          const SizedBox(height: 16),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+/// The status headline card at the top of the left pane — the event's
+/// equivalent of the report's stage card, illustrated with the activity mark.
+class _StatusCard extends StatelessWidget {
+  final String chip;
+  final String headline;
+  final String blurb;
+  final Color accent;
+  final List<({String label, String value})> facts;
+  const _StatusCard({
+    required this.chip,
+    required this.headline,
+    required this.blurb,
+    required this.accent,
+    this.facts = const [],
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(AdminUi.cardRadius),
+        border: Border.all(color: accent.withValues(alpha: 0.20)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 7,
+                height: 7,
+                decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                chip,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  color: accent,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          LayoutBuilder(
+            builder: (context, c) {
+              final copy = Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    headline,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      height: 1.25,
+                      fontWeight: FontWeight.w800,
+                      color: AdminUi.textPrimary,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    blurb,
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      height: 1.45,
+                      color: AdminUi.textSecondary,
+                    ),
+                  ),
+                ],
+              );
+
+              // Below ~380px the illustration would squeeze the headline into a
+              // ragged column, so it drops out and the copy takes the full row.
+              if (c.maxWidth < 380) return copy;
+              return Row(
+                children: [
+                  Expanded(child: copy),
+                  const SizedBox(width: 12),
+                  Image.asset(
+                    'assets/images/activity.webp',
+                    width: (c.maxWidth * 0.22).clamp(72.0, 116.0),
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                  ),
+                ],
+              );
+            },
+          ),
+          if (facts.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            _FactStrip(facts: facts, accent: accent),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// The white inset strip of label/value pairs at the foot of the status card.
+/// Side by side when there's room, stacked when there isn't, so a long date or
+/// time range never gets clipped.
+class _FactStrip extends StatelessWidget {
+  final List<({String label, String value})> facts;
+  final Color accent;
+  const _FactStrip({required this.facts, required this.accent});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget fact(({String label, String value}) f) => Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          f.label,
+          style: const TextStyle(fontSize: 11, color: AdminUi.textMuted),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          f.value,
+          style: const TextStyle(
+            fontSize: 12.5,
+            height: 1.35,
+            fontWeight: FontWeight.w700,
+            color: AdminUi.textPrimary,
+          ),
+        ),
+      ],
+    );
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AdminUi.surface,
+        borderRadius: BorderRadius.circular(AdminUi.controlRadius),
+        border: Border.all(color: accent.withValues(alpha: 0.18)),
+      ),
+      child: LayoutBuilder(
+        builder: (context, c) {
+          // Each fact needs ~150px to seat a date on two lines; under that the
+          // row becomes a stack.
+          if (c.maxWidth >= facts.length * 150) {
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (var i = 0; i < facts.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 14),
+                  Expanded(child: fact(facts[i])),
+                ],
+              ],
+            );
+          }
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (var i = 0; i < facts.length; i++) ...[
+                if (i > 0) const SizedBox(height: 10),
+                fact(facts[i]),
+              ],
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// "Label: value" line in the details pane's id block. Pass [value] for plain
+/// text or [trailing] for a widget (the status pill).
+class _KvRow extends StatelessWidget {
+  final String label;
+  final String? value;
+  final Widget? trailing;
+  const _KvRow({required this.label, this.value, this.trailing});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '$label: ',
+            style: const TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+              color: AdminUi.textPrimary,
+            ),
+          ),
+          Expanded(
+            child:
+                trailing ??
+                Text(
+                  value ?? '—',
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    height: 1.35,
+                    color: AdminUi.textSecondary,
+                  ),
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// An icon + heading with its content indented beneath — the repeating unit of
+/// both panes (Cover Photo, Featured, Event, Location, Description).
+class _IconSection extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final Widget child;
+  final bool isLast;
+  const _IconSection({
+    required this.icon,
+    required this.title,
+    required this.child,
+    this.isLast = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: isLast ? 0 : 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 15, color: AppColors.primaryBlue),
+              const SizedBox(width: 7),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: AdminUi.textPrimary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Padding(padding: const EdgeInsets.only(left: 22), child: child),
+        ],
+      ),
+    );
+  }
+}
+
+/// A full-width decision button for the details pane's Action block.
+class _ActionButton extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color color;
+  final bool outlined;
+  final bool busy;
+  final VoidCallback? onTap;
+  const _ActionButton({
+    required this.label,
+    required this.icon,
+    required this.color,
+    this.onTap,
+    this.outlined = false,
+    this.busy = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final style = ButtonStyle(
+      padding: const WidgetStatePropertyAll(
+        EdgeInsets.symmetric(horizontal: 10, vertical: 13),
+      ),
+      shape: WidgetStatePropertyAll(
+        RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AdminUi.controlRadius),
+        ),
+      ),
+    );
+    final content = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (busy && !outlined)
+          const SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+          )
+        else
+          Icon(icon, size: 17),
+        const SizedBox(width: 7),
+        Flexible(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+          ),
+        ),
+      ],
+    );
+
+    return SizedBox(
+      width: double.infinity,
+      child: outlined
+          ? OutlinedButton(
+              onPressed: onTap,
+              style: style.merge(
+                OutlinedButton.styleFrom(
+                  foregroundColor: color,
+                  side: BorderSide(color: color.withValues(alpha: 0.45)),
+                ),
+              ),
+              child: content,
+            )
+          : FilledButton(
+              onPressed: onTap,
+              style: style.merge(
+                FilledButton.styleFrom(backgroundColor: color),
+              ),
+              child: content,
+            ),
+    );
+  }
+}
+
+/// The dialog's way out, styled to sit on a pane's top-right corner.
+class _PaneCloseButton extends StatelessWidget {
+  const _PaneCloseButton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AdminUi.subtle,
+      shape: const CircleBorder(),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => Navigator.pop(context),
+        child: Tooltip(
+          message: 'Close',
+          child: Container(
+            width: 32,
+            height: 32,
+            alignment: Alignment.center,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.fromBorderSide(BorderSide(color: AdminUi.border)),
+            ),
+            child: const Icon(
+              Icons.close_rounded,
+              size: 18,
+              color: AdminUi.textSecondary,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 void showEventForm(BuildContext context, {EventModel? existing}) {
   final wide = MediaQuery.of(context).size.width >= 900;
   if (wide) {
@@ -1411,9 +1940,6 @@ void showEventForm(BuildContext context, {EventModel? existing}) {
   }
 }
 
-/// Awaits a background event create and toasts the outcome on a context that
-/// outlives the (already-closed) composer. Top-level so it never touches the
-/// disposed composer State.
 Future<void> _reportEventSave(Future<void> op, BuildContext ctx) async {
   try {
     await op;
@@ -1439,14 +1965,21 @@ class _EventFormDialog extends ConsumerStatefulWidget {
 class _EventFormDialogState extends ConsumerState<_EventFormDialog> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _title;
-  late final TextEditingController _location;
   late final TextEditingController _time;
   late final TextEditingController _description;
   late final TextEditingController _expect;
   late final TextEditingController _requirements;
 
+  // Date / location are chosen through pickers, but they render as read-only
+  // fields so they share the exact metrics and error styling of every other
+  // field — hence the display controllers.
+  late final TextEditingController _dateText;
+  late final TextEditingController _locationText;
+
   String _category = 'Health';
+  String? _barangay;
   DateTime? _date;
+  TimeOfDay? _timeOfDay;
   bool _featured = false;
   bool _saving = false;
   String? _error;
@@ -1463,7 +1996,6 @@ class _EventFormDialogState extends ConsumerState<_EventFormDialog> {
     super.initState();
     final e = widget.existing;
     _title = TextEditingController(text: e?.title ?? '');
-    _location = TextEditingController(text: e?.location ?? '');
     _time = TextEditingController(text: e?.eventTime ?? '');
     _description = TextEditingController(text: e?.description ?? '');
     _expect = TextEditingController(text: e?.whatToExpect ?? '');
@@ -1471,20 +2003,55 @@ class _EventFormDialogState extends ConsumerState<_EventFormDialog> {
     _category = e != null && kEventCategoryColors.containsKey(e.category)
         ? e.category
         : 'Health';
+    // Older events were saved with free-text venues that predate the canonical
+    // barangay list — keep whatever is stored so editing never silently blanks
+    // or rewrites the location.
+    _barangay = (e?.location.trim().isNotEmpty ?? false) ? e!.location.trim() : null;
     _date = e?.eventDate;
+    // Times were free text before this form had a picker, so an unparseable
+    // legacy value stays in the field verbatim and only the picker's starting
+    // hour falls back.
+    _timeOfDay = _parseTime(e?.eventTime);
     _featured = e?.isFeatured ?? false;
     _imageUrl = e?.imageUrl;
+    _dateText = TextEditingController(
+      text: _date == null ? '' : _shortDate(_date),
+    );
+    _locationText = TextEditingController(text: _barangay ?? '');
   }
 
   @override
   void dispose() {
     _title.dispose();
-    _location.dispose();
     _time.dispose();
     _description.dispose();
     _expect.dispose();
     _requirements.dispose();
+    _dateText.dispose();
+    _locationText.dispose();
     super.dispose();
+  }
+
+  static final _timeRe = RegExp(r'^(\d{1,2}):(\d{2})\s*([AaPp])\.?[Mm]\.?$');
+
+  static TimeOfDay? _parseTime(String? raw) {
+    final m = _timeRe.firstMatch((raw ?? '').trim());
+    if (m == null) return null;
+    var hour = int.parse(m.group(1)!);
+    final minute = int.parse(m.group(2)!);
+    if (hour < 1 || hour > 12 || minute > 59) return null;
+    if (hour == 12) hour = 0;
+    if (m.group(3)!.toLowerCase() == 'p') hour += 12;
+    return TimeOfDay(hour: hour, minute: minute);
+  }
+
+  /// Formatted here rather than through MaterialLocalizations because the string
+  /// is stored and shown verbatim in the citizen feed — it must not drift with
+  /// the viewer's locale or 24-hour setting.
+  static String _formatTime(TimeOfDay t) {
+    final hour = t.hourOfPeriod == 0 ? 12 : t.hourOfPeriod;
+    final minute = t.minute.toString().padLeft(2, '0');
+    return '$hour:$minute ${t.period == DayPeriod.am ? 'AM' : 'PM'}';
   }
 
   Future<void> _pickImage() async {
@@ -1538,15 +2105,27 @@ class _EventFormDialogState extends ConsumerState<_EventFormDialog> {
       firstDate: DateTime(now.year - 1),
       lastDate: DateTime(now.year + 3),
     );
-    if (res != null) setState(() => _date = res);
+    if (res == null || !mounted) return;
+    setState(() {
+      _date = res;
+      _dateText.text = _shortDate(res);
+    });
+  }
+
+  Future<void> _pickTime() async {
+    final res = await showTimePicker(
+      context: context,
+      initialTime: _timeOfDay ?? const TimeOfDay(hour: 9, minute: 0),
+    );
+    if (res == null || !mounted) return;
+    setState(() {
+      _timeOfDay = res;
+      _time.text = _formatTime(res);
+    });
   }
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_date == null) {
-      setState(() => _error = 'Please choose an event date.');
-      return;
-    }
     final notifier = ref.read(adminEventsProvider.notifier);
     final colorHex = _colorToHex(kEventCategoryColors[_category]!);
 
@@ -1563,7 +2142,7 @@ class _EventFormDialogState extends ConsumerState<_EventFormDialog> {
         }
         await notifier.edit(widget.existing!.id, {
           'title': _title.text.trim(),
-          'location': _location.text.trim(),
+          'location': _barangay!,
           'event_date': _date!.toIso8601String().substring(0, 10),
           'event_time': _time.text.trim(),
           'category': _category,
@@ -1596,7 +2175,7 @@ class _EventFormDialogState extends ConsumerState<_EventFormDialog> {
     final temp = EventModel(
       id: 'temp_${DateTime.now().microsecondsSinceEpoch}',
       title: _title.text.trim(),
-      location: _location.text.trim(),
+      location: _barangay!,
       eventDate: _date!,
       eventTime: _time.text.trim(),
       category: _category,
@@ -1619,7 +2198,7 @@ class _EventFormDialogState extends ConsumerState<_EventFormDialog> {
       _reportEventSave(
         notifier.create(
           title: _title.text.trim(),
-          location: _location.text.trim(),
+          location: _barangay!,
           eventDate: _date!,
           eventTime: _time.text.trim(),
           category: _category,
@@ -1692,28 +2271,9 @@ class _EventFormDialogState extends ConsumerState<_EventFormDialog> {
                     const SizedBox(height: 12),
                     _buildCategoryPicker(),
                     const SizedBox(height: 12),
-                    _field(
-                      _location,
-                      'Location',
-                      hint: 'Venue / barangay',
-                      required: true,
-                    ),
+                    _buildBarangayPicker(),
                     const SizedBox(height: 12),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(child: _buildDatePicker()),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _field(
-                            _time,
-                            'Time',
-                            hint: 'e.g. 9:00 AM',
-                            required: true,
-                          ),
-                        ),
-                      ],
-                    ),
+                    _buildDateTimeRow(),
                     const SizedBox(height: 12),
                     _field(
                       _description,
@@ -1988,55 +2548,100 @@ class _EventFormDialogState extends ConsumerState<_EventFormDialog> {
     );
   }
 
-  Widget _buildDatePicker() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Date',
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: AdminUi.textSecondary,
-          ),
-        ),
-        const SizedBox(height: 8),
-        InkWell(
-          onTap: _pickDate,
-          borderRadius: BorderRadius.circular(AdminUi.controlRadius),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
-            decoration: BoxDecoration(
-              color: AdminUi.surface,
-              borderRadius: BorderRadius.circular(AdminUi.controlRadius),
-              border: Border.all(color: AdminUi.border),
-            ),
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.calendar_today_rounded,
-                  size: 16,
-                  color: AdminUi.textMuted,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    _date == null ? 'Choose date' : _shortDate(_date),
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: _date == null
-                          ? AdminUi.textMuted
-                          : AdminUi.textPrimary,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
+  /// Date and time sit side by side when there is room, but below ~380dp of
+  /// form width the two boxes squeeze their labels, so they stack instead.
+  Widget _buildDateTimeRow() {
+    final date = _pickerField(
+      _dateText,
+      'Date',
+      hint: 'Choose date',
+      icon: Icons.calendar_today_rounded,
+      onTap: _pickDate,
+    );
+    final time = _pickerField(
+      _time,
+      'Time',
+      hint: 'Choose time',
+      icon: Icons.access_time_rounded,
+      onTap: _pickTime,
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 380) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [date, const SizedBox(height: 12), time],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: date),
+            const SizedBox(width: 12),
+            Expanded(child: time),
+          ],
+        );
+      },
     );
   }
+
+  /// Location is constrained to Aparri's canonical barangays so events line up
+  /// with the barangay filters citizens and staff already browse by.
+  Widget _buildBarangayPicker() => _pickerField(
+    _locationText,
+    'Location',
+    hint: 'Select barangay',
+    icon: Icons.location_on_rounded,
+    onTap: _pickBarangay,
+    trailing: Icons.expand_more_rounded,
+  );
+
+  Future<void> _pickBarangay() async {
+    // Same rule as the cover-image picker: the wide layout floats this form in
+    // a dialog, where a slide-up sheet would detach from the card.
+    final wide = MediaQuery.of(context).size.width >= 900;
+    final String? selected;
+    if (wide) {
+      selected = await showDialog<String>(
+        context: context,
+        builder: (_) => _BarangayPickerDialog(current: _barangay),
+      );
+    } else {
+      selected = await showModalBottomSheet<String>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (_) => _BarangayPickerSheet(current: _barangay),
+      );
+    }
+    if (selected == null || !mounted) return;
+    setState(() {
+      _barangay = selected;
+      _locationText.text = selected!;
+    });
+  }
+
+  /// A field whose value comes from a picker rather than the keyboard. It is a
+  /// read-only [TextFormField] rather than a tappable box so that its height,
+  /// border and error styling are the ones [_field] already produces — the two
+  /// cannot drift apart.
+  Widget _pickerField(
+    TextEditingController ctrl,
+    String label, {
+    required String hint,
+    required IconData icon,
+    required VoidCallback onTap,
+    IconData? trailing,
+  }) => _field(
+    ctrl,
+    label,
+    hint: hint,
+    required: true,
+    readOnly: true,
+    onTap: onTap,
+    icon: icon,
+    trailing: trailing,
+  );
 
   Widget _field(
     TextEditingController ctrl,
@@ -2044,6 +2649,10 @@ class _EventFormDialogState extends ConsumerState<_EventFormDialog> {
     String? hint,
     int maxLines = 1,
     bool required = false,
+    bool readOnly = false,
+    VoidCallback? onTap,
+    IconData? icon,
+    IconData? trailing,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2060,6 +2669,12 @@ class _EventFormDialogState extends ConsumerState<_EventFormDialog> {
         TextFormField(
           controller: ctrl,
           maxLines: maxLines,
+          readOnly: readOnly,
+          onTap: onTap,
+          // A picker field never takes keyboard input, so it should not steal
+          // focus (and pop the soft keyboard) on tap.
+          canRequestFocus: !readOnly,
+          mouseCursor: readOnly ? SystemMouseCursors.click : null,
           style: const TextStyle(fontSize: 13, color: AdminUi.textPrimary),
           validator: required
               ? (v) => (v == null || v.trim().isEmpty) ? 'Required' : null
@@ -2070,9 +2685,34 @@ class _EventFormDialogState extends ConsumerState<_EventFormDialog> {
             hintStyle: const TextStyle(fontSize: 13, color: AdminUi.textMuted),
             filled: true,
             fillColor: AdminUi.surface,
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 11,
+            // The icons carry their own padding, and contentPadding drops its
+            // matching side: InputDecorator measures contentPadding from the
+            // icon's edge, not the field's, so leaving both on would double it.
+            prefixIcon: icon == null
+                ? null
+                : Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 8, 0),
+                    child: Icon(icon, size: 16, color: AdminUi.textMuted),
+                  ),
+            prefixIconConstraints: const BoxConstraints(
+              minWidth: 0,
+              minHeight: 0,
+            ),
+            suffixIcon: trailing == null
+                ? null
+                : Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 0, 12, 0),
+                    child: Icon(trailing, size: 16, color: AdminUi.textMuted),
+                  ),
+            suffixIconConstraints: const BoxConstraints(
+              minWidth: 0,
+              minHeight: 0,
+            ),
+            contentPadding: EdgeInsets.only(
+              left: icon == null ? 12 : 0,
+              right: trailing == null ? 12 : 0,
+              top: 11,
+              bottom: 11,
             ),
             border: _border(AdminUi.border),
             enabledBorder: _border(AdminUi.border),
@@ -2089,6 +2729,205 @@ class _EventFormDialogState extends ConsumerState<_EventFormDialog> {
     borderRadius: BorderRadius.circular(AdminUi.controlRadius),
     borderSide: BorderSide(color: c),
   );
+}
+
+// ── Barangay picker ───────────────────────────────────────────────────────────
+// Two shells over one searchable list: a centred dialog for web/tablet (where
+// the event form itself floats) and a draggable sheet for phones.
+
+class _BarangayPickerDialog extends StatelessWidget {
+  final String? current;
+  const _BarangayPickerDialog({this.current});
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    return Dialog(
+      backgroundColor: AdminUi.surface,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      clipBehavior: Clip.antiAlias,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 420,
+          maxHeight: size.height * 0.7,
+        ),
+        child: _BarangayPickerBody(current: current),
+      ),
+    );
+  }
+}
+
+class _BarangayPickerSheet extends StatelessWidget {
+  final String? current;
+  const _BarangayPickerSheet({this.current});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.7,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        builder: (ctx, scrollCtrl) => Material(
+          color: AdminUi.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+          clipBehavior: Clip.antiAlias,
+          child: _BarangayPickerBody(
+            current: current,
+            scrollController: scrollCtrl,
+            showGrabber: true,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BarangayPickerBody extends StatefulWidget {
+  final String? current;
+  final ScrollController? scrollController;
+  final bool showGrabber;
+  const _BarangayPickerBody({
+    this.current,
+    this.scrollController,
+    this.showGrabber = false,
+  });
+
+  @override
+  State<_BarangayPickerBody> createState() => _BarangayPickerBodyState();
+}
+
+class _BarangayPickerBodyState extends State<_BarangayPickerBody> {
+  final _search = TextEditingController();
+  late List<String> _results = List<String>.from(kAparriBarangays);
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  void _filter(String q) {
+    final query = q.trim().toLowerCase();
+    setState(() {
+      _results = query.isEmpty
+          ? List<String>.from(kAparriBarangays)
+          : kAparriBarangays
+                .where((b) => b.toLowerCase().contains(query))
+                .toList();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (widget.showGrabber)
+          Container(
+            width: 40,
+            height: 4,
+            margin: const EdgeInsets.only(top: 10),
+            decoration: BoxDecoration(
+              color: AdminUi.border,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 8, 10),
+          child: Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Select barangay',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: AdminUi.textPrimary,
+                  ),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close_rounded, color: AdminUi.textMuted),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: TextField(
+            controller: _search,
+            onChanged: _filter,
+            style: const TextStyle(fontSize: 13, color: AdminUi.textPrimary),
+            decoration: InputDecoration(
+              isDense: true,
+              hintText: 'Search barangay…',
+              hintStyle: const TextStyle(fontSize: 13, color: AdminUi.textMuted),
+              prefixIcon: const Icon(
+                Icons.search_rounded,
+                size: 18,
+                color: AdminUi.textMuted,
+              ),
+              filled: true,
+              fillColor: AdminUi.subtle,
+              contentPadding: const EdgeInsets.symmetric(vertical: 11),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(AdminUi.controlRadius),
+                borderSide: BorderSide.none,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Flexible(
+          child: _results.isEmpty
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 32),
+                  child: Text(
+                    'No barangay matches that search.',
+                    style: TextStyle(fontSize: 13, color: AdminUi.textMuted),
+                  ),
+                )
+              : ListView.builder(
+                  controller: widget.scrollController,
+                  padding: const EdgeInsets.only(bottom: 12),
+                  itemCount: _results.length,
+                  itemBuilder: (_, i) {
+                    final name = _results[i];
+                    final selected = name == widget.current;
+                    return ListTile(
+                      dense: true,
+                      title: Text(
+                        name,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: selected
+                              ? FontWeight.w700
+                              : FontWeight.w500,
+                          color: selected
+                              ? AppColors.primaryBlue
+                              : AdminUi.textPrimary,
+                        ),
+                      ),
+                      trailing: selected
+                          ? const Icon(
+                              Icons.check_rounded,
+                              size: 18,
+                              color: AppColors.primaryBlue,
+                            )
+                          : null,
+                      onTap: () => Navigator.pop(context, name),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
 }
 
 class _ImageHint extends StatelessWidget {

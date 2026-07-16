@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import '../../../core/widgets/responsive_page.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -307,7 +308,25 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
   // ── Build ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final width = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+    final rawWidth = MediaQuery.of(context).size.width;
+    final bool wide = kIsWeb && rawWidth >= 900;
+    final double width = wide ? 460.0 : rawWidth.clamp(0.0, 480.0);
+
+    if (wide) {
+      return LoadingOverlay(
+        isLoading: _saving,
+        child: Scaffold(
+          backgroundColor: const Color(0xFFF3F4F6),
+          body: SafeArea(
+            child: LoadingOverlay.bodyOrSkeleton(
+              isLoading: _loading,
+              layout: SkeletonLayout.editProfile,
+              child: _buildEditProfileWebBody(width),
+            ),
+          ),
+        ),
+      );
+    }
 
     return LoadingOverlay(
       isLoading: _saving,
@@ -481,19 +500,37 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
 
   // ── Main form ─────────────────────────────────────────────────────────────
   Widget _buildForm(double width) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildProfileSummary(width),
+        SizedBox(height: width * 0.04),
+        _buildFormFields(width),
+      ],
+    );
+  }
+
+  // Profile summary (avatar + lock banner). Its own left column on web.
+  Widget _buildProfileSummary(double width) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildAvatarCard(width),
+        if (_isLocked) ...[
+          SizedBox(height: width * 0.04),
+          _buildLockBanner(width),
+        ],
+      ],
+    );
+  }
+
+  // Editable fields (wrapped in the Form). Right column on web.
+  Widget _buildFormFields(double width) {
     return Form(
       key: _formKey,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildAvatarCard(width),
-          SizedBox(height: width * 0.04),
-
-          if (_isLocked) ...[
-            _buildLockBanner(width),
-            SizedBox(height: width * 0.04),
-          ],
-
           _buildSectionLabel('ACCOUNT', width),
           SizedBox(height: width * 0.02),
           _buildCard(
@@ -684,6 +721,53 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // ── WEB: two-column form (profile summary | fields) ────────────────────────
+  Widget _buildFormWeb(double width) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(width: 360, child: _buildProfileSummary(360)),
+        const SizedBox(width: 28),
+        Expanded(child: _buildFormFields(width)),
+      ],
+    );
+  }
+
+  Widget _buildEditProfileWebBody(double width) {
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1040),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 48),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildHeader(width),
+                const SizedBox(height: 20),
+                FadeTransition(
+                  opacity: _fadeAnim,
+                  child: SlideTransition(
+                    position: _slideAnim,
+                    child: _isVerified
+                        ? _buildFormWeb(width)
+                        : Center(
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 600),
+                              child: _buildNotVerifiedState(width),
+                            ),
+                          ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

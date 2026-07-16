@@ -10,6 +10,7 @@ import '../../../core/network/network_wrapper.dart';
 import '../../../core/utils/overlay_exit.dart';
 import '../../../core/widgets/app_snackbar.dart';
 import '../../../core/widgets/modal/verification_required_dialog.dart';
+import '../../../core/widgets/logout_confirm_dialog.dart';
 import '../Quick-action/Report/report_issue_screen.dart';
 import '../Quick-action/Chat-with-Agent/chat_agent_screen.dart';
 import '../Quick-action/Suggestion/suggestion_screen.dart';
@@ -212,7 +213,11 @@ class _HomePageState extends ConsumerState<HomePage>
 
   // ── Navigation helpers ────────────────────────────────────────────────────
 
-  void _goToNewsFeed({String? postId, bool openComments = false}) async {
+  void _goToNewsFeed({
+    String? postId,
+    bool openComments = false,
+    bool highlight = false,
+  }) async {
     if (!citizenGuardAllow(context, 'newsfeed')) return;
     // Ensure the profile is loaded before navigating, so the feed filters by
     // the user's barangay on first open — not just city-wide / LGU broadcasts.
@@ -236,6 +241,7 @@ class _HomePageState extends ConsumerState<HomePage>
         // Optional: jump to a specific post (from a notification tap).
         'initialPostId': ?postId,
         if (postId != null) 'initialOpenComments': openComments,
+        if (postId != null) 'initialHighlightPost': highlight,
       },
     );
   }
@@ -416,8 +422,16 @@ class _HomePageState extends ConsumerState<HomePage>
             username: widget.username,
             isVerified: _verifStatus == VerifStatus.verified,
             isPending: _verifStatus == VerifStatus.pending,
-            onOpenNewsFeed: ({String? postId, bool openComments = false}) =>
-                _goToNewsFeed(postId: postId, openComments: openComments),
+            onOpenNewsFeed: ({
+              String? postId,
+              bool openComments = false,
+              bool highlight = false,
+            }) =>
+                _goToNewsFeed(
+                  postId: postId,
+                  openComments: openComments,
+                  highlight: highlight,
+                ),
           );
         },
       ),
@@ -438,101 +452,9 @@ class _HomePageState extends ConsumerState<HomePage>
   }
 
   Future<void> _handleLogout() async {
-    final shouldLogout = await showDialog<bool>(
-      context: context,
-      barrierColor: Colors.black54,
-      builder: (ctx) => Dialog(
-        backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEF4444).withOpacity(0.10),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.logout_rounded,
-                  size: 28,
-                  color: Color(0xFFEF4444),
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Log Out?',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF1F2937),
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                "You'll need to sign in again to access your account.",
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Color(0xFF6B7280),
-                  height: 1.45,
-                ),
-              ),
-              const SizedBox(height: 24),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.pop(ctx, false),
-                      style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Color(0xFFE5E7EB)),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                      child: const Text(
-                        'Cancel',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF374151),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () => Navigator.pop(ctx, true),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFEF4444),
-                        elevation: 0,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                      child: const Text(
-                        'Log Out',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    final shouldLogout = await showLogoutConfirmDialog(context);
 
-    if (shouldLogout != true || !mounted) return;
+    if (!shouldLogout || !mounted) return;
 
     showDialog(
       context: context,

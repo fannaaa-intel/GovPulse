@@ -13,6 +13,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'location_picker_screen.dart';
 import 'dart:async';
 import '../../../../core/widgets/app_snackbar.dart';
+import '../../../../core/services/gps_stamp_service.dart';
+import '../../../../core/widgets/reveal_loading.dart';
 
 // ── Aparri bounding box — must match location_picker_screen.dart ──────────
 const double _riMinLat = 18.2750;
@@ -178,6 +180,30 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
   static const int _maxFiles = 6;
   final ImagePicker _picker = ImagePicker();
   bool _consentInEnglish = true;
+
+  /// Paths of attachments that were captured live with the camera and carry a
+  /// baked-in GPS stamp. Everything else (gallery photos, videos) is treated as
+  /// an unverified upload. Used to label each media row's `source` on submit.
+  final Set<String> _gpsVerifiedPaths = {};
+
+  /// Paths of attachments still being processed — camera photos baking a GPS
+  /// stamp, gallery images decoding, or videos generating a thumbnail. Their
+  /// tile shows an in-place bottom-to-top reveal instead of a full-screen
+  /// spinner, and Submit is guarded until they finish.
+  final Set<String> _processingPaths = {};
+
+  /// Paths whose work has just finished: the tile's reveal is still mounted but
+  /// now plays its closing sweep to the very top + fade-out. Cleared (together
+  /// with [_processingPaths]) once the reveal reports it has finished.
+  final Set<String> _completedPaths = {};
+
+  /// Generated video-thumbnail bytes, keyed by file path, so a video tile shows
+  /// instantly once its thumbnail is ready (populated during processing).
+  final Map<String, Uint8List> _thumbCache = {};
+
+  /// Minimum time a tile's reveal stays visible, so quick items (gallery image
+  /// decode) still show the animation instead of flickering.
+  static const Duration _minReveal = Duration(milliseconds: 500);
 
   // ── Location state (barangay-based) ───────────────────────────────────────
   LatLng? _pickedLatLng;
@@ -597,6 +623,17 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
           backgroundColor: const Color(0xFFF3F4F6),
           body: ResponsivePageBody(
             maxWidth: 640,
+            shellTitle: 'Report an Issue',
+            shellSubtitle:
+                'Tell your LGU about a community problem — with photos and a '
+                'location so it can be acted on quickly.',
+            shellIcon: Icons.report_gmailerrorred_rounded,
+            shellHighlights: const [
+              (Icons.add_a_photo_outlined, 'Attach photos'),
+              (Icons.location_on_outlined, 'Pin the location'),
+              (Icons.track_changes_rounded, 'Track the status'),
+            ],
+            shellContentWidth: 600,
             child: SafeArea(
               child: Column(
                 children: [
@@ -1257,15 +1294,21 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
 
     if (choice == null) return;
 
+    // Live camera capture → add the tile instantly and bake the GPS stamp in
+    // the background (the tile shows a bottom-to-top reveal meanwhile). No
+    // full-screen spinner.
+    if (choice == 'camera') {
+      final p = await _picker.pickImage(source: ImageSource.camera);
+      if (p != null) _addCameraCapture(p);
+      return;
+    }
+
     List<XFile> picked = [];
     if (choice == 'gallery') {
       picked = await _picker.pickMultiImage(limit: remaining);
     } else if (choice == 'video') {
       final v = await _picker.pickVideo(source: ImageSource.gallery);
       if (v != null) picked = [v];
-    } else if (choice == 'camera') {
-      final p = await _picker.pickImage(source: ImageSource.camera);
-      if (p != null) picked = [p];
     }
 
     if (picked.isEmpty) return;
@@ -1294,10 +1337,139 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
 
     if (validFiles.isEmpty) return;
     FocusManager.instance.primaryFocus?.unfocus();
+    final canAdd = _maxFiles - _attachedFiles.length;
+    for (final f in validFiles.take(canAdd)) {
+      _isVideo(f) ? _addGalleryVideo(f) : _addGalleryImage(f);
+    }
+  }
+
+  /// Adds a gallery image instantly, showing the reveal while it decodes.
+  void _addGalleryImage(XFile file) {
+    if (!mounted) return;
     setState(() {
-      final canAdd = _maxFiles - _attachedFiles.length;
-      _attachedFiles.addAll(validFiles.take(canAdd));
+      _attachedFiles.add(file);
+      _processingPaths.add(file.path);
     });
+    Future.wait([
+      precacheImage(FileImage(File(file.path)), context),
+      Future<void>.delayed(_minReveal),
+    ]).whenComplete(() {
+      if (!mounted) return;
+      // Keep the reveal mounted; let it sweep to the top, then it clears itself.
+      setState(() => _completedPaths.add(file.path));
+    });
+  }
+
+  /// Adds a gallery video instantly, showing the reveal while its thumbnail is
+  /// generated (then cached so the tile renders it without a spinner).
+  void _addGalleryVideo(XFile file) {
+    if (!mounted) return;
+    setState(() {
+      _attachedFiles.add(file);
+      _processingPaths.add(file.path);
+    });
+    Future.wait([
+      VideoThumbnail.thumbnailData(
+        video: file.path,
+        imageFormat: ImageFormat.JPEG,
+        maxWidth: 200,
+        quality: 75,
+      ).then((data) {
+        if (data != null) _thumbCache[file.path] = data;
+      }).catchError((_) {}),
+      Future<void>.delayed(_minReveal),
+    ]).whenComplete(() {
+      if (!mounted) return;
+      setState(() => _completedPaths.add(file.path));
+    });
+  }
+
+  /// Adds a freshly captured camera photo to the grid immediately (showing the
+  /// original as a preview under a reveal animation), then bakes the GPS stamp
+  /// in the background and swaps in the stamped file when ready.
+  void _addCameraCapture(XFile original) {
+    if (!mounted) return;
+    setState(() {
+      _attachedFiles.add(original);
+      _processingPaths.add(original.path);
+    });
+
+    GpsStampService.stampPhoto(original).then((result) async {
+      final finalFile = result.file;
+      final tooLarge = await finalFile.length() > 10 * 1024 * 1024;
+      if (!mounted) return;
+      setState(() {
+        final idx = _attachedFiles.indexWhere((f) => f.path == original.path);
+        if (idx == -1) {
+          _processingPaths.remove(original.path); // removed while processing
+          return;
+        }
+        if (tooLarge) {
+          _attachedFiles.removeAt(idx);
+          _processingPaths.remove(original.path);
+        } else {
+          _attachedFiles[idx] = finalFile;
+          if (result.stamped) _gpsVerifiedPaths.add(finalFile.path);
+          // Hand the still-mounted reveal over to the stamped file's path and
+          // let it play its closing sweep to the top.
+          _processingPaths.remove(original.path);
+          _processingPaths.add(finalFile.path);
+          _completedPaths.add(finalFile.path);
+        }
+      });
+      if (tooLarge) {
+        showAppSnackBar(
+          context,
+          "That photo was too large (over 10MB) and was removed.",
+          type: AppSnackType.error,
+        );
+      }
+    });
+  }
+
+  /// Video thumbnail for a grid tile — uses the cached bytes if ready, else
+  /// generates them (the reveal covers the plain placeholder while processing).
+  Widget _videoThumb(XFile file, double width) {
+    final cached = _thumbCache[file.path];
+    Widget withPlay(Widget image) => Stack(
+      fit: StackFit.expand,
+      children: [
+        image,
+        Center(
+          child: Container(
+            padding: EdgeInsets.all(width * 0.015),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.5),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.play_arrow_rounded,
+              color: Colors.white,
+              size: width * 0.06,
+            ),
+          ),
+        ),
+      ],
+    );
+
+    if (cached != null) {
+      return withPlay(Image.memory(cached, fit: BoxFit.cover));
+    }
+    return FutureBuilder<Uint8List?>(
+      future: VideoThumbnail.thumbnailData(
+        video: file.path,
+        imageFormat: ImageFormat.JPEG,
+        maxWidth: 200,
+        quality: 75,
+      ),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.done &&
+            snapshot.data != null) {
+          return withPlay(Image.memory(snapshot.data!, fit: BoxFit.cover));
+        }
+        return const ColoredBox(color: Color(0xFFE0F2FE));
+      },
+    );
   }
 
   void _previewImage(BuildContext context, XFile file, double width) {
@@ -1440,94 +1612,63 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
                     ),
                   );
                 }
+                final file = _attachedFiles[index];
+                final processing = _processingPaths.contains(file.path);
                 return GestureDetector(
-                  onTap: () {
-                    _isVideo(_attachedFiles[index])
-                        ? _previewVideo(context, _attachedFiles[index], width)
-                        : _previewImage(context, _attachedFiles[index], width);
-                  },
+                  onTap: processing
+                      ? null
+                      : () {
+                          _isVideo(file)
+                              ? _previewVideo(context, file, width)
+                              : _previewImage(context, file, width);
+                        },
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
                       ClipRRect(
                         borderRadius: BorderRadius.circular(width * 0.025),
-                        child: _isVideo(_attachedFiles[index])
-                            ? FutureBuilder<Uint8List?>(
-                                future: VideoThumbnail.thumbnailData(
-                                  video: _attachedFiles[index].path,
-                                  imageFormat: ImageFormat.JPEG,
-                                  maxWidth: 200,
-                                  quality: 75,
-                                ),
-                                builder: (context, snapshot) {
-                                  if (snapshot.connectionState ==
-                                          ConnectionState.done &&
-                                      snapshot.data != null) {
-                                    return Stack(
-                                      fit: StackFit.expand,
-                                      children: [
-                                        Image.memory(
-                                          snapshot.data!,
-                                          fit: BoxFit.cover,
-                                        ),
-                                        Center(
-                                          child: Container(
-                                            padding: EdgeInsets.all(
-                                              width * 0.015,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: Colors.black.withValues(
-                                                alpha: 0.5,
-                                              ),
-                                              shape: BoxShape.circle,
-                                            ),
-                                            child: Icon(
-                                              Icons.play_arrow_rounded,
-                                              color: Colors.white,
-                                              size: width * 0.06,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    );
-                                  }
-                                  return Container(
-                                    color: const Color(0xFFE0F2FE),
-                                    child: Center(
-                                      child: CircularProgressIndicator(
-                                        color: AppColors.primaryBlue,
-                                        strokeWidth: 2,
-                                      ),
-                                    ),
-                                  );
-                                },
-                              )
-                            : Image.file(
-                                File(_attachedFiles[index].path),
-                                fit: BoxFit.cover,
-                              ),
+                        child: _isVideo(file)
+                            ? _videoThumb(file, width)
+                            : Image.file(File(file.path), fit: BoxFit.cover),
                       ),
-                      Positioned(
-                        top: 5,
-                        right: 5,
-                        child: GestureDetector(
-                          onTap: () =>
-                              setState(() => _attachedFiles.removeAt(index)),
-                          child: Container(
-                            width: width * 0.055,
-                            height: width * 0.055,
-                            decoration: const BoxDecoration(
-                              color: Colors.red,
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(
-                              Icons.close_rounded,
-                              color: Colors.white,
-                              size: width * 0.034,
+                      // Bottom-to-top reveal while the GPS stamp bakes; it fills
+                      // to the top the moment processing completes.
+                      if (processing)
+                        Positioned.fill(
+                          child: RevealLoading(
+                            borderRadius: BorderRadius.circular(width * 0.025),
+                            completed: _completedPaths.contains(file.path),
+                            onFinished: () {
+                              if (!mounted) return;
+                              setState(() {
+                                _processingPaths.remove(file.path);
+                                _completedPaths.remove(file.path);
+                              });
+                            },
+                          ),
+                        ),
+                      if (!processing)
+                        Positioned(
+                          top: 5,
+                          right: 5,
+                          child: GestureDetector(
+                            onTap: () =>
+                                setState(() => _attachedFiles.removeAt(index)),
+                            child: Container(
+                              width: width * 0.055,
+                              height: width * 0.055,
+                              decoration: const BoxDecoration(
+                                color: Colors.red,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                Icons.close_rounded,
+                                color: Colors.white,
+                                size: width * 0.034,
+                              ),
                             ),
                           ),
                         ),
-                      ),
                     ],
                   ),
                 );
@@ -1886,6 +2027,9 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
     if (_attachedFiles.isEmpty) {
       return 'Please attach at least one photo or video.';
     }
+    if (_processingPaths.isNotEmpty) {
+      return 'Please wait for your photo to finish processing.';
+    }
     return null;
   }
 
@@ -1922,7 +2066,11 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
               fileOptions: FileOptions(contentType: contentType),
             );
 
-        mediaItems.add({'path': storagePath, 'mime': contentType});
+        mediaItems.add({
+          'path': storagePath,
+          'mime': contentType,
+          'source': _gpsVerifiedPaths.contains(file.path) ? 'camera' : 'upload',
+        });
       }
 
       // ── 3. Insert report into database ────────────────────────────────────
@@ -1951,12 +2099,48 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
 
       // ── 4. Insert media rows into report_media table ──────────────────────
       for (int i = 0; i < mediaItems.length; i++) {
-        await supabase.from('report_media').insert({
+        final row = <String, dynamic>{
           'report_id': reportId,
           'storage_path': mediaItems[i]['path'],
           'mime_type': mediaItems[i]['mime'],
           'display_order': i + 1,
-        });
+          'source': mediaItems[i]['source'],
+        };
+        // Capture the inserted row id so the AI-image check can target it.
+        Map<String, dynamic> inserted;
+        try {
+          inserted = await supabase
+              .from('report_media')
+              .insert(row)
+              .select('id')
+              .single();
+        } on PostgrestException catch (e) {
+          // `source` column may not be migrated yet — retry without it so
+          // submitting a report never breaks (media_source_column.sql).
+          if ((e.message).toLowerCase().contains('source')) {
+            row.remove('source');
+            inserted = await supabase
+                .from('report_media')
+                .insert(row)
+                .select('id')
+                .single();
+          } else {
+            rethrow;
+          }
+        }
+
+        // Fire-and-forget AI-generated-image check (images only). NOT awaited —
+        // it must never delay the success toast/navigation, and a failure (or an
+        // un-migrated DB / down detector) leaves the submission untouched.
+        final mime = (mediaItems[i]['mime'] ?? '').toLowerCase();
+        if (mime.startsWith('image/')) {
+          supabase.functions.invoke('check-ai-image', body: {
+            'bucket': 'report-media',
+            'path': mediaItems[i]['path'],
+            'table': 'report_media',
+            'id': inserted['id'],
+          }).ignore(); // swallow errors — never disturb the submission flow
+        }
       }
       // ── 5. Success ────────────────────────────────────────────────────────
       if (mounted) {
@@ -2118,7 +2302,9 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
       child: SizedBox(
         width: double.infinity,
         child: ElevatedButton(
-          onPressed: _isSubmitting ? null : _submitReport,
+          onPressed: (_isSubmitting || _processingPaths.isNotEmpty)
+              ? null
+              : _submitReport,
           style: ElevatedButton.styleFrom(
             backgroundColor: AppColors.green,
             disabledBackgroundColor: const Color(0xFFD1D5DB),
@@ -2139,7 +2325,9 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
                   ),
                 )
               : Text(
-                  'Submit Report',
+                  _processingPaths.isNotEmpty
+                      ? 'Finishing photo…'
+                      : 'Submit Report',
                   style: TextStyle(
                     fontSize: width * 0.042,
                     fontWeight: FontWeight.w700,

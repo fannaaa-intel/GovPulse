@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'
+    show HardwareKeyboard, KeyDownEvent, LogicalKeyboardKey;
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../services/chat_service.dart';
 import '../../../theme/app_colors.dart';
 import 'Chat_bubbles_model.dart';
@@ -37,6 +40,9 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
   // ── Track agent-message arrivals so we can notify the bubble (unread badge)
   int _lastSeenMsgCount = 0;
 
+  /// The citizen's own profile photo, for their outgoing bubbles.
+  String? _myPhotoUrl;
+
   @override
   void initState() {
     super.initState();
@@ -46,7 +52,25 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
     ChatService.I.onChatOpened();
 
     _lastSeenMsgCount = ChatService.I.messages.length;
+    _loadMyPhoto();
     _scrollDownSoon();
+  }
+
+  Future<void> _loadMyPhoto() async {
+    try {
+      final client = Supabase.instance.client;
+      final uid = client.auth.currentUser?.id;
+      if (uid == null) return;
+      final cd = await client
+          .from('citizen_details')
+          .select('profile_photo_path')
+          .eq('user_id', uid)
+          .maybeSingle();
+      final path = (cd?['profile_photo_path'] as String?)?.trim() ?? '';
+      if (path.isEmpty || !mounted) return;
+      setState(() => _myPhotoUrl =
+          client.storage.from('profile-photos').getPublicUrl(path));
+    } catch (_) {/* default icon */}
   }
 
   @override
@@ -299,39 +323,35 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
   // ── Header ───────────────────────────────────────────────────────────────
   Widget _buildHeader() {
     const double avatarSize = 38;
+    // Swap the bot identity for the live staff member once connected.
+    final connected = ChatService.I.isConnectedToStaff;
+    final staffName = ChatService.I.connectedStaffName;
+    final staffPhoto = ChatService.I.connectedStaffPhotoUrl;
+    final dept = ChatService.I.connectedDepartment;
+    final title = connected
+        ? ((staffName?.trim().isNotEmpty ?? false)
+            ? staffName!.trim()
+            : (dept != null ? '$dept staff' : 'LGU Staff'))
+        : 'LGU Aparri Agent';
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 14, 12, 12),
       child: Row(
         children: [
-          Container(
-            width: avatarSize,
-            height: avatarSize,
-            decoration: BoxDecoration(
-              color: AppColors.primaryBlue.withValues(alpha: 0.10),
-              shape: BoxShape.circle,
-            ),
-            child: Center(
-              child: Image.asset(
-                'assets/images/customer.webp',
-                width: avatarSize * 0.53,
-                fit: BoxFit.contain,
-                errorBuilder: (_, _, _) => Icon(
-                  Icons.support_agent_rounded,
-                  size: avatarSize * 0.53,
-                  color: AppColors.primaryBlue,
-                ),
-              ),
-            ),
+          ChatAgentAvatar(
+            size: avatarSize,
+            photoUrl: connected ? staffPhoto : null,
           ),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
+              children: [
                 Text(
-                  'LGU Aparri Agent',
-                  style: TextStyle(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                     color: _kTextPri,
@@ -339,8 +359,10 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
                   ),
                 ),
                 Text(
-                  'Online',
-                  style: TextStyle(
+                  connected ? 'Online · Connected to a person' : 'Online',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
                     fontSize: 11.5,
                     color: AppColors.green,
                     fontWeight: FontWeight.w500,
@@ -387,9 +409,12 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           if (!isUser)
-            const Padding(
-              padding: EdgeInsets.only(right: 7),
-              child: ChatAgentAvatar(),
+            Padding(
+              padding: const EdgeInsets.only(right: 7),
+              child: ChatAgentAvatar(
+                photoUrl:
+                    msg.fromStaff ? ChatService.I.connectedStaffPhotoUrl : null,
+              ),
             ),
           Flexible(
             child: Column(
@@ -441,6 +466,11 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
               ],
             ),
           ),
+          if (isUser)
+            Padding(
+              padding: const EdgeInsets.only(left: 7),
+              child: ChatCitizenAvatar(photoUrl: _myPhotoUrl),
+            ),
         ],
       ),
     );
@@ -574,15 +604,25 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
                 borderRadius: BorderRadius.circular(22),
                 border: Border.all(color: AppColors.stroke, width: 1),
               ),
-              child: TextField(
+              child: Focus(
+                onKeyEvent: (node, event) {
+                  // Enter sends; Shift+Enter inserts a newline.
+                  if (event is KeyDownEvent &&
+                      event.logicalKey == LogicalKeyboardKey.enter &&
+                      !HardwareKeyboard.instance.isShiftPressed) {
+                    _send();
+                    return KeyEventResult.handled;
+                  }
+                  return KeyEventResult.ignored;
+                },
+                child: TextField(
                 key: _textFieldKey,
                 controller: _textCtrl,
                 focusNode: _focusNode,
 
                 maxLines: 3,
                 minLines: 1,
-                // Enter key inserts a newline; send is button-only so the keyboard
-                // never auto-dismisses on submit.
+                // Enter sends (button also works); Shift+Enter = newline.
                 textInputAction: TextInputAction.newline,
                 keyboardType: TextInputType.multiline,
                 textCapitalization: TextCapitalization.sentences,
@@ -603,6 +643,7 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
                     vertical: 11,
                   ),
                 ),
+              ),
               ),
             ),
           ),

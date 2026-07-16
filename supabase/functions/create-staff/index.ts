@@ -48,12 +48,17 @@ serve(async (req) => {
     }
 
     // ── 2. Validate input ────────────────────────────────────────────────────
-    const { email, password, username, fullName } = await req.json()
+    const { email, password, username, fullName, department, isExternal } = await req.json()
     const cleanEmail = (email ?? "").trim().toLowerCase()
     const cleanUsername = (username ?? "").trim()
     const cleanName = (fullName ?? "").trim()
+    const cleanDept = (department ?? "").trim()
+    const external = isExternal === true
     if (!cleanEmail || !password || !cleanUsername) {
       return json({ success: false, message: "Email, username and password are required." }, 400)
+    }
+    if (!cleanDept) {
+      return json({ success: false, message: "A department is required for staff." }, 400)
     }
     if ((password as string).length < 8) {
       return json({ success: false, message: "Password must be at least 8 characters." }, 400)
@@ -90,7 +95,10 @@ serve(async (req) => {
           user_id: uid,
           full_name: cleanName || null,
           title: "Staff",
-          organization: "LGU Aparri",
+          organization: external ? cleanDept : "LGU Aparri",
+          department: cleanDept,
+          is_external: external,
+          is_online: false,
         })
       if (aErr) throw aErr
     } catch (e) {

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../screen/home_screen.dart';
+import '../../../core/widgets/deeplink_highlight.dart';
 import '../../../core/widgets/modal/verification_required_dialog.dart';
 import '../../../core/moderation/profanity_filter.dart';
 import '../../../core/providers/community_posts_provider.dart';
@@ -36,6 +38,11 @@ class NewsFeedScreen extends StatefulWidget {
   final String? initialPostId;
   final bool initialOpenComments;
 
+  /// Flash [initialPostId] on arrival. False for hearts — a reaction scrolls
+  /// you to the post but doesn't warrant singling it out (see
+  /// [kHeartNotifTypes]).
+  final bool initialHighlightPost;
+
   const NewsFeedScreen({
     super.key,
     this.username = '',
@@ -44,6 +51,7 @@ class NewsFeedScreen extends StatefulWidget {
     this.isGuest = false,
     this.initialPostId,
     this.initialOpenComments = false,
+    this.initialHighlightPost = false,
   });
 
   @override
@@ -51,7 +59,7 @@ class NewsFeedScreen extends StatefulWidget {
 }
 
 class _NewsFeedScreenState extends State<NewsFeedScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, DeepLinkHighlightMixin {
   static const int _navIndex = 2;
 
   bool get _isVerified => widget.isVerified;
@@ -66,7 +74,8 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
   final Set<String> _expandedPosts = {};
 
   // Deep-link support: jump to the post a notification pointed at, once loaded.
-  final Map<String, GlobalKey> _postKeys = {};
+  // Scroll + flash come from DeepLinkHighlightMixin (shared with My Submissions
+  // and the admin/staff consoles), so every deep-link lands the same way.
   bool _handledInitialPost = false;
 
   @override
@@ -127,22 +136,38 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
     _handledInitialPost = true;
 
     final target = post;
+    // Scrolls into view, and flashes only when the notification was real
+    // content (a comment/reply) rather than a heart.
+    flashHighlight(widget.initialHighlightPost ? targetId : null);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final ctx = _postKeys[targetId]?.currentContext;
-      if (ctx != null) {
-        Scrollable.ensureVisible(
-          ctx,
-          duration: const Duration(milliseconds: 400),
-          curve: Curves.easeOutCubic,
-          alignment: 0.1,
-        );
+      if (!widget.initialHighlightPost) {
+        // Hearts don't flash, but must still be scrolled to.
+        final ctx = highlightKey(targetId).currentContext;
+        if (ctx != null) {
+          Scrollable.ensureVisible(
+            ctx,
+            duration: kHighlightScroll,
+            curve: Curves.easeOutCubic,
+            alignment: kHighlightAlignment,
+          );
+        }
       }
       if (widget.initialOpenComments) {
         _openCommentsSheet(target);
       }
     });
   }
+
+  /// Draws the deep-link flash as a ring around a post card. The card owns its
+  /// own surface, so the accent goes outside it rather than replacing it.
+  Widget _highlightWrap(String postId, double width, Widget card) =>
+      highlightRing(
+        highlighted: isHighlighted(postId),
+        radius: width * 0.05,
+        accent: AppColors.primaryBlue,
+        child: card,
+      );
 
   Future<void> _loadMyInteractions() async {
     final userId = _supabase.auth.currentUser?.id;
@@ -593,7 +618,12 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
 
   @override
   Widget build(BuildContext context) {
-    final width = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+    final rawWidth = MediaQuery.of(context).size.width;
+    // WEB / large screens: feed column + info rail that fills the width, instead
+    // of a stranded 480px phone column. Phones & narrow web keep the original
+    // body (design width capped at 480), byte-for-byte unchanged.
+    final bool wide = kIsWeb && rawWidth >= 900;
+    final double width = wide ? 480.0 : rawWidth.clamp(0.0, 480.0);
     final provider = CommunityPostsProvider.instance;
     final visiblePosts = _filteredPosts;
 
@@ -618,7 +648,13 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
         userBarangay: widget.userBarangay,
         backgroundColor: const Color(0xFFF3F4F6),
         body: SafeArea(
-          child: Center(
+          child: wide
+              ? LoadingOverlay.bodyOrSkeleton(
+                  isLoading: !provider.initialLoadDone && provider.isLoading,
+                  layout: SkeletonLayout.newsFeed,
+                  child: _buildNewsFeedWebBody(width, provider, visiblePosts),
+                )
+              : Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 480),
               child: Column(
@@ -653,11 +689,14 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
                                   final post = visiblePosts[i];
                                   final pid = post['id'] as String;
                                   return KeyedSubtree(
-                                    key: _postKeys.putIfAbsent(
-                                        pid, () => GlobalKey()),
+                                    key: highlightKey(pid),
                                     child: _animated(
                                       i + 1,
-                                      _buildPostCard(width, post),
+                                      _highlightWrap(
+                                        pid,
+                                        width,
+                                        _buildPostCard(width, post),
+                                      ),
                                     ),
                                   );
                                 },
@@ -670,6 +709,164 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  // ── WEB body: centered feed column + info rail ─────────────────────────────
+  Widget _buildNewsFeedWebBody(
+    double w,
+    CommunityPostsProvider provider,
+    List<Map<String, dynamic>> visiblePosts,
+  ) {
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1080),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 56),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // Feed column
+                SizedBox(
+                  width: 600,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _buildTopBar(w),
+                      const SizedBox(height: 20),
+                      if (provider.error != null)
+                        _buildErrorState(w, provider)
+                      else if (visiblePosts.isEmpty)
+                        _animated(1, _buildEmptyState(w))
+                      else
+                        for (int i = 0; i < visiblePosts.length; i++) ...[
+                          KeyedSubtree(
+                            key: highlightKey(
+                              visiblePosts[i]['id'] as String,
+                            ),
+                            child: _animated(
+                              i + 1,
+                              _highlightWrap(
+                                visiblePosts[i]['id'] as String,
+                                w,
+                                _buildPostCard(w, visiblePosts[i]),
+                              ),
+                            ),
+                          ),
+                          if (i < visiblePosts.length - 1)
+                            const SizedBox(height: 16),
+                        ],
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 32),
+                // Info rail
+                SizedBox(width: 300, child: _buildNewsFeedRail()),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNewsFeedRail() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _railCard(
+          icon: Icons.campaign_rounded,
+          color: AppColors.primaryBlue,
+          title: 'Community Updates',
+          body:
+              'Official posts and announcements from LGU Aparri and your '
+              'barangay. Use the filter to narrow updates by time.',
+        ),
+        const SizedBox(height: 16),
+        _railCard(
+          icon: Icons.place_rounded,
+          color: const Color(0xFF059669),
+          title: (widget.userBarangay?.isNotEmpty ?? false)
+              ? widget.userBarangay!
+              : 'Your Area',
+          body:
+              "You're seeing updates for your barangay along with city-wide "
+              'announcements from the municipal government.',
+        ),
+        const SizedBox(height: 16),
+        _railCard(
+          icon: Icons.verified_user_rounded,
+          color: const Color(0xFFD97706),
+          title: 'Stay Informed',
+          body:
+              'Interactions and comments are moderated. Please keep posts '
+              'respectful and relevant to the Aparri community.',
+        ),
+      ],
+    );
+  }
+
+  Widget _railCard({
+    required IconData icon,
+    required Color color,
+    required String title,
+    required String body,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: .03),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: .12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, size: 19, color: color),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF111827),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            body,
+            style: const TextStyle(
+              fontSize: 12.5,
+              height: 1.5,
+              color: Color(0xFF6B7280),
+            ),
+          ),
+        ],
       ),
     );
   }

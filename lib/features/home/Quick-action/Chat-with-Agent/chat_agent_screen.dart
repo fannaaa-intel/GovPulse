@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/widgets/responsive_page.dart';
 import '../../../../core/services/chat_service.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -37,6 +38,17 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
   final FocusNode _focusNode = FocusNode();
   ChatService get _svc => widget.service;
 
+  /// Locally-selected star count in the post-chat rating card (0 = none yet).
+  int _ratingStars = 0;
+
+  /// Whether the rating card was showing on the previous rebuild. Used to reset
+  /// [_ratingStars] each time a *fresh* rating card appears — otherwise a new
+  /// conversation's rating card inherits the stars picked for the previous one.
+  bool _wasShowingRating = false;
+
+  /// The signed-in citizen's own profile photo, for their outgoing bubbles.
+  String? _myPhotoUrl;
+
   // ── Lifecycle ─────────────────────────────────────────────────────────────
   @override
   void initState() {
@@ -45,6 +57,7 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
       vsync: this,
       duration: const Duration(milliseconds: 500),
     );
+    _loadMyPhoto();
 
     _svc.addListener(_onChatChanged);
 
@@ -67,8 +80,32 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
     super.dispose();
   }
 
+  /// Loads the citizen's own profile photo (public `profile-photos` bucket) so
+  /// their outgoing bubbles show their face, falling back to a person icon.
+  Future<void> _loadMyPhoto() async {
+    try {
+      final client = Supabase.instance.client;
+      final uid = client.auth.currentUser?.id;
+      if (uid == null) return;
+      final cd = await client
+          .from('citizen_details')
+          .select('profile_photo_path')
+          .eq('user_id', uid)
+          .maybeSingle();
+      final path = (cd?['profile_photo_path'] as String?)?.trim() ?? '';
+      if (path.isEmpty || !mounted) return;
+      setState(() => _myPhotoUrl =
+          client.storage.from('profile-photos').getPublicUrl(path));
+    } catch (_) {/* fall back to the default person icon */}
+  }
+
   void _onChatChanged() {
     if (!mounted) return;
+    // Reset the picked stars each time a fresh rating card appears (false→true
+    // edge), so a new conversation never inherits the previous chat's rating.
+    final showingRating = _svc.showRatingBar;
+    if (showingRating && !_wasShowingRating) _ratingStars = 0;
+    _wasShowingRating = showingRating;
     setState(() {}); // ✅ immediate rebuild, no flicker frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -116,6 +153,7 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
       time: m.time,
       status: MessageStatus.values[m.status.index],
       offline: m.offline,
+      fromStaff: m.fromStaff,
     );
   }
 
@@ -280,6 +318,145 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
     );
   }
 
+  // ── Post-chat rating card ─────────────────────────────────────────────────
+  static const List<String> _ratingLabels = [
+    'Tap a star to rate',
+    'Poor',
+    'Fair',
+    'Good',
+    'Great',
+    'Excellent',
+  ];
+
+  Widget _buildRatingCard(double width) {
+    final selected = _ratingStars;
+    final tint = AppColors.primaryBlue;
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: AppColors.stroke, width: 1)),
+      ),
+      padding: EdgeInsets.fromLTRB(
+        width * 0.05,
+        width * 0.045,
+        width * 0.05,
+        width * 0.05,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: width * 0.12,
+            height: width * 0.12,
+            decoration: BoxDecoration(
+              color: tint.withValues(alpha: 0.10),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(Icons.support_agent_rounded,
+                color: tint, size: width * 0.062),
+          ),
+          SizedBox(height: width * 0.03),
+          Text(
+            'How was your chat?',
+            style: TextStyle(
+              fontSize: width * 0.044,
+              fontWeight: FontWeight.w800,
+              color: const Color(0xFF111827),
+            ),
+          ),
+          SizedBox(height: width * 0.012),
+          Text(
+            'Your feedback helps our staff serve you better.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: width * 0.031, color: AppColors.hint),
+          ),
+          SizedBox(height: width * 0.04),
+          // ── Stars ──────────────────────────────────────────────────────
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(5, (i) {
+              final starIndex = i + 1;
+              final active = starIndex <= selected;
+              return GestureDetector(
+                onTap: () => setState(() => _ratingStars = starIndex),
+                behavior: HitTestBehavior.opaque,
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: width * 0.014),
+                  child: AnimatedScale(
+                    duration: const Duration(milliseconds: 180),
+                    curve: Curves.easeOutBack,
+                    scale: active ? 1.12 : 1.0,
+                    child: Icon(
+                      active ? Icons.star_rounded : Icons.star_outline_rounded,
+                      size: width * 0.095,
+                      color: active
+                          ? const Color(0xFFF5A623)
+                          : AppColors.stroke,
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ),
+          SizedBox(height: width * 0.022),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 200),
+            child: Text(
+              _ratingLabels[selected],
+              key: ValueKey(selected),
+              style: TextStyle(
+                fontSize: width * 0.033,
+                fontWeight: FontWeight.w700,
+                color: selected == 0 ? AppColors.hint : tint,
+              ),
+            ),
+          ),
+          SizedBox(height: width * 0.04),
+          // ── Submit ─────────────────────────────────────────────────────
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: selected == 0
+                  ? null
+                  : () => _svc.submitRating(selected),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: tint,
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: tint.withValues(alpha: 0.35),
+                disabledForegroundColor: Colors.white,
+                elevation: 0,
+                padding: EdgeInsets.symmetric(vertical: width * 0.038),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(width * 0.028),
+                ),
+              ),
+              child: Text(
+                'Submit rating',
+                style: TextStyle(
+                  fontSize: width * 0.036,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+          SizedBox(height: width * 0.01),
+          TextButton(
+            onPressed: () => _svc.dismissRating(),
+            style: TextButton.styleFrom(foregroundColor: AppColors.hint),
+            child: Text(
+              'Maybe later',
+              style: TextStyle(
+                fontSize: width * 0.032,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ── Build ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
@@ -288,11 +465,30 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
       backgroundColor: AppColors.inputBg,
       body: ResponsivePageBody(
         maxWidth: 600,
+        shellTitle: 'Chat with an Agent',
+        shellSubtitle:
+            'Ask questions and get help from the Aparri support team.',
+        shellIcon: Icons.support_agent_rounded,
+        shellHighlights: const [
+          (Icons.chat_bubble_outline_rounded, 'Real-time answers'),
+          (Icons.schedule_rounded, 'Fast responses'),
+          (Icons.verified_user_outlined, 'Official support'),
+        ],
+        shellContentWidth: 620,
         child: SafeArea(
           child: Column(
             children: [
               _buildHeader(width),
-              ChatAgentInfoBar(width: width),
+              ChatAgentInfoBar(
+                width: width,
+                connected: _svc.isConnectedToStaff,
+                // Real staff name once fetched; department label until then.
+                staffLabel: _svc.connectedStaffName ??
+                    (_svc.connectedDepartment != null
+                        ? '${_svc.connectedDepartment} staff'
+                        : null),
+                staffPhotoUrl: _svc.connectedStaffPhotoUrl,
+              ),
               Expanded(child: _buildMessageList(width)),
               // AFTER
               if (_svc.showBackToMenu && _svc == ChatService.I)
@@ -301,7 +497,9 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
                 _buildIntentChips(width),
               if (_svc.showCategoryChips && _svc == ChatService.I)
                 _buildCategoryChips(width),
-              if (_svc.isTerminal)
+              if (_svc.showRatingBar)
+                _buildRatingCard(width)
+              else if (_svc.isTerminal)
                 _buildTerminalCard(width)
               else
                 ChatInputBar(
@@ -396,10 +594,17 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
         if (realIndex == messages.length && isTyping) {
           return ChatTypingBubble(width: width);
         }
+        final src = messages[realIndex];
         return ChatMessageBubble(
           width: width,
-          message: _toViewMsg(messages[realIndex]),
+          message: _toViewMsg(src),
           formatTime: _formatTime,
+          // Staff photo for the connected staffer's bubbles; the citizen's own
+          // photo for their outgoing bubbles.
+          agentPhotoUrl: _svc.connectedStaffPhotoUrl,
+          citizenPhotoUrl: _myPhotoUrl,
+          onResend: () => _svc.resendMessage(src),
+          onDelete: () => _svc.deleteMessage(src),
         );
       },
     );

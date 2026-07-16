@@ -1,12 +1,17 @@
 import 'dart:async';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/deeplink_highlight.dart';
+import '../../../core/widgets/media_source_badge.dart';
+import '../../../core/widgets/ai_detection_badge.dart';
 import '../theme/admin_ui.dart';
 import '../providers/admin_feedback_provider.dart';
 import '../providers/admin_identity_reveal_provider.dart';
 import '../widgets/admin_detail_screen.dart';
 import '../widgets/admin_moderation.dart';
+import '../widgets/admin_skeleton.dart';
 import '../widgets/admin_submission_ui.dart';
 import '../widgets/revealable_submitter.dart';
 import '../widgets/admin_snackbar.dart';
@@ -92,13 +97,17 @@ class _StarRow extends StatelessWidget {
 // ═════════════════════════════════════════════════════════════════════════════
 
 class AdminFeedbackPage extends ConsumerStatefulWidget {
-  const AdminFeedbackPage({super.key});
+  /// A feedback id to scroll to and flash once, when arriving from an insight
+  /// row or a notification. Null for a normal open.
+  final String? highlightId;
+  const AdminFeedbackPage({super.key, this.highlightId});
 
   @override
   ConsumerState<AdminFeedbackPage> createState() => _AdminFeedbackPageState();
 }
 
-class _AdminFeedbackPageState extends ConsumerState<AdminFeedbackPage> {
+class _AdminFeedbackPageState extends ConsumerState<AdminFeedbackPage>
+    with DeepLinkHighlightMixin {
   final _searchCtrl = TextEditingController();
   Timer? _debounce;
 
@@ -228,6 +237,9 @@ class _AdminFeedbackPageState extends ConsumerState<AdminFeedbackPage> {
     final filters = notifier.filters;
     final pad = MediaQuery.of(context).size.width < 600 ? 16.0 : 24.0;
 
+    // Rows exist only once the fetch resolves — flash the deep-link target then.
+    if (async.hasValue) flashHighlightOnce(widget.highlightId);
+
     return RefreshIndicator(
       onRefresh: () => ref.read(adminFeedbackProvider.notifier).refresh(),
       child: SingleChildScrollView(
@@ -259,6 +271,8 @@ class _AdminFeedbackPageState extends ConsumerState<AdminFeedbackPage> {
                   onOpen: _openDetail,
                   onRetry: () =>
                       ref.read(adminFeedbackProvider.notifier).refresh(),
+                  keyFor: highlightKey,
+                  isHighlighted: isHighlighted,
                 ),
               ],
             ),
@@ -416,10 +430,18 @@ class _Results extends StatelessWidget {
   final AsyncValue<List<AdminFeedback>> async;
   final void Function(AdminFeedback) onOpen;
   final VoidCallback onRetry;
+
+  /// Deep-link plumbing: the page owns the highlight state (via
+  /// [DeepLinkHighlightMixin]) and hands down a key + a flag per row, so the
+  /// flashed row can be scrolled to and tinted.
+  final GlobalKey Function(String id) keyFor;
+  final bool Function(String id) isHighlighted;
   const _Results({
     required this.async,
     required this.onOpen,
     required this.onRetry,
+    required this.keyFor,
+    required this.isHighlighted,
   });
 
   @override
@@ -448,7 +470,12 @@ class _Results extends StatelessWidget {
                   children: [
                     const _TableHeader(),
                     for (final f in items)
-                      _TableRow(feedback: f, onOpen: () => onOpen(f)),
+                      _TableRow(
+                        key: keyFor(f.id),
+                        feedback: f,
+                        onOpen: () => onOpen(f),
+                        highlighted: isHighlighted(f.id),
+                      ),
                   ],
                 );
               }
@@ -457,7 +484,12 @@ class _Results extends StatelessWidget {
                 child: Column(
                   children: [
                     for (final f in items)
-                      _Card(feedback: f, onOpen: () => onOpen(f)),
+                      _Card(
+                        key: keyFor(f.id),
+                        feedback: f,
+                        onOpen: () => onOpen(f),
+                        highlighted: isHighlighted(f.id),
+                      ),
                   ],
                 ),
               );
@@ -521,18 +553,33 @@ class _HCell extends StatelessWidget {
 class _TableRow extends StatelessWidget {
   final AdminFeedback feedback;
   final VoidCallback onOpen;
-  const _TableRow({required this.feedback, required this.onOpen});
+
+  /// Set when this row is the deep-link target: it flashes, then fades back.
+  final bool highlighted;
+  const _TableRow({
+    super.key,
+    required this.feedback,
+    required this.onOpen,
+    this.highlighted = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     final f = feedback;
     return InkWell(
       onTap: onOpen,
-      child: Container(
-        decoration: BoxDecoration(
-          color: f.isAnonymous ? kAnonColor.withValues(alpha: 0.035) : null,
-          border: const Border(bottom: BorderSide(color: AdminUi.border)),
-        ),
+      child: AnimatedContainer(
+        duration: kHighlightFade,
+        decoration: highlighted
+            ? highlightRowDecoration(
+                accent: AppColors.primaryBlue,
+                divider: const BorderSide(color: AdminUi.border),
+              )
+            : BoxDecoration(
+                color:
+                    f.isAnonymous ? kAnonColor.withValues(alpha: 0.035) : null,
+                border: const Border(bottom: BorderSide(color: AdminUi.border)),
+              ),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
           children: [
@@ -637,7 +684,13 @@ class _PhotoCount extends StatelessWidget {
 class _Card extends StatelessWidget {
   final AdminFeedback feedback;
   final VoidCallback onOpen;
-  const _Card({required this.feedback, required this.onOpen});
+  final bool highlighted;
+  const _Card({
+    super.key,
+    required this.feedback,
+    required this.onOpen,
+    this.highlighted = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -645,6 +698,7 @@ class _Card extends StatelessWidget {
     return SubmissionListCard(
       isAnonymous: f.isAnonymous,
       onTap: onOpen,
+      highlighted: highlighted,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -746,6 +800,11 @@ class _FeedbackDetailDialogState extends ConsumerState<_FeedbackDetailDialog> {
   String? _response;
   bool _busy = false;
 
+  /// Which PANE is showing when the layout is too narrow to seat both side by
+  /// side: 0 = Feedback Details, 1 = Feedback Status. Details leads — you read
+  /// what the citizen rated and wrote before you reply to it.
+  int _paneTab = 0;
+
   @override
   void initState() {
     super.initState();
@@ -829,137 +888,42 @@ class _FeedbackDetailDialogState extends ConsumerState<_FeedbackDetailDialog> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
+  /// Left pane — where this feedback stands, and the reply that closes it out.
+  ///
+  /// Deliberately NOT the report's stepper: feedback has no workflow to walk
+  /// through. It's either waiting on the LGU or it's been answered, so the
+  /// status card plus the reply composer say everything the four-step rail
+  /// would, without inventing stages that don't exist.
+  Widget _statusPane() {
     final f = widget.feedback;
-    final size = MediaQuery.of(context).size;
-    final narrow = size.width < 640;
-    final c = _officeColor(f.officeId);
+    final replied = _status == FeedbackStatus.responded;
+    final accent = _statusColor(_status);
 
-    final aspects = <MapEntry<String, int>>[
-      if (f.aspectStaff != null) MapEntry('Staff attitude', f.aspectStaff!),
-      if (f.aspectWait != null) MapEntry('Wait time', f.aspectWait!),
-      if (f.aspectClarity != null) MapEntry('Process clarity', f.aspectClarity!),
-      if (f.aspectFacility != null) MapEntry('Facility', f.aspectFacility!),
-    ];
-
-    // Rich header — X only in the wide dialog; the narrow page uses the chevron.
-    Widget richHeader({required bool showClose}) => Padding(
-          padding: EdgeInsets.fromLTRB(20, showClose ? 18 : 12, 12, 12),
-          child: Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: c.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(_officeIcon(f.officeId), size: 22, color: c),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(f.officeLabel,
-                        style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                            color: AdminUi.textPrimary)),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Text(f.shortId,
-                            style: const TextStyle(
-                                fontSize: 12, color: AdminUi.textMuted)),
-                        const SizedBox(width: 8),
-                        StatusPill(
-                          label: feedbackStatusLabel(_status),
-                          color: _statusColor(_status),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              if (showClose)
-                IconButton(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close_rounded),
-                  color: AdminUi.textMuted,
-                ),
-            ],
-          ),
-        );
-
-    final scrollContent = SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
+    return _Pane(
+      title: 'Feedback Status',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AdminModerationBar(
-            isDismissed: f.isDismissed,
-            reason: f.dismissedReason,
-            busy: _busy,
-            onDismiss: _dismiss,
-            onRestore: _restore,
-          ),
-          const SizedBox(height: 16),
-          RevealableSubmitter(
-            source: RevealSource.feedback,
-            submissionId: f.id,
-            isAnonymous: f.isAnonymous,
-            name: f.submitterName,
-            photoUrl: f.submitterPhotoUrl,
-            role: null,
-          ),
-          const SizedBox(height: 20),
-          _sectionTitle('SERVICE'),
-          const SizedBox(height: 8),
-          Text(f.serviceName.isEmpty ? '—' : f.serviceName,
-              style: const TextStyle(
-                  fontSize: 13.5, height: 1.4, color: AdminUi.textPrimary)),
-          const SizedBox(height: 6),
-          Text('Visited · ${adminShortDate(f.visitDate)}',
-              style: const TextStyle(fontSize: 12, color: AdminUi.textMuted)),
-          const SizedBox(height: 20),
-          _sectionTitle('OVERALL RATING'),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              _StarRow(rating: f.overallRating, size: 20),
-              const SizedBox(width: 10),
-              Text(feedbackRatingLabel(f.overallRating),
-                  style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: AdminUi.textSecondary)),
+          _StatusCard(
+            chip: feedbackStatusLabel(_status),
+            headline: replied
+                ? 'You\'ve replied to this feedback.'
+                : 'This feedback is awaiting a reply.',
+            blurb: replied
+                ? 'The citizen has been notified of your response. The internal '
+                      'note below stays private to the console.'
+                : 'It\'s still on the review desk. Send a reply and the citizen '
+                      'is notified — or keep a private note for the team.',
+            accent: accent,
+            facts: [
+              (label: 'Submitted on', value: adminLongDateTime(f.createdAt)),
+              if (replied && _respondedAt != null)
+                (label: 'Replied on', value: adminLongDateTime(_respondedAt))
+              else
+                (label: 'Office', value: f.officeLabel),
             ],
           ),
-          if (aspects.isNotEmpty) ...[
-            const SizedBox(height: 20),
-            _sectionTitle('ASPECT RATINGS'),
-            const SizedBox(height: 10),
-            _AspectGrid(aspects: aspects),
-          ],
-          const SizedBox(height: 20),
-          _sectionTitle('COMMENT'),
-          const SizedBox(height: 8),
-          Text(
-            f.comment ?? 'No comment provided.',
-            style: TextStyle(
-              fontSize: 13.5,
-              height: 1.5,
-              color:
-                  f.comment == null ? AdminUi.textMuted : AdminUi.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 20),
-          _sectionTitle('PHOTOS'),
-          const SizedBox(height: 10),
-          _PhotoGallery(urls: f.photoUrls),
-          const SizedBox(height: 22),
+          const SizedBox(height: 18),
           RespondPanel(
             isAnonymous: f.isAnonymous,
             respondedAt: _respondedAt,
@@ -972,48 +936,642 @@ class _FeedbackDetailDialogState extends ConsumerState<_FeedbackDetailDialog> {
         ],
       ),
     );
+  }
 
-    // Narrow → full-screen page.
-    if (narrow) {
-      return AdminDetailScaffold(
-        title: 'Feedback details',
-        child: Column(
-          children: [
-            richHeader(showClose: false),
-            const Divider(height: 1, color: AdminUi.border),
-            Expanded(child: scrollContent),
-          ],
-        ),
-      );
-    }
+  /// Right pane — what was rated, and by whom. Mirrors the report details pane;
+  /// there's no action block because feedback's only actions are the reply
+  /// (left pane) and dismissal (the moderation bar up top).
+  Widget _detailsPane() {
+    final f = widget.feedback;
+    final aspects = <MapEntry<String, int>>[
+      if (f.aspectStaff != null) MapEntry('Staff attitude', f.aspectStaff!),
+      if (f.aspectWait != null) MapEntry('Wait time', f.aspectWait!),
+      if (f.aspectClarity != null) MapEntry('Process clarity', f.aspectClarity!),
+      if (f.aspectFacility != null) MapEntry('Facility', f.aspectFacility!),
+    ];
+    final photos = f.photoUrls;
 
-    // Wide → centered dialog card.
-    return Dialog(
-      backgroundColor: AdminUi.surface,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 640, maxHeight: 720),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            richHeader(showClose: true),
-            const Divider(height: 1, color: AdminUi.border),
-            Flexible(child: scrollContent),
-          ],
-        ),
+    return _Pane(
+      title: 'Feedback Details',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AdminModerationBar(
+            isDismissed: f.isDismissed,
+            reason: f.dismissedReason,
+            busy: _busy,
+            onDismiss: _dismiss,
+            onRestore: _restore,
+          ),
+          const SizedBox(height: 14),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _HeroThumb(
+                url: photos.isEmpty ? null : photos.first,
+                officeId: f.officeId,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _KvRow(
+                      label: 'Status',
+                      trailing: StatusPill(
+                        label: feedbackStatusLabel(_status),
+                        color: _statusColor(_status),
+                      ),
+                    ),
+                    _KvRow(label: 'ID', value: '#FBK-${f.shortId}'),
+                    _KvRow(
+                      label: 'Date Submitted',
+                      value: adminShortDate(f.createdAt),
+                    ),
+                    _KvRow(
+                      label: 'Time Submitted',
+                      value: adminClockTime(f.createdAt),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          const Divider(height: 1, color: AdminUi.border),
+          const SizedBox(height: 18),
+          _IconSection(
+            icon: _officeIcon(f.officeId),
+            title: 'Office',
+            child: Text(
+              f.officeLabel,
+              style: const TextStyle(
+                fontSize: 13,
+                height: 1.4,
+                color: AdminUi.textSecondary,
+              ),
+            ),
+          ),
+          _IconSection(
+            icon: Icons.room_service_rounded,
+            title: 'Service',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  f.serviceName.isEmpty ? '—' : f.serviceName,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    height: 1.4,
+                    color: AdminUi.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  'Visited · ${adminShortDate(f.visitDate)}',
+                  style: const TextStyle(fontSize: 12, color: AdminUi.textMuted),
+                ),
+              ],
+            ),
+          ),
+          _IconSection(
+            icon: Icons.star_rounded,
+            title: 'Overall Rating',
+            child: Row(
+              children: [
+                _StarRow(rating: f.overallRating, size: 18),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    feedbackRatingLabel(f.overallRating),
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AdminUi.textSecondary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (aspects.isNotEmpty)
+            _IconSection(
+              icon: Icons.tune_rounded,
+              title: 'Aspect Ratings',
+              child: _AspectGrid(aspects: aspects),
+            ),
+          _IconSection(
+            icon: Icons.person_rounded,
+            title: 'Submitted By',
+            child: RevealableSubmitter(
+              source: RevealSource.feedback,
+              submissionId: f.id,
+              isAnonymous: f.isAnonymous,
+              name: f.submitterName,
+              photoUrl: f.submitterPhotoUrl,
+              role: null,
+            ),
+          ),
+          _IconSection(
+            icon: Icons.description_rounded,
+            title: 'Comment',
+            child: Text(
+              f.comment ?? 'No comment provided.',
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.5,
+                color:
+                    f.comment == null ? AdminUi.textMuted : AdminUi.textSecondary,
+              ),
+            ),
+          ),
+          _IconSection(
+            icon: Icons.attach_file_rounded,
+            title: 'Photos',
+            isLast: true,
+            child: _PhotoGallery(
+              urls: f.photoUrls,
+              sources: f.photoSources,
+              aiScores: f.photoAiScores,
+              aiStatuses: f.photoAiStatus,
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _sectionTitle(String text) => Text(
-        text,
-        style: const TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.5,
-          color: AdminUi.textMuted,
+  @override
+  Widget build(BuildContext context) {
+    final narrow = MediaQuery.of(context).size.width < kAdminDetailNarrowBelow;
+
+    // One pane at a time on a phone, or in a dialog too narrow for two columns.
+    // Stacking both would make a small screen scroll the length of the pair.
+    Widget paneTabs() => AdminSegmentedTabs(
+      labels: const ['Feedback Details', 'Feedback Status'],
+      selected: _paneTab,
+      onSelect: (i) => setState(() => _paneTab = i),
+    );
+
+    Widget activePane() => SingleChildScrollView(
+      padding: const EdgeInsets.all(14),
+      child: _paneTab == 0 ? _detailsPane() : _statusPane(),
+    );
+
+    if (narrow) {
+      return AdminDetailScaffold(
+        title: 'Feedback details',
+        child: Container(
+          color: AdminUi.pageBg,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
+                child: paneTabs(),
+              ),
+              Expanded(child: activePane()),
+            ],
+          ),
         ),
       );
+    }
+
+    return Dialog(
+      backgroundColor: AdminUi.pageBg,
+      // Tight vertical inset: the panes are long, and every pixel given back
+      // here is a pixel the admin doesn't have to scroll.
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1120, maxHeight: 900),
+        child: LayoutBuilder(
+          builder: (context, c) {
+            if (c.maxWidth < _kTwoPaneFrom) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
+                    child: Row(
+                      children: [
+                        Expanded(child: paneTabs()),
+                        const SizedBox(width: 10),
+                        const _PaneCloseButton(),
+                      ],
+                    ),
+                  ),
+                  Flexible(child: activePane()),
+                ],
+              );
+            }
+            return Stack(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: AdminTwoPaneRow(
+                    main: _statusPane(),
+                    side: _detailsPane(),
+                  ),
+                ),
+                // Pinned rather than scrolled with the pane — the way out stays
+                // put however far down you are.
+                const Positioned(top: 22, right: 22, child: _PaneCloseButton()),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+/// Width at which the detail splits into two columns. Matches the reports and
+/// suggestions consoles so all three break at the same point.
+const double _kTwoPaneFrom = 900;
+
+/// Test hook for the status card that heads the detail's left pane — the piece
+/// with the width-dependent illustration and fact strip.
+Widget feedbackStatusCardForTesting({
+  required String chip,
+  required String headline,
+  required String blurb,
+  required Color accent,
+  List<({String label, String value})> facts = const [],
+}) => _StatusCard(
+  chip: chip,
+  headline: headline,
+  blurb: blurb,
+  accent: accent,
+  facts: facts,
+);
+
+// ── Detail building blocks ───────────────────────────────────────────────────
+
+/// A titled white card — one of the two panes of the feedback detail.
+class _Pane extends StatelessWidget {
+  final String title;
+  final Widget child;
+  const _Pane({required this.title, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AdminUi.surface,
+        borderRadius: BorderRadius.circular(AdminUi.cardRadius),
+        border: Border.all(color: AdminUi.border),
+        boxShadow: AdminUi.cardShadow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: AdminUi.textPrimary,
+              letterSpacing: -0.4,
+            ),
+          ),
+          const SizedBox(height: 16),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+/// The status headline card at the top of the left pane — the feedback's
+/// equivalent of the report's stage card, illustrated with the feedback mark.
+class _StatusCard extends StatelessWidget {
+  final String chip;
+  final String headline;
+  final String blurb;
+  final Color accent;
+  final List<({String label, String value})> facts;
+  const _StatusCard({
+    required this.chip,
+    required this.headline,
+    required this.blurb,
+    required this.accent,
+    this.facts = const [],
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(AdminUi.cardRadius),
+        border: Border.all(color: accent.withValues(alpha: 0.20)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 7,
+                height: 7,
+                decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                chip,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  color: accent,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          LayoutBuilder(
+            builder: (context, c) {
+              final copy = Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    headline,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      height: 1.25,
+                      fontWeight: FontWeight.w800,
+                      color: AdminUi.textPrimary,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    blurb,
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      height: 1.45,
+                      color: AdminUi.textSecondary,
+                    ),
+                  ),
+                ],
+              );
+
+              // Below ~380px the illustration would squeeze the headline into a
+              // ragged column, so it drops out and the copy takes the full row.
+              if (c.maxWidth < 380) return copy;
+              return Row(
+                children: [
+                  Expanded(child: copy),
+                  const SizedBox(width: 12),
+                  Image.asset(
+                    'assets/images/feedback.webp',
+                    width: (c.maxWidth * 0.22).clamp(72.0, 116.0),
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                  ),
+                ],
+              );
+            },
+          ),
+          if (facts.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            _FactStrip(facts: facts, accent: accent),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// The white inset strip of label/value pairs at the foot of the status card.
+/// Side by side when there's room, stacked when there isn't, so a long office
+/// name or timestamp never gets clipped.
+class _FactStrip extends StatelessWidget {
+  final List<({String label, String value})> facts;
+  final Color accent;
+  const _FactStrip({required this.facts, required this.accent});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget fact(({String label, String value}) f) => Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          f.label,
+          style: const TextStyle(fontSize: 11, color: AdminUi.textMuted),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          f.value,
+          style: const TextStyle(
+            fontSize: 12.5,
+            height: 1.35,
+            fontWeight: FontWeight.w700,
+            color: AdminUi.textPrimary,
+          ),
+        ),
+      ],
+    );
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AdminUi.surface,
+        borderRadius: BorderRadius.circular(AdminUi.controlRadius),
+        border: Border.all(color: accent.withValues(alpha: 0.18)),
+      ),
+      child: LayoutBuilder(
+        builder: (context, c) {
+          // Each fact needs ~150px to seat a date on two lines; under that the
+          // row becomes a stack.
+          if (c.maxWidth >= facts.length * 150) {
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (var i = 0; i < facts.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 14),
+                  Expanded(child: fact(facts[i])),
+                ],
+              ],
+            );
+          }
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (var i = 0; i < facts.length; i++) ...[
+                if (i > 0) const SizedBox(height: 10),
+                fact(facts[i]),
+              ],
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// Square preview of the feedback's first photo, beside the id/date block.
+/// Falls back to the office mark when there's no photo to show.
+class _HeroThumb extends StatelessWidget {
+  final String? url;
+  final String officeId;
+  const _HeroThumb({required this.url, required this.officeId});
+
+  @override
+  Widget build(BuildContext context) {
+    final u = url;
+    Widget inner;
+    if (u == null) {
+      inner = _OfficeIconBox(officeId, size: 88);
+    } else {
+      inner = GestureDetector(
+        onTap: () => showDialog(
+          context: context,
+          barrierColor: Colors.black87,
+          builder: (_) => _FullscreenImageDialog(url: u),
+        ),
+        // Shimmers in its own box while it loads, and stays cached after.
+        child: SkeletonNetworkImage(
+          url: u,
+          errorChild: _OfficeIconBox(officeId, size: 88),
+        ),
+      );
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        width: 88,
+        height: 88,
+        color: AdminUi.subtle,
+        child: inner,
+      ),
+    );
+  }
+}
+
+/// "Label: value" line in the details pane's id block. Pass [value] for plain
+/// text or [trailing] for a widget (the status pill).
+class _KvRow extends StatelessWidget {
+  final String label;
+  final String? value;
+  final Widget? trailing;
+  const _KvRow({required this.label, this.value, this.trailing});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '$label: ',
+            style: const TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+              color: AdminUi.textPrimary,
+            ),
+          ),
+          Expanded(
+            child:
+                trailing ??
+                Text(
+                  value ?? '—',
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    height: 1.35,
+                    color: AdminUi.textSecondary,
+                  ),
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// An icon + heading with its content indented beneath — the repeating unit of
+/// the details pane (Office, Service, Rating, Comment, Photos).
+class _IconSection extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final Widget child;
+  final bool isLast;
+  const _IconSection({
+    required this.icon,
+    required this.title,
+    required this.child,
+    this.isLast = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: isLast ? 0 : 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 15, color: AppColors.primaryBlue),
+              const SizedBox(width: 7),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: AdminUi.textPrimary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Padding(padding: const EdgeInsets.only(left: 22), child: child),
+        ],
+      ),
+    );
+  }
+}
+
+/// The dialog's way out, styled to sit on a pane's top-right corner.
+class _PaneCloseButton extends StatelessWidget {
+  const _PaneCloseButton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AdminUi.subtle,
+      shape: const CircleBorder(),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => Navigator.pop(context),
+        child: Tooltip(
+          message: 'Close',
+          child: Container(
+            width: 32,
+            height: 32,
+            alignment: Alignment.center,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.fromBorderSide(BorderSide(color: AdminUi.border)),
+            ),
+            child: const Icon(
+              Icons.close_rounded,
+              size: 18,
+              color: AdminUi.textSecondary,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _AspectGrid extends StatelessWidget {
@@ -1063,7 +1621,19 @@ class _AspectGrid extends StatelessWidget {
 
 class _PhotoGallery extends StatelessWidget {
   final List<String> urls;
-  const _PhotoGallery({required this.urls});
+
+  /// Per-photo provenance, aligned index-for-index with [urls].
+  final List<String> sources;
+
+  /// Per-photo AI-detection results, aligned index-for-index with [urls].
+  final List<double?> aiScores;
+  final List<String?> aiStatuses;
+  const _PhotoGallery({
+    required this.urls,
+    this.sources = const [],
+    this.aiScores = const [],
+    this.aiStatuses = const [],
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1071,17 +1641,46 @@ class _PhotoGallery extends StatelessWidget {
       return const Text('No photos attached.',
           style: TextStyle(fontSize: 13, color: AdminUi.textMuted));
     }
-    return Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      children: [for (final u in urls) _PhotoThumb(url: u)],
+    // Tiles size to the pane rather than a hardcoded 92, so the grid ends flush
+    // on a narrow details column and stays tappable on a phone.
+    return LayoutBuilder(
+      builder: (context, c) {
+        final tile = attachmentTileSize(c.maxWidth);
+        return Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            for (var i = 0; i < urls.length; i++)
+              _PhotoThumb(
+                url: urls[i],
+                size: tile,
+                verified: i < sources.length && sources[i] == 'camera',
+                aiScore: i < aiScores.length ? aiScores[i] : null,
+                aiStatus: i < aiStatuses.length ? aiStatuses[i] : null,
+              ),
+          ],
+        );
+      },
     );
   }
 }
 
 class _PhotoThumb extends StatelessWidget {
   final String url;
-  const _PhotoThumb({required this.url});
+  final bool verified;
+  final double? aiScore;
+  final String? aiStatus;
+
+  /// Side of the square tile. The gallery sizes this to the pane it's in — see
+  /// [attachmentTileSize].
+  final double size;
+  const _PhotoThumb({
+    required this.url,
+    this.size = 92,
+    this.verified = false,
+    this.aiScore,
+    this.aiStatus,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1094,19 +1693,38 @@ class _PhotoThumb extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(10),
         child: Container(
-          width: 92,
-          height: 92,
+          width: size,
+          height: size,
           color: AdminUi.subtle,
           child: Stack(
             fit: StackFit.expand,
             children: [
-              Image.network(
-                url,
+              // Shimmers while it loads and keeps a disk cache, so reopening
+              // this feedback doesn't re-download its photos.
+              SkeletonNetworkImage(
+                url: url,
                 fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => const Icon(
-                    Icons.broken_image_rounded,
-                    color: AdminUi.textMuted,
-                    size: 22),
+                errorChild: const ColoredBox(
+                  color: AdminUi.subtle,
+                  child: Icon(Icons.broken_image_rounded,
+                      color: AdminUi.textMuted, size: 22),
+                ),
+              ),
+              Positioned(
+                top: 5,
+                left: 5,
+                child: MediaSourceBadge(verified: verified),
+              ),
+              // AI-generated-image flag (top-right, opposite the source badge).
+              // Compact on the small 92px thumb to avoid collision.
+              Positioned(
+                top: 5,
+                right: 5,
+                child: AiDetectionBadge(
+                  score: aiScore,
+                  status: aiStatus,
+                  compact: true,
+                ),
               ),
               Positioned(
                 right: 5,
@@ -1142,7 +1760,19 @@ class _FullscreenImageDialog extends StatelessWidget {
         children: [
           Center(
             child: InteractiveViewer(
-              child: Image.network(url, fit: BoxFit.contain),
+              // Cached: the thumb already warmed this URL, so opening the
+              // viewer shows the photo instead of re-fetching it.
+              child: CachedNetworkImage(
+                imageUrl: url,
+                fit: BoxFit.contain,
+                placeholder: (_, _) =>
+                    const CircularProgressIndicator(color: Colors.white),
+                errorWidget: (_, _, _) => const Icon(
+                  Icons.broken_image_rounded,
+                  color: Colors.white54,
+                  size: 40,
+                ),
+              ),
             ),
           ),
           Positioned(

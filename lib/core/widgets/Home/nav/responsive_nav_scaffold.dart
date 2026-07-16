@@ -37,6 +37,7 @@ import '../../../providers/user_profile_provider.dart';
 import '../../../services/chat_service.dart';
 import '../../../services/push_service.dart';
 import '../../modal/verification_required_dialog.dart';
+import '../../logout_confirm_dialog.dart';
 import '../../../../features/home/screen/home_screen.dart';
 import '../../../../features/home/screen/notification_popup.dart';
 import '../Chat-bubbles/home_chat_bubble.dart';
@@ -194,7 +195,11 @@ class ResponsiveNavScaffold extends ConsumerWidget {
             username: username,
             isVerified: verifStatus == VerifStatus.verified,
             isPending: verifStatus == VerifStatus.pending,
-            onOpenNewsFeed: ({String? postId, bool openComments = false}) =>
+            onOpenNewsFeed: ({
+              String? postId,
+              bool openComments = false,
+              bool highlight = false,
+            }) =>
                 Navigator.pushNamed(
               context,
               '/newsfeed',
@@ -203,6 +208,7 @@ class ResponsiveNavScaffold extends ConsumerWidget {
                 'isVerified': verifStatus == VerifStatus.verified,
                 'initialPostId': ?postId,
                 if (postId != null) 'initialOpenComments': openComments,
+                if (postId != null) 'initialHighlightPost': highlight,
               },
             ),
           );
@@ -230,101 +236,9 @@ class ResponsiveNavScaffold extends ConsumerWidget {
       return;
     }
 
-    final shouldLogout = await showDialog<bool>(
-      context: context,
-      barrierColor: Colors.black54,
-      builder: (ctx) => Dialog(
-        backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEF4444).withValues(alpha: 0.10),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.logout_rounded,
-                  size: 28,
-                  color: Color(0xFFEF4444),
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Log Out?',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF1F2937),
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                "You'll need to sign in again to access your account.",
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Color(0xFF6B7280),
-                  height: 1.45,
-                ),
-              ),
-              const SizedBox(height: 24),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.pop(ctx, false),
-                      style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Color(0xFFE5E7EB)),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                      child: const Text(
-                        'Cancel',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF374151),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () => Navigator.pop(ctx, true),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFEF4444),
-                        elevation: 0,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                      child: const Text(
-                        'Log Out',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    final shouldLogout = await showLogoutConfirmDialog(context);
 
-    if (shouldLogout != true || !context.mounted) return;
+    if (!shouldLogout || !context.mounted) return;
 
     showDialog(
       context: context,

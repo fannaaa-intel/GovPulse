@@ -183,6 +183,15 @@ class _ChangePasswordSendScreenState extends State<ChangePasswordSendScreen>
         backgroundColor: Colors.white,
         body: ResponsivePageBody(
           maxWidth: 520,
+          shellTitle: 'Change Password',
+          shellSubtitle:
+              'Update your password to keep your GovPulse account secure.',
+          shellIcon: Icons.lock_rounded,
+          shellHighlights: const [
+            (Icons.mark_email_read_rounded, "Verify it's you by email"),
+            (Icons.shield_rounded, 'Choose a strong new password'),
+            (Icons.check_circle_rounded, 'Takes less than a minute'),
+          ],
           child: SafeArea(
             child: Column(
               children: [
@@ -206,6 +215,15 @@ class _ChangePasswordSendScreenState extends State<ChangePasswordSendScreen>
       resizeToAvoidBottomInset: true,
       body: ResponsivePageBody(
         maxWidth: 520,
+        shellTitle: 'Change Password',
+        shellSubtitle:
+            'Update your password to keep your GovPulse account secure.',
+        shellIcon: Icons.lock_rounded,
+        shellHighlights: const [
+          (Icons.mark_email_read_rounded, "Verify it's you by email"),
+          (Icons.shield_rounded, 'Choose a strong new password'),
+          (Icons.check_circle_rounded, 'Takes less than a minute'),
+        ],
         child: SafeArea(
           child: Column(
             children: [

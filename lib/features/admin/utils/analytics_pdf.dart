@@ -514,6 +514,7 @@ List<pw.Widget> _aiSection(AdminDashboardData d) {
     InsightTrend.improving => 'Improving',
     InsightTrend.declining => 'Declining',
     InsightTrend.stable => 'Stable',
+    InsightTrend.unknown => 'Not enough data',
   };
   out.add(_h2('Predictive satisfaction outlook'));
   out.add(
@@ -577,7 +578,11 @@ List<pw.Widget> _aiSection(AdminDashboardData d) {
           for (final f in nlp.focus)
             [
               _severityLabel(f.severity),
-              f.title,
+              // Scope carries the office + sample size; without it the printed
+              // report repeats the vague, un-actionable "Process clarity".
+              (f.scope == null || f.scope!.trim().isEmpty)
+                  ? f.title
+                  : '${f.title}\n${f.scope}',
               f.metric,
               f.suggestion,
             ],

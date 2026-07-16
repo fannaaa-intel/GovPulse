@@ -30,8 +30,8 @@ const SEVERITIES = new Set(["high", "medium", "low"]);
 
 const SYSTEM_PROMPT = `
 You are a public-service operations analyst for the Local Government Unit (LGU)
-of Aparri, Cagayan, Philippines. You are given AGGREGATED citizen feedback and
-report data. Produce a short, practical outlook the LGU can act on.
+of Aparri, Cagayan, Philippines. You are given AGGREGATED citizen feedback,
+report, and suggestion data. Produce a short, practical outlook the LGU can act on.
 
 Return ONLY a JSON object with exactly these keys:
 {
@@ -39,6 +39,7 @@ Return ONLY a JSON object with exactly these keys:
   "focus": [
     {
       "title": "short issue label (e.g. 'Wait time', 'High-urgency reports', 'Document clarity')",
+      "scope": "WHERE it applies + how much evidence, taken verbatim from the data (e.g. \\"Mayor's Office · 4 responses\\", '5 suggestions'). Use null only if the data truly identifies no office or count.",
       "metric": "the number behind it (e.g. '2.6★', '3 reports', '4 mentions')",
       "suggestion": "ONE concrete action the LGU can take",
       "severity": "high" | "medium" | "low"
@@ -48,7 +49,17 @@ Return ONLY a JSON object with exactly these keys:
 
 Rules:
 - Base everything strictly on the provided data. NEVER invent numbers, offices, or facts.
-- 1 to 3 focus items, most important first. If the data is thin, return fewer.
+- 1 to 4 focus items, most important first. If the data is thin, return fewer.
+- \`aspect_averages_by_office\` is the actionable one: name the specific office in
+  \`scope\` and in the suggestion. Never report a weak dimension without saying WHERE —
+  "Process clarity is low" is useless; "Process clarity at the Mayor's Office (2.0★,
+  3 responses)" is actionable. \`aspect_averages\` is the all-office blend; use it only
+  for the summary, never as a focus metric.
+- \`suggestion_categories\` is what citizens ASKED FOR (not complaints). When present,
+  include the most-requested category as a focus item: citizens have already told you
+  what they want, so recommend reviewing and replying to it.
+- Respect sample size. A dimension backed by 1 response is weak evidence — never call
+  it high severity on its own, and prefer signals with more responses behind them.
 - Suggestions must be concrete and doable by a municipal office (staffing, signage,
   queueing, checklists, dispatch/triage, facility fixes) — not vague ("improve service").
 - severity: high = safety risk or strong repeated complaint; medium = real routine issue;
@@ -57,6 +68,7 @@ Rules:
 
 interface Focus {
   title: string;
+  scope: string | null;
   metric: string;
   suggestion: string;
   severity: string;
@@ -81,13 +93,18 @@ function parseResult(raw: string): { summary: string; focus: Focus[] } | null {
       if (!title || !suggestion) continue;
       let severity = String(f?.severity ?? "medium").toLowerCase().trim();
       if (!SEVERITIES.has(severity)) severity = "medium";
+      const scope = String(f?.scope ?? "").trim();
       focus.push({
         title: title.slice(0, 60),
+        // Empty/"null" scope is legitimate — the client just omits the line.
+        scope: scope && scope.toLowerCase() !== "null"
+          ? scope.slice(0, 60)
+          : null,
         metric: String(f?.metric ?? "").trim().slice(0, 24),
         suggestion: suggestion.slice(0, 200),
         severity,
       });
-      if (focus.length >= 3) break;
+      if (focus.length >= 4) break;
     }
     if (!summary && focus.length === 0) return null;
     return { summary, focus };
@@ -101,6 +118,7 @@ function parseResult(raw: string): { summary: string; focus: Focus[] } | null {
 function buildAggregate(
   feedback: Array<Record<string, unknown>>,
   reports: Array<Record<string, unknown>>,
+  suggestions: Array<Record<string, unknown>>,
 ) {
   const num = (v: unknown) => (typeof v === "number" ? v : null);
   const avg = (key: string) => {
@@ -139,9 +157,53 @@ function buildAggregate(
     }
   }
 
+  // Per-office aspect averages. The all-office blend below cannot tell an admin
+  // WHERE to act ("process clarity 2.5★" — at which office?), so the model gets
+  // the breakdown plus each office's response count to weigh evidence by.
+  const ASPECTS: Record<string, string> = {
+    aspect_staff: "staff_attitude",
+    aspect_wait: "wait_time",
+    aspect_clarity: "process_clarity",
+    aspect_facility: "facility",
+  };
+  const officeTotals: Record<string, Record<string, [number, number]>> = {};
+  const officeResponses: Record<string, number> = {};
+  for (const r of feedback) {
+    const office = String(r["office_label"] ?? "").trim();
+    if (!office) continue;
+    officeResponses[office] = (officeResponses[office] ?? 0) + 1;
+    for (const [col, label] of Object.entries(ASPECTS)) {
+      const v = num(r[col]);
+      if (!v || v <= 0) continue;
+      const slot = (officeTotals[office] ??= {});
+      const [s, n] = slot[label] ?? [0, 0];
+      slot[label] = [s + v, n + 1];
+    }
+  }
+  const aspectsByOffice: Record<string, Record<string, number | string>> = {};
+  for (const [office, aspects] of Object.entries(officeTotals)) {
+    const row: Record<string, number | string> = {
+      responses: officeResponses[office] ?? 0,
+    };
+    for (const [label, [s, n]] of Object.entries(aspects)) {
+      if (n > 0) row[label] = +(s / n).toFixed(2);
+    }
+    aspectsByOffice[office] = row;
+  }
+
+  // What citizens ASKED FOR, as opposed to what they rated or reported.
+  const suggestionCategories: Record<string, number> = {};
+  for (const s of suggestions) {
+    const raw = String(s["category"] ?? "").trim();
+    const other = String(s["category_other"] ?? "").trim();
+    const cat = raw === "others" && other ? other : (raw || "other");
+    suggestionCategories[cat] = (suggestionCategories[cat] ?? 0) + 1;
+  }
+
   return {
     feedback_count: feedback.length,
     report_count: reports.length,
+    suggestion_count: suggestions.length,
     avg_overall: avg("overall_rating"),
     aspect_averages: {
       staff_attitude: avg("aspect_staff"),
@@ -149,10 +211,12 @@ function buildAggregate(
       process_clarity: avg("aspect_clarity"),
       facility: avg("aspect_facility"),
     },
+    aspect_averages_by_office: aspectsByOffice,
     top_negative_comments: negativeComments,
     complaint_themes: themeCounts,
     report_categories: reportCategories,
     urgent_report_samples: urgentReportSamples,
+    suggestion_categories: suggestionCategories,
   };
 }
 
@@ -183,12 +247,13 @@ serve(async (req: Request) => {
   // 1. Pull the data (barangay scale → a single bounded read each).
   let feedback: Array<Record<string, unknown>> = [];
   let reports: Array<Record<string, unknown>> = [];
+  let suggestions: Array<Record<string, unknown>> = [];
   try {
-    const [fb, rp] = await Promise.all([
+    const [fb, rp, sg] = await Promise.all([
       supabase
         .from("feedbacks")
         .select(
-          "overall_rating, aspect_staff, aspect_wait, aspect_clarity, aspect_facility, comment, ai_sentiment, ai_theme, created_at",
+          "office_label, overall_rating, aspect_staff, aspect_wait, aspect_clarity, aspect_facility, comment, ai_sentiment, ai_theme, created_at",
         )
         .order("created_at", { ascending: false })
         .limit(300),
@@ -197,9 +262,15 @@ serve(async (req: Request) => {
         .select("category, category_other, remarks, status, created_at")
         .order("created_at", { ascending: false })
         .limit(300),
+      supabase
+        .from("suggestions")
+        .select("category, category_other, created_at")
+        .order("created_at", { ascending: false })
+        .limit(300),
     ]);
     feedback = (fb.data ?? []) as Array<Record<string, unknown>>;
     reports = (rp.data ?? []) as Array<Record<string, unknown>>;
+    suggestions = (sg.data ?? []) as Array<Record<string, unknown>>;
   } catch (e) {
     console.error("data fetch failed:", e);
     return new Response(JSON.stringify({ error: "DB read failed" }), {
@@ -208,14 +279,16 @@ serve(async (req: Request) => {
     });
   }
 
-  if (feedback.length === 0 && reports.length === 0) {
+  if (
+    feedback.length === 0 && reports.length === 0 && suggestions.length === 0
+  ) {
     return new Response(
       JSON.stringify({ skipped: "no data to analyse" }),
       { headers: { "Content-Type": "application/json", ...corsHeaders } },
     );
   }
 
-  const aggregate = buildAggregate(feedback, reports);
+  const aggregate = buildAggregate(feedback, reports, suggestions);
 
   // 2. Ask Groq for the outlook.
   let result: { summary: string; focus: Focus[] } | null = null;

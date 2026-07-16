@@ -388,13 +388,20 @@ class _VerificationReviewScreenState extends State<VerificationReviewScreen> {
       body: SafeArea(
         top: true,
         bottom: false,
-        child: Column(
+        // Web / large screens: cap + center the flow so form fields don't
+        // stretch edge-to-edge. Phones (≤560px) render pixel-identical.
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: Column(
           children: [
             _buildHeader(context),
             _buildStepper(),
             Expanded(child: _buildForm()),
             _buildBottomButton(bottomPadding),
           ],
+            ),
+          ),
         ),
       ),
     );

@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/widgets/event_status_pill.dart';
 import 'events_screen.dart';
 
 class EventDetailScreen extends StatefulWidget {
@@ -110,6 +111,11 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       backgroundColor: Colors.white,
       body: ResponsivePageBody(
         maxWidth: 760,
+        shellTitle: 'Event Details',
+        shellSubtitle:
+            'View the full details of this community event.',
+        shellIcon: Icons.event_rounded,
+        shellContentWidth: 640,
         child: SafeArea(
           child: Column(
             children: [
@@ -235,26 +241,36 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  // category badge
-                                  Container(
-                                    padding: EdgeInsets.symmetric(
-                                      horizontal: w * 0.028,
-                                      vertical: w * 0.010,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: event.categoryColor,
-                                      borderRadius: BorderRadius.circular(
-                                        w * 0.015,
+                                  // category badge + time-status pill
+                                  Row(
+                                    children: [
+                                      Container(
+                                        padding: EdgeInsets.symmetric(
+                                          horizontal: w * 0.028,
+                                          vertical: w * 0.010,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: event.categoryColor,
+                                          borderRadius: BorderRadius.circular(
+                                            w * 0.015,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          event.category,
+                                          style: TextStyle(
+                                            fontSize: w * 0.028,
+                                            fontWeight: FontWeight.w700,
+                                            color: Colors.white,
+                                          ),
+                                        ),
                                       ),
-                                    ),
-                                    child: Text(
-                                      event.category,
-                                      style: TextStyle(
+                                      const Spacer(),
+                                      EventStatusPill(
+                                        eventDate: event.eventDate,
+                                        eventTime: event.time,
                                         fontSize: w * 0.028,
-                                        fontWeight: FontWeight.w700,
-                                        color: Colors.white,
                                       ),
-                                    ),
+                                    ],
                                   ),
                                   SizedBox(height: w * 0.025),
                                   // title

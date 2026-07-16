@@ -1,8 +1,10 @@
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'admin_reports_provider.dart'
     show reportCategoryLabel, reportStatusFromDb, ReportStatus;
+import 'admin_suggestions_provider.dart' show suggestionCategoryLabel;
 
 /// What kind of event an activity-feed row represents. The UI maps this to an
 /// icon + colour so the provider stays free of any Flutter/material imports.
@@ -82,18 +84,31 @@ class SatisfactionStats {
 }
 
 /// Direction of the forecasted service-quality trend.
-enum InsightTrend { improving, declining, stable }
+///
+/// [unknown] is not a neutral reading — it means the trend was never measured
+/// (only one 30-day window has rated feedback, so there is no second point to
+/// compare against). It is distinct from [stable], which is a real finding:
+/// two windows were compared and barely moved.
+enum InsightTrend { improving, declining, stable, unknown }
 
 /// A single actionable focus area under the predictive outlook: what's weak,
 /// the number behind it, and a concrete suggested action.
 class OutlookFocus {
   final String title; // e.g. "Wait time" / "High-urgency reports" / a theme
+
+  /// WHERE the finding applies and how much evidence sits behind it — e.g.
+  /// "Mayor's Office · 3 responses". Without this a weak score is an average
+  /// blended across every office, which tells an admin nothing about what to
+  /// actually fix. Null when the signal genuinely has no narrower scope.
+  final String? scope;
+
   final String metric; // e.g. "2.6★" / "3 reports" / "4 mentions"
   final String suggestion; // concrete recommended action
   final String severity; // 'high' | 'medium' | 'low' → colour
 
   const OutlookFocus({
     required this.title,
+    this.scope,
     required this.metric,
     required this.suggestion,
     required this.severity,
@@ -169,8 +184,27 @@ class NlpInsights {
   // ── Predictive outlook — from feedback rating trend ────────────────────────
   final double? recentAvg; // avg overall rating, recent window
   final double? priorAvg; // avg overall rating, prior window
-  final double? forecastRating; // projected next-period rating (1..5)
+
+  /// How many *rated* responses back each window. Drives the forecast's "why"
+  /// line, so an admin can weigh a projection built on 2 responses differently
+  /// from one built on 40.
+  final int recentCount;
+  final int priorCount;
+
+  /// Projected next-period rating (1..5). Null whenever [trend] is
+  /// [InsightTrend.unknown] — a forecast needs both windows to extrapolate from.
+  final double? forecastRating;
   final InsightTrend trend;
+
+  /// True when [forecastRating] hit the 1..5 rating scale's edge, i.e. the raw
+  /// extrapolation ran past what a star rating can express. The "why" line says
+  /// so rather than presenting a clamped number as a clean projection.
+  bool get forecastClamped {
+    final r = recentAvg, d = trendDelta;
+    if (r == null || d == null) return false;
+    final raw = r + d;
+    return raw < 1.0 || raw > 5.0;
+  }
 
   /// Classified feedback responses (for the sentiment drill-down), newest-first.
   final List<FeedbackInsightItem> sentimentItems;
@@ -202,6 +236,8 @@ class NlpInsights {
     required this.urgentLow,
     required this.recentAvg,
     required this.priorAvg,
+    this.recentCount = 0,
+    this.priorCount = 0,
     required this.forecastRating,
     required this.trend,
     this.sentimentItems = const [],
@@ -225,7 +261,7 @@ class NlpInsights {
     recentAvg: null,
     priorAvg: null,
     forecastRating: null,
-    trend: InsightTrend.stable,
+    trend: InsightTrend.unknown,
     sentimentItems: [],
     urgencyItems: [],
     focus: [],
@@ -342,6 +378,7 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
       _selectPendingVerifications(),
       _selectRecentVerifications(),
       _selectFeedbacks(),
+      _selectSuggestions(),
     ]);
 
     // Dismissed (spam / nonsense) rows are excluded from every metric and the
@@ -353,6 +390,8 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
     final recentVerifRows = results[2];
     final feedbackRows =
         results[3].where((r) => r['dismissed_at'] == null).toList();
+    final suggestionRows =
+        results[4].where((r) => r['dismissed_at'] == null).toList();
 
     // AI recommendations are optional (function may not be deployed) and must
     // never break the dashboard — fetched separately and guarded.
@@ -410,7 +449,7 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
       topCategories: topCategories,
       reportDates: reportDates,
       satisfaction: _satisfaction(feedbackRows),
-      nlp: _nlp(feedbackRows, reportRows, aiInsight, now),
+      nlp: _nlp(feedbackRows, reportRows, suggestionRows, aiInsight, now),
       recentActivity: activity.take(6).toList(),
     );
   }
@@ -451,6 +490,27 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
         .select('id')
         .eq('status', 'pending');
     return List<Map<String, dynamic>>.from(res);
+  }
+
+  /// Citizen suggestions — what people are *asking for*, as opposed to what
+  /// they rated (feedbacks) or what broke (reports). Feeds the recommended
+  /// focus: a suggestion is a citizen answering "what should the LGU do next",
+  /// which is exactly the question that block exists to answer.
+  ///
+  /// Guarded like the others: the `dismissed_at` moderation column is optional
+  /// (spam_moderation migration), and any hard failure degrades to an empty
+  /// list rather than taking the dashboard down.
+  Future<List<Map<String, dynamic>>> _selectSuggestions() async {
+    const baseCols = 'id, category, category_other, barangay, created_at';
+    for (final cols in ['$baseCols, dismissed_at', baseCols]) {
+      try {
+        final res = await _db.from('suggestions').select(cols);
+        return List<Map<String, dynamic>>.from(res);
+      } catch (_) {
+        // Column set unavailable — fall through to the next, smaller one.
+      }
+    }
+    return const [];
   }
 
   /// The latest AI recommendation row written by the recommend-actions Edge
@@ -775,9 +835,23 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
     return 'low';
   }
 
+  /// Test seam for [_nlp]. The analysis is pure — plain rows in, [NlpInsights]
+  /// out, never touching `_db` — so tests can drive it on a bare notifier
+  /// without Supabase initialised. Do not call from production code.
+  @visibleForTesting
+  NlpInsights analyseNlp(
+    List<Map<String, dynamic>> feedbackRows,
+    List<Map<String, dynamic>> reportRows,
+    List<Map<String, dynamic>> suggestionRows,
+    Map<String, dynamic>? aiInsight,
+    DateTime now,
+  ) =>
+      _nlp(feedbackRows, reportRows, suggestionRows, aiInsight, now);
+
   NlpInsights _nlp(
     List<Map<String, dynamic>> feedbackRows,
     List<Map<String, dynamic>> reportRows,
+    List<Map<String, dynamic>> suggestionRows,
     Map<String, dynamic>? aiInsight,
     DateTime now,
   ) {
@@ -921,12 +995,44 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
 
     // Predictive-outlook focus: prefer AI recommendations (recommend-actions
     // Edge Function) when present; otherwise compute them on-device (hybrid).
+    //
+    // GUARD: the AI outlook (summary + focus) is feedback-centric — the
+    // recommend-actions function can fabricate rating metrics (e.g. "3.43 avg",
+    // "Wait time 2.57★") when there is little or no real feedback to summarise.
+    // Only trust it once actual feedback has been analyzed; otherwise fall back
+    // to the on-device focus, which surfaces ONLY real, report-backed signals
+    // (e.g. outstanding high-urgency reports) and never invents ratings.
+    //
+    // FRESHNESS: `hasFeedbackSignal` only proves feedback exists *now* — not
+    // that the AI ever saw it. `_selectAiInsight` returns the newest cached row
+    // whatever its age, so a row generated before the latest submissions
+    // contradicts the panel it sits under ("no feedback to gauge service
+    // quality" printed directly beneath a real 3.0 average). Treat the insight
+    // as stale when any submission is newer than it, and fall back on-device.
+    //
+    // Compared row-timestamp to row-timestamp (never to local `now`), so this
+    // holds regardless of device clock skew or timezone; `_parseTs` normalises
+    // both sides identically.
+    final hasFeedbackSignal = analyzed > 0;
+    final aiGeneratedAt = _parseTs(aiInsight?['generated_at']);
+    DateTime? newestSubmission;
+    for (final r in [...feedbackRows, ...reportRows, ...suggestionRows]) {
+      final ts = _parseTs(r['created_at']);
+      if (ts != null && (newestSubmission == null || ts.isAfter(newestSubmission))) {
+        newestSubmission = ts;
+      }
+    }
+    // An insight with no `generated_at` cannot be proven fresh — don't trust it.
+    final aiIsFresh = aiGeneratedAt != null &&
+        (newestSubmission == null || !aiGeneratedAt.isBefore(newestSubmission));
+
     final aiFocus = _parseAiFocus(aiInsight);
     final aiSummary = (aiInsight?['summary'] as String?)?.trim();
-    final useAiOutlook = aiFocus.isNotEmpty || (aiSummary?.isNotEmpty ?? false);
-    final focus = aiFocus.isNotEmpty
-        ? aiFocus
-        : _buildFocus(feedbackRows, high);
+    final useAiOutlook = hasFeedbackSignal &&
+        aiIsFresh &&
+        (aiFocus.isNotEmpty || (aiSummary?.isNotEmpty ?? false));
+    final focus =
+        useAiOutlook ? aiFocus : _buildFocus(feedbackRows, suggestionRows, high);
 
     int newestFirst(FeedbackInsightItem a, FeedbackInsightItem b) {
       final at = a.createdAt?.millisecondsSinceEpoch ?? 0;
@@ -940,7 +1046,11 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
     final recentAvg = recentN == 0 ? null : recentSum / recentN;
     final priorAvg = priorN == 0 ? null : priorSum / priorN;
 
-    InsightTrend trend = InsightTrend.stable;
+    // A trend needs TWO points. With only one window we cannot say "Stable" —
+    // that would report a default as a finding — and we cannot extrapolate, so
+    // the forecast stays null. (Previously this projected `recentAvg` flat and
+    // labelled the copy "projected", inventing a forecast from a single point.)
+    InsightTrend trend = InsightTrend.unknown;
     double? forecast;
     if (recentAvg != null && priorAvg != null) {
       final delta = recentAvg - priorAvg;
@@ -948,8 +1058,6 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
           ? InsightTrend.improving
           : (delta < -0.15 ? InsightTrend.declining : InsightTrend.stable);
       forecast = (recentAvg + delta).clamp(1.0, 5.0);
-    } else if (recentAvg != null) {
-      forecast = recentAvg; // one window only — project it flat.
     }
 
     return NlpInsights(
@@ -965,6 +1073,8 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
       urgentLow: low,
       recentAvg: recentAvg,
       priorAvg: priorAvg,
+      recentCount: recentN,
+      priorCount: priorN,
       forecastRating: forecast,
       trend: trend,
       sentimentItems: sentimentItems,
@@ -990,9 +1100,15 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
       var severity =
           (e['severity'] as String?)?.trim().toLowerCase() ?? 'medium';
       if (!severities.contains(severity)) severity = 'medium';
+      // `scope` is written by newer deploys of recommend-actions; rows from an
+      // older deploy simply lack it, and the card omits the line.
+      final scope = (e['scope'] as String?)?.trim();
       out.add(
         OutlookFocus(
           title: title,
+          scope: (scope == null || scope.isEmpty || scope.toLowerCase() == 'null')
+              ? null
+              : scope,
           metric: (e['metric'] as String?)?.trim() ?? '',
           suggestion: suggestion,
           severity: severity,
@@ -1002,33 +1118,40 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
     return out.take(4).toList();
   }
 
-  // Aspect key → (display label, suggested action) for the outlook's focus areas.
+  // Aspect key → (display label, suggested action). The action is stored WITHOUT
+  // its final full stop so the office it applies to can be appended, turning
+  // generic advice into "…checklists at Mayor's Office."
   static const _aspectActions = <String, (String, String)>{
     'aspect_staff': (
       'Staff attitude',
-      'Coach front-desk staff on courtesy and responsiveness.',
+      'Coach front-desk staff on courtesy and responsiveness',
     ),
     'aspect_wait': (
       'Wait time',
-      'Add a window or post queue numbers during peak hours.',
+      'Add a window or post queue numbers during peak hours',
     ),
     'aspect_clarity': (
       'Process clarity',
-      'Publish clear, step-by-step requirement checklists.',
+      'Publish clear, step-by-step requirement checklists',
     ),
     'aspect_facility': (
       'Facility',
-      'Improve facility comfort — seating, signage, cleanliness.',
+      'Improve facility comfort — seating, signage, cleanliness',
     ),
   };
 
-  /// Builds up to three data-backed focus areas + suggested actions:
+  static String _plural(int n, String word) => '$n $word${n == 1 ? '' : 's'}';
+
+  /// Builds up to four data-backed focus areas + suggested actions:
   ///  1. outstanding high-urgency reports (most actionable),
-  ///  2. the weakest service dimension below 3.5★, and
-  ///  3. the most common complaint theme among negative feedback (when AI
+  ///  2. the weakest service dimension below 3.5★, scoped to the office that
+  ///     actually drives it,
+  ///  3. the most-requested citizen suggestion category, and
+  ///  4. the most common complaint theme among negative feedback (when AI
   ///     themes are available).
   List<OutlookFocus> _buildFocus(
     List<Map<String, dynamic>> feedbackRows,
+    List<Map<String, dynamic>> suggestionRows,
     int urgentHigh,
   ) {
     final out = <OutlookFocus>[];
@@ -1037,40 +1160,92 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
       out.add(
         OutlookFocus(
           title: 'High-urgency reports',
-          metric: '$urgentHigh report${urgentHigh == 1 ? '' : 's'}',
+          metric: _plural(urgentHigh, 'report'),
           suggestion: 'Triage and dispatch these before routine items.',
           severity: 'high',
         ),
       );
     }
 
-    // Weakest aspect below 3.5★.
-    String? weakestKey;
-    double weakestAvg = 3.5; // only aspects below this qualify
-    for (final entry in _aspectActions.entries) {
-      var sum = 0.0, n = 0;
-      for (final r in feedbackRows) {
-        final v = r[entry.key];
-        if (v is num && v > 0) {
-          sum += v;
-          n++;
-        }
+    // Weakest (office, aspect) pair below 3.5★.
+    //
+    // Deliberately NOT a global per-aspect average: averaging one dimension
+    // across every office produces a number no one can act on ("Process
+    // clarity 2.5★" — clarity *where*?). Scoring each office separately names
+    // the office to fix, and carries the sample size so a 1-response dip reads
+    // as the weak evidence it is.
+    final byOffice = <String, Map<String, (double, int)>>{};
+    for (final r in feedbackRows) {
+      final office = (r['office_label'] as String?)?.trim() ?? '';
+      for (final key in _aspectActions.keys) {
+        final v = r[key];
+        if (v is! num || v <= 0) continue;
+        final aspects = byOffice.putIfAbsent(office, () => {});
+        final (sum, n) = aspects[key] ?? (0.0, 0);
+        aspects[key] = (sum + v, n + 1);
       }
-      if (n == 0) continue;
-      final avg = sum / n;
-      if (avg < weakestAvg) {
-        weakestAvg = avg;
-        weakestKey = entry.key;
+    }
+
+    String? weakestKey;
+    String weakestOffice = '';
+    double weakestAvg = 3.5; // only aspects below this qualify
+    var weakestN = 0;
+    for (final officeEntry in byOffice.entries) {
+      for (final aspectEntry in officeEntry.value.entries) {
+        final (sum, n) = aspectEntry.value;
+        if (n == 0) continue;
+        final avg = sum / n;
+        if (avg < weakestAvg) {
+          weakestAvg = avg;
+          weakestKey = aspectEntry.key;
+          weakestOffice = officeEntry.key;
+          weakestN = n;
+        }
       }
     }
     if (weakestKey != null) {
       final meta = _aspectActions[weakestKey]!;
+      final hasOffice = weakestOffice.isNotEmpty;
+      final responses = _plural(weakestN, 'response');
       out.add(
         OutlookFocus(
           title: meta.$1,
+          scope: hasOffice ? '$weakestOffice · $responses' : responses,
           metric: '${weakestAvg.toStringAsFixed(1)}★',
-          suggestion: meta.$2,
+          suggestion:
+              hasOffice ? '${meta.$2} at $weakestOffice.' : '${meta.$2}.',
           severity: weakestAvg < 2.5 ? 'high' : 'medium',
+        ),
+      );
+    }
+
+    // Most-requested citizen suggestion category. Suggestions are citizens
+    // stating what the LGU should do next, which is the exact question this
+    // block answers — so they belong here rather than in the rating forecast,
+    // which they carry no score to feed.
+    final suggestionCounts = <String, int>{};
+    for (final s in suggestionRows) {
+      final label = suggestionCategoryLabel(
+        s['category'] as String?,
+        s['category_other'] as String?,
+      ).trim();
+      if (label.isEmpty) continue;
+      suggestionCounts[label] = (suggestionCounts[label] ?? 0) + 1;
+    }
+    if (suggestionCounts.isNotEmpty) {
+      final top = suggestionCounts.entries.reduce(
+        (a, b) => a.value >= b.value ? a : b,
+      );
+      out.add(
+        OutlookFocus(
+          title: top.key,
+          scope: 'Citizen suggestions',
+          metric: _plural(top.value, 'suggestion'),
+          // Phrased by weight of evidence: one suggestion is not a mandate.
+          suggestion: top.value >= 2
+              ? 'Most-requested by citizens — review these and reply with a decision.'
+              : 'Raised by a citizen — review and reply with a decision.',
+          severity: 'low',
         ),
       );
     }
@@ -1102,7 +1277,7 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
       }
     }
 
-    return out.take(3).toList();
+    return out.take(4).toList();
   }
 
   ActivityItem _reportActivity(Map<String, dynamic> row) {

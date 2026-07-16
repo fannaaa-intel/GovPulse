@@ -48,6 +48,56 @@ Future<T?> showAdminDetail<T>(
   );
 }
 
+/// Two detail panes side by side at a SHARED height — the wide layout for a
+/// detail that splits into a main pane and a sidebar.
+///
+/// Both panes are stretched to the row's full height and each scrolls on its
+/// own, so:
+///   • the cards always read as a balanced pair — the shorter one grows to its
+///     sibling's height instead of leaving a gap beneath it;
+///   • a long pane scrolls without dragging the other one out of view.
+///
+/// Must be given a BOUNDED height (the stretch has nothing to measure against
+/// otherwise). Intrinsics are deliberately not used: the panes contain
+/// LayoutBuilders, which can't answer an intrinsic-height query.
+class AdminTwoPaneRow extends StatelessWidget {
+  final Widget main;
+  final Widget side;
+  final int mainFlex;
+  final int sideFlex;
+  final double gap;
+  const AdminTwoPaneRow({
+    super.key,
+    required this.main,
+    required this.side,
+    this.mainFlex = 62,
+    this.sideFlex = 38,
+    this.gap = 14,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(flex: mainFlex, child: _pane(main)),
+        SizedBox(width: gap),
+        Expanded(flex: sideFlex, child: _pane(side)),
+      ],
+    );
+  }
+
+  /// Fills the row's height, and scrolls only once the content outgrows it.
+  static Widget _pane(Widget child) => LayoutBuilder(
+        builder: (context, c) => SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: c.maxHeight),
+            child: child,
+          ),
+        ),
+      );
+}
+
 /// Rounded chevron back button + title, for the top of a full-screen detail
 /// (mirrors the citizen settings sub-screens).
 class AdminChevronHeader extends StatelessWidget {

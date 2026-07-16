@@ -5,6 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:math' as math;
+import '../settings/my-submission/my_submissions_screen.dart'
+    show MySubmissionsArgs, MySubmissionsScreen;
+import '../my_report/my_reports_screen.dart' show ReportItem;
 
 // ── Model ─────────────────────────────────────────────────────────────────────
 class AppNotification {
@@ -29,6 +32,11 @@ class AppNotification {
   /// Null for notifications with no post context. Lets a tap jump to that post.
   final String? postId;
 
+  /// Generic target id for deep-linking (currently a suggestion/feedback id on
+  /// `suggestion_response` / `feedback_response` replies). Null when the column
+  /// isn't migrated yet or the notification has no target.
+  final String? referenceId;
+
   AppNotification({
     this.id,
     required this.icon,
@@ -40,6 +48,7 @@ class AppNotification {
     this.actorId,
     this.actorPhotoUrl,
     this.postId,
+    this.referenceId,
   });
 
   String formatTimeAgo(DateTime t) {
@@ -63,6 +72,7 @@ class AppNotification {
       actorId: row['actor_id'] as String?,
       actorPhotoUrl: row['actor_photo_url'] as String?,
       postId: row['post_id'] as String?,
+      referenceId: row['reference_id'] as String?,
     );
   }
 
@@ -294,6 +304,11 @@ class NotificationService {
   static int get count => notifications.length;
 }
 
+/// Reaction notification types. These navigate like any other, but never flash
+/// their target: a heart is ambient acknowledgement, not work arriving, so
+/// accenting a row for one would overstate it. Mirrors the admin/staff shells.
+const Set<String> kHeartNotifTypes = {'post_like', 'comment_like'};
+
 /// Routes a tap on a citizen notification. Only actionable notifications
 /// navigate; everything else is informational and does nothing.
 ///
@@ -304,9 +319,15 @@ class NotificationService {
 ///  • social activity (`post_like` / `post_comment` / `comment_reply` /
 ///    `comment_like`) → opens the community feed, jumping to the post when its
 ///    id is known; anything about a comment opens that post's comment thread.
+///  • `suggestion_response` / `feedback_response` (an LGU reply) → open My
+///    Submissions on the matching tab and highlight the item (via referenceId).
+///  • `report_decision` (a report status change) → open that report's detail
+///    screen, fetched by referenceId.
+///  • `chat` (a staff reply in the citizen's LGU conversation) → open the chat
+///    screen. No id needed: a citizen has a single thread.
 ///  • `verification_submitted` ("we've received your ID"), the verification-
 ///    approved / "you're verified" notice, LGU broadcasts, staff messages and
-///    admin responses (`general`) → informational, no navigation.
+///    other admin responses (`general`) → informational, no navigation.
 ///
 /// The caller closes the notification sheet before calling this.
 void routeCitizenNotificationTap(
@@ -315,7 +336,8 @@ void routeCitizenNotificationTap(
   required String username,
   required bool isVerified,
   required bool isPending,
-  required void Function({String? postId, bool openComments}) onOpenNewsFeed,
+  required void Function({String? postId, bool openComments, bool highlight})
+      onOpenNewsFeed,
 }) {
   switch (n.type) {
     case 'verification_reminder':
@@ -328,13 +350,88 @@ void routeCitizenNotificationTap(
     case 'comment_like':
       // Anything about a comment (comment/reply/comment-like) opens the post's
       // thread; a post like just jumps to the post.
+      //
+      // Only real content landing flashes the post. A heart is ambient
+      // acknowledgement — it still scrolls you there, but singling the post out
+      // with an accent would overstate a reaction.
       onOpenNewsFeed(
         postId: n.postId,
         openComments: n.type != 'post_like',
+        highlight: !kHeartNotifTypes.contains(n.type),
       );
+      break;
+    case 'suggestion_response':
+      // LGU replied to a suggestion → open My Submissions on the Suggestions
+      // tab and highlight the item (when its id is known / column migrated).
+      // Skip if that screen is already open so we don't stack a duplicate.
+      if (MySubmissionsScreen.isOpen) return;
+      Navigator.pushNamed(
+        context,
+        '/my_submissions',
+        arguments: MySubmissionsArgs(
+          username: username,
+          initialTab: 1,
+          highlightId: n.referenceId,
+        ),
+      );
+      break;
+    case 'feedback_response':
+      if (MySubmissionsScreen.isOpen) return;
+      Navigator.pushNamed(
+        context,
+        '/my_submissions',
+        arguments: MySubmissionsArgs(
+          username: username,
+          initialTab: 2,
+          highlightId: n.referenceId,
+        ),
+      );
+      break;
+    case 'chat':
+      // A staff reply landed. Unlike the staff console — where a staffer picks
+      // one of many conversations — a citizen has exactly ONE LGU thread, held
+      // by ChatService.I. So there's nothing to disambiguate and no id needed:
+      // opening the chat screen IS landing on the message.
+      Navigator.pushNamed(context, '/chat', arguments: username);
+      break;
+    case 'report_decision':
+      // LGU changed a report's status → open that report's detail. Needs the
+      // report id from reference_id (report_notification_deeplink.sql); older
+      // rows without it fall through to no navigation.
+      final reportId = n.referenceId;
+      if (reportId != null && reportId.isNotEmpty) {
+        _openReportFromNotification(context, reportId, username);
+      }
       break;
     default:
       break;
+  }
+}
+
+/// Fetches the owner's report by id and opens its detail screen. Best-effort —
+/// a fetch failure (offline / RLS / deleted row) simply does nothing.
+Future<void> _openReportFromNotification(
+  BuildContext context,
+  String reportId,
+  String username,
+) async {
+  try {
+    final row = await Supabase.instance.client
+        .from('reports')
+        .select('*, report_media(id)')
+        .eq('id', reportId)
+        .maybeSingle();
+    if (row == null || !context.mounted) return;
+    final item = ReportItem.fromMap(row);
+    // Use the canonical /report_detail route: instant enter, fade-out exit,
+    // NetworkWrapper — matching how the report detail opens everywhere else.
+    Navigator.pushNamed(
+      context,
+      '/report_detail',
+      arguments: {'report': item, 'username': username},
+    );
+  } catch (_) {
+    // best-effort — no navigation on failure
   }
 }
 
@@ -841,11 +938,7 @@ class _NotificationPopupState extends State<NotificationPopup> {
                             // ── List area ─────────────────────────────────
                             Expanded(
                               child: _loading
-                                  ? const Center(
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
+                                  ? _NotifLoadingSkeleton(width: w)
                                   : Stack(
                                       children: [
                                         // AnimatedList: always present when
@@ -921,6 +1014,147 @@ class _NotificationPopupState extends State<NotificationPopup> {
           ],
         );
       },
+    );
+  }
+}
+
+// ── Loading skeleton ──────────────────────────────────────────────────────────
+//
+// Shown while notifications load, in place of a bare spinner, so the list area
+// reads as "content is coming" and doesn't jump when the real cards land. A
+// single shimmer band sweeps across a small stack of placeholder cards shaped
+// like [_NotifItem].
+class _NotifLoadingSkeleton extends StatefulWidget {
+  final double width;
+  const _NotifLoadingSkeleton({required this.width});
+
+  @override
+  State<_NotifLoadingSkeleton> createState() => _NotifLoadingSkeletonState();
+}
+
+class _NotifLoadingSkeletonState extends State<_NotifLoadingSkeleton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  static const Color _base = Color(0xFFE7EBF1);
+  static const Color _highlight = Color(0xFFF5F7FB);
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1250),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final w = widget.width;
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return ShaderMask(
+          blendMode: BlendMode.srcATop,
+          shaderCallback: (bounds) {
+            final dx = (_controller.value * 2 - 1) * bounds.width;
+            return LinearGradient(
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+              colors: const [_base, _highlight, _base],
+              stops: const [0.25, 0.5, 0.75],
+              transform: GradientTranslation(dx),
+            ).createShader(bounds);
+          },
+          child: child,
+        );
+      },
+      // Render only as many placeholder cards as actually fit the available
+      // height, and clip the rest, so the skeleton never overflows a short
+      // popup (small phones, split-screen, tiny web windows). A fixed count
+      // used to spill past the list area and trip a RenderFlex overflow.
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final cardExtent = w * 0.209; // card height + bottom margin
+          final maxH = constraints.maxHeight.isFinite
+              ? constraints.maxHeight
+              : cardExtent * 5;
+          final count = (maxH / cardExtent).floor().clamp(1, 5);
+          return ClipRect(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: List.generate(count, (_) => _NotifSkeletonCard(width: w)),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// Slides the shimmer gradient horizontally across the wrapped bounds.
+class GradientTranslation extends GradientTransform {
+  final double dx;
+  const GradientTranslation(this.dx);
+  @override
+  Matrix4? transform(Rect bounds, {TextDirection? textDirection}) =>
+      Matrix4.translationValues(dx, 0, 0);
+}
+
+class _NotifSkeletonCard extends StatelessWidget {
+  final double width;
+  const _NotifSkeletonCard({required this.width});
+
+  @override
+  Widget build(BuildContext context) {
+    final w = width;
+    Widget bar(double bw, double bh) => Container(
+          width: bw,
+          height: bh,
+          decoration: BoxDecoration(
+            color: const Color(0xFFE7EBF1),
+            borderRadius: BorderRadius.circular(6),
+          ),
+        );
+    return Container(
+      margin: EdgeInsets.only(bottom: w * 0.025),
+      padding: EdgeInsets.all(w * 0.03),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: .65),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: w * 0.105,
+            height: w * 0.105,
+            decoration: BoxDecoration(
+              color: const Color(0xFFE7EBF1),
+              borderRadius: BorderRadius.circular(14),
+            ),
+          ),
+          SizedBox(width: w * 0.025),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                bar(double.infinity, w * 0.032),
+                SizedBox(height: w * 0.02),
+                bar(w * 0.5, w * 0.028),
+                SizedBox(height: w * 0.02),
+                bar(w * 0.22, w * 0.024),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

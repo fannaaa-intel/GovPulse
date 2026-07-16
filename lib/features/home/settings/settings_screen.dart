@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_snackbar.dart';
+import '../../../core/widgets/logout_confirm_dialog.dart';
 import '../../../core/widgets/loading/loading_overlay.dart';
 import '../../../core/widgets/modal/verification_required_dialog.dart';
 import '../../../core/widgets/Home/nav/responsive_nav_scaffold.dart';
@@ -31,6 +33,10 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
   bool _isFacebookUser = false;
   bool _isFacebookOnly = false;
 
+  // ── Push-notification preference ──────────────────────────────────────────
+  bool _pushEnabled = true;
+  bool _pushBusy = false;
+
   // ── Entry animation controller ────────────────────────────────────────────
   late final AnimationController _entryCtrl;
 
@@ -51,6 +57,53 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
 
     // ── Seed identity flags ───────────────────────────────────────────────
     _refreshIdentityFlags();
+    _loadPushPref();
+  }
+
+  // ── Push preference ─────────────────────────────────────────────────────────
+  Future<void> _loadPushPref() async {
+    try {
+      final uid = Supabase.instance.client.auth.currentUser?.id;
+      if (uid == null) return;
+      final row = await Supabase.instance.client
+          .from('notification_preferences')
+          .select('push_enabled')
+          .eq('user_id', uid)
+          .maybeSingle();
+      if (!mounted) return;
+      // No row = enabled by default.
+      setState(() => _pushEnabled = (row?['push_enabled'] as bool?) ?? true);
+    } catch (_) {
+      // Table may not exist yet (migration not run) — leave the default (on).
+    }
+  }
+
+  Future<void> _togglePush(bool value) async {
+    if (_pushBusy) return;
+    final previous = _pushEnabled;
+    setState(() {
+      _pushEnabled = value; // optimistic
+      _pushBusy = true;
+    });
+    try {
+      final uid = Supabase.instance.client.auth.currentUser?.id;
+      if (uid == null) throw 'Not signed in';
+      await Supabase.instance.client.from('notification_preferences').upsert({
+        'user_id': uid,
+        'push_enabled': value,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      });
+      if (!mounted) return;
+      setState(() => _pushBusy = false);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _pushEnabled = previous; // revert on failure
+        _pushBusy = false;
+      });
+      showAppSnackBar(context, 'Could not update notifications setting.',
+          type: AppSnackType.error);
+    }
   }
 
   @override
@@ -137,105 +190,7 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
 
   // ── Logout flow ───────────────────────────────────────────────────────────
   Future<void> _confirmLogout() async {
-    final width = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
-
-    final shouldLogout = await showDialog<bool>(
-      context: context,
-      barrierColor: Colors.black54,
-      builder: (ctx) => Dialog(
-        backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(width * 0.045),
-        ),
-        child: Padding(
-          padding: EdgeInsets.all(width * 0.055),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: width * 0.16,
-                height: width * 0.16,
-                decoration: BoxDecoration(
-                  color: AppColors.red.withValues(alpha: 0.10),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  Icons.logout_rounded,
-                  size: width * 0.085,
-                  color: AppColors.red,
-                ),
-              ),
-              SizedBox(height: width * 0.04),
-              Text(
-                'Log Out?',
-                style: TextStyle(
-                  fontSize: width * 0.052,
-                  fontWeight: FontWeight.w700,
-                  color: const Color(0xFF1F2937),
-                ),
-              ),
-              SizedBox(height: width * 0.022),
-              Text(
-                'You\'ll need to sign in again to access your account.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: width * 0.034,
-                  color: const Color(0xFF6B7280),
-                  height: 1.45,
-                ),
-              ),
-              SizedBox(height: width * 0.055),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.pop(ctx, false),
-                      style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: AppColors.stroke),
-                        padding: EdgeInsets.symmetric(vertical: width * 0.035),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(width * 0.03),
-                        ),
-                      ),
-                      child: Text(
-                        'Cancel',
-                        style: TextStyle(
-                          fontSize: width * 0.038,
-                          fontWeight: FontWeight.w600,
-                          color: const Color(0xFF374151),
-                        ),
-                      ),
-                    ),
-                  ),
-                  SizedBox(width: width * 0.025),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () => Navigator.pop(ctx, true),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.red,
-                        elevation: 0,
-                        padding: EdgeInsets.symmetric(vertical: width * 0.035),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(width * 0.03),
-                        ),
-                      ),
-                      child: Text(
-                        'Log Out',
-                        style: TextStyle(
-                          fontSize: width * 0.038,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    final shouldLogout = await showLogoutConfirmDialog(context);
 
     if (shouldLogout != true || !mounted) return;
 
@@ -316,7 +271,12 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
   // ── Build ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final width = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+    final rawWidth = MediaQuery.of(context).size.width;
+    // WEB / large screens: two-column settings layout that fills the width.
+    // Phones & narrow web keep the original single-column body (design width
+    // capped at 480), byte-for-byte unchanged.
+    final bool wide = kIsWeb && rawWidth >= 900;
+    final double width = wide ? 460.0 : rawWidth.clamp(0.0, 480.0);
 
     // ── Read from provider ────────────────────────────────────────────────
     final profileAsync = ref.watch(userProfileProvider);
@@ -344,62 +304,176 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
       verifStatus: profile?.verifStatus,
       onLogout: (_) => _confirmLogout(),
       body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 480),
+        child: wide
+            ? LoadingOverlay.bodyOrSkeleton(
+                isLoading: profileLoading,
+                layout: SkeletonLayout.settings,
+                child: _buildWebBody(
+                  width,
+                  verifStatus,
+                  email,
+                  fullName,
+                  facePhotoUrl,
+                  facePhotoPath,
+                  profileLoading,
+                  badge,
+                ),
+              )
+            : Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 480),
+                  child: Column(
+                    children: [
+                      _buildHeader(width),
+                      Expanded(
+                        child: LoadingOverlay.bodyOrSkeleton(
+                          isLoading: profileLoading,
+                          layout: SkeletonLayout.settings,
+                          child: SingleChildScrollView(
+                            physics: const BouncingScrollPhysics(),
+                            padding: EdgeInsets.fromLTRB(
+                              width * 0.04,
+                              width * 0.02,
+                              width * 0.04,
+                              width * 0.06,
+                            ),
+                            child: Column(
+                              children: [
+                                _animated(
+                                  1,
+                                  _buildProfileCard(
+                                    width,
+                                    fullName,
+                                    email,
+                                    facePhotoUrl,
+                                    facePhotoPath,
+                                    profileLoading,
+                                    badge,
+                                  ),
+                                ),
+                                SizedBox(height: width * 0.04),
+                                _animated(
+                                  2,
+                                  _buildAccountSection(
+                                    width,
+                                    verifStatus,
+                                    email,
+                                    profileLoading,
+                                  ),
+                                ),
+                                SizedBox(height: width * 0.04),
+                                _animated(3, _buildPreferencesSection(width)),
+                                SizedBox(height: width * 0.04),
+                                _animated(4, _buildSupportSection(width)),
+                                SizedBox(height: width * 0.04),
+                                _animated(5, _buildLegalSection(width)),
+                                SizedBox(height: width * 0.04),
+                                _animated(6, _buildAboutSection(width)),
+                                SizedBox(height: width * 0.05),
+                                _animated(7, _buildLogoutButton(width)),
+                                SizedBox(height: width * 0.025),
+                                _animated(7, _buildDeleteAccountButton(width)),
+                                SizedBox(height: width * 0.04),
+                                _animated(8, _buildFooter(width)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+      ),
+    );
+  }
+
+  // ── WEB body: profile banner + two-column sections ─────────────────────────
+  Widget _buildWebBody(
+    double width,
+    String verifStatus,
+    String? email,
+    String? fullName,
+    String? facePhotoUrl,
+    String? facePhotoPath,
+    bool profileLoading,
+    ({String label, Color bg, Color border, Color dot, Color text}) badge,
+  ) {
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1080),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 56),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _buildHeader(width),
-                Expanded(
-                  child: LoadingOverlay.bodyOrSkeleton(
-                    isLoading: profileLoading,
-                    layout: SkeletonLayout.settings,
-                    child: SingleChildScrollView(
-                      physics: const BouncingScrollPhysics(),
-                      padding: EdgeInsets.fromLTRB(
-                        width * 0.04,
-                        width * 0.02,
-                        width * 0.04,
-                        width * 0.06,
-                      ),
-                      child: Column(
-                        children: [
-                          _animated(
-                            1,
-                            _buildProfileCard(
-                              width,
-                              fullName,
-                              email,
-                              facePhotoUrl,
-                              facePhotoPath,
-                              profileLoading,
-                              badge,
+                const SizedBox(height: 24),
+                _animated(
+                  1,
+                  _buildProfileCard(
+                    width,
+                    fullName,
+                    email,
+                    facePhotoUrl,
+                    facePhotoPath,
+                    profileLoading,
+                    badge,
+                  ),
+                ),
+                const SizedBox(height: 28),
+                IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _animated(
+                              2,
+                              _buildAccountSection(
+                                width,
+                                verifStatus,
+                                email,
+                                profileLoading,
+                              ),
                             ),
-                          ),
-                          SizedBox(height: width * 0.04),
-                          _animated(
-                            2,
-                            _buildAccountSection(
-                              width,
-                              verifStatus,
-                              email,
-                              profileLoading,
-                            ),
-                          ),
-                          SizedBox(height: width * 0.04),
-                          _animated(3, _buildSupportSection(width)),
-                          SizedBox(height: width * 0.04),
-                          _animated(4, _buildLegalSection(width)),
-                          SizedBox(height: width * 0.04),
-                          _animated(5, _buildAboutSection(width)),
-                          SizedBox(height: width * 0.05),
-                          _animated(6, _buildLogoutButton(width)),
-                          SizedBox(height: width * 0.025),
-                          _animated(7, _buildDeleteAccountButton(width)),
-                          SizedBox(height: width * 0.04),
-                          _animated(8, _buildFooter(width)),
-                        ],
+                            const SizedBox(height: 20),
+                            _animated(3, _buildPreferencesSection(width)),
+                            const SizedBox(height: 20),
+                            _animated(4, _buildSupportSection(width)),
+                          ],
+                        ),
                       ),
+                      const SizedBox(width: 24),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _animated(5, _buildLegalSection(width)),
+                            const SizedBox(height: 20),
+                            _animated(6, _buildAboutSection(width)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 32),
+                Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 460),
+                    child: Column(
+                      children: [
+                        _animated(6, _buildLogoutButton(width)),
+                        SizedBox(height: width * 0.025),
+                        _animated(7, _buildDeleteAccountButton(width)),
+                        SizedBox(height: width * 0.04),
+                        _animated(8, _buildFooter(width)),
+                      ],
                     ),
                   ),
                 ),
@@ -914,6 +988,33 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
               arguments: widget.username,
             );
           },
+        ),
+      ],
+    );
+  }
+
+  // ── Preferences section ───────────────────────────────────────────────────
+  Widget _buildPreferencesSection(double width) {
+    return _buildSectionCard(
+      title: 'PREFERENCES',
+      width: width,
+      children: [
+        _buildTile(
+          imagePath: 'assets/images/settings/notification.webp',
+          iconBgColor: AppColors.primaryBlue,
+          title: 'Push notifications',
+          subtitle: _pushEnabled
+              ? 'Get alerts for report updates, replies & more'
+              : 'Push alerts are off — you\'ll still see them in-app',
+          width: width,
+          showChevron: false,
+          showDivider: false,
+          onTap: () => _togglePush(!_pushEnabled),
+          trailing: Switch.adaptive(
+            value: _pushEnabled,
+            onChanged: _pushBusy ? null : _togglePush,
+            activeThumbColor: AppColors.primaryBlue,
+          ),
         ),
       ],
     );

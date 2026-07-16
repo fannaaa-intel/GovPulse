@@ -14,13 +14,24 @@ import '../theme/admin_ui.dart';
 import '../utils/analytics_pdf.dart';
 import '../widgets/admin_skeleton.dart';
 import '../widgets/admin_snackbar.dart';
+import '../widgets/admin_submission_ui.dart';
+
+// Nav tab indices owned by the shell (AdminDashboardScreen.navItems). That list
+// is private to the shell's State, so pages can't resolve it by label — these
+// mirror it. Keep in sync if the nav order ever changes.
+const int _kTabReports = 3;
+const int _kTabFeedback = 5;
 
 class AdminOverviewPage extends ConsumerStatefulWidget {
   final int selectedIndex;
 
   /// Lets the dashboard jump the shell to another section (e.g. Reports = 1).
   /// Wired by the dashboard screen; null elsewhere → tiles simply aren't tappable.
-  final void Function(int index)? onNavigate;
+  ///
+  /// [highlightId] deep-links to one row on the destination page, which scrolls
+  /// it into view and flashes it — so tapping an insight lands on the exact
+  /// feedback/report it was computed from, not just the right list.
+  final void Function(int index, {String? highlightId})? onNavigate;
 
   const AdminOverviewPage({
     super.key,
@@ -157,50 +168,11 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
   }
 
   // ── Tab bar + per-tab content (narrow layout only) ────────────────────────
-  Widget _buildTabBar() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: AdminUi.surface,
-        borderRadius: BorderRadius.circular(AdminUi.controlRadius),
-        border: Border.all(color: AdminUi.border),
-      ),
-      child: Row(
-        children: [
-          for (int i = 0; i < _tabLabels.length; i++)
-            Expanded(child: _tabButton(_tabLabels[i], i)),
-        ],
-      ),
-    );
-  }
-
-  Widget _tabButton(String label, int i) {
-    final selected = _tab == i;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () => setState(() => _tab = i),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 6),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: selected ? AppColors.primaryBlue : Colors.transparent,
-          borderRadius: BorderRadius.circular(AdminUi.controlRadius - 3),
-        ),
-        child: Text(
-          label,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-            color: selected ? Colors.white : AdminUi.textSecondary,
-          ),
-        ),
-      ),
-    );
-  }
+  Widget _buildTabBar() => AdminSegmentedTabs(
+        labels: _tabLabels,
+        selected: _tab,
+        onSelect: (i) => setState(() => _tab = i),
+      );
 
   /// The sections shown under the active tab. Each tab is deliberately short so
   /// it fits with little scrolling (the whole point of the split):
@@ -808,6 +780,18 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
       insights: data?.nlp,
       loading: async.isLoading && data == null,
       hero: true,
+      onOpenItem: widget.onNavigate == null ? null : _openInsightItem,
+    );
+  }
+
+  /// Sentiment rows are feedback; urgency rows are reports. Jump to the console
+  /// that owns the item and flash it, so an insight is traceable to the exact
+  /// submission behind it.
+  void _openInsightItem(FeedbackInsightItem item, {required bool isReport}) {
+    if (item.id.isEmpty) return; // nothing to deep-link to
+    widget.onNavigate!(
+      isReport ? _kTabReports : _kTabFeedback,
+      highlightId: item.id,
     );
   }
 
@@ -1556,6 +1540,12 @@ class _ActivityRow extends StatelessWidget {
 // renders as a clearly-labelled placeholder zone — designed and ready to wire,
 // not faked. When the pipeline writes sentiment/urgency, populate the
 // AdminDashboardData model and swap the placeholders for the real widgets.
+/// Test seam for the predictive-outlook panel. Lets tests render the real
+/// widget from plain [NlpInsights] and read back the copy an admin would see,
+/// without standing up the whole dashboard page and its providers.
+@visibleForTesting
+Widget nlpOutlookForTesting(NlpInsights nlp) => _NlpOutlook(nlp);
+
 class _NlpInsightsCard extends StatelessWidget {
   final NlpInsights? insights;
   final bool loading;
@@ -1564,10 +1554,16 @@ class _NlpInsightsCard extends StatelessWidget {
   /// gradient header and — on wide screens — the three insight panels laid out
   /// side-by-side, so it reads as the dashboard's headline feature.
   final bool hero;
+
+  /// Opens a sentiment/urgency item on its own console, flashed. Null → the
+  /// breakdown rows stay inert (e.g. no navigation wired).
+  final void Function(FeedbackInsightItem, {required bool isReport})?
+      onOpenItem;
   const _NlpInsightsCard({
     this.insights,
     this.loading = false,
     this.hero = false,
+    this.onOpenItem,
   });
 
   @override
@@ -1686,8 +1682,22 @@ class _NlpInsightsCard extends StatelessWidget {
 
     // Three distinct containers — one per insight — so nothing feels crowded.
     // Wide screens lay them side-by-side (equal height); narrow screens stack.
-    final sentiment = _Card(child: _NlpSentiment(nlp));
-    final urgency = _Card(child: _NlpUrgency(nlp));
+    final sentiment = _Card(
+      child: _NlpSentiment(
+        nlp,
+        onOpenItem: onOpenItem == null
+            ? null
+            : (i) => onOpenItem!(i, isReport: false),
+      ),
+    );
+    final urgency = _Card(
+      child: _NlpUrgency(
+        nlp,
+        onOpenItem: onOpenItem == null
+            ? null
+            : (i) => onOpenItem!(i, isReport: true),
+      ),
+    );
     final outlook = _Card(child: _NlpOutlook(nlp));
 
     return Column(
@@ -1825,6 +1835,19 @@ Color _urgencyColor(String u) => switch (u) {
 int _urgRank(String u) => u == 'high' ? 0 : (u == 'medium' ? 1 : 2);
 String _cap(String s) => s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
 
+/// Compact "how long ago" label (2m / 3h / 5d / 2w) for breakdown rows, so two
+/// otherwise-identical items (same category + same barangay, no description)
+/// are still told apart at a glance. Empty when the timestamp is missing.
+String _relTimeShort(DateTime? t) {
+  if (t == null) return '';
+  final diff = DateTime.now().difference(t);
+  if (diff.isNegative || diff.inMinutes < 1) return 'now';
+  if (diff.inMinutes < 60) return '${diff.inMinutes}m';
+  if (diff.inHours < 24) return '${diff.inHours}h';
+  if (diff.inDays < 7) return '${diff.inDays}d';
+  return '${(diff.inDays / 7).floor()}w';
+}
+
 List<FeedbackInsightItem> _sortedBy(
   List<FeedbackInsightItem> items,
   int Function(FeedbackInsightItem) rank,
@@ -1843,7 +1866,8 @@ List<FeedbackInsightItem> _sortedBy(
 // ── Sentiment split — filterable bars + ordered feedback breakdown ───────────
 class _NlpSentiment extends StatefulWidget {
   final NlpInsights nlp;
-  const _NlpSentiment(this.nlp);
+  final void Function(FeedbackInsightItem)? onOpenItem;
+  const _NlpSentiment(this.nlp, {this.onOpenItem});
 
   @override
   State<_NlpSentiment> createState() => _NlpSentimentState();
@@ -1906,6 +1930,7 @@ class _NlpSentimentState extends State<_NlpSentiment> {
           headerLabel: _filter == null ? 'RESPONSES' : '${_cap(_filter!)} · ${filtered.length}',
           sheetTitle: _filter == null ? 'All responses' : '${_cap(_filter!)} feedback',
           accent: _filter == null ? AdminUi.textMuted : _sentimentColor(_filter!),
+          onOpenItem: widget.onOpenItem,
         ),
       ],
     );
@@ -1915,7 +1940,8 @@ class _NlpSentimentState extends State<_NlpSentiment> {
 // ── Urgency triage — filterable bars + ordered report breakdown ──────────────
 class _NlpUrgency extends StatefulWidget {
   final NlpInsights nlp;
-  const _NlpUrgency(this.nlp);
+  final void Function(FeedbackInsightItem)? onOpenItem;
+  const _NlpUrgency(this.nlp, {this.onOpenItem});
 
   @override
   State<_NlpUrgency> createState() => _NlpUrgencyState();
@@ -1977,6 +2003,7 @@ class _NlpUrgencyState extends State<_NlpUrgency> {
           headerLabel: _filter == null ? 'REPORTS' : '${_cap(_filter!)} · ${filtered.length}',
           sheetTitle: _filter == null ? 'All reports' : '${_cap(_filter!)} urgency',
           accent: _filter == null ? AdminUi.textMuted : _urgencyColor(_filter!),
+          onOpenItem: widget.onOpenItem,
         ),
       ],
     );
@@ -2113,12 +2140,16 @@ class _InsightBreakdown extends StatelessWidget {
   final String headerLabel;
   final String sheetTitle;
   final Color accent;
+
+  /// Opens one item on its own console, flashed. Null → rows stay inert.
+  final void Function(FeedbackInsightItem)? onOpenItem;
   const _InsightBreakdown({
     required this.items,
     required this.urgencyMode,
     required this.headerLabel,
     required this.sheetTitle,
     required this.accent,
+    this.onOpenItem,
   });
 
   @override
@@ -2160,7 +2191,11 @@ class _InsightBreakdown extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           for (final it in shown)
-            _BreakdownRow(item: it, urgencyMode: urgencyMode),
+            _BreakdownRow(
+              item: it,
+              urgencyMode: urgencyMode,
+              onOpen: onOpenItem == null ? null : () => onOpenItem!(it),
+            ),
           if (more > 0)
             _SeeAllRow(
               label: 'View all ${items.length}',
@@ -2170,6 +2205,7 @@ class _InsightBreakdown extends StatelessWidget {
                 accent: accent,
                 urgencyMode: urgencyMode,
                 items: items,
+                onOpenItem: onOpenItem,
               ),
             ),
         ],
@@ -2222,6 +2258,7 @@ void _showBreakdownSheet(
   required Color accent,
   required bool urgencyMode,
   required List<FeedbackInsightItem> items,
+  void Function(FeedbackInsightItem)? onOpenItem,
 }) {
   final mq = MediaQuery.of(context);
   final narrow = mq.size.width < 640;
@@ -2230,6 +2267,13 @@ void _showBreakdownSheet(
     accent: accent,
     urgencyMode: urgencyMode,
     items: items,
+    // Dismiss the sheet before jumping, or the destination opens underneath it.
+    onOpenItem: onOpenItem == null
+        ? null
+        : (item) {
+            Navigator.of(context).pop();
+            onOpenItem(item);
+          },
   );
   if (narrow) {
     showModalBottomSheet(
@@ -2271,7 +2315,10 @@ class _BreakdownSheet extends StatelessWidget {
     required this.accent,
     required this.urgencyMode,
     required this.items,
+    this.onOpenItem,
   });
+
+  final void Function(FeedbackInsightItem)? onOpenItem;
 
   @override
   Widget build(BuildContext context) {
@@ -2325,8 +2372,13 @@ class _BreakdownSheet extends StatelessWidget {
               itemCount: items.length,
               separatorBuilder: (_, _) =>
                   const Divider(height: 1, color: AdminUi.subtle),
-              itemBuilder: (_, i) =>
-                  _BreakdownRow(item: items[i], urgencyMode: urgencyMode),
+              itemBuilder: (_, i) => _BreakdownRow(
+                item: items[i],
+                urgencyMode: urgencyMode,
+                onOpen: onOpenItem == null
+                    ? null
+                    : () => onOpenItem!(items[i]),
+              ),
             ),
           ),
         ],
@@ -2338,20 +2390,38 @@ class _BreakdownSheet extends StatelessWidget {
 class _BreakdownRow extends StatelessWidget {
   final FeedbackInsightItem item;
   final bool urgencyMode;
-  const _BreakdownRow({required this.item, required this.urgencyMode});
+
+  /// Opens this item on its own console (Feedback / Reports), flashed. Null
+  /// when the shell didn't wire navigation → the row stays inert.
+  final VoidCallback? onOpen;
+  const _BreakdownRow({
+    required this.item,
+    required this.urgencyMode,
+    this.onOpen,
+  });
 
   @override
   Widget build(BuildContext context) {
     final color = urgencyMode
         ? _urgencyColor(item.urgency)
         : _sentimentColor(item.sentiment);
-    final subtitle = urgencyMode
-        ? (item.service.isNotEmpty ? item.service : null)
-        : (item.comment != null && item.comment!.isNotEmpty
-            ? item.comment
-            : (item.service.isNotEmpty ? item.service : null));
+    // Urgency: two same-category, same-barangay reports used to render
+    // identically (only the barangay was shown). Compose location + the
+    // citizen's own description so each report reads distinctly.
+    final String? subtitle;
+    if (urgencyMode) {
+      final loc = item.service.trim();
+      final desc = item.comment?.trim() ?? '';
+      final parts = [loc, desc].where((s) => s.isNotEmpty).toList();
+      subtitle = parts.isEmpty ? null : parts.join(' · ');
+    } else {
+      final desc = item.comment?.trim() ?? '';
+      final svc = item.service.trim();
+      subtitle = desc.isNotEmpty ? desc : (svc.isNotEmpty ? svc : null);
+    }
+    final time = _relTimeShort(item.createdAt);
 
-    return Padding(
+    final row = Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2390,28 +2460,58 @@ class _BreakdownRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          // Trailing: urgency word (reports) or star rating (feedback).
-          if (urgencyMode)
-            Text(
-              item.urgency,
-              style: TextStyle(
-                fontSize: 10.5,
-                fontWeight: FontWeight.w700,
-                color: color,
-              ),
-            )
-          else if (item.rating > 0)
-            _MiniStars(item.rating)
-          else
-            Text(
-              item.sentiment,
-              style: TextStyle(
-                fontSize: 10.5,
-                fontWeight: FontWeight.w700,
-                color: color,
-              ),
-            ),
+          // Trailing: urgency word (reports) or star rating (feedback), with a
+          // compact "time ago" beneath so rows are never ambiguous.
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (urgencyMode)
+                Text(
+                  item.urgency,
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                    color: color,
+                  ),
+                )
+              else if (item.rating > 0)
+                _MiniStars(item.rating)
+              else
+                Text(
+                  item.sentiment,
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                    color: color,
+                  ),
+                ),
+              if (time.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text(
+                  time,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: AppColors.grey,
+                  ),
+                ),
+              ],
+            ],
+          ),
         ],
+      ),
+    );
+
+    if (onOpen == null) return row;
+    // An insight is a claim about specific submissions; make it traceable back
+    // to them. Hover feedback matters here — this is a desktop console, and the
+    // row is otherwise indistinguishable from static text.
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: onOpen,
+        behavior: HitTestBehavior.opaque,
+        child: row,
       ),
     );
   }
@@ -2440,15 +2540,24 @@ class _NlpOutlook extends StatelessWidget {
         AppColors.primaryBlue,
         'Stable',
       ),
+      InsightTrend.unknown => (
+        Icons.help_outline_rounded,
+        AdminUi.textMuted,
+        'Not enough data',
+      ),
     };
 
     final recent = nlp.recentAvg;
     final forecast = nlp.forecastRating;
     final delta = nlp.trendDelta;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
+    // Equal-height cards come from IntrinsicHeight in the parent Row, which can
+    // hand this content 1px less than it measured (sub-pixel rounding). Clip
+    // that harmless overflow rather than let it throw a layout error.
+    return ClipRect(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
         const _NlpSectionLabel(
           icon: Icons.insights_rounded,
           label: 'Predictive outlook',
@@ -2520,8 +2629,39 @@ class _NlpOutlook extends StatelessWidget {
           const SizedBox(height: 8),
           _outlookRow('Prior 30 days', nlp.priorAvg, AdminUi.textSecondary),
           _outlookRow('Recent 30 days', recent, color, emphasize: true),
-          _outlookRow('Forecast', forecast, color,
-              emphasize: true, italicNote: 'projected'),
+          // Only a real extrapolation earns the "projected" label. With one
+          // window there is nothing to project from, so explain the gap instead
+          // of printing a copy of the recent average as if it were a forecast.
+          if (forecast != null) ...[
+            _outlookRow('Forecast', forecast, color,
+                emphasize: true, italicNote: 'projected'),
+            // Show the working. A projected star rating with no stated basis
+            // reads as authority it hasn't earned — especially at barangay
+            // sample sizes, where two responses can swing it a full star.
+            Padding(
+              padding: const EdgeInsets.only(left: 4, right: 4, top: 1),
+              child: Text(
+                _forecastBasis(nlp),
+                style: const TextStyle(
+                  fontSize: 10.5,
+                  height: 1.35,
+                  color: AdminUi.textMuted,
+                ),
+              ),
+            ),
+          ] else
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 5, horizontal: 4),
+              child: Text(
+                'No forecast yet — needs rated feedback in two consecutive '
+                '30-day windows to project a trend.',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  height: 1.35,
+                  color: AdminUi.textMuted,
+                ),
+              ),
+            ),
         ],
         if (nlp.focus.isNotEmpty || (nlp.aiSummary?.isNotEmpty ?? false)) ...[
           const SizedBox(height: 14),
@@ -2568,8 +2708,33 @@ class _NlpOutlook extends StatelessWidget {
           const SizedBox(height: 8),
           for (final f in nlp.focus) _FocusCard(f),
         ],
-      ],
+        ],
+      ),
     );
+  }
+
+  /// Plain-language basis for the projected rating: the arithmetic, the
+  /// evidence behind it, and any caveat that changes how much weight it
+  /// deserves. Only called when a real two-window forecast exists.
+  static String _forecastBasis(NlpInsights nlp) {
+    final delta = nlp.trendDelta!;
+    final sign = delta >= 0 ? '+' : '';
+    final recent = nlp.recentCount;
+    final prior = nlp.priorCount;
+
+    final parts = <String>[
+      'Carries the $sign${delta.toStringAsFixed(1)}★ change from the prior '
+          'window forward one period.',
+      'Based on $recent recent and $prior prior rated '
+          '${recent == 1 && prior == 1 ? 'response' : 'responses'}.',
+    ];
+    if (nlp.forecastClamped) {
+      parts.add('Capped at the 1–5★ scale.');
+    }
+    if (recent + prior < 5) {
+      parts.add('Small sample — treat as directional.');
+    }
+    return parts.join(' ');
   }
 
   Widget _outlookRow(String label, double? value, Color valueColor,
@@ -2723,6 +2888,22 @@ class _FocusCard extends StatelessWidget {
               ),
             ],
           ),
+          // WHERE the finding applies + how much evidence backs it. Aligned to
+          // the title (past the severity dot) so it reads as the title's
+          // subtitle rather than a second bullet.
+          if (focus.scope != null && focus.scope!.trim().isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(left: 14, top: 2),
+              child: Text(
+                focus.scope!,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 10.5,
+                  color: AdminUi.textMuted,
+                ),
+              ),
+            ),
           const SizedBox(height: 5),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,

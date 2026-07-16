@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import '../../../../core/theme/app_colors.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/widgets/Home/nav/responsive_nav_scaffold.dart';
 import '../../../../core/widgets/loading/loading_overlay.dart';
+import '../../../core/widgets/web/web_card_grid.dart';
 
 class _T {
   static TextStyle heading(double w, {Color? color}) => TextStyle(
@@ -59,7 +61,7 @@ class _T {
 
 // ─── Model ────────────────────────────────────────────────────────────────────
 
-enum ReportStatus { pending, underReview, resolved, rejected }
+enum ReportStatus { pending, underReview, inProgress, resolved, rejected }
 
 class ReportItem {
   final String id;
@@ -75,6 +77,15 @@ class ReportItem {
   final int mediaCount;
   final String fullId;
 
+  /// External entity this report was endorsed to (out-of-LGU scope), e.g.
+  /// "DPWH". Null when the report is still handled inside the LGU. Drives the
+  /// real "Endorsed to …" timeline step (never guessed from the category).
+  final String? endorsedToDepartment;
+  final DateTime? endorsedAt;
+
+  /// Reason shown to the citizen when a report was rejected at triage.
+  final String? rejectionNote;
+
   const ReportItem({
     required this.id,
     required this.category,
@@ -88,6 +99,9 @@ class ReportItem {
     this.isAnonymous = false,
     this.mediaCount = 0,
     required this.fullId,
+    this.endorsedToDepartment,
+    this.endorsedAt,
+    this.rejectionNote,
   });
 
   factory ReportItem.fromMap(Map<String, dynamic> m) {
@@ -95,6 +109,8 @@ class ReportItem {
       switch (s) {
         case 'under_review':
           return ReportStatus.underReview;
+        case 'in_progress':
+          return ReportStatus.inProgress;
         case 'resolved':
           return ReportStatus.resolved;
         case 'rejected':
@@ -121,6 +137,15 @@ class ReportItem {
       dateReported: DateTime.parse(m['created_at'] as String).toLocal(),
       isAnonymous: m['is_anonymous'] as bool? ?? false,
       mediaCount: (m['report_media'] as List<dynamic>?)?.length ?? 0,
+      endorsedToDepartment: (m['endorsed_to_department'] as String?)?.trim().isEmpty ?? true
+          ? null
+          : m['endorsed_to_department'] as String?,
+      endorsedAt: m['endorsed_at'] == null
+          ? null
+          : DateTime.tryParse(m['endorsed_at'] as String)?.toLocal(),
+      rejectionNote: (m['rejection_note'] as String?)?.trim().isEmpty ?? true
+          ? null
+          : (m['rejection_note'] as String?)?.trim(),
     );
   }
 
@@ -178,7 +203,8 @@ class _MyReportsScreenState extends State<MyReportsScreen>
         return true;
       case StatusFilter.pending:
         return r.status == ReportStatus.pending ||
-            r.status == ReportStatus.underReview;
+            r.status == ReportStatus.underReview ||
+            r.status == ReportStatus.inProgress;
       case StatusFilter.resolved:
         return r.status == ReportStatus.resolved;
       case StatusFilter.rejected:
@@ -231,7 +257,8 @@ class _MyReportsScreenState extends State<MyReportsScreen>
       .where(
         (r) =>
             r.status == ReportStatus.pending ||
-            r.status == ReportStatus.underReview,
+            r.status == ReportStatus.underReview ||
+            r.status == ReportStatus.inProgress,
       )
       .length;
   int get _resolvedCount =>
@@ -240,6 +267,8 @@ class _MyReportsScreenState extends State<MyReportsScreen>
       _allReports.where((r) => r.status == ReportStatus.rejected).length;
 
   // ── Lifecycle ──────────────────────────────────────────────────────────────
+
+  RealtimeChannel? _channel;
 
   @override
   void initState() {
@@ -251,12 +280,55 @@ class _MyReportsScreenState extends State<MyReportsScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _fetchReports();
     });
+    _subscribe();
   }
 
   @override
   void dispose() {
+    if (_channel != null) Supabase.instance.client.removeChannel(_channel!);
     _entryCtrl.dispose();
     super.dispose();
+  }
+
+  /// Live-refresh the list when the admin/staff move any of my reports.
+  void _subscribe() {
+    final supabase = Supabase.instance.client;
+    final userId = supabase.auth.currentUser?.id;
+    if (userId == null) return;
+    _channel = supabase
+        .channel('my_reports:$userId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'reports',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'user_id',
+            value: userId,
+          ),
+          callback: (_) => _silentRefresh(),
+        )
+        .subscribe();
+  }
+
+  Future<void> _silentRefresh() async {
+    try {
+      final supabase = Supabase.instance.client;
+      final userId = supabase.auth.currentUser!.id;
+      final response = await supabase
+          .from('reports')
+          .select('*, report_media(id)')
+          .eq('user_id', userId)
+          .order('created_at', ascending: false);
+      if (!mounted) return;
+      setState(() {
+        _allReports = (response as List<dynamic>)
+            .map((e) => ReportItem.fromMap(e as Map<String, dynamic>))
+            .toList();
+      });
+    } catch (_) {
+      // Non-fatal — the next event or a manual pull-to-refresh will refresh.
+    }
   }
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
@@ -340,31 +412,150 @@ class _MyReportsScreenState extends State<MyReportsScreen>
 
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+    final width = MediaQuery.of(context).size.width;
+    // WEB / large screens: a real multi-column dashboard that fills the width
+    // instead of a stranded 480px phone column. Phones & narrow web fall through
+    // to the original mobile body below, byte-for-byte unchanged.
+    final bool wide = kIsWeb && width >= 900;
+    final double w = wide ? 460.0 : width.clamp(0.0, 480.0);
     return ResponsiveNavScaffold(
       currentIndex: 1,
       username: widget.username,
       isVerified: true,
       backgroundColor: const Color(0xFFF3F4F6),
       body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 480),
-            child: Column(
-              children: [
-                _buildTopBar(w),
-                Expanded(
-                  child: LoadingOverlay.bodyOrSkeleton(
-                    isLoading: _isLoading,
-                    layout: SkeletonLayout.myReports,
-                    child: _buildBody(w),
+        child: wide
+            ? LoadingOverlay.bodyOrSkeleton(
+                isLoading: _isLoading,
+                layout: SkeletonLayout.myReports,
+                child: _buildWebBody(w),
+              )
+            : Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 480),
+                  child: Column(
+                    children: [
+                      _buildTopBar(w),
+                      Expanded(
+                        child: LoadingOverlay.bodyOrSkeleton(
+                          isLoading: _isLoading,
+                          layout: SkeletonLayout.myReports,
+                          child: _buildBody(w),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
-            ),
+              ),
+      ),
+    );
+  }
+
+  // ── WEB body: header banner + KPI row + report card grid ───────────────────
+  Widget _buildWebBody(double w) {
+    final ww = w * 1.18;
+    final reports = _filteredReports;
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1160),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 56),
+            child: _error != null
+                ? _buildBody(w)
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _buildTopBar(w),
+                      const SizedBox(height: 24),
+                      _animated(1, _buildKpiRow(w)),
+                      const SizedBox(height: 28),
+                      _animated(2, _buildReportsHeaderWeb(w, ww, reports.length)),
+                      const SizedBox(height: 16),
+                      _animated(
+                        3,
+                        reports.isEmpty
+                            ? _buildEmptyState(w)
+                            : WebCardGrid(
+                                targetColumnWidth: 520,
+                                children: [
+                                  for (final r in reports)
+                                    _reportGridCard(w, ww, r),
+                                ],
+                              ),
+                      ),
+                    ],
+                  ),
           ),
         ),
       ),
+    );
+  }
+
+  // Toolbar (title + count + filter chips) shown above the web report grid.
+  Widget _buildReportsHeaderWeb(double w, double ww, int count) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text('Report History', style: _T.title(ww, color: _T.textPrimary)),
+            const Spacer(),
+            Text(
+              '$count ${count == 1 ? 'report' : 'reports'}',
+              style: _T.caption(ww, color: _T.textSecondary),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _filterChip(w, 'All', ReportFilter.all, Icons.list_rounded),
+            _filterChip(w, 'Today', ReportFilter.today, Icons.wb_sunny_outlined),
+            _filterChip(
+              w,
+              'This Week',
+              ReportFilter.thisWeek,
+              Icons.date_range_rounded,
+            ),
+            _filterChip(
+              w,
+              'This Month',
+              ReportFilter.thisMonth,
+              Icons.calendar_month_rounded,
+            ),
+            _filterChip(
+              w,
+              'Last 3 Months',
+              ReportFilter.last3Months,
+              Icons.calendar_today_rounded,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  // A single report rendered as a standalone web card (for the grid).
+  Widget _reportGridCard(double w, double ww, ReportItem report) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: .04),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: _buildReportTile(w, ww, report),
     );
   }
 
@@ -1080,6 +1271,13 @@ class _MyReportsScreenState extends State<MyReportsScreen>
           'bg': const Color(0xFFEEF2FF),
           'text': const Color(0xFF3730A3),
           'dot': const Color(0xFF6366F1),
+        };
+      case ReportStatus.inProgress:
+        return {
+          'label': 'In Progress',
+          'bg': const Color(0xFFEFF6FF),
+          'text': const Color(0xFF1D4ED8),
+          'dot': const Color(0xFF2563EB),
         };
       case ReportStatus.resolved:
         return {

@@ -317,6 +317,8 @@ class AdminUsersNotifier extends AsyncNotifier<List<ManagedUser>> {
     required String password,
     required String username,
     required String fullName,
+    required String department,
+    bool isExternal = false,
   }) async {
     final res = await _db.functions.invoke(
       'create-staff',
@@ -325,6 +327,8 @@ class AdminUsersNotifier extends AsyncNotifier<List<ManagedUser>> {
         'password': password,
         'username': username,
         'fullName': fullName,
+        'department': department,
+        'isExternal': isExternal,
       },
     );
     final data = res.data;
