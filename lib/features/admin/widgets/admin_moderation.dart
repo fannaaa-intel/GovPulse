@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../theme/admin_ui.dart';
+import '../../../core/widgets/app_dialog.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  Spam / troll moderation UI — shared across reports, feedback, suggestions.
@@ -26,7 +27,7 @@ Future<String?> showAdminDismissDialog(
   BuildContext context, {
   required String itemLabel,
 }) {
-  return showDialog<String>(
+  return showAppDialog<String>(
     context: context,
     barrierColor: Colors.black54,
     builder: (ctx) => _DismissReasonDialog(itemLabel: itemLabel),

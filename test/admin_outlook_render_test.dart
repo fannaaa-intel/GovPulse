@@ -136,4 +136,49 @@ void main() {
     expect(text, contains('2 suggestions'));
     expect(text, contains('On-device'));
   });
+
+  // The panel sits in a Row under IntrinsicHeight, which can hand it marginally
+  // less height than it measured. It must absorb that rather than throw.
+  //
+  // Worth pinning because the first attempt at this was a ClipRect, which looks
+  // like a fix and is not: it clips the PAINT, while the Column underneath is
+  // still laid out against the short constraint and still throws. Only giving
+  // the Column unbounded height actually prevents the overflow, so this test
+  // fails against a ClipRect and passes against the scroll view.
+  // Heights are chosen to actually BIND: this panel's content runs ~200–250px
+  // at 440 wide, so anything above that constrains nothing and would pass
+  // against the broken code too.
+  group('survives a height constraint shorter than its content', () {
+    for (final h in [200.0, 150.0, 100.0]) {
+      testWidgets('at ${h.toInt()}px tall', (tester) async {
+        final nlp = _notifier.analyseNlp(
+          [
+            _feedback(2, _now.subtract(const Duration(days: 3))),
+            _feedback(3, _now.subtract(const Duration(days: 40))),
+          ],
+          const [],
+          const [],
+          null,
+          _now,
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: Center(
+                child: SizedBox(
+                  width: 440,
+                  height: h,
+                  child: nlpOutlookForTesting(nlp),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        expect(tester.takeException(), isNull);
+      });
+    }
+  });
 }

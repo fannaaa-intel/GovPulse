@@ -193,7 +193,12 @@ class _ImageViewerState extends State<_ImageViewer> {
 
   @override
   Widget build(BuildContext context) {
-    final width = MediaQuery.of(context).size.width;
+    // This viewer is fullscreen, so it proportions against the SHORTEST side
+    // rather than the width: an icon at 25% of a landscape width (~211dp) would
+    // be most of a ~390dp-tall screen, while 25% of the shortest side is the
+    // same comfortable size whichever way the phone is held. Portrait is
+    // unchanged — there the width IS the shortest side.
+    final width = MediaQuery.of(context).size.shortestSide;
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Stack(

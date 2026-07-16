@@ -3,6 +3,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/deeplink_highlight.dart';
 import '../theme/admin_ui.dart';
 import 'admin_skeleton.dart';
+import '../../../core/widgets/app_dialog.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  Shared UI kit for the admin "submission" consoles — Reports, Suggestions and
@@ -1231,7 +1232,7 @@ Future<void> openAdminFilterSheet(
       ),
     );
   }
-  return showDialog(
+  return showAppDialog(
     context: context,
     builder: (_) => Dialog(
       backgroundColor: AdminUi.surface,

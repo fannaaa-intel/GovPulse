@@ -142,10 +142,21 @@ begin
 end;
 $$;
 
+-- ⚠ SUPERSEDED — do not re-enable. This predates the triage gate, when pinging
+-- staff the moment a report was filed WAS the design. It no longer is:
+-- report_triage_gate.sql §5 drops this trigger because a pending report is
+-- invisible to staff under the new RLS, so the ping deep-links them to a report
+-- they cannot open. Staff are notified on ROUTING instead
+-- (trg_notify_staff_report_assigned / trg_notify_staff_report_endorsed).
+--
+-- Left commented rather than deleted so this file still reads as the history of
+-- how staff notifications worked. See fix_staff_new_report_ping.sql.
+--
+-- drop trigger if exists trg_notify_staff_new_report on public.reports;
+-- create trigger trg_notify_staff_new_report
+--   after insert on public.reports
+--   for each row execute function public.notify_staff_new_report();
 drop trigger if exists trg_notify_staff_new_report on public.reports;
-create trigger trg_notify_staff_new_report
-  after insert on public.reports
-  for each row execute function public.notify_staff_new_report();
 
 -- ── 4. Report endorsed to an external entity ─────────────────────────────────
 create or replace function public.notify_staff_report_endorsed()

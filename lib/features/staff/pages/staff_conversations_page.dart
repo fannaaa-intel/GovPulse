@@ -13,6 +13,7 @@ import '../data/staff_repository.dart';
 import '../providers/staff_providers.dart';
 import '../theme/staff_ui.dart';
 import '../widgets/staff_common.dart';
+import '../../../core/widgets/app_dialog.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  Conversations — the live-chat inbox.
@@ -681,7 +682,7 @@ class _StaffThreadViewState extends ConsumerState<StaffThreadView> {
   /// notice + the citizen's stars once they rate. No goodbye chat-bubble is
   /// sent — the closure is a system notice on both sides, not a message.
   Future<void> _endChat() async {
-    final confirm = await showDialog<bool>(
+    final confirm = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: Colors.white,

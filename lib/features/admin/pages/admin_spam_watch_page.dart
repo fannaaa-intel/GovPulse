@@ -6,10 +6,11 @@ import '../../../core/theme/app_colors.dart';
 import '../providers/admin_spam_watch_provider.dart';
 import '../providers/admin_users_provider.dart';
 import '../theme/admin_ui.dart';
+import '../../../core/widgets/app_dialog.dart';
 
 /// Opens the "Spam watch" report — the noisiest citizens across every channel.
 void showSpamWatchReview(BuildContext context) {
-  showDialog(
+  showAppDialog(
     context: context,
     barrierColor: Colors.black54,
     builder: (_) => Dialog(

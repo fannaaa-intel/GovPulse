@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/app_dialog.dart';
 import '../theme/admin_ui.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -22,9 +23,13 @@ bool adminDetailIsNarrow(BuildContext context) =>
 /// widget decides its own narrow/wide layout via [adminDetailIsNarrow].
 ///   • narrow → instant full-screen route (content slides up itself)
 ///   • wide    → centered dialog card
+///
+/// Pass [barrierDismissible] `false` for a detail holding unsaved input, so a
+/// stray click beside the card can't throw the work away.
 Future<T?> showAdminDetail<T>(
   BuildContext context, {
   required WidgetBuilder builder,
+  bool barrierDismissible = true,
 }) {
   if (adminDetailIsNarrow(context)) {
     return Navigator.of(context).push<T>(
@@ -34,17 +39,17 @@ Future<T?> showAdminDetail<T>(
         // does its own slide-up inside the screen (see AdminDetailScaffold), so
         // the opaque scaffold never flashes.
         transitionDuration: Duration.zero,
-        reverseTransitionDuration: const Duration(milliseconds: 220),
+        reverseTransitionDuration: kAppDialogDuration,
         pageBuilder: (ctx, _, _) => builder(ctx),
         transitionsBuilder: (_, anim, _, child) =>
             FadeTransition(opacity: anim, child: child),
       ),
     );
   }
-  return showDialog<T>(
+  return showAppDialog<T>(
     context: context,
-    barrierColor: Colors.black54,
     builder: builder,
+    barrierDismissible: barrierDismissible,
   );
 }
 

@@ -24,6 +24,7 @@ import '../providers/staff_providers.dart';
 import '../theme/staff_ui.dart';
 import '../widgets/staff_command_palette.dart';
 import '../widgets/staff_notifications.dart';
+import '../../../core/widgets/app_dialog.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  Staff console — the role_id 2 shell.
@@ -195,7 +196,7 @@ class _StaffConsoleScreenState extends ConsumerState<StaffConsoleScreen> {
     );
     if (!ok || !mounted) return;
 
-    showDialog(
+    showAppDialog(
       context: context,
       barrierDismissible: false,
       builder: (_) =>

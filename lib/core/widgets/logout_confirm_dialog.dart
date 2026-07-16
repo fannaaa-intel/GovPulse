@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
+import 'app_dialog.dart';
 
 /// A single, clean logout confirmation shared across the citizen app, admin
 /// console and staff console, so the experience is identical everywhere.
@@ -11,7 +12,7 @@ Future<bool> showLogoutConfirmDialog(
   BuildContext context, {
   String message = "You'll need to sign in again to access your account.",
 }) async {
-  final result = await showDialog<bool>(
+  final result = await showAppDialog<bool>(
     context: context,
     barrierColor: Colors.black54,
     builder: (ctx) => Dialog(

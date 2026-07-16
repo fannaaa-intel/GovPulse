@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/citizen_guard.dart';
 import '../theme/app_colors.dart';
+import 'app_dialog.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  Citizen enforcement modals + the per-feature gate helper.
@@ -43,7 +44,7 @@ Future<void> _signOut(BuildContext context) async {
 
 // ── Suspension: blocking, must sign out ──────────────────────────────────────
 Future<void> showSuspendedModal(BuildContext context, SuspensionInfo info) {
-  return showDialog<void>(
+  return showAppDialog<void>(
     context: context,
     barrierDismissible: false,
     builder: (ctx) => PopScope(
@@ -69,7 +70,7 @@ Future<void> showSuspendedModal(BuildContext context, SuspensionInfo info) {
 
 // ── Restriction: informational notice (login / live) ─────────────────────────
 Future<void> showRestrictionNotice(BuildContext context, RestrictionInfo info) {
-  return showDialog<void>(
+  return showAppDialog<void>(
     context: context,
     builder: (ctx) => _GuardDialog(
       icon: Icons.info_rounded,
@@ -91,7 +92,7 @@ Future<void> showRestrictionNotice(BuildContext context, RestrictionInfo info) {
 // ── Restriction: a specific feature was tapped ───────────────────────────────
 Future<void> showFeatureBlockedModal(BuildContext context, String feature) {
   final info = CitizenGuard.I.status.value.restriction;
-  return showDialog<void>(
+  return showAppDialog<void>(
     context: context,
     builder: (ctx) => _GuardDialog(
       icon: Icons.lock_rounded,

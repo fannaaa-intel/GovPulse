@@ -10,6 +10,7 @@ import '../../../../core/widgets/Home/Newsfeed/rate_limit_dialogs.dart';
 import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/services/gps_stamp_service.dart';
 import '../../../../core/widgets/reveal_loading.dart';
+import '../../../../core/widgets/app_dialog.dart';
 
 class FeedbackScreen extends StatefulWidget {
   final String username;
@@ -364,7 +365,7 @@ class _FeedbackScreenState extends State<FeedbackScreen>
 
   // ── Validation dialog (matches SuggestionScreen — no snackbars for errors) ───
   void _showValidationDialog(String message) {
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (ctx) => Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -710,7 +711,7 @@ class _FeedbackScreenState extends State<FeedbackScreen>
 
   // ── Anonymous consent dialog (identical to SuggestionScreen) ─────────────────
   void _showAnonymousConsentDialog() {
-    showDialog(
+    showAppDialog(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(

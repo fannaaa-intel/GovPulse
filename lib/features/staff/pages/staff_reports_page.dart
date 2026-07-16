@@ -12,6 +12,7 @@ import '../data/staff_repository.dart';
 import '../providers/staff_providers.dart';
 import '../theme/staff_ui.dart';
 import '../widgets/staff_common.dart';
+import '../../../core/widgets/app_dialog.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  Reports (department-scoped) + Endorsements (external entity) share the same
@@ -79,7 +80,7 @@ typedef _ReturnToTriage = Future<void> Function(String id, String reason);
 /// (possibly empty if they confirm without typing), or null on cancel.
 Future<String?> _showReturnDialog(BuildContext context) {
   final ctrl = TextEditingController();
-  return showDialog<String>(
+  return showAppDialog<String>(
     context: context,
     builder: (ctx) => AlertDialog(
       backgroundColor: StaffUi.surface,
@@ -252,7 +253,7 @@ class _ReportListViewState extends State<_ReportListView>
         builder: (_) => sheet,
       );
     } else {
-      showDialog(
+      showAppDialog(
         context: context,
         barrierColor: Colors.black.withValues(alpha: 0.45),
         builder: (_) => Center(

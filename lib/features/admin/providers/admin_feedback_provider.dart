@@ -275,6 +275,17 @@ class AdminFeedbackNotifier extends AsyncNotifier<List<AdminFeedback>> {
 
   int get dismissedCount => _all.where((f) => f.isDismissed).length;
 
+  /// The feedback as it stands in the store, whatever the current filters
+  /// happen to show. The detail dialog stays open across a restore, which moves
+  /// the row straight out of the "Show dismissed" slice it was opened from — so
+  /// it can't read itself back out of the filtered [state].
+  AdminFeedback? byId(String id) {
+    for (final f in _all) {
+      if (f.id == id) return f;
+    }
+    return null;
+  }
+
   void _publish() {
     state = AsyncValue.data(_view());
   }

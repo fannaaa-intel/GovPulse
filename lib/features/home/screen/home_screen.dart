@@ -1,9 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/services/chat_service.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 import '../../../features/home/screen/notification_popup.dart';
 import '../../../core/network/network_wrapper.dart';
@@ -18,6 +16,7 @@ import '../Quick-action/Suggestion/suggestion_screen.dart';
 import '../Quick-action/Feedback/feedback_screen.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 
+import '../../../core/widgets/Home/nav/nav_band.dart';
 import '../../../core/widgets/Home/nav/home_bottom_nav.dart';
 import '../../../core/widgets/Home/nav/home_top_nav.dart';
 import '../../../core/widgets/Home/nav/home_nav_drawer.dart';
@@ -42,6 +41,7 @@ import '../../../core/services/push_service.dart';
 import '../../../core/services/citizen_guard.dart';
 import '../../../core/widgets/citizen_guard_modals.dart';
 import '../../../core/providers/user_profile_provider.dart';
+import '../../../core/widgets/app_dialog.dart';
 
 class HomePage extends ConsumerStatefulWidget {
   final String username;
@@ -54,20 +54,18 @@ class HomePage extends ConsumerStatefulWidget {
 class _HomePageState extends ConsumerState<HomePage>
     with TickerProviderStateMixin
     implements RouteAware {
-  final FlutterLocalNotificationsPlugin notificationsPlugin =
-      FlutterLocalNotificationsPlugin();
-
   DateTime? lastBackPressed;
 
   late final AnimationController _entryCtrl;
   static const int _navIndex = 0;
 
   // ── Responsive bands ──────────────────────────────────────────────────────
-  //   width <  _kMobileBreakpoint  → MOBILE body  + bottom nav   (phones)
-  //   600–900                      → WEB body      + drawer       (tablet-web)
-  //   width >= _kTopNavBreakpoint   → WEB body      + top nav      (desktop)
-  static const double _kMobileBreakpoint = 600;
-  static const double _kTopNavBreakpoint = 900;
+  // The rule lives in `nav_band.dart` (resolveNavBand), shared with
+  // ResponsiveNavScaffold so Home and the other four nav destinations can't
+  // disagree about which chrome a viewport gets:
+  //   phone  (native, shortest side < 600) → MOBILE body + bottom nav
+  //   drawer (tablet / narrow web)         → WEB body    + drawer
+  //   topNav (width >= 900)                → WEB body    + top nav
   static const double _kMobileContentMax = 480;
   static const double _kTwoColumnBreakpoint = 1100;
   static const double _kNavCompactBelow = 1050;
@@ -88,8 +86,6 @@ class _HomePageState extends ConsumerState<HomePage>
       vsync: this,
       duration: const Duration(milliseconds: 900),
     );
-    _initNotifications();
-
     WidgetsBinding.instance.addPostFrameCallback((_) {
       precacheImage(const AssetImage('assets/images/bg.webp'), context);
     });
@@ -456,7 +452,7 @@ class _HomePageState extends ConsumerState<HomePage>
 
     if (!shouldLogout || !mounted) return;
 
-    showDialog(
+    showAppDialog(
       context: context,
       barrierDismissible: false,
       builder: (_) => const Center(
@@ -480,14 +476,13 @@ class _HomePageState extends ConsumerState<HomePage>
     }
   }
 
-  void _initNotifications() async {
-    const settings = InitializationSettings(
-      android: AndroidInitializationSettings('@mipmap/ic_launcher'),
-    );
-    await notificationsPlugin.initialize(settings);
-  }
-
   void _triggerVerificationReminder() async {
+    // Inserting the row is the WHOLE job: it fills the in-app bell, and the
+    // push_on_notification trigger turns it into the device push. This used to
+    // ALSO fire a local notification here — a second tray entry for the same
+    // reminder, worded differently ("Complete Verification") from the row the
+    // bell showed ("Verification Required"), so the two never collapsed and the
+    // user simply got told twice.
     final added = await NotificationService.add(
       AppNotification(
         icon: Icons.verified_user,
@@ -498,23 +493,7 @@ class _HomePageState extends ConsumerState<HomePage>
         type: 'verification_reminder',
       ),
     );
-    if (added && mounted) {
-      setState(() {});
-      const details = NotificationDetails(
-        android: AndroidNotificationDetails(
-          'verification_channel',
-          'Verification Reminder',
-          importance: Importance.max,
-          priority: Priority.high,
-        ),
-      );
-      await notificationsPlugin.show(
-        0,
-        'Complete Verification',
-        'Tap to verify your account now',
-        details,
-      );
-    }
+    if (added && mounted) setState(() {});
   }
 
   // ── BUILD ─────────────────────────────────────────────────────────────────
@@ -532,9 +511,10 @@ class _HomePageState extends ConsumerState<HomePage>
     final fullName = profile?.fullName;
     final profileLoading = profileAsync.isLoading;
 
-    final bool useMobile = !kIsWeb && width < _kMobileBreakpoint;
-    final bool useTopNav = width >= _kTopNavBreakpoint;
-    final bool useDrawer = !useMobile && !useTopNav;
+    final band = resolveNavBand(size);
+    final bool useMobile = band == NavBand.phone;
+    final bool useTopNav = band == NavBand.topNav;
+    final bool useDrawer = band == NavBand.drawer;
 
     return PopScope(
       canPop: false,
@@ -615,7 +595,15 @@ class _HomePageState extends ConsumerState<HomePage>
     bool profileLoading,
     String? barangay,
   ) {
-    final double headerHeight = (width * 0.52).clamp(200.0, 300.0);
+    // The banner is proportioned off WIDTH, but it must never dominate a short
+    // viewport: on a landscape phone the width-based figure pins to its 300 max
+    // against a ~390dp-tall screen, so the banner alone would eat ~77% of the
+    // page before any content. Cap it against the height we actually have, with
+    // a floor so it stays a banner rather than collapsing to a stripe. Portrait
+    // is unaffected — there the width-based figure is already the smaller one.
+    final double headerHeight = math
+        .min((width * 0.52).clamp(200.0, 300.0), height * 0.35)
+        .clamp(140.0, 300.0);
     final double cardPull = (width * 0.05).clamp(14.0, 28.0);
     final double sectionGap = (width * 0.05).clamp(16.0, 28.0);
     final double contentW = math.min(width, _kMobileContentMax);
@@ -699,7 +687,11 @@ class _HomePageState extends ConsumerState<HomePage>
           Align(
             alignment: Alignment.bottomCenter,
             child: Container(
-              height: math.min(width * 0.20, 80),
+              // The white fade-out is sized off width, but also held to a share
+              // of the banner itself — otherwise a short landscape banner would
+              // be more than half gradient. Portrait keeps its existing 78dp:
+              // there the width figure is already the smaller of the two.
+              height: math.min(math.min(width * 0.20, 80), height * 0.40),
               decoration: const BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,

@@ -3,6 +3,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
+import 'admin_pdf.dart';
 import '../providers/admin_dashboard_provider.dart';
 import '../providers/admin_feedback_provider.dart';
 import '../providers/admin_reports_provider.dart';
@@ -20,30 +21,6 @@ import '../providers/admin_suggestions_provider.dart';
 //  mobile) — no print dialog. The document is print-ready if the admin chooses
 //  to print the saved file later.
 // ════════════════════════════════════════════════════════════════════════════
-
-// ── Palette ─────────────────────────────────────────────────────────────────
-final _ink = PdfColor.fromInt(0xFF1F2937);
-final _muted = PdfColor.fromInt(0xFF6B7280);
-final _line = PdfColor.fromInt(0xFFE5E7EB);
-final _subtle = PdfColor.fromInt(0xFFF3F4F6);
-
-/// PDF-safe text. The bundled Helvetica font only covers Latin-1, so any glyph
-/// outside it (en/em dashes, bullets, the ★ rating mark, and the smart quotes /
-/// ellipses the AI summaries emit) renders as a blank "tofu" box. Map them to
-/// safe equivalents before they reach the page.
-String _safe(String s) => s
-    .replaceAll('★', ' / 5')
-    .replaceAll('–', '-')
-    .replaceAll('—', '-')
-    .replaceAll('•', '-')
-    .replaceAll('“', '"')
-    .replaceAll('”', '"')
-    .replaceAll('‘', "'")
-    .replaceAll('’', "'")
-    .replaceAll('…', '...')
-    .replaceAll('→', '->')
-    .replaceAll('≥', '>=')
-    .replaceAll('≤', '<=');
 
 /// Build and present the print-ready analytics report for the given window.
 /// The lists are expected to be already filtered to the last [rangeDays] days;
@@ -65,7 +42,7 @@ Future<void> exportAnalyticsPdf({
     pw.MultiPage(
       pageFormat: PdfPageFormat.a4,
       margin: const pw.EdgeInsets.fromLTRB(36, 40, 36, 40),
-      footer: _footer,
+      footer: pdfFooter,
       build: (context) => [
         _titleBlock(rangeDays, now),
         pw.SizedBox(height: 20),
@@ -102,73 +79,42 @@ pw.Widget _titleBlock(int rangeDays, DateTime now) {
       '${DateFormat('MMM d, yyyy').format(start)} – '
       '${DateFormat('MMM d, yyyy').format(now)}';
 
-  return pw.Container(
-    padding: const pw.EdgeInsets.only(bottom: 14),
-    decoration: pw.BoxDecoration(
-      border: pw.Border(bottom: pw.BorderSide(color: _ink, width: 2)),
-    ),
-    child: pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        pw.Text(
-          'GovPulse',
-          style: pw.TextStyle(
-            fontSize: 24,
-            fontWeight: pw.FontWeight.bold,
-            color: _ink,
-          ),
-        ),
-        pw.SizedBox(height: 2),
-        pw.Text(
-          'Analytics & Findings Report',
-          style: pw.TextStyle(fontSize: 14, color: _ink),
-        ),
-        pw.SizedBox(height: 10),
-        pw.Row(
-          children: [
-            _metaChip('Coverage', rangeLabel),
-            pw.SizedBox(width: 10),
-            _metaChip('Period', period),
-            pw.SizedBox(width: 10),
-            _metaChip(
-              'Generated',
-              DateFormat('MMM d, yyyy · h:mm a').format(now),
-            ),
-          ],
-        ),
-        pw.SizedBox(height: 4),
-        pw.Text(
-          'Local Government Unit of Aparri, Cagayan',
-          style: pw.TextStyle(fontSize: 9, color: _muted),
-        ),
-      ],
-    ),
+  return pdfTitleBlock(
+    title: 'Analytics & Findings Report',
+    chips: [
+      (label: 'Coverage', value: rangeLabel),
+      (label: 'Period', value: period),
+      (
+        label: 'Generated',
+        value: DateFormat('MMM d, yyyy · h:mm a').format(now),
+      ),
+    ],
   );
 }
 
-pw.Widget _metaChip(String label, String value) {
+pw.Widget pdfMetaChip(String label, String value) {
   return pw.Container(
     padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 5),
     decoration: pw.BoxDecoration(
-      color: _subtle,
+      color: pdfSubtle,
       borderRadius: pw.BorderRadius.circular(4),
     ),
     child: pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
         pw.Text(
-          _safe(label.toUpperCase()),
+          pdfSafe(label.toUpperCase()),
           style: pw.TextStyle(
             fontSize: 6.5,
-            color: _muted,
+            color: pdfMuted,
             fontWeight: pw.FontWeight.bold,
             letterSpacing: 0.4,
           ),
         ),
         pw.SizedBox(height: 1),
         pw.Text(
-          _safe(value),
-          style: pw.TextStyle(fontSize: 9, color: _ink),
+          pdfSafe(value),
+          style: pw.TextStyle(fontSize: 9, color: pdfInk),
         ),
       ],
     ),
@@ -179,10 +125,10 @@ pw.Widget _metaChip(String label, String value) {
 
 List<pw.Widget> _reportsSection(List<AdminReport> reports, int rangeDays) {
   final total = reports.length;
-  final out = <pw.Widget>[_h1('1. Citizen Reports')];
+  final out = <pw.Widget>[pdfH1('1. Citizen Reports')];
 
   if (total == 0) {
-    out.add(_empty('No reports were submitted in this period.'));
+    out.add(pdfEmpty('No reports were submitted in this period.'));
     return out;
   }
 
@@ -209,7 +155,7 @@ List<pw.Widget> _reportsSection(List<AdminReport> reports, int rangeDays) {
   final perDay = total / rangeDays;
 
   out.add(
-    _summaryLine(
+    pdfSummaryLine(
       '$total report${total == 1 ? '' : 's'} submitted over $rangeDays days '
       '(avg ${perDay.toStringAsFixed(1)}/day). '
       'Resolution rate ${_pct(resolutionRate)} ($resolved resolved). '
@@ -217,9 +163,9 @@ List<pw.Widget> _reportsSection(List<AdminReport> reports, int rangeDays) {
     ),
   );
 
-  out.add(_h2('Status breakdown'));
+  out.add(pdfH2('Status breakdown'));
   out.add(
-    _table(
+    pdfTable(
       ['Status', 'Count', 'Share'],
       [
         for (final s in ReportStatus.values)
@@ -233,9 +179,9 @@ List<pw.Widget> _reportsSection(List<AdminReport> reports, int rangeDays) {
     ),
   );
 
-  out.add(_h2('By category'));
+  out.add(pdfH2('By category'));
   out.add(
-    _table(
+    pdfTable(
       ['Category', 'Count', 'Share'],
       [
         for (final e in byCategory)
@@ -245,9 +191,9 @@ List<pw.Widget> _reportsSection(List<AdminReport> reports, int rangeDays) {
     ),
   );
 
-  out.add(_h2('Barangay hotspots'));
+  out.add(pdfH2('Barangay hotspots'));
   out.add(
-    _table(
+    pdfTable(
       ['Barangay', 'Reports', 'Share'],
       [
         for (final e in byBarangay.take(8))
@@ -265,7 +211,7 @@ List<pw.Widget> _reportsSection(List<AdminReport> reports, int rangeDays) {
       (statusCounts[ReportStatus.underReview] ?? 0) +
       (statusCounts[ReportStatus.inProgress] ?? 0);
   out.add(
-    _findings([
+    pdfFindings([
       '"${topCat.key}" is the most-reported category '
           '(${topCat.value}, ${_pct(topCat.value / total)} of reports).',
       if (topBrgy.key != 'Unspecified')
@@ -284,10 +230,10 @@ List<pw.Widget> _reportsSection(List<AdminReport> reports, int rangeDays) {
 // ══ Feedback ══════════════════════════════════════════════════════════════════
 
 List<pw.Widget> _feedbackSection(List<AdminFeedback> feedback) {
-  final out = <pw.Widget>[_h1('2. Citizen Feedback')];
+  final out = <pw.Widget>[pdfH1('2. Citizen Feedback')];
 
   if (feedback.isEmpty) {
-    out.add(_empty('No feedback was submitted in this period.'));
+    out.add(pdfEmpty('No feedback was submitted in this period.'));
     return out;
   }
 
@@ -338,7 +284,7 @@ List<pw.Widget> _feedbackSection(List<AdminFeedback> feedback) {
         .compareTo(officeSum[b]! / officeN[b]!));
 
   out.add(
-    _summaryLine(
+    pdfSummaryLine(
       '${feedback.length} response${feedback.length == 1 ? '' : 's'} '
       '(${rated.length} rated). '
       'Average satisfaction ${avgOverall == null ? '—' : '${avgOverall.toStringAsFixed(1)} / 5'}. '
@@ -346,9 +292,9 @@ List<pw.Widget> _feedbackSection(List<AdminFeedback> feedback) {
     ),
   );
 
-  out.add(_h2('Rating distribution'));
+  out.add(pdfH2('Rating distribution'));
   out.add(
-    _table(
+    pdfTable(
       ['Rating', 'Label', 'Count', 'Share'],
       [
         for (var i = 5; i >= 1; i--)
@@ -363,9 +309,9 @@ List<pw.Widget> _feedbackSection(List<AdminFeedback> feedback) {
     ),
   );
 
-  out.add(_h2('Service dimensions (average)'));
+  out.add(pdfH2('Service dimensions (average)'));
   out.add(
-    _table(
+    pdfTable(
       ['Dimension', 'Average', 'Rated by'],
       [
         for (final e in aspects.entries)
@@ -388,9 +334,9 @@ List<pw.Widget> _feedbackSection(List<AdminFeedback> feedback) {
   );
 
   if (offices.isNotEmpty) {
-    out.add(_h2('By office'));
+    out.add(pdfH2('By office'));
     out.add(
-      _table(
+      pdfTable(
         ['Office', 'Avg rating', 'Responses'],
         [
           for (final o in offices)
@@ -405,7 +351,7 @@ List<pw.Widget> _feedbackSection(List<AdminFeedback> feedback) {
   final ranked = aspects.entries.where((e) => e.value != null).toList()
     ..sort((a, b) => a.value!.compareTo(b.value!));
   out.add(
-    _findings([
+    pdfFindings([
       if (avgOverall != null)
         'Overall satisfaction is ${avgOverall.toStringAsFixed(1)} / 5 '
             'across ${rated.length} rated response${rated.length == 1 ? '' : 's'}.',
@@ -426,10 +372,10 @@ List<pw.Widget> _feedbackSection(List<AdminFeedback> feedback) {
 // ══ Suggestions ═══════════════════════════════════════════════════════════════
 
 List<pw.Widget> _suggestionsSection(List<AdminSuggestion> suggestions) {
-  final out = <pw.Widget>[_h1('3. Citizen Suggestions')];
+  final out = <pw.Widget>[pdfH1('3. Citizen Suggestions')];
 
   if (suggestions.isEmpty) {
-    out.add(_empty('No suggestions were submitted in this period.'));
+    out.add(pdfEmpty('No suggestions were submitted in this period.'));
     return out;
   }
 
@@ -440,16 +386,16 @@ List<pw.Widget> _suggestionsSection(List<AdminSuggestion> suggestions) {
   final byCategory = _tally(suggestions.map((s) => s.category));
 
   out.add(
-    _summaryLine(
+    pdfSummaryLine(
       '$total suggestion${total == 1 ? '' : 's'} submitted. '
       '$responded responded to (${_pct(responded / total)}). '
       '$anonymous anonymous.',
     ),
   );
 
-  out.add(_h2('By category'));
+  out.add(pdfH2('By category'));
   out.add(
-    _table(
+    pdfTable(
       ['Category', 'Count', 'Share'],
       [
         for (final e in byCategory)
@@ -459,9 +405,9 @@ List<pw.Widget> _suggestionsSection(List<AdminSuggestion> suggestions) {
     ),
   );
 
-  out.add(_h2('Response status'));
+  out.add(pdfH2('Response status'));
   out.add(
-    _table(
+    pdfTable(
       ['Status', 'Count', 'Share'],
       [
         ['New', '${total - responded}', _pct((total - responded) / total)],
@@ -473,7 +419,7 @@ List<pw.Widget> _suggestionsSection(List<AdminSuggestion> suggestions) {
 
   final topCat = byCategory.first;
   out.add(
-    _findings([
+    pdfFindings([
       '"${topCat.key}" is the most common suggestion theme '
           '(${topCat.value}, ${_pct(topCat.value / total)}).',
       'The LGU has closed the loop on ${_pct(responded / total)} of suggestions.',
@@ -489,17 +435,17 @@ List<pw.Widget> _suggestionsSection(List<AdminSuggestion> suggestions) {
 
 List<pw.Widget> _aiSection(AdminDashboardData d) {
   final nlp = d.nlp;
-  final out = <pw.Widget>[_h1('4. AI Forecast & Insights')];
+  final out = <pw.Widget>[pdfH1('4. AI Forecast & Insights')];
 
   if (!nlp.hasData) {
     out.add(
-      _empty('Not enough classified feedback or reports to generate insights yet.'),
+      pdfEmpty('Not enough classified feedback or reports to generate insights yet.'),
     );
     return out;
   }
 
   out.add(
-    _summaryLine(
+    pdfSummaryLine(
       nlp.usesAi
           ? 'Hybrid AI analysis: ${nlp.aiClassified} feedback and '
                 '${nlp.reportsAiClassified} reports were model-classified; the rest '
@@ -516,9 +462,9 @@ List<pw.Widget> _aiSection(AdminDashboardData d) {
     InsightTrend.stable => 'Stable',
     InsightTrend.unknown => 'Not enough data',
   };
-  out.add(_h2('Predictive satisfaction outlook'));
+  out.add(pdfH2('Predictive satisfaction outlook'));
   out.add(
-    _table(
+    pdfTable(
       ['Metric', 'Value'],
       [
         ['Prior 30-day average', nlp.priorAvg == null ? '—' : '${nlp.priorAvg!.toStringAsFixed(2)} / 5'],
@@ -538,9 +484,9 @@ List<pw.Widget> _aiSection(AdminDashboardData d) {
 
   // Sentiment.
   if (nlp.analyzed > 0) {
-    out.add(_h2('Feedback sentiment'));
+    out.add(pdfH2('Feedback sentiment'));
     out.add(
-      _table(
+      pdfTable(
         ['Sentiment', 'Count', 'Share'],
         [
           ['Positive', '${nlp.positive}', _pct(nlp.positiveShare)],
@@ -554,9 +500,9 @@ List<pw.Widget> _aiSection(AdminDashboardData d) {
 
   // Urgency triage.
   if (nlp.reportsAnalyzed > 0) {
-    out.add(_h2('Report urgency triage'));
+    out.add(pdfH2('Report urgency triage'));
     out.add(
-      _table(
+      pdfTable(
         ['Urgency', 'Count', 'Share'],
         [
           ['High', '${nlp.urgentHigh}', _pct(nlp.highShare)],
@@ -570,9 +516,9 @@ List<pw.Widget> _aiSection(AdminDashboardData d) {
 
   // Recommended focus areas.
   if (nlp.focus.isNotEmpty) {
-    out.add(_h2('Recommended focus areas'));
+    out.add(pdfH2('Recommended focus areas'));
     out.add(
-      _table(
+      pdfTable(
         ['Priority', 'Focus', 'Metric', 'Suggested action'],
         [
           for (final f in nlp.focus)
@@ -594,172 +540,12 @@ List<pw.Widget> _aiSection(AdminDashboardData d) {
 
   // AI narrative, if any.
   if ((nlp.aiSummary ?? '').isNotEmpty) {
-    out.add(_h2('AI outlook summary'));
-    out.add(_para(nlp.aiSummary!.trim()));
+    out.add(pdfH2('AI outlook summary'));
+    out.add(pdfPara(nlp.aiSummary!.trim()));
   }
 
   return out;
 }
-
-// ══ Shared building blocks ════════════════════════════════════════════════════
-
-pw.Widget _h1(String text) => pw.Padding(
-  padding: const pw.EdgeInsets.only(bottom: 8),
-  child: pw.Container(
-    width: double.infinity,
-    padding: const pw.EdgeInsets.only(bottom: 4),
-    decoration: pw.BoxDecoration(
-      border: pw.Border(bottom: pw.BorderSide(color: _line, width: 1)),
-    ),
-    child: pw.Text(
-      _safe(text),
-      style: pw.TextStyle(
-        fontSize: 15,
-        fontWeight: pw.FontWeight.bold,
-        color: _ink,
-      ),
-    ),
-  ),
-);
-
-pw.Widget _h2(String text) => pw.Padding(
-  padding: const pw.EdgeInsets.only(top: 12, bottom: 5),
-  child: pw.Text(
-    _safe(text.toUpperCase()),
-    style: pw.TextStyle(
-      fontSize: 9,
-      fontWeight: pw.FontWeight.bold,
-      color: _muted,
-      letterSpacing: 0.5,
-    ),
-  ),
-);
-
-pw.Widget _summaryLine(String text) => pw.Container(
-  width: double.infinity,
-  padding: const pw.EdgeInsets.all(9),
-  decoration: pw.BoxDecoration(
-    color: _subtle,
-    borderRadius: pw.BorderRadius.circular(5),
-  ),
-  child: pw.Text(
-    _safe(text),
-    style: pw.TextStyle(fontSize: 10, color: _ink, lineSpacing: 2),
-  ),
-);
-
-pw.Widget _para(String text) => pw.Padding(
-  padding: const pw.EdgeInsets.only(top: 2),
-  child: pw.Text(
-    _safe(text),
-    style: pw.TextStyle(fontSize: 10, color: _ink, lineSpacing: 2.5),
-  ),
-);
-
-pw.Widget _findings(List<String> items) {
-  final visible = items.where((s) => s.trim().isNotEmpty).toList();
-  return pw.Column(
-    crossAxisAlignment: pw.CrossAxisAlignment.start,
-    children: [
-      _h2('Findings'),
-      ...visible.map(
-        (s) => pw.Padding(
-          padding: const pw.EdgeInsets.only(bottom: 3),
-          child: pw.Row(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              // A drawn dot rather than a "•" glyph — the built-in font has no
-              // bullet, so the character alone would render as a blank box.
-              pw.Container(
-                width: 10,
-                padding: const pw.EdgeInsets.only(top: 4),
-                child: pw.Container(
-                  width: 3,
-                  height: 3,
-                  decoration: pw.BoxDecoration(
-                    color: _muted,
-                    shape: pw.BoxShape.circle,
-                  ),
-                ),
-              ),
-              pw.Expanded(
-                child: pw.Text(
-                  _safe(s),
-                  style: pw.TextStyle(fontSize: 10, color: _ink, lineSpacing: 2),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    ],
-  );
-}
-
-pw.Widget _empty(String text) => pw.Padding(
-  padding: const pw.EdgeInsets.symmetric(vertical: 6),
-  child: pw.Text(
-    _safe(text),
-    style: pw.TextStyle(
-      fontSize: 10,
-      color: _muted,
-      fontStyle: pw.FontStyle.italic,
-    ),
-  ),
-);
-
-/// A bordered table. [numeric] right-aligns those column indices; [flex] gives
-/// custom column widths (index → flex weight).
-pw.Widget _table(
-  List<String> headers,
-  List<List<String>> rows, {
-  Set<int> numeric = const {},
-  Map<int, double> flex = const {},
-}) {
-  final alignments = <int, pw.Alignment>{
-    for (var i = 0; i < headers.length; i++)
-      i: numeric.contains(i) ? pw.Alignment.centerRight : pw.Alignment.centerLeft,
-  };
-  final widths = <int, pw.TableColumnWidth>{
-    for (final e in flex.entries) e.key: pw.FlexColumnWidth(e.value),
-  };
-
-  return pw.TableHelper.fromTextArray(
-    headers: [for (final h in headers) _safe(h)],
-    data: [
-      for (final row in rows) [for (final cell in row) _safe(cell)],
-    ],
-    border: pw.TableBorder.all(color: _line, width: 0.5),
-    headerStyle: pw.TextStyle(
-      fontSize: 8.5,
-      fontWeight: pw.FontWeight.bold,
-      color: _ink,
-    ),
-    headerDecoration: pw.BoxDecoration(color: _subtle),
-    cellStyle: pw.TextStyle(fontSize: 9, color: _ink),
-    cellHeight: 16,
-    headerAlignments: alignments,
-    cellAlignments: alignments,
-    columnWidths: widths.isEmpty ? null : widths,
-    cellPadding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-  );
-}
-
-pw.Widget _footer(pw.Context context) => pw.Container(
-  alignment: pw.Alignment.centerRight,
-  margin: const pw.EdgeInsets.only(top: 8),
-  padding: const pw.EdgeInsets.only(top: 4),
-  decoration: pw.BoxDecoration(
-    border: pw.Border(top: pw.BorderSide(color: _line, width: 0.5)),
-  ),
-  child: pw.Text(
-    _safe(
-      'GovPulse · Aparri, Cagayan   —   '
-      'Page ${context.pageNumber} of ${context.pagesCount}',
-    ),
-    style: pw.TextStyle(fontSize: 8, color: _muted),
-  ),
-);
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 

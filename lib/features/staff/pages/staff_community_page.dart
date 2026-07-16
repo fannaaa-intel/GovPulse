@@ -9,6 +9,7 @@ import '../data/staff_repository.dart';
 import '../providers/staff_providers.dart';
 import '../theme/staff_ui.dart';
 import '../widgets/staff_common.dart';
+import '../../../core/widgets/app_dialog.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  Community — staff compose updates that are QUEUED for admin approval before
@@ -139,7 +140,7 @@ class _StaffCommunityPageState extends ConsumerState<StaffCommunityPage>
         ),
       );
     } else {
-      showDialog(
+      showAppDialog(
         context: context,
         barrierColor: Colors.black.withValues(alpha: 0.45),
         builder: (_) => const Center(

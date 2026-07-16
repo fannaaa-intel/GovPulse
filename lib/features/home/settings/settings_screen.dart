@@ -16,6 +16,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../../../core/services/push_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../Resets/set_password_screen.dart';
+import '../../../core/widgets/app_dialog.dart';
 
 class SettingScreen extends ConsumerStatefulWidget {
   final String username;
@@ -194,7 +195,7 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
 
     if (shouldLogout != true || !mounted) return;
 
-    showDialog(
+    showAppDialog(
       context: context,
       barrierDismissible: false,
       builder: (_) => const Center(
@@ -226,7 +227,7 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
   Future<void> _confirmDeleteAccount() async {
     final width = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
 
-    await showDialog(
+    await showAppDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: Colors.white,

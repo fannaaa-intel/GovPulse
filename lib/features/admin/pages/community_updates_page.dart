@@ -19,6 +19,7 @@ import '../widgets/admin_dialog_back.dart';
 import '../widgets/admin_skeleton.dart';
 import '../widgets/admin_snackbar.dart';
 import '../widgets/admin_user_actions.dart';
+import '../../../core/widgets/app_dialog.dart';
 
 const int _kMaxImages = 6;
 
@@ -1363,7 +1364,7 @@ void _toast(BuildContext context, String msg, {bool error = false}) {
 }
 
 Future<bool?> _confirmDelete(BuildContext context) {
-  return showDialog<bool>(
+  return showAppDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -1388,7 +1389,7 @@ Future<bool?> _confirmDelete(BuildContext context) {
 
 Future<String?> _askReason(BuildContext context) {
   final ctrl = TextEditingController();
-  return showDialog<String>(
+  return showAppDialog<String>(
     context: context,
     builder: (ctx) => AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -1428,7 +1429,7 @@ void showCommunityComposer(
 }) {
   final wide = MediaQuery.of(context).size.width >= 900;
   if (wide) {
-    showDialog(
+    showAppDialog(
       context: context,
       barrierDismissible: false,
       builder: (_) => Dialog(
@@ -1716,7 +1717,7 @@ class _ComposerFormState extends ConsumerState<_ComposerForm> {
   Future<UpdateCategory?> _pickCategory() {
     final wide = MediaQuery.of(context).size.width >= 900;
     if (wide) {
-      return showDialog<UpdateCategory>(
+      return showAppDialog<UpdateCategory>(
         context: context,
         builder: (_) => Dialog(
           backgroundColor: Colors.transparent,
@@ -1800,7 +1801,7 @@ class _ComposerFormState extends ConsumerState<_ComposerForm> {
   Future<String?> _pickBarangay() {
     final wide = MediaQuery.of(context).size.width >= 900;
     if (wide) {
-      return showDialog<String>(
+      return showAppDialog<String>(
         context: context,
         builder: (_) => Dialog(
           backgroundColor: Colors.transparent,
@@ -2571,7 +2572,7 @@ void showCommentsPanel(
 ) {
   final wide = MediaQuery.of(context).size.width >= 900;
   if (wide) {
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (_) => Dialog(
         backgroundColor: Colors.transparent,
@@ -2930,7 +2931,7 @@ class _CommentsPanelState extends ConsumerState<_CommentsPanel> {
 
   Future<void> _delete(CommunityComment c) async {
     if (c.isOptimistic) return; // still saving; ignore
-    final ok = await showDialog<bool>(
+    final ok = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -3029,7 +3030,7 @@ class _CommentsPanelState extends ConsumerState<_CommentsPanel> {
 /// text, or null if cancelled.
 Future<String?> _askEditComment(BuildContext context, String initial) {
   final ctrl = TextEditingController(text: initial);
-  return showDialog<String>(
+  return showAppDialog<String>(
     context: context,
     builder: (ctx) => AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),

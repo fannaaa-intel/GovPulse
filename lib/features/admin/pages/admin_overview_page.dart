@@ -15,6 +15,7 @@ import '../utils/analytics_pdf.dart';
 import '../widgets/admin_skeleton.dart';
 import '../widgets/admin_snackbar.dart';
 import '../widgets/admin_submission_ui.dart';
+import '../../../core/widgets/app_dialog.dart';
 
 // Nav tab indices owned by the shell (AdminDashboardScreen.navItems). That list
 // is private to the shell's State, so pages can't resolve it by label — these
@@ -2291,7 +2292,7 @@ void _showBreakdownSheet(
       builder: (_) => content,
     );
   } else {
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (_) => Dialog(
         backgroundColor: AdminUi.surface,
@@ -2552,9 +2553,16 @@ class _NlpOutlook extends StatelessWidget {
     final delta = nlp.trendDelta;
 
     // Equal-height cards come from IntrinsicHeight in the parent Row, which can
-    // hand this content 1px less than it measured (sub-pixel rounding). Clip
-    // that harmless overflow rather than let it throw a layout error.
-    return ClipRect(
+    // hand this content 1px less than it measured (sub-pixel rounding).
+    //
+    // A ClipRect does NOT fix that: it clips the painting, but the Column is
+    // still laid out against the too-short constraint and still throws
+    // "RenderFlex overflowed". Scrolling is what actually fixes it — the
+    // viewport gives the Column unbounded height, so it lays out at its natural
+    // size and can never overflow. Physics are disabled because there is nothing
+    // to scroll to: the only thing past the edge is that rounding remainder.
+    return SingleChildScrollView(
+      physics: const NeverScrollableScrollPhysics(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
