@@ -210,7 +210,9 @@ max_frequency = "1s"
 # Number of characters used in the email OTP.
 otp_length = 6
 # Number of seconds before the email OTP expires (defaults to 1 hour).
-otp_expiry = 3600
+# Kept at 120 to match the hosted project's "Email OTP Expiration" setting and
+# the "expires in 2 minutes" copy in the email template + change-password screen.
+otp_expiry = 120
 
 # Use a production-ready SMTP server
 # [auth.email.smtp]

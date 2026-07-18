@@ -38,7 +38,9 @@ serve(async (req) => {
       return rateLimitResponse(ipLimit.retryAfter, "Too many requests from your network. Please try again later.")
     }
 
-    const emailShort = await checkRateLimit(supabase, `send-otp:email:${normalizedEmail}:short`, 3, 600)
+    // 5 per 10 min (not 3): the OTP expires in 2 minutes, so a user with slow
+    // email delivery legitimately needs more re-sends inside one window.
+    const emailShort = await checkRateLimit(supabase, `send-otp:email:${normalizedEmail}:short`, 5, 600)
     if (!emailShort.allowed) {
       return rateLimitResponse(emailShort.retryAfter, "We just sent you a code. Please wait a few minutes before requesting another.")
     }

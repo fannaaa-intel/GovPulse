@@ -19,6 +19,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { groqChat } from "../_shared/groq.ts";
 
 const MODEL = "llama-3.1-8b-instant"; // fast + cheap; triage is a simple call
 const MAX_BATCH = 50;
@@ -92,29 +93,17 @@ function parseTriage(raw: string): Triage | null {
 }
 
 async function classifyOne(apiKey: string, r: ReportRow): Promise<Triage | null> {
-  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: userPrompt(r) },
-      ],
-      temperature: 0,
-      max_tokens: 100,
-      response_format: { type: "json_object" },
-    }),
+  const raw = await groqChat(apiKey, {
+    model: MODEL,
+    messages: [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: userPrompt(r) },
+    ],
+    temperature: 0,
+    max_tokens: 100,
+    response_format: { type: "json_object" },
   });
-  if (!res.ok) {
-    console.error("Groq error", res.status, await res.text());
-    return null;
-  }
-  const data = await res.json();
-  return parseTriage(data.choices?.[0]?.message?.content ?? "");
+  return raw === null ? null : parseTriage(raw);
 }
 
 serve(async (req: Request) => {

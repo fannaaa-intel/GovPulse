@@ -313,32 +313,34 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
   DateTime? _latestSuggestionReplyAt;
   DateTime? _latestFeedbackReplyAt;
 
-  // ── Report categories — matches report_issue_screen.dart assets ─────────────
+  // ── Report categories — matches report_issue_screen.dart assets. Labels are
+  // single-line: they render as the card TITLE now (not a caption squeezed
+  // under the icon), and they flow into the detail hero unbroken.
   static const Map<String, _CatCfg> _reportCats = {
     'road': _CatCfg(
       'assets/images/report/roadtwo.webp',
       Color(0xFF3B82F6),
-      'Road &\nInfra',
+      'Road & Infrastructure',
     ),
     'waste': _CatCfg(
       'assets/images/report/bin.webp',
       Color(0xFFEF4444),
-      'Waste &\nGarbage',
+      'Waste & Garbage',
     ),
     'drainage': _CatCfg(
       'assets/images/report/road.webp',
       Color(0xFF06B6D4),
-      'Drainage &\nFlooding',
+      'Drainage & Flooding',
     ),
     'streetlight': _CatCfg(
       'assets/images/report/lamppost.webp',
       Color(0xFFF59E0B),
-      'Streetlight\nOutage',
+      'Streetlight Outage',
     ),
     'environment': _CatCfg(
       'assets/images/report/leaf.webp',
       Color(0xFF10B981),
-      'Environment\n& Pollution',
+      'Environment & Pollution',
     ),
     'others': _CatCfg(
       'assets/images/report/menu.webp',
@@ -352,22 +354,22 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
     'public_service': _CatCfg(
       'assets/images/suggestion/courthouse.webp',
       Color(0xFF1D4ED8),
-      'Public\nService',
+      'Public Service',
     ),
     'community_program': _CatCfg(
       'assets/images/suggestion/group.webp',
       Color(0xFF8B5CF6),
-      'Community\nProgram',
+      'Community Program',
     ),
     'health_safety': _CatCfg(
       'assets/images/suggestion/health.webp',
       Color(0xFFEF4444),
-      'Health &\nSafety',
+      'Health & Safety',
     ),
     'infrastructure': _CatCfg(
       'assets/images/suggestion/building.webp',
       Color(0xFFF59E0B),
-      'Infra-\nstructure',
+      'Infrastructure',
     ),
     'environment': _CatCfg(
       'assets/images/suggestion/trees.webp',
@@ -386,23 +388,23 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
     'health': _OfficeCfg(
       Icons.local_hospital_rounded,
       Color(0xFFEF4444),
-      'Health\nOffice',
+      'Health Office',
     ),
     'mayor': _OfficeCfg(
       Icons.account_balance_rounded,
       Color(0xFF1D4ED8),
-      "Mayor's\nOffice",
+      "Mayor's Office",
     ),
-    'mpdo': _OfficeCfg(Icons.map_rounded, Color(0xFF10B981), 'Planning &\nDev'),
+    'mpdo': _OfficeCfg(Icons.map_rounded, Color(0xFF10B981), 'Planning & Dev'),
     'civil': _OfficeCfg(
       Icons.assignment_rounded,
       Color(0xFFF59E0B),
-      'Civil\nRegistrar',
+      'Civil Registrar',
     ),
     'cert': _OfficeCfg(
       Icons.task_alt_rounded,
       Color(0xFF8B5CF6),
-      'Certificate\nVerif.',
+      'Certificate Verif.',
     ),
   };
 
@@ -1246,115 +1248,94 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
     return GestureDetector(
       onTap: () => _openReportDetail(r),
       child: Container(
-      margin: EdgeInsets.only(bottom: w * 0.03),
-      padding: EdgeInsets.all(w * 0.035),
-      decoration: _cardDecoration(w),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Category icon tile — Section 1 grid-cell style
-          _buildCatTile(w, asset: cat.asset, color: cat.color, label: label),
-          SizedBox(width: w * 0.03),
-          Expanded(
-            child: Column(
+        margin: EdgeInsets.only(bottom: w * 0.03),
+        padding: EdgeInsets.all(w * 0.038),
+        decoration: _cardDecoration(w),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Location row + status badge
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (r.barangay != null && r.barangay!.isNotEmpty) ...[
-                      Icon(
-                        Icons.location_on_outlined,
-                        size: w * 0.033,
-                        color: const Color(0xFF9CA3AF),
-                      ),
-                      SizedBox(width: w * 0.01),
-                      Expanded(
-                        child: Text(
-                          r.barangay!,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: w * 0.03,
-                            color: const Color(0xFF6B7280),
-                          ),
-                        ),
-                      ),
-                    ] else
-                      const Spacer(),
-                    SizedBox(width: w * 0.015),
-                    _buildStatusBadge(w, status),
-                  ],
-                ),
-                // Remarks
-                if (r.remarks != null && r.remarks!.isNotEmpty) ...[
-                  SizedBox(height: w * 0.015),
-                  Text(
-                    r.remarks!,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    softWrap: true,
-                    style: TextStyle(
-                      fontSize: w * 0.031,
-                      color: const Color(0xFF374151),
-                      height: 1.45,
-                    ),
-                  ),
-                ],
-                SizedBox(height: w * 0.015),
-                // Date + attachment count — wraps so it never overflows
-                Wrap(
-                  spacing: w * 0.02,
-                  runSpacing: w * 0.012,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.calendar_today_outlined,
-                          size: w * 0.03,
-                          color: const Color(0xFF9CA3AF),
-                        ),
-                        SizedBox(width: w * 0.01),
-                        Text(
-                          _fmt(r.createdAt),
-                          style: TextStyle(
-                            fontSize: w * 0.028,
-                            color: const Color(0xFF9CA3AF),
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (r.mediaCount > 0)
+                _buildIconChip(w, asset: cat.asset, color: cat.color),
+                SizedBox(width: w * 0.03),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Title + single status pill — what it is, at a glance.
                       Row(
-                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Icon(
-                            Icons.attach_file_rounded,
-                            size: w * 0.03,
-                            color: const Color(0xFF9CA3AF),
-                          ),
-                          SizedBox(width: w * 0.008),
-                          Text(
-                            '${r.mediaCount} ${r.mediaCount == 1 ? 'file' : 'files'}',
-                            style: TextStyle(
-                              fontSize: w * 0.028,
-                              color: const Color(0xFF9CA3AF),
+                          Expanded(
+                            child: Text(
+                              label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: w * 0.034,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFF1F2937),
+                                height: 1.25,
+                              ),
                             ),
                           ),
+                          SizedBox(width: w * 0.02),
+                          _buildStatusBadge(w, status),
                         ],
                       ),
-                    // Anonymous indicator sits inline and wraps if needed
-                    if (r.isAnonymous) _buildAnonBadge(w),
-                  ],
+                      SizedBox(height: w * 0.014),
+                      // Meta line — wraps, so it can never overflow on narrow
+                      // phones or inside the 600px web shell column.
+                      Wrap(
+                        spacing: w * 0.025,
+                        runSpacing: w * 0.012,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          _metaId(w, 'RPT-${r.id.substring(0, 8).toUpperCase()}'),
+                          if (r.barangay != null && r.barangay!.isNotEmpty)
+                            _metaItem(
+                              w,
+                              Icons.location_on_outlined,
+                              r.barangay!,
+                              maxWidth: w * 0.42,
+                            ),
+                          _metaItem(
+                            w,
+                            Icons.calendar_today_outlined,
+                            _fmt(r.createdAt),
+                          ),
+                          if (r.mediaCount > 0)
+                            _metaItem(
+                              w,
+                              Icons.attach_file_rounded,
+                              '${r.mediaCount} ${r.mediaCount == 1 ? 'file' : 'files'}',
+                            ),
+                          if (r.isAnonymous) _buildAnonBadge(w),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
-          ),
-        ],
-      ),
+            // Remarks — full card width for a readable line length.
+            if (r.remarks != null && r.remarks!.isNotEmpty) ...[
+              SizedBox(height: w * 0.022),
+              Text(
+                r.remarks!,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                softWrap: true,
+                style: TextStyle(
+                  fontSize: w * 0.031,
+                  color: const Color(0xFF374151),
+                  height: 1.45,
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -1388,82 +1369,95 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
     return GestureDetector(
       onTap: () => _openSuggestionDetail(context, s, label),
       child: AnimatedContainer(
-      key: key,
-      duration: const Duration(milliseconds: 450),
-      margin: EdgeInsets.only(bottom: w * 0.03),
-      padding: EdgeInsets.all(w * 0.035),
-      decoration: highlighted ? _highlightDecoration(w) : _cardDecoration(w),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildCatTile(w, asset: cat.asset, color: cat.color, label: label),
-              SizedBox(width: w * 0.03),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Date row + status indicators — wraps so it never overflows
-                    Wrap(
-                      spacing: w * 0.02,
-                      runSpacing: w * 0.012,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.calendar_today_outlined,
-                              size: w * 0.03,
-                              color: const Color(0xFF9CA3AF),
-                            ),
-                            SizedBox(width: w * 0.01),
-                            Text(
-                              _fmt(s.createdAt),
+        key: key,
+        duration: const Duration(milliseconds: 450),
+        margin: EdgeInsets.only(bottom: w * 0.03),
+        padding: EdgeInsets.all(w * 0.038),
+        decoration: highlighted ? _highlightDecoration(w) : _cardDecoration(w),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildIconChip(w, asset: cat.asset, color: cat.color),
+                SizedBox(width: w * 0.03),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Title + at most one state pill (Replied/Closed are
+                      // mutually exclusive), so this row can't overflow.
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                fontSize: w * 0.028,
-                                color: const Color(0xFF9CA3AF),
+                                fontSize: w * 0.034,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFF1F2937),
+                                height: 1.25,
                               ),
                             ),
+                          ),
+                          if (s.hasReply || s.isClosed) ...[
+                            SizedBox(width: w * 0.02),
+                            if (s.hasReply)
+                              _buildRepliedBadge(w)
+                            else
+                              _buildClosedBadge(w),
                           ],
-                        ),
-                        if (s.hasReply) _buildRepliedBadge(w),
-                        if (s.isClosed) _buildClosedBadge(w),
-                        if (s.isAnonymous) _buildAnonBadge(w),
-                      ],
-                    ),
-                    // Details
-                    if (s.details != null && s.details!.isNotEmpty) ...[
-                      SizedBox(height: w * 0.015),
-                      Text(
-                        s.details!,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        softWrap: true,
-                        style: TextStyle(
-                          fontSize: w * 0.031,
-                          color: const Color(0xFF374151),
-                          height: 1.45,
-                        ),
+                        ],
+                      ),
+                      SizedBox(height: w * 0.014),
+                      Wrap(
+                        spacing: w * 0.025,
+                        runSpacing: w * 0.012,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          _metaId(w, 'SGS-${s.id.substring(0, 8).toUpperCase()}'),
+                          _metaItem(
+                            w,
+                            Icons.calendar_today_outlined,
+                            _fmt(s.createdAt),
+                          ),
+                          if (s.isAnonymous) _buildAnonBadge(w),
+                        ],
                       ),
                     ],
-                  ],
+                  ),
+                ),
+              ],
+            ),
+            // Details — full card width for a readable line length.
+            if (s.details != null && s.details!.isNotEmpty) ...[
+              SizedBox(height: w * 0.022),
+              Text(
+                s.details!,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                softWrap: true,
+                style: TextStyle(
+                  fontSize: w * 0.031,
+                  color: const Color(0xFF374151),
+                  height: 1.45,
                 ),
               ),
             ],
-          ),
-          // Official LGU reply — spans the full card width below the summary.
-          if (s.hasReply)
-            _buildResponseBlock(
-              w,
-              s.adminResponse!,
-              s.reviewedAt,
-              responderPhotoUrl: s.responderPhotoUrl,
-            ),
-        ],
-      ),
+            // Official LGU reply — spans the full card width below the summary.
+            if (s.hasReply)
+              _buildResponseBlock(
+                w,
+                s.adminResponse!,
+                s.reviewedAt,
+                responderPhotoUrl: s.responderPhotoUrl,
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -1480,239 +1474,112 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
     return GestureDetector(
       onTap: () => _openFeedbackDetail(context, f),
       child: AnimatedContainer(
-      key: key,
-      duration: const Duration(milliseconds: 450),
-      margin: EdgeInsets.only(bottom: w * 0.03),
-      padding: EdgeInsets.all(w * 0.035),
-      decoration: highlighted ? _highlightDecoration(w) : _cardDecoration(w),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildOfficeTile(w, f, office),
-              SizedBox(width: w * 0.03),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Title row: office name + status badges top-right.
-                    // Identity info (name + anon status) is grouped together so
-                    // the badge never crowds the rating row below.
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            f.officeLabel,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: w * 0.033,
-                              fontWeight: FontWeight.w700,
-                              color: const Color(0xFF1F2937),
-                              height: 1.2,
+        key: key,
+        duration: const Duration(milliseconds: 450),
+        margin: EdgeInsets.only(bottom: w * 0.03),
+        padding: EdgeInsets.all(w * 0.038),
+        decoration: highlighted ? _highlightDecoration(w) : _cardDecoration(w),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildIconChip(
+                  w,
+                  icon: office?.icon ?? Icons.business_rounded,
+                  color: office?.color ?? AppColors.primaryBlue,
+                ),
+                SizedBox(width: w * 0.03),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Title + at most one state pill; Anonymous moves to the
+                      // wrapping meta line so this row can't overflow.
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              f.officeLabel,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: w * 0.034,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFF1F2937),
+                                height: 1.25,
+                              ),
                             ),
                           ),
-                        ),
-                        if (f.hasReply) ...[
-                          SizedBox(width: w * 0.02),
-                          _buildRepliedBadge(w),
+                          if (f.hasReply || f.isClosed) ...[
+                            SizedBox(width: w * 0.02),
+                            if (f.hasReply)
+                              _buildRepliedBadge(w)
+                            else
+                              _buildClosedBadge(w),
+                          ],
                         ],
-                        if (f.isClosed) ...[
-                          SizedBox(width: w * 0.02),
-                          _buildClosedBadge(w),
-                        ],
-                        if (f.isAnonymous) ...[
-                          SizedBox(width: w * 0.02),
-                          _buildAnonBadge(w),
-                        ],
-                      ],
-                    ),
-                    SizedBox(height: w * 0.014),
-                    // Stars + date — single clean row, no badge crowding
-                    Row(
-                      children: [
-                        _buildStars(w, f.rating),
-                        SizedBox(width: w * 0.022),
-                        Icon(
-                          Icons.calendar_today_outlined,
-                          size: w * 0.03,
-                          color: const Color(0xFF9CA3AF),
-                        ),
-                        SizedBox(width: w * 0.01),
-                        Expanded(
-                          child: Text(
-                            _fmt(f.visitDate),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: w * 0.028,
-                              color: const Color(0xFF9CA3AF),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    SizedBox(height: w * 0.01),
-                    // Service name — muted, truncated
-                    Text(
-                      f.serviceName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: w * 0.028,
-                        color: const Color(0xFF9CA3AF),
                       ),
-                    ),
-                    // Comment
-                    if (f.comment != null && f.comment!.isNotEmpty) ...[
+                      SizedBox(height: w * 0.014),
+                      // Stars + visit date + id — wraps on narrow widths.
+                      Wrap(
+                        spacing: w * 0.025,
+                        runSpacing: w * 0.012,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          _buildStars(w, f.rating),
+                          _metaItem(
+                            w,
+                            Icons.calendar_today_outlined,
+                            _fmt(f.visitDate),
+                          ),
+                          _metaId(w, 'FBK-${f.id.substring(0, 8).toUpperCase()}'),
+                          if (f.isAnonymous) _buildAnonBadge(w),
+                        ],
+                      ),
                       SizedBox(height: w * 0.012),
+                      // Service name — muted, truncated
                       Text(
-                        f.comment!,
-                        maxLines: 2,
+                        f.serviceName,
+                        maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        softWrap: true,
                         style: TextStyle(
-                          fontSize: w * 0.031,
-                          color: const Color(0xFF374151),
-                          height: 1.45,
+                          fontSize: w * 0.028,
+                          color: const Color(0xFF9CA3AF),
                         ),
                       ),
                     ],
-                  ],
+                  ),
+                ),
+              ],
+            ),
+            // Comment — full card width for a readable line length.
+            if (f.comment != null && f.comment!.isNotEmpty) ...[
+              SizedBox(height: w * 0.022),
+              Text(
+                f.comment!,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                softWrap: true,
+                style: TextStyle(
+                  fontSize: w * 0.031,
+                  color: const Color(0xFF374151),
+                  height: 1.45,
                 ),
               ),
             ],
-          ),
-          // Official LGU reply — spans the full card width below the summary.
-          if (f.hasReply)
-            _buildResponseBlock(
-              w,
-              f.adminResponse!,
-              f.reviewedAt,
-              responderPhotoUrl: f.responderPhotoUrl,
-            ),
-        ],
-      ),
-      ),
-    );
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // CATEGORY ICON TILE — mirrors Section 1 grid-cell style exactly
-  // ─────────────────────────────────────────────────────────────────────────
-
-  Widget _buildCatTile(
-    double w, {
-    required String asset,
-    required Color color,
-    required String label,
-  }) {
-    final size = w * 0.12;
-    // Caption box is a bit wider than the icon so long words (e.g. custom
-    // "Others" text) break/ellipsis cleanly instead of snapping mid-word.
-    final labelWidth = size + w * 0.05;
-    return SizedBox(
-      width: labelWidth,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: size,
-            height: size,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  color.withValues(alpha: 0.18),
-                  color.withValues(alpha: 0.08),
-                ],
+            // Official LGU reply — spans the full card width below the summary.
+            if (f.hasReply)
+              _buildResponseBlock(
+                w,
+                f.adminResponse!,
+                f.reviewedAt,
+                responderPhotoUrl: f.responderPhotoUrl,
               ),
-              borderRadius: BorderRadius.circular(w * 0.038),
-              border: Border.all(color: color.withValues(alpha: 0.22)),
-            ),
-            child: Padding(
-              padding: EdgeInsets.all(w * 0.025),
-              // Icons display with their natural colors, on a soft tint of the
-              // category color so each card reads vibrant but stays legible.
-              child: Image.asset(
-                asset,
-                fit: BoxFit.contain,
-                errorBuilder: (_, _, _) => Icon(
-                  Icons.category_rounded,
-                  size: size * 0.48,
-                  color: color,
-                ),
-              ),
-            ),
-          ),
-          SizedBox(height: w * 0.012),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            softWrap: true,
-            style: TextStyle(
-              fontSize: w * 0.021,
-              fontWeight: FontWeight.w600,
-              color: const Color(0xFF374151),
-              height: 1.15,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── Office icon tile (icon-based, same dimensions as _buildCatTile) ─────────
-  Widget _buildOfficeTile(double w, _Feedback f, _OfficeCfg? office) {
-    final size = w * 0.12;
-    final labelWidth = size + w * 0.05;
-    final color = office?.color ?? AppColors.primaryBlue;
-    final icon = office?.icon ?? Icons.business_rounded;
-    final label = office?.label ?? f.officeId;
-
-    return SizedBox(
-      width: labelWidth,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: size,
-            height: size,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  color.withValues(alpha: 0.18),
-                  color.withValues(alpha: 0.08),
-                ],
-              ),
-              borderRadius: BorderRadius.circular(w * 0.038),
-              border: Border.all(color: color.withValues(alpha: 0.22)),
-            ),
-            child: Icon(icon, size: size * 0.48, color: color),
-          ),
-          SizedBox(height: w * 0.012),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            softWrap: true,
-            style: TextStyle(
-              fontSize: w * 0.021,
-              fontWeight: FontWeight.w600,
-              color: const Color(0xFF374151),
-              height: 1.15,
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1720,6 +1587,90 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
   // ─────────────────────────────────────────────────────────────────────────
   // SHARED WIDGETS
   // ─────────────────────────────────────────────────────────────────────────
+
+  // ── Compact leading icon chip — the label lives in the card title now, not
+  // squeezed underneath the icon, so every card keeps one visual anchor and the
+  // full width for its text. Pass [asset] (report/suggestion art) or [icon]
+  // (feedback offices).
+  Widget _buildIconChip(
+    double w, {
+    String? asset,
+    IconData? icon,
+    required Color color,
+  }) {
+    final size = w * 0.115;
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            color.withValues(alpha: 0.18),
+            color.withValues(alpha: 0.08),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(w * 0.034),
+        border: Border.all(color: color.withValues(alpha: 0.22)),
+      ),
+      child: asset != null
+          ? Padding(
+              padding: EdgeInsets.all(w * 0.022),
+              child: Image.asset(
+                asset,
+                fit: BoxFit.contain,
+                errorBuilder: (_, _, _) => Icon(
+                  Icons.category_rounded,
+                  size: size * 0.5,
+                  color: color,
+                ),
+              ),
+            )
+          : Icon(icon ?? Icons.business_rounded, size: size * 0.5, color: color),
+    );
+  }
+
+  // ── One muted icon+text item on a card's meta line. [maxWidth] caps long
+  // free text (barangay names) so the item ellipsizes instead of pushing the
+  // Wrap onto endless rows.
+  Widget _metaItem(double w, IconData icon, String text, {double? maxWidth}) {
+    final label = Text(
+      text,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(
+        fontSize: w * 0.028,
+        fontWeight: FontWeight.w500,
+        color: const Color(0xFF9CA3AF),
+      ),
+    );
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: w * 0.03, color: const Color(0xFF9CA3AF)),
+        SizedBox(width: w * 0.01),
+        maxWidth == null
+            ? label
+            : ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: maxWidth),
+                child: label,
+              ),
+      ],
+    );
+  }
+
+  // ── Short submission id (RPT-/SGS-/FBK-…) — matches the detail hero's id so
+  // a citizen can connect a card to a notification or a conversation.
+  Widget _metaId(double w, String id) => Text(
+    id,
+    style: TextStyle(
+      fontSize: w * 0.026,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 0.3,
+      color: const Color(0xFF9CA3AF),
+    ),
+  );
 
   // ── Anonymous indicator pill ────────────────────────────────────────────────
   Widget _buildAnonBadge(double w) {

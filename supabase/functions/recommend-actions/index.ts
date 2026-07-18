@@ -15,6 +15,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { groqChat } from "../_shared/groq.ts";
 
 // Recommendations benefit from stronger reasoning and run rarely (on-demand /
 // daily cron), so the 70B model is the right quality/cost trade-off here.
@@ -60,6 +61,14 @@ Rules:
   what they want, so recommend reviewing and replying to it.
 - Respect sample size. A dimension backed by 1 response is weak evidence — never call
   it high severity on its own, and prefer signals with more responses behind them.
+- \`negative_theme_trend\` compares negative-feedback themes in the last 30 days vs the
+  30 days before. A theme whose recent count clearly exceeds its prior count is a
+  WORSENING trend — call it out with both numbers ("wait-time complaints 6 this month
+  vs 2 last month"), it outranks a merely-low static average.
+- \`high_urgency_reports\` gives the same recent-vs-prior comparison for AI-triaged
+  high-urgency reports plus where they concentrate (category / barangay). Rising
+  high-urgency volume concentrated in one place is a forward-looking risk — name the
+  place and recommend dispatch/inspection there.
 - Suggestions must be concrete and doable by a municipal office (staffing, signage,
   queueing, checklists, dispatch/triage, facility fixes) — not vague ("improve service").
 - severity: high = safety risk or strong repeated complaint; medium = real routine issue;
@@ -200,6 +209,53 @@ function buildAggregate(
     suggestionCategories[cat] = (suggestionCategories[cat] ?? 0) + 1;
   }
 
+  // ── Trends: last 30 days vs the 30 before ──────────────────────────────────
+  // Static counts describe the present; these two comparisons let the model say
+  // something forward-looking ("wait-time complaints doubled this month") that
+  // is still 100% grounded in the data. Both lean on the classify-* AI labels
+  // (taxonomy themes / ai_urgency), degrading to empty objects if the labels
+  // haven't been backfilled.
+  const DAY = 86400000;
+  const nowMs = Date.now();
+  const windowOf = (r: Record<string, unknown>): "recent" | "prior" | null => {
+    const t = Date.parse(String(r["created_at"] ?? ""));
+    if (!Number.isFinite(t)) return null;
+    const age = nowMs - t;
+    if (age < 0) return null;
+    if (age < 30 * DAY) return "recent";
+    if (age < 60 * DAY) return "prior";
+    return null;
+  };
+
+  const negativeThemeTrend: Record<string, { recent: number; prior: number }> =
+    {};
+  for (const r of feedback) {
+    if (String(r["ai_sentiment"] ?? "").toLowerCase() !== "negative") continue;
+    const theme = String(r["ai_theme"] ?? "").toLowerCase().trim();
+    const win = windowOf(r);
+    if (!theme || theme === "other" || !win) continue;
+    const slot = (negativeThemeTrend[theme] ??= { recent: 0, prior: 0 });
+    slot[win]++;
+  }
+
+  const highUrgency = { recent: 0, prior: 0 };
+  const highRecentByCategory: Record<string, number> = {};
+  const highRecentByBarangay: Record<string, number> = {};
+  for (const r of reports) {
+    if (String(r["ai_urgency"] ?? "").toLowerCase() !== "high") continue;
+    const win = windowOf(r);
+    if (!win) continue;
+    highUrgency[win]++;
+    if (win === "recent") {
+      const cat = String(r["category"] ?? "other").trim() || "other";
+      highRecentByCategory[cat] = (highRecentByCategory[cat] ?? 0) + 1;
+      const brgy = String(r["barangay"] ?? "").trim();
+      if (brgy) {
+        highRecentByBarangay[brgy] = (highRecentByBarangay[brgy] ?? 0) + 1;
+      }
+    }
+  }
+
   return {
     feedback_count: feedback.length,
     report_count: reports.length,
@@ -217,6 +273,12 @@ function buildAggregate(
     report_categories: reportCategories,
     urgent_report_samples: urgentReportSamples,
     suggestion_categories: suggestionCategories,
+    negative_theme_trend: negativeThemeTrend,
+    high_urgency_reports: {
+      ...highUrgency,
+      recent_by_category: highRecentByCategory,
+      recent_by_barangay: highRecentByBarangay,
+    },
   };
 }
 
@@ -259,7 +321,9 @@ serve(async (req: Request) => {
         .limit(300),
       supabase
         .from("reports")
-        .select("category, category_other, remarks, status, created_at")
+        .select(
+          "category, category_other, barangay, remarks, status, ai_urgency, created_at",
+        )
         .order("created_at", { ascending: false })
         .limit(300),
       supabase
@@ -290,39 +354,29 @@ serve(async (req: Request) => {
 
   const aggregate = buildAggregate(feedback, reports, suggestions);
 
-  // 2. Ask Groq for the outlook.
+  // 2. Ask Groq for the outlook (retries on 429/5xx via groqChat).
   let result: { summary: string; focus: Focus[] } | null = null;
   try {
-    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          {
-            role: "user",
-            content:
-              "Aggregated data (JSON):\n" + JSON.stringify(aggregate),
-          },
-        ],
-        temperature: 0.3,
-        max_tokens: 600,
-        response_format: { type: "json_object" },
-      }),
+    const raw = await groqChat(apiKey, {
+      model: MODEL,
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        {
+          role: "user",
+          content: "Aggregated data (JSON):\n" + JSON.stringify(aggregate),
+        },
+      ],
+      temperature: 0.3,
+      max_tokens: 600,
+      response_format: { type: "json_object" },
     });
-    if (!res.ok) {
-      console.error("Groq error", res.status, await res.text());
+    if (raw === null) {
       return new Response(
         JSON.stringify({ error: "AI service error" }),
         { status: 502, headers: corsHeaders },
       );
     }
-    const data = await res.json();
-    result = parseResult(data.choices?.[0]?.message?.content ?? "");
+    result = parseResult(raw);
   } catch (e) {
     console.error("groq call failed:", e);
     return new Response(JSON.stringify({ error: "Internal error" }), {

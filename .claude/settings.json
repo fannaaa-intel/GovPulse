@@ -40,7 +40,14 @@
       "Bash(docker --version)",
       "Bash(docker info *)",
       "Bash(flutter --version)",
-      "PowerShell(flutter analyze lib/features/admin/widgets/accept_assign_dialog.dart lib/features/admin/pages/admin_reports_page.dart 2>&1)"
+      "PowerShell(flutter analyze lib/features/admin/widgets/accept_assign_dialog.dart lib/features/admin/pages/admin_reports_page.dart 2>&1)",
+      "PowerShell(flutter analyze lib/features/admin/providers/admin_dashboard_provider.dart lib/features/admin/pages/admin_overview_page.dart test/admin_nlp_outlook_test.dart test/admin_outlook_render_test.dart)",
+      "PowerShell(flutter test test/admin_nlp_outlook_test.dart test/admin_outlook_render_test.dart test/admin_outlook_render_test.dart test/report_buckets_test.dart test/report_status_tracker_test.dart)",
+      "PowerShell(flutter test --reporter compact)",
+      "PowerShell(flutter analyze lib/features/home/settings/my-submission/my_submissions_screen.dart)",
+      "PowerShell(flutter test --reporter compact 2>&1)",
+      "PowerShell(flutter analyze lib/features/admin/providers/admin_dashboard_provider.dart)",
+      "PowerShell(deno check supabase/functions/classify-feedback/index.ts supabase/functions/classify-report/index.ts supabase/functions/recommend-actions/index.ts 2>&1)"
     ],
     "additionalDirectories": [
       "c:\\Users\\DELL\\.claude\\projects\\c--Users-DELL-govpulse\\memory"

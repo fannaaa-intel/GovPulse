@@ -456,7 +456,7 @@ class _ChangePasswordSendScreenState extends State<ChangePasswordSendScreen>
           SizedBox(width: w * 0.025),
           Expanded(
             child: Text(
-              'A 6-digit code will be sent to this email. The code expires in 10 minutes.',
+              'A 6-digit code will be sent to this email. The code expires in 2 minutes.',
               style: TextStyle(
                 fontSize: w * 0.032,
                 color: const Color(0xFF1E40AF),

@@ -5,7 +5,7 @@
 // Classifies each citizen feedback comment into:
 //   • ai_sentiment : "positive" | "neutral" | "negative"
 //   • ai_urgency   : "high" | "medium" | "low"
-//   • ai_theme     : a short 1–3 word topic label (free text)
+//   • ai_theme     : one label from the fixed THEMES taxonomy below
 // and writes them back to public.feedbacks. The admin dashboard reads these
 // columns and shows a "Hybrid AI" badge; any feedback the model hasn't reached
 // yet still shows via the on-device rule-based fallback (see
@@ -27,6 +27,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { groqChat } from "../_shared/groq.ts";
 
 // Small/fast is plenty for classification; swap to llama-3.3-70b-versatile if
 // you want more nuance on Taglish/Ilocano comments (same free Groq endpoint).
@@ -41,6 +42,34 @@ const corsHeaders = {
 
 const SENTIMENTS = new Set(["positive", "neutral", "negative"]);
 const URGENCIES = new Set(["high", "medium", "low"]);
+
+// Fixed theme taxonomy. Free-text themes fragment ("wait time" / "waiting" /
+// "queue" / "pila") and can never be counted or trended; a closed set makes
+// ai_theme aggregable. Mirrors the four aspect ratings the app already collects
+// (staff, wait, clarity, facility) plus the other recurring LGU subjects.
+const THEMES = [
+  "wait time",
+  "staff attitude",
+  "documents",
+  "process clarity",
+  "facilities",
+  "fees",
+  "staffing",
+  "other",
+] as const;
+const THEME_SET = new Set<string>(THEMES);
+
+// Coerce whatever the model produced onto the taxonomy: exact match, else a
+// containment match ("long wait time" → "wait time"), else "other".
+function normalizeTheme(raw: string): string {
+  const t = raw.toLowerCase().trim();
+  if (THEME_SET.has(t)) return t;
+  for (const known of THEMES) {
+    if (known === "other") continue;
+    if (t.includes(known) || (t.length >= 4 && known.includes(t))) return known;
+  }
+  return "other";
+}
 
 interface FeedbackRow {
   id: string;
@@ -63,7 +92,7 @@ Return ONLY a JSON object with exactly these keys:
 {
   "sentiment": "positive" | "neutral" | "negative",
   "urgency":   "high" | "medium" | "low",
-  "theme":     "<1-3 word topic, e.g. 'wait time', 'staff attitude', 'documents'>"
+  "theme":     "wait time" | "staff attitude" | "documents" | "process clarity" | "facilities" | "fees" | "staffing" | "other"
 }
 
 Guidance:
@@ -72,7 +101,12 @@ Guidance:
 - urgency: how urgently the LGU should act. "high" = safety risk, repeated failure,
   strong complaint, or something time-critical; "medium" = a real but routine issue;
   "low" = praise, minor note, or neutral remark.
-- theme: the main subject in a few words, lowercase.
+- theme: the MAIN subject, chosen from the list above — pick the closest fit.
+  "wait time" = queues/slow service; "staff attitude" = how personnel treated the
+  citizen; "documents" = permits/certificates/requirements; "process clarity" =
+  confusing steps or instructions; "facilities" = the physical office/equipment;
+  "fees" = cost or payment issues; "staffing" = not enough personnel/counters.
+  Use "other" ONLY when nothing on the list fits.
 Do not add any text outside the JSON.
 `.trim();
 
@@ -97,9 +131,9 @@ function parseClassification(raw: string): Classification | null {
     const obj = JSON.parse(text);
     const sentiment = String(obj.sentiment ?? "").toLowerCase().trim();
     const urgency = String(obj.urgency ?? "").toLowerCase().trim();
-    const theme = String(obj.theme ?? "").toLowerCase().trim().slice(0, 60);
+    const theme = normalizeTheme(String(obj.theme ?? ""));
     if (!SENTIMENTS.has(sentiment) || !URGENCIES.has(urgency)) return null;
-    return { sentiment, urgency, theme: theme || "general" };
+    return { sentiment, urgency, theme };
   } catch {
     return null;
   }
@@ -109,30 +143,34 @@ async function classifyOne(
   apiKey: string,
   row: FeedbackRow,
 ): Promise<Classification | null> {
-  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: userPrompt(row) },
-      ],
-      temperature: 0,
-      max_tokens: 120,
-      response_format: { type: "json_object" },
-    }),
+  const raw = await groqChat(apiKey, {
+    model: MODEL,
+    messages: [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: userPrompt(row) },
+    ],
+    temperature: 0,
+    max_tokens: 120,
+    response_format: { type: "json_object" },
   });
-  if (!res.ok) {
-    console.error("Groq error", res.status, await res.text());
-    return null;
+  return raw === null ? null : parseClassification(raw);
+}
+
+// Rows with no written comment don't need a language model — the star rating
+// maps deterministically, which saves the API quota for rows with actual text.
+// No words also means no theme (ai_theme stays null rather than polluting
+// "other"). Rows with neither rating nor comment are marked neutral/low so the
+// batch sweep stops re-fetching them forever.
+function classifyRatingOnly(row: FeedbackRow): Classification {
+  const rating = row.overall_rating;
+  if (rating == null || rating < 1) {
+    return { sentiment: "neutral", urgency: "low", theme: "" };
   }
-  const data = await res.json();
-  const raw: string = data.choices?.[0]?.message?.content ?? "";
-  return parseClassification(raw);
+  return {
+    sentiment: rating >= 4 ? "positive" : rating === 3 ? "neutral" : "negative",
+    urgency: rating <= 2 ? "medium" : "low",
+    theme: "",
+  };
 }
 
 serve(async (req: Request) => {
@@ -208,7 +246,10 @@ serve(async (req: Request) => {
   const failures: string[] = [];
 
   for (const row of rows) {
-    const result = await classifyOne(apiKey, row);
+    const hasComment = (row.comment ?? "").trim().length > 0;
+    const result = hasComment
+      ? await classifyOne(apiKey, row)
+      : classifyRatingOnly(row);
     if (!result) {
       failures.push(row.id);
       continue;
@@ -218,7 +259,7 @@ serve(async (req: Request) => {
       .update({
         ai_sentiment: result.sentiment,
         ai_urgency: result.urgency,
-        ai_theme: result.theme,
+        ai_theme: result.theme || null,
         ai_classified_at: new Date().toISOString(),
       })
       .eq("id", row.id);
