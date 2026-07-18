@@ -13,7 +13,9 @@ import '../../staff/data/staff_departments.dart';
 import '../theme/admin_ui.dart';
 import '../providers/admin_reports_provider.dart';
 import '../utils/report_pdf.dart';
+import '../widgets/accept_assign_dialog.dart';
 import '../widgets/admin_detail_screen.dart';
+import '../widgets/endorse_entity_dialog.dart';
 import '../widgets/admin_moderation.dart';
 import '../providers/admin_identity_reveal_provider.dart';
 import '../widgets/admin_submission_ui.dart';
@@ -1423,7 +1425,9 @@ class _ConfirmedChip extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.primaryBlue.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: AppColors.primaryBlue.withValues(alpha: 0.30)),
+        border: Border.all(
+          color: AppColors.primaryBlue.withValues(alpha: 0.30),
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1675,7 +1679,11 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
-      showAdminSnackBar(context, 'Could not link: $e', type: AdminSnackType.error);
+      showAdminSnackBar(
+        context,
+        'Could not link: $e',
+        type: AdminSnackType.error,
+      );
     }
   }
 
@@ -1730,92 +1738,12 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
     }
   }
 
-  /// Picker that adapts to the viewport: a centered dialog on wide screens
-  /// (web / desktop) and a slide-up bottom sheet on small screens (the mobile
-  /// app), so the bottom sheet is never used on a large web layout.
-  Future<T?> _showRoutePicker<T>({
-    required String title,
-    required String subtitle,
-    required List<Widget> Function(BuildContext ctx) itemsBuilder,
-  }) {
-    final wide = MediaQuery.of(context).size.width >= 640;
-
-    Widget content(BuildContext ctx) => Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 18, 20, 6),
-          child: Text(
-            title,
-            style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              color: AdminUi.textPrimary,
-            ),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
-          child: Text(
-            subtitle,
-            style: const TextStyle(fontSize: 12.5, color: AdminUi.textMuted),
-          ),
-        ),
-        ...itemsBuilder(ctx),
-        const SizedBox(height: 8),
-      ],
-    );
-
-    if (wide) {
-      return showAppDialog<T>(
-        context: context,
-        builder: (ctx) => Dialog(
-          backgroundColor: AdminUi.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420, maxHeight: 560),
-            child: SingleChildScrollView(child: content(ctx)),
-          ),
-        ),
-      );
-    }
-    return showModalBottomSheet<T>(
-      context: context,
-      backgroundColor: AdminUi.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => SafeArea(child: content(ctx)),
-    );
-  }
-
   /// Endorses this report to an external entity (out-of-LGU-scope). The report
   /// then lands in that entity's staff-console inbox.
   Future<void> _endorse() async {
-    final picked = await _showRoutePicker<String?>(
-      title: 'Endorse to external entity',
-      subtitle:
-          'For concerns outside LGU scope. The entity sees this report in their console.',
-      itemsBuilder: (ctx) => [
-        for (final d in StaffDepartments.external)
-          ListTile(
-            leading: const Icon(
-              Icons.forward_to_inbox_rounded,
-              color: AppColors.primaryBlue,
-            ),
-            title: Text(d.name),
-            onTap: () => Navigator.pop(ctx, d.name),
-          ),
-        const Divider(height: 1, color: AdminUi.border),
-        ListTile(
-          leading: const Icon(Icons.close_rounded, color: AppColors.red),
-          title: const Text('Clear endorsement'),
-          onTap: () => Navigator.pop(ctx, ''),
-        ),
-      ],
+    final picked = await showEndorseEntityDialog(
+      context,
+      currentEndorsement: widget.report.endorsedToDepartment,
     );
     if (picked == null || !mounted) return;
     setState(() => _busy = true);
@@ -1845,25 +1773,9 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
   /// office the category maps to; the admin can override it if mis-categorized.
   Future<void> _accept() async {
     final r = widget.report;
-    final auto = StaffDepartments.forReportCategory(r.categoryKey);
-    final picked = await _showRoutePicker<String>(
-      title: 'Accept & route to office',
-      subtitle:
-          'The chosen office starts handling this report. Suggested from the category — change it if mis-filed.',
-      itemsBuilder: (ctx) => [
-        for (final d in StaffDepartments.internal)
-          ListTile(
-            leading: Icon(
-              d.name == auto
-                  ? Icons.check_circle_rounded
-                  : Icons.account_balance_rounded,
-              color: d.name == auto ? AppColors.green : AppColors.primaryBlue,
-            ),
-            title: Text(d.name),
-            subtitle: d.name == auto ? const Text('Suggested') : null,
-            onTap: () => Navigator.pop(ctx, d.name),
-          ),
-      ],
+    final picked = await showAcceptAssignDialog(
+      context,
+      recommendedOffice: StaffDepartments.forReportCategory(r.categoryKey),
     );
     if (picked == null || !mounted) return;
     setState(() => _busy = true);
@@ -2337,7 +2249,10 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
                   ),
                   child: const Text(
                     'Unlink',
-                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800),
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
               ],

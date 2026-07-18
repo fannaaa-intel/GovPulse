@@ -11,6 +11,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/widgets/app_dialog.dart';
 import '../theme/staff_ui.dart';
 import 'staff_common.dart';
 
@@ -320,7 +321,7 @@ Future<void> showStaffNotifications(BuildContext context) {
         ).animate(curved),
         child: child,
       );
-      return FadeTransition(
+      final content = FadeTransition(
         opacity: curved,
         child: narrow
             ? Center(child: panel)
@@ -334,6 +335,8 @@ Future<void> showStaffNotifications(BuildContext context) {
                 ),
               ),
       );
+      // Frost the console behind the panel, ramping with the same animation.
+      return withDialogBlur(anim, content);
     },
   );
 }

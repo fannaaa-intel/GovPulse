@@ -1,3 +1,5 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -26,6 +28,76 @@ import 'package:flutter/material.dart';
 /// second tap never has to wait on it. Shared with the full-screen routes so
 /// the app and the web console feel the same.
 const Duration kAppDialogDuration = Duration(milliseconds: 220);
+
+/// How hard the page behind a pop-up frosts over. Matched to the citizen
+/// notification popup (the reference the rest of the app follows): enough that
+/// the surroundings clearly recede behind the card, not so much that context is
+/// lost. Ramped by the route's own animation so the blur grows on the way in
+/// and melts away on the way out — never a hard on/off.
+const double kAppDialogBlurSigma = 7;
+
+/// A full-screen blur whose strength tracks [animation] (0 → none, 1 → full).
+/// Sits *behind* a pop-up so everything painted earlier — the page and the
+/// barrier tint — is frosted. At the animation's resting ends it drops the
+/// filter entirely, so there's no idle blur layer (and no zero-sigma saveLayer)
+/// once the dialog is fully gone.
+class _AnimatedBlurBackdrop extends StatelessWidget {
+  final Animation<double> animation;
+  final double sigma;
+  final Widget child;
+  const _AnimatedBlurBackdrop({
+    required this.animation,
+    required this.sigma,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (context, child) {
+        // Same easing as the card so blur and scale move together.
+        final v = Curves.easeOutCubic.transform(
+          animation.value.clamp(0.0, 1.0),
+        );
+        if (v <= 0.001) return child!;
+        return BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: sigma * v, sigmaY: sigma * v),
+          child: child,
+        );
+      },
+      child: child,
+    );
+  }
+}
+
+/// Wraps [child] so the same receding, frosted backdrop as [showAppDialog] sits
+/// behind it — for pop-ups presented with a hand-rolled [showGeneralDialog]
+/// (dropdown panels, command palettes) instead of the shared dialog route.
+///
+/// Drop it around the widget a `transitionBuilder` returns; the blur ramps with
+/// that route's [animation] and fills the screen behind the panel, on top of
+/// whatever `barrierColor` the panel already sets.
+Widget withDialogBlur(
+  Animation<double> animation,
+  Widget child, {
+  double sigma = kAppDialogBlurSigma,
+}) {
+  return Stack(
+    children: [
+      Positioned.fill(
+        child: _AnimatedBlurBackdrop(
+          animation: animation,
+          sigma: sigma,
+          // A transparent filler gives the BackdropFilter its full-screen size
+          // without painting anything itself — the barrier tint shows through.
+          child: const SizedBox.expand(),
+        ),
+      ),
+      child,
+    ],
+  );
+}
 
 /// The shared open/close animation: a fade, plus a slight scale so the card
 /// settles in and recedes out and the eye has something to follow.
@@ -62,6 +134,21 @@ class AppDialogRoute<T> extends DialogRoute<T> {
 
   @override
   Duration get transitionDuration => kAppDialogDuration;
+
+  // Frost the page behind the card. Wrapping the stock barrier keeps its
+  // tap-to-dismiss and semantics intact; the blur ramps with the route's
+  // animation, so it grows as the card arrives and clears as it leaves.
+  @override
+  Widget buildModalBarrier() {
+    final barrier = super.buildModalBarrier();
+    final anim = animation;
+    if (anim == null) return barrier;
+    return _AnimatedBlurBackdrop(
+      animation: anim,
+      sigma: kAppDialogBlurSigma,
+      child: barrier,
+    );
+  }
 
   @override
   Widget buildTransitions(

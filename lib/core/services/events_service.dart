@@ -1,5 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../utils/search_filter.dart';
+
 // ─── Model ────────────────────────────────────────────────────────────────────
 
 enum EventStatus { pending, approved, rejected }
@@ -105,11 +107,16 @@ class EventsService {
     }
 
     if (searchQuery != null && searchQuery.isNotEmpty) {
-      query = query.or(
-        'title.ilike.%$searchQuery%,'
-        'location.ilike.%$searchQuery%,'
-        'category.ilike.%$searchQuery%',
-      );
+      // Sanitize before interpolating: the raw term must never be able to add
+      // its own OR branches to the PostgREST filter.
+      final safe = sanitizeOrTerm(searchQuery);
+      if (safe.isNotEmpty) {
+        query = query.or(
+          'title.ilike.%$safe%,'
+          'location.ilike.%$safe%,'
+          'category.ilike.%$safe%',
+        );
+      }
     }
 
     final response = await query.order('event_date', ascending: true);

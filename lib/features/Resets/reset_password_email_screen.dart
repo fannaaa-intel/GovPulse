@@ -83,8 +83,8 @@ class _ResetPasswordEmailScreenState extends State<ResetPasswordEmailScreen>
         ),
         headers: {
           "Content-Type": "application/json",
-          "apikey": "eyJhbGciOiJIUzI1Ni...",
-          "Authorization": "Bearer eyJhbGciOiJIUzI1Ni...",
+          "apikey": "sb_publishable_ZBDaQPQdFyC5kOHGbce9Ig_zdtIi6Mo",
+          "Authorization": "Bearer sb_publishable_ZBDaQPQdFyC5kOHGbce9Ig_zdtIi6Mo",
         },
         body: jsonEncode({"email": email.trim()}),
       );
@@ -310,9 +310,9 @@ class _ResetPasswordEmailScreenState extends State<ResetPasswordEmailScreen>
                                             headers: {
                                               "Content-Type":
                                                   "application/json",
-                                              "apikey": "eyJhbGciOiJIUzI1Ni...",
+                                              "apikey": "sb_publishable_ZBDaQPQdFyC5kOHGbce9Ig_zdtIi6Mo",
                                               "Authorization":
-                                                  "Bearer eyJhbGciOiJIUzI1Ni...",
+                                                  "Bearer sb_publishable_ZBDaQPQdFyC5kOHGbce9Ig_zdtIi6Mo",
                                             },
                                             body: jsonEncode({
                                               "email": email.trim(),

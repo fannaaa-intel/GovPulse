@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/app_dialog.dart';
 import '../providers/admin_reports_provider.dart';
 import '../providers/admin_users_provider.dart';
 import '../theme/admin_ui.dart';
@@ -33,7 +34,7 @@ Future<void> showAdminCommandPalette(
         _CommandPalette(sections: sections, onNavigate: onNavigate),
     transitionBuilder: (_, anim, _, child) {
       final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
-      return FadeTransition(
+      final content = FadeTransition(
         opacity: curved,
         child: SafeArea(
           child: Align(
@@ -51,6 +52,8 @@ Future<void> showAdminCommandPalette(
           ),
         ),
       );
+      // Frost the console behind the palette while it's open.
+      return withDialogBlur(anim, content);
     },
   );
 }

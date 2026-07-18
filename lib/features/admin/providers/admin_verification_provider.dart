@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/utils/search_filter.dart';
+
 // ── Domain ───────────────────────────────────────────────────────────────────
 
 enum VerificationStatus { pending, approved, rejected }
@@ -231,11 +233,15 @@ class AdminVerificationNotifier extends AsyncNotifier<List<AdminVerification>> {
     // show accurate per-status counts and switch filters without a round-trip).
     final q = _filters.query.trim();
     if (q.isNotEmpty) {
-      final safe = q.replaceAll(',', ' ').replaceAll('%', '');
-      query = query.or(
-        'first_name.ilike.%$safe%,last_name.ilike.%$safe%,'
-        'id_number.ilike.%$safe%,barangay.ilike.%$safe%',
-      );
+      // Strip every PostgREST-structural character, not just `,`/`%`, so the
+      // term can't inject extra OR branches into the filter.
+      final safe = sanitizeOrTerm(q);
+      if (safe.isNotEmpty) {
+        query = query.or(
+          'first_name.ilike.%$safe%,last_name.ilike.%$safe%,'
+          'id_number.ilike.%$safe%,barangay.ilike.%$safe%',
+        );
+      }
     }
 
     final rows = await query

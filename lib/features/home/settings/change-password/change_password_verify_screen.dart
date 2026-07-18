@@ -21,7 +21,7 @@ class _ChangePasswordVerifyScreenState extends State<ChangePasswordVerifyScreen>
     with TickerProviderStateMixin {
   static const String _baseUrl =
       'https://vxvflhjbafqwehuxnmeq.supabase.co/functions/v1';
-  static const String _apiKey = 'eyJhbGciOiJIUzI1Ni...';
+  static const String _apiKey = 'sb_publishable_ZBDaQPQdFyC5kOHGbce9Ig_zdtIi6Mo';
 
   final List<TextEditingController> _controllers = List.generate(
     6,

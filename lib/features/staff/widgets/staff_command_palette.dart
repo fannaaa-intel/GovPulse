@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/widgets/app_dialog.dart';
 import '../../admin/providers/admin_reports_provider.dart' show reportStatusLabel;
 import '../providers/staff_providers.dart';
 import '../theme/staff_ui.dart';
@@ -28,7 +29,7 @@ Future<void> showStaffCommandPalette(
         _Palette(sections: sections, onNavigate: onNavigate),
     transitionBuilder: (_, anim, _, child) {
       final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
-      return FadeTransition(
+      final content = FadeTransition(
         opacity: curved,
         child: SafeArea(
           child: Align(
@@ -46,6 +47,8 @@ Future<void> showStaffCommandPalette(
           ),
         ),
       );
+      // Frost the console behind the palette while it's open.
+      return withDialogBlur(anim, content);
     },
   );
 }

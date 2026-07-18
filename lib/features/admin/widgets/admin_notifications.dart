@@ -18,6 +18,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/widgets/app_dialog.dart';
 import '../theme/admin_ui.dart';
 import 'admin_skeleton.dart';
 
@@ -413,7 +414,7 @@ Future<void> showAdminNotifications(BuildContext context) {
         ).animate(curved),
         child: child,
       );
-      return FadeTransition(
+      final content = FadeTransition(
         opacity: curved,
         child: narrow
             ? Center(child: panel)
@@ -427,6 +428,9 @@ Future<void> showAdminNotifications(BuildContext context) {
                 ),
               ),
       );
+      // Frost the console behind the panel, ramping with the same animation so
+      // it grows on open and clears on close — matching every other pop-up.
+      return withDialogBlur(anim, content);
     },
   );
 }

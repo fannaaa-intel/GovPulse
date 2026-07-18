@@ -21,8 +21,37 @@ import 'core/services/chat_service.dart';
 /// Global navigator key — used by [AuthService] to push after login.
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
+/// True for the one known-benign framework crash we deliberately swallow: the
+/// `_zOrderIndex != null` assertion thrown from a [Tooltip]'s hide path.
+///
+/// The framework's Tooltip (raw_tooltip.dart) doesn't stop its fade controller
+/// when its widget is deactivated mid-animation — so on the very common "hover a
+/// nav/toolbar tooltip, then click something that rebuilds it away" flow, the
+/// controller ticks to `dismissed` a frame later and calls
+/// `OverlayPortalController.hide()` on an already-detached portal, tripping the
+/// assert (flutter/lib/src/widgets/overlay.dart). It is DEBUG-ONLY: in release
+/// the assert is compiled out and `hide()` is a harmless no-op, so suppressing
+/// it in debug just matches release behaviour. The match is deliberately narrow
+/// — the assertion text AND a tooltip stack frame — so every other error still
+/// surfaces normally. Remove once the upstream Tooltip fix lands.
+bool _isBenignTooltipZOrderAssertion(FlutterErrorDetails details) {
+  if (!details.exceptionAsString().contains('_zOrderIndex')) return false;
+  final stack = details.stack?.toString() ?? '';
+  return stack.contains('raw_tooltip') ||
+      stack.contains('_handleStatusChanged') ||
+      stack.contains('Tooltip');
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Drop only the benign Tooltip assertion above; forward everything else to
+  // Flutter's normal reporting so real errors are never hidden.
+  final previousOnError = FlutterError.onError;
+  FlutterError.onError = (FlutterErrorDetails details) {
+    if (_isBenignTooltipZOrderAssertion(details)) return;
+    (previousOnError ?? FlutterError.presentError)(details);
+  };
 
   // Force Hybrid Composition for Android Google Maps. Without it this device
   // renders blank map tiles (only the marker + "Google" logo draw). Hybrid
