@@ -162,7 +162,7 @@ class _ResetPasswordEmailVerifyScreenState
         ),
         headers: {
           "Content-Type": "application/json",
-          "apikey": "eyJhbGciOiJIUzI1Ni...",
+          "apikey": "sb_publishable_ZBDaQPQdFyC5kOHGbce9Ig_zdtIi6Mo",
         },
         body: jsonEncode({"email": widget.email}),
       );
@@ -198,7 +198,7 @@ class _ResetPasswordEmailVerifyScreenState
         ),
         headers: {
           "Content-Type": "application/json",
-          "apikey": "eyJhbGciOiJIUzI1Ni...",
+          "apikey": "sb_publishable_ZBDaQPQdFyC5kOHGbce9Ig_zdtIi6Mo",
         },
         body: jsonEncode({"email": widget.email, "code": code}),
       );
@@ -387,7 +387,7 @@ class _ResetPasswordEmailVerifyScreenState
                                       ),
                                       headers: {
                                         "Content-Type": "application/json",
-                                        "apikey": "eyJhbGciOiJIUzI1Ni...",
+                                        "apikey": "sb_publishable_ZBDaQPQdFyC5kOHGbce9Ig_zdtIi6Mo",
                                       },
                                       body: jsonEncode({
                                         "email": widget.email,

@@ -38,7 +38,9 @@
       "Bash(git rm *)",
       "Bash(supabase --version)",
       "Bash(docker --version)",
-      "Bash(docker info *)"
+      "Bash(docker info *)",
+      "Bash(flutter --version)",
+      "PowerShell(flutter analyze lib/features/admin/widgets/accept_assign_dialog.dart lib/features/admin/pages/admin_reports_page.dart 2>&1)"
     ],
     "additionalDirectories": [
       "c:\\Users\\DELL\\.claude\\projects\\c--Users-DELL-govpulse\\memory"

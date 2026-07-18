@@ -96,9 +96,34 @@ Deno.serve(async (req) => {
   try {
     const payload = await req.json();
     // Supabase webhook shape: { type, table, schema, record, old_record }.
-    const row = payload?.record ?? payload;
+    const incoming = payload?.record ?? payload;
+    const notifId = incoming?.id;
+
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    );
+
+    // Trust the DB, not the caller. This function is reachable by anyone holding
+    // the public anon key, so the request body cannot be authoritative for who
+    // gets pushed or what the push says — otherwise a forged payload could send
+    // an arbitrary notification to any user_id. Re-read the row by its id and
+    // use ONLY those DB-sourced fields; a payload with no matching row is a
+    // no-op. The legitimate INSERT trigger always passes a real, committed id.
+    if (!notifId) {
+      return new Response(JSON.stringify({ skipped: "no notification id" }), {
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const { data: row } = await supabase
+      .from("notifications")
+      .select("id, user_id, title, subtitle, type, topic, is_approved")
+      .eq("id", notifId)
+      .maybeSingle();
+
     if (!row || !row.user_id) {
-      return new Response(JSON.stringify({ skipped: "no user_id" }), {
+      return new Response(JSON.stringify({ skipped: "unknown or userless row" }), {
         headers: { "Content-Type": "application/json" },
       });
     }
@@ -112,11 +137,6 @@ Deno.serve(async (req) => {
     const saRaw = Deno.env.get("FCM_SERVICE_ACCOUNT");
     if (!saRaw) throw new Error("FCM_SERVICE_ACCOUNT secret is not set");
     const sa = JSON.parse(saRaw) as Record<string, string>;
-
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-    );
 
     // Respect the user's push master-switch. No row = enabled (default).
     const { data: pref } = await supabase
