@@ -237,6 +237,205 @@ void main() {
     });
   });
 
+  group('weekly regression forecast', () {
+    test('three populated weeks fit a trend even without a prior window', () {
+      // Days 2/9/16 back → weeks 0/1/2 → averages 4/3/2: a +1★/week recovery.
+      // Every rating sits inside the recent 30 days, where the two-window
+      // method has nothing to compare — the regression still forecasts.
+      final nlp = _run(
+        feedback: [
+          _feedback(4, _now.subtract(const Duration(days: 2))),
+          _feedback(3, _now.subtract(const Duration(days: 9))),
+          _feedback(2, _now.subtract(const Duration(days: 16))),
+        ],
+      );
+
+      expect(nlp.priorAvg, isNull);
+      expect(nlp.forecastWeeks, 3);
+      expect(nlp.forecastResponses, 3);
+      expect(nlp.trend, InsightTrend.improving);
+      // Perfect fit: 2, 3, 4 → next week 5. Exactly at the edge, not past it.
+      expect(nlp.forecastRating, closeTo(5.0, 1e-9));
+      expect(nlp.forecastClamped, isFalse);
+    });
+
+    test('a flat weekly series is genuinely stable', () {
+      final nlp = _run(
+        feedback: [
+          _feedback(3, _now.subtract(const Duration(days: 2))),
+          _feedback(3, _now.subtract(const Duration(days: 9))),
+          _feedback(3, _now.subtract(const Duration(days: 16))),
+        ],
+      );
+
+      expect(nlp.trend, InsightTrend.stable);
+      expect(nlp.forecastRating, closeTo(3.0, 1e-9));
+      expect(nlp.forecastClamped, isFalse);
+    });
+
+    test('a steep declining fit is clamped at the scale floor', () {
+      // Averages 1, 2, 3 going back → next week projects to 0 → clamped to 1.
+      final nlp = _run(
+        feedback: [
+          _feedback(1, _now.subtract(const Duration(days: 2))),
+          _feedback(2, _now.subtract(const Duration(days: 9))),
+          _feedback(3, _now.subtract(const Duration(days: 16))),
+        ],
+      );
+
+      expect(nlp.trend, InsightTrend.declining);
+      expect(nlp.forecastRating, 1.0);
+      expect(nlp.forecastClamped, isTrue);
+    });
+
+    test('multiple ratings in one week are averaged, not double-counted', () {
+      // Week 0 holds a 5 and a 1 → one 3.0 point, not two points that would
+      // tilt the fit toward the noisier week.
+      final nlp = _run(
+        feedback: [
+          _feedback(5, _now.subtract(const Duration(days: 1))),
+          _feedback(1, _now.subtract(const Duration(days: 2))),
+          _feedback(3, _now.subtract(const Duration(days: 9))),
+          _feedback(3, _now.subtract(const Duration(days: 16))),
+        ],
+      );
+
+      expect(nlp.forecastWeeks, 3);
+      expect(nlp.forecastResponses, 4);
+      expect(nlp.trend, InsightTrend.stable);
+      expect(nlp.forecastRating, closeTo(3.0, 1e-9));
+    });
+
+    test('two populated weeks still fall back to the two-window method', () {
+      final nlp = _run(
+        feedback: [
+          _feedback(4, _now.subtract(const Duration(days: 5))),
+          _feedback(2, _now.subtract(const Duration(days: 45))),
+        ],
+      );
+
+      expect(nlp.forecastWeeks, 0,
+          reason: 'the regression must not run on two points');
+      expect(nlp.forecastRating, 5.0);
+      expect(nlp.trend, InsightTrend.improving);
+    });
+  });
+
+  group('cluster escalation', () {
+    var seq = 0;
+    Map<String, dynamic> report({
+      required int daysAgo,
+      String category = 'road',
+      String barangay = 'Macanaya (Pescaria)',
+      String remarks = 'Test',
+      String? status,
+    }) =>
+        {
+          'id': 'cl-${seq++}',
+          'category': category,
+          'category_other': null,
+          'barangay': barangay,
+          'remarks': remarks,
+          'status': status,
+          'created_at':
+              _now.subtract(Duration(days: daysAgo, hours: seq)).toIso8601String(),
+        };
+
+    test('three similar open reports this week escalate one level', () {
+      // 'road' + calm remarks → medium on their own; as a cluster → high.
+      final nlp = _run(
+        feedback: const [],
+        reports: [
+          report(daysAgo: 0),
+          report(daysAgo: 1),
+          report(daysAgo: 2),
+        ],
+      );
+
+      expect(nlp.urgentHigh, 3);
+      expect(nlp.urgentMedium, 0);
+      for (final i in nlp.urgencyItems) {
+        expect(i.urgency, 'high');
+        expect(i.escalationNote, contains('3 similar open reports'));
+        expect(i.escalationNote, contains('Macanaya'));
+      }
+    });
+
+    test('two similar reports are not a cluster', () {
+      final nlp = _run(
+        feedback: const [],
+        reports: [report(daysAgo: 0), report(daysAgo: 1)],
+      );
+
+      expect(nlp.urgentMedium, 2);
+      expect(nlp.urgentHigh, 0);
+    });
+
+    test('resolved reports neither count toward nor join a cluster', () {
+      final nlp = _run(
+        feedback: const [],
+        reports: [
+          report(daysAgo: 0),
+          report(daysAgo: 1),
+          report(daysAgo: 2, status: 'resolved'),
+        ],
+      );
+
+      expect(nlp.urgentHigh, 0,
+          reason: 'only 2 open reports — the resolved one is settled');
+      expect(nlp.urgentMedium, 3);
+      for (final i in nlp.urgencyItems) {
+        expect(i.escalationNote, isNull);
+      }
+    });
+
+    test('reports older than a week do not cluster', () {
+      final nlp = _run(
+        feedback: const [],
+        reports: [
+          report(daysAgo: 10),
+          report(daysAgo: 11),
+          report(daysAgo: 12),
+        ],
+      );
+
+      expect(nlp.urgentMedium, 3);
+      expect(nlp.urgentHigh, 0);
+    });
+
+    test('the "others" catch-all never clusters', () {
+      // Three unrelated free-text issues are not one situation.
+      final nlp = _run(
+        feedback: const [],
+        reports: [
+          report(daysAgo: 0, category: 'others'),
+          report(daysAgo: 1, category: 'others'),
+          report(daysAgo: 2, category: 'others'),
+        ],
+      );
+
+      expect(nlp.urgentLow, 3);
+      expect(nlp.urgentMedium, 0);
+    });
+
+    test('already-high reports stay high with no escalation note', () {
+      final nlp = _run(
+        feedback: const [],
+        reports: [
+          report(daysAgo: 0, category: 'drainage', remarks: 'flooding'),
+          report(daysAgo: 1, category: 'drainage', remarks: 'flooding'),
+          report(daysAgo: 2, category: 'drainage', remarks: 'flooding'),
+        ],
+      );
+
+      expect(nlp.urgentHigh, 3);
+      for (final i in nlp.urgencyItems) {
+        expect(i.escalationNote, isNull,
+            reason: 'high cannot be bumped — a note would claim it was');
+      }
+    });
+  });
+
   group('focus is specific about where', () {
     test('the weakest aspect names the office driving it', () {
       // Health Office clarity is the worst single (office, aspect) pair. A

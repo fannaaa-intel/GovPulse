@@ -2457,6 +2457,19 @@ class _BreakdownRow extends StatelessWidget {
                       color: AdminUi.textMuted,
                     ),
                   ),
+                // Cluster escalation: the urgency shown is above the report's
+                // own label, so say why or the bump reads as a mislabel.
+                if (item.escalationNote != null)
+                  Text(
+                    '↑ Escalated — ${item.escalationNote}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      fontStyle: FontStyle.italic,
+                      color: AppColors.orange,
+                    ),
+                  ),
               ],
             ),
           ),
@@ -2661,8 +2674,9 @@ class _NlpOutlook extends StatelessWidget {
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 5, horizontal: 4),
               child: Text(
-                'No forecast yet — needs rated feedback in two consecutive '
-                '30-day windows to project a trend.',
+                'No forecast yet — needs rated feedback spread across at '
+                'least 3 different weeks, or two consecutive 30-day windows, '
+                'to project a trend.',
                 style: TextStyle(
                   fontSize: 11.5,
                   height: 1.35,
@@ -2725,21 +2739,38 @@ class _NlpOutlook extends StatelessWidget {
   /// evidence behind it, and any caveat that changes how much weight it
   /// deserves. Only called when a real two-window forecast exists.
   static String _forecastBasis(NlpInsights nlp) {
-    final delta = nlp.trendDelta!;
-    final sign = delta >= 0 ? '+' : '';
-    final recent = nlp.recentCount;
-    final prior = nlp.priorCount;
-
-    final parts = <String>[
-      'Carries the $sign${delta.toStringAsFixed(1)}★ change from the prior '
+    final parts = <String>[];
+    final int responses;
+    if (nlp.forecastWeeks >= 3) {
+      // Regression path: a trend line over weekly average ratings.
+      responses = nlp.forecastResponses;
+      parts.add(
+        'Trend line fitted over ${nlp.forecastWeeks} weekly averages '
+        '($responses rated ${responses == 1 ? 'response' : 'responses'}, '
+        'last 12 weeks), projected one week ahead.',
+      );
+    } else {
+      // Fallback path: too few populated weeks, so the older two-window
+      // extrapolation produced the number — both windows exist here.
+      final delta = nlp.trendDelta!;
+      final sign = delta >= 0 ? '+' : '';
+      final recent = nlp.recentCount;
+      final prior = nlp.priorCount;
+      responses = recent + prior;
+      parts
+        ..add(
+          'Carries the $sign${delta.toStringAsFixed(1)}★ change from the prior '
           'window forward one period.',
-      'Based on $recent recent and $prior prior rated '
+        )
+        ..add(
+          'Based on $recent recent and $prior prior rated '
           '${recent == 1 && prior == 1 ? 'response' : 'responses'}.',
-    ];
+        );
+    }
     if (nlp.forecastClamped) {
       parts.add('Capped at the 1–5★ scale.');
     }
-    if (recent + prior < 5) {
+    if (responses < 5) {
       parts.add('Small sample — treat as directional.');
     }
     return parts.join(' ');

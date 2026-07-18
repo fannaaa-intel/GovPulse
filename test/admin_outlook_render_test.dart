@@ -96,6 +96,31 @@ void main() {
     expect(text, contains('Small sample'));
   });
 
+  testWidgets('a regression forecast cites its weekly basis', (tester) async {
+    // Three populated weeks → the fitted forecast, not the window fallback.
+    final nlp = _notifier.analyseNlp(
+      [
+        _feedback(4, _now.subtract(const Duration(days: 2))),
+        _feedback(3, _now.subtract(const Duration(days: 9))),
+        _feedback(2, _now.subtract(const Duration(days: 16))),
+      ],
+      const [],
+      const [],
+      null,
+      _now,
+    );
+
+    final text = await _render(tester, nlp);
+
+    expect(text, contains('Improving'));
+    expect(text, contains('projected'));
+    expect(text, contains('Trend line fitted over 3 weekly averages'));
+    expect(text, contains('3 rated responses'));
+    expect(text, contains('Small sample'));
+    expect(text, isNot(contains('Carries the')),
+        reason: 'the fallback wording must not describe a fitted forecast');
+  });
+
   testWidgets('focus names the office and the citizen suggestion',
       (tester) async {
     final nlp = _notifier.analyseNlp(

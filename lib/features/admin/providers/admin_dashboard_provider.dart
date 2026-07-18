@@ -86,9 +86,9 @@ class SatisfactionStats {
 /// Direction of the forecasted service-quality trend.
 ///
 /// [unknown] is not a neutral reading — it means the trend was never measured
-/// (only one 30-day window has rated feedback, so there is no second point to
-/// compare against). It is distinct from [stable], which is a real finding:
-/// two windows were compared and barely moved.
+/// (too few dated ratings for either the weekly regression or the two-window
+/// comparison). It is distinct from [stable], which is a real finding: the
+/// data was fitted/compared and barely moved.
 enum InsightTrend { improving, declining, stable, unknown }
 
 /// A single actionable focus area under the predictive outlook: what's weak,
@@ -126,6 +126,12 @@ class FeedbackInsightItem {
   final String sentiment; // positive | neutral | negative
   final String urgency; // high | medium | low
   final bool aiLabeled; // true when the AI model set the labels
+
+  /// Why this report's urgency was bumped above its own label — e.g.
+  /// "3 similar open reports in Macanaya this week". Null when the urgency is
+  /// the report's own (AI or rule) label. Reports only.
+  final String? escalationNote;
+
   final DateTime? createdAt;
 
   const FeedbackInsightItem({
@@ -137,6 +143,7 @@ class FeedbackInsightItem {
     required this.sentiment,
     required this.urgency,
     required this.aiLabeled,
+    this.escalationNote,
     required this.createdAt,
   });
 
@@ -191,20 +198,25 @@ class NlpInsights {
   final int recentCount;
   final int priorCount;
 
-  /// Projected next-period rating (1..5). Null whenever [trend] is
-  /// [InsightTrend.unknown] — a forecast needs both windows to extrapolate from.
+  /// Projected next-period rating (1..5). Preferred source: a least-squares
+  /// fit over weekly average ratings ([forecastWeeks] ≥ 3 buckets). When the
+  /// data is too sparse for that, falls back to the two-window extrapolation
+  /// (recent + delta); null when neither method has enough points.
   final double? forecastRating;
   final InsightTrend trend;
 
+  /// Populated weekly rating buckets behind the regression forecast. 0 means
+  /// the regression didn't run — [forecastRating] (if any) came from the
+  /// two-window fallback. Drives the forecast's "why" line.
+  final int forecastWeeks;
+
+  /// Rated responses inside those weekly buckets (regression path only).
+  final int forecastResponses;
+
   /// True when [forecastRating] hit the 1..5 rating scale's edge, i.e. the raw
-  /// extrapolation ran past what a star rating can express. The "why" line says
+  /// projection ran past what a star rating can express. The "why" line says
   /// so rather than presenting a clamped number as a clean projection.
-  bool get forecastClamped {
-    final r = recentAvg, d = trendDelta;
-    if (r == null || d == null) return false;
-    final raw = r + d;
-    return raw < 1.0 || raw > 5.0;
-  }
+  final bool forecastClamped;
 
   /// Classified feedback responses (for the sentiment drill-down), newest-first.
   final List<FeedbackInsightItem> sentimentItems;
@@ -240,6 +252,9 @@ class NlpInsights {
     this.priorCount = 0,
     required this.forecastRating,
     required this.trend,
+    this.forecastWeeks = 0,
+    this.forecastResponses = 0,
+    this.forecastClamped = false,
     this.sentimentItems = const [],
     this.urgencyItems = const [],
     this.focus = const [],
@@ -397,6 +412,12 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
     // never break the dashboard — fetched separately and guarded.
     final aiInsight = await _selectAiInsight();
 
+    // Self-heal a stale outlook: _nlp discards an insight older than the newest
+    // submission, which would otherwise leave the panel on the on-device
+    // fallback until the daily cron. Kick one regeneration in the background;
+    // the completion handler (or the next poll) picks up the fresh row.
+    _maybeRegenerateOutlook(feedbackRows, reportRows, suggestionRows, aiInsight);
+
     final now = DateTime.now();
     final weekAgo = now.subtract(const Duration(days: 7));
     final twoWeeksAgo = now.subtract(const Duration(days: 14));
@@ -511,6 +532,47 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
       }
     }
     return const [];
+  }
+
+  /// Last time this client kicked recommend-actions, static so tab switches /
+  /// provider rebuilds share one debounce window and can't stampede the (paid)
+  /// AI function.
+  static DateTime? _lastOutlookKick;
+
+  /// Fire-and-forget one recommend-actions run when the cached AI insight is
+  /// stale (older than the newest submission, mirroring _nlp's freshness
+  /// guard) or missing. Only when feedback exists — the AI outlook is
+  /// feedback-centric and fabricates metrics on empty data. Best-effort: any
+  /// failure is swallowed and the daily cron remains the backstop.
+  void _maybeRegenerateOutlook(
+    List<Map<String, dynamic>> feedbackRows,
+    List<Map<String, dynamic>> reportRows,
+    List<Map<String, dynamic>> suggestionRows,
+    Map<String, dynamic>? aiInsight,
+  ) {
+    if (feedbackRows.isEmpty) return;
+
+    final generatedAt = _parseTs(aiInsight?['generated_at']);
+    DateTime? newest;
+    for (final r in [...feedbackRows, ...reportRows, ...suggestionRows]) {
+      final ts = _parseTs(r['created_at']);
+      if (ts != null && (newest == null || ts.isAfter(newest))) newest = ts;
+    }
+    final stale = generatedAt == null ||
+        (newest != null && generatedAt.isBefore(newest));
+    if (!stale) return;
+
+    final now = DateTime.now();
+    if (_lastOutlookKick != null &&
+        now.difference(_lastOutlookKick!) < const Duration(minutes: 10)) {
+      return;
+    }
+    _lastOutlookKick = now;
+
+    _db.functions
+        .invoke('recommend-actions', body: const <String, dynamic>{})
+        .then((_) => silentRefresh())
+        .catchError((_) {});
   }
 
   /// The latest AI recommendation row written by the recommend-actions Edge
@@ -861,10 +923,17 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
     var pos = 0, neu = 0, neg = 0;
     final sentimentItems = <FeedbackInsightItem>[];
 
-    // Predictive-outlook windows: last 30 days vs the prior 30.
+    // Predictive-outlook windows: last 30 days vs the prior 30 (drives the
+    // Prior/Recent rows and the fallback forecast).
     final recentStart = now.subtract(const Duration(days: 30));
     final priorStart = now.subtract(const Duration(days: 60));
     var recentSum = 0.0, recentN = 0, priorSum = 0.0, priorN = 0;
+
+    // Weekly rating buckets (week 0 = the 7 days ending now, 12 weeks back)
+    // for the regression forecast.
+    const weekWindow = 12;
+    final weekSum = List<double>.filled(weekWindow, 0);
+    final weekN = List<int>.filled(weekWindow, 0);
 
     for (final r in feedbackRows) {
       final ratingRaw = r['overall_rating'];
@@ -932,7 +1001,7 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
         ),
       );
 
-      // Outlook windows (rating-only).
+      // Outlook windows + weekly buckets (rating-only).
       if (hasRating) {
         final ts = _parseTs(r['created_at']);
         if (ts != null) {
@@ -943,20 +1012,35 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
             priorSum += rating;
             priorN++;
           }
+          final daysAgo = now.difference(ts).inDays;
+          if (daysAgo >= 0 && daysAgo < weekWindow * 7) {
+            final w = daysAgo ~/ 7;
+            weekSum[w] += rating;
+            weekN[w]++;
+          }
         }
       }
     }
 
     // ── Urgency triage — from citizen REPORTS ────────────────────────────────
+    // Two passes. The per-report label (AI or on-device rule) judges each
+    // report in isolation, but three "medium" drainage reports from the same
+    // barangay in a week describe ONE worsening situation — so the first pass
+    // labels and counts clusters (same category + barangay, open, last 7 days),
+    // and the second bumps every open member of a cluster of 3+ one level.
     var reportsAnalyzed = 0;
     var reportsAiClassified = 0;
     var high = 0, med = 0, low = 0;
     final urgencyItems = <FeedbackInsightItem>[];
 
+    final clusterStart = now.subtract(const Duration(days: 7));
+    final clusterCounts = <String, int>{};
+    final triaged =
+        <({Map<String, dynamic> row, String urgency, bool ai, String? cluster})>[];
+
     for (final r in reportRows) {
       reportsAnalyzed++;
       final key = (r['category'] as String?)?.trim().toLowerCase();
-      final other = r['category_other'] as String?;
       final remarks = (r['remarks'] as String?)?.trim() ?? '';
       final barangay = (r['barangay'] as String?)?.trim() ?? '';
 
@@ -967,6 +1051,44 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
       final hasAiUrgency = _urgencies.contains(aiUrgency);
       if (hasAiUrgency) reportsAiClassified++;
       final urgency = hasAiUrgency ? aiUrgency! : _reportUrgency(remarks, key);
+
+      // Cluster eligibility: a real category (the "others" catch-all mixes
+      // unrelated issues), a named barangay, created this week, still open.
+      // Resolved/rejected reports are settled — they neither count nor bump.
+      final ts = _parseTs(r['created_at']);
+      final status = reportStatusFromDb(r['status'] as String?);
+      final open =
+          status != ReportStatus.resolved && status != ReportStatus.rejected;
+      String? cluster;
+      if (open &&
+          key != null &&
+          key.isNotEmpty &&
+          key != 'others' &&
+          barangay.isNotEmpty &&
+          ts != null &&
+          ts.isAfter(clusterStart) &&
+          !ts.isAfter(now)) {
+        cluster = '$key|${barangay.toLowerCase()}';
+        clusterCounts[cluster] = (clusterCounts[cluster] ?? 0) + 1;
+      }
+      triaged.add((row: r, urgency: urgency, ai: hasAiUrgency, cluster: cluster));
+    }
+
+    const bumped = {'low': 'medium', 'medium': 'high'};
+    for (final t in triaged) {
+      final r = t.row;
+      final key = (r['category'] as String?)?.trim().toLowerCase();
+      final other = r['category_other'] as String?;
+      final remarks = (r['remarks'] as String?)?.trim() ?? '';
+      final barangay = (r['barangay'] as String?)?.trim() ?? '';
+
+      var urgency = t.urgency;
+      String? escalationNote;
+      final clusterSize = t.cluster == null ? 0 : clusterCounts[t.cluster]!;
+      if (clusterSize >= 3 && bumped.containsKey(urgency)) {
+        urgency = bumped[urgency]!;
+        escalationNote = '$clusterSize similar open reports in $barangay this week';
+      }
 
       switch (urgency) {
         case 'high':
@@ -985,7 +1107,8 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
           rating: 0,
           sentiment: '', // n/a for reports
           urgency: urgency,
-          aiLabeled: hasAiUrgency,
+          aiLabeled: t.ai,
+          escalationNote: escalationNote,
           createdAt: _parseTs(r['created_at']),
         ),
       );
@@ -1046,18 +1169,64 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
     final recentAvg = recentN == 0 ? null : recentSum / recentN;
     final priorAvg = priorN == 0 ? null : priorSum / priorN;
 
-    // A trend needs TWO points. With only one window we cannot say "Stable" —
-    // that would report a default as a finding — and we cannot extrapolate, so
-    // the forecast stays null. (Previously this projected `recentAvg` flat and
-    // labelled the copy "projected", inventing a forecast from a single point.)
+    // Forecast — preferred: least-squares fit over weekly average ratings.
+    // Weekly buckets smooth single-response noise, don't care where a 30-day
+    // boundary falls, and work even when every rating sits inside the recent
+    // window (where the two-window method has nothing to compare). The fit
+    // needs ≥3 populated weeks — two points define a line but can't show it's
+    // a trend rather than noise.
+    //
+    // Fallback: the two-window extrapolation (recent + delta), so thin data
+    // (e.g. two lone ratings six weeks apart) still yields a directional
+    // forecast — the UI states its weaker basis. With neither, trend stays
+    // `unknown` and the forecast stays null: reporting "Stable" from a single
+    // point would present a default as a finding.
     InsightTrend trend = InsightTrend.unknown;
     double? forecast;
-    if (recentAvg != null && priorAvg != null) {
+    var forecastClamped = false;
+    var forecastWeeks = 0;
+    var forecastResponses = 0;
+
+    final xs = <double>[]; // weeks ago (0 = current week)
+    final ys = <double>[]; // average rating that week
+    for (var w = 0; w < weekWindow; w++) {
+      if (weekN[w] > 0) {
+        xs.add(w.toDouble());
+        ys.add(weekSum[w] / weekN[w]);
+      }
+    }
+
+    if (xs.length >= 3) {
+      final n = xs.length;
+      final meanX = xs.reduce((a, b) => a + b) / n;
+      final meanY = ys.reduce((a, b) => a + b) / n;
+      var cov = 0.0, varX = 0.0;
+      for (var i = 0; i < n; i++) {
+        cov += (xs[i] - meanX) * (ys[i] - meanY);
+        varX += (xs[i] - meanX) * (xs[i] - meanX);
+      }
+      // Slope is per week *ago* (positive = the past was better); the forward
+      // direction is its negation. x = -1 projects one week ahead.
+      final slope = cov / varX;
+      final intercept = meanY - slope * meanX;
+      final raw = intercept - slope;
+      forecast = raw.clamp(1.0, 5.0);
+      forecastClamped = raw < 1.0 || raw > 5.0;
+      // Same sensitivity as the fallback: judged on the projected 30-day change.
+      final change30 = -slope * (30 / 7);
+      trend = change30 > 0.15
+          ? InsightTrend.improving
+          : (change30 < -0.15 ? InsightTrend.declining : InsightTrend.stable);
+      forecastWeeks = xs.length;
+      forecastResponses = weekN.fold(0, (a, b) => a + b);
+    } else if (recentAvg != null && priorAvg != null) {
       final delta = recentAvg - priorAvg;
       trend = delta > 0.15
           ? InsightTrend.improving
           : (delta < -0.15 ? InsightTrend.declining : InsightTrend.stable);
-      forecast = (recentAvg + delta).clamp(1.0, 5.0);
+      final raw = recentAvg + delta;
+      forecast = raw.clamp(1.0, 5.0);
+      forecastClamped = raw < 1.0 || raw > 5.0;
     }
 
     return NlpInsights(
@@ -1077,6 +1246,9 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
       priorCount: priorN,
       forecastRating: forecast,
       trend: trend,
+      forecastWeeks: forecastWeeks,
+      forecastResponses: forecastResponses,
+      forecastClamped: forecastClamped,
       sentimentItems: sentimentItems,
       urgencyItems: urgencyItems,
       focus: focus,
