@@ -239,6 +239,13 @@ class AdminUsersNotifier extends AsyncNotifier<List<ManagedUser>> {
           .select('user_id, status, created_at')
           .inFilter('user_id', ids)
           .order('created_at', ascending: false),
+      // Officials (admins + staff) keep their name + avatar in admin_profiles
+      // (bucket: admin-avatars), NOT in public_user_profiles. Without this the
+      // Team list falls back to username and a blank silhouette.
+      _db
+          .from('admin_profiles')
+          .select('user_id, full_name, organization, photo_url')
+          .inFilter('user_id', ids),
     ]);
 
     final roles = <String, int>{
@@ -271,14 +278,43 @@ class AdminUsersNotifier extends AsyncNotifier<List<ManagedUser>> {
     for (final r in List<Map<String, dynamic>>.from(results[5])) {
       verifs.putIfAbsent(r['user_id'] as String, () => r['status'] as String? ?? '');
     }
+    // Official identity (admins + staff), keyed by user_id.
+    final officials = <String, Map<String, dynamic>>{
+      for (final r in List<Map<String, dynamic>>.from(results[6]))
+        r['user_id'] as String: r,
+    };
 
     return rows.map((p) {
       final id = p['id'] as String;
       final nameRow = names[id];
-      final photoPath = nameRow?['profile_photo_path'] as String?;
+      final official = officials[id];
+
+      // Officials store name + avatar in admin_profiles (photo_url is already a
+      // full public URL); citizens use public_user_profiles + the profile-photos
+      // bucket. Resolve name/photo from whichever applies.
+      String? firstName = nameRow?['first_name'] as String?;
+      String? lastName = nameRow?['last_name'] as String?;
       String? photoUrl;
-      if (photoPath != null && photoPath.isNotEmpty) {
-        photoUrl = _db.storage.from('profile-photos').getPublicUrl(photoPath);
+      // Officials show their admin_profiles name; a staff member has a full_name,
+      // while an admin may only carry the organization ("LGU Aparri") — fall back
+      // to that so the row never degrades to a bare username.
+      final officialName = (official?['full_name'] as String?)?.trim();
+      final officialOrg = (official?['organization'] as String?)?.trim();
+      final resolvedOfficial = (officialName != null && officialName.isNotEmpty)
+          ? officialName
+          : (officialOrg != null && officialOrg.isNotEmpty ? officialOrg : null);
+      if (resolvedOfficial != null) {
+        firstName = resolvedOfficial; // single field → displayName uses it as-is
+        lastName = null;
+      }
+      final officialPhoto = (official?['photo_url'] as String?)?.trim();
+      if (officialPhoto != null && officialPhoto.isNotEmpty) {
+        photoUrl = officialPhoto;
+      } else {
+        final photoPath = nameRow?['profile_photo_path'] as String?;
+        if (photoPath != null && photoPath.isNotEmpty) {
+          photoUrl = _db.storage.from('profile-photos').getPublicUrl(photoPath);
+        }
       }
       final restr = restrictions[id];
       final susp = suspensions[id];
@@ -286,8 +322,8 @@ class AdminUsersNotifier extends AsyncNotifier<List<ManagedUser>> {
         id: id,
         username: p['username'] as String?,
         email: p['email'] as String?,
-        firstName: nameRow?['first_name'] as String?,
-        lastName: nameRow?['last_name'] as String?,
+        firstName: firstName,
+        lastName: lastName,
         photoUrl: photoUrl,
         barangay: barangays[id],
         role: _roleFromId(roles[id]),

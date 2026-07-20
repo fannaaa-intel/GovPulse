@@ -43,6 +43,10 @@ class NewsFeedScreen extends StatefulWidget {
   /// [kHeartNotifTypes]).
   final bool initialHighlightPost;
 
+  /// The specific comment/reply a notification pointed at. When set alongside
+  /// [initialOpenComments], the sheet scrolls to it and flashes it blue.
+  final String? initialCommentId;
+
   const NewsFeedScreen({
     super.key,
     this.username = '',
@@ -52,6 +56,7 @@ class NewsFeedScreen extends StatefulWidget {
     this.initialPostId,
     this.initialOpenComments = false,
     this.initialHighlightPost = false,
+    this.initialCommentId,
   });
 
   @override
@@ -77,6 +82,34 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
   // Scroll + flash come from DeepLinkHighlightMixin (shared with My Submissions
   // and the admin/staff consoles), so every deep-link lands the same way.
   bool _handledInitialPost = false;
+
+  // The reference a notification carried can be a POST id or (from the comment
+  // triggers) a COMMENT id — resolved lazily: when no post matches, one lookup
+  // against community_comments maps it to its post + the comment to highlight.
+  late String? _targetPostId = widget.initialPostId;
+  late String? _targetCommentId = widget.initialCommentId;
+  bool _triedCommentResolve = false;
+
+  Future<void> _tryResolveCommentRef(String ref) async {
+    if (_triedCommentResolve) return;
+    _triedCommentResolve = true;
+    try {
+      final row = await _supabase
+          .from('community_comments')
+          .select('id, post_id')
+          .eq('id', ref)
+          .maybeSingle();
+      final postId = row?['post_id'] as String?;
+      if (postId == null || !mounted) return;
+      setState(() {
+        _targetPostId = postId;
+        _targetCommentId = ref;
+      });
+      _maybeHandleInitialPost();
+    } catch (_) {
+      /* ref stays unresolved — the feed just opens normally */
+    }
+  }
 
   @override
   void initState() {
@@ -122,7 +155,7 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
   /// view for like taps. Runs at most once.
   void _maybeHandleInitialPost() {
     if (_handledInitialPost) return;
-    final targetId = widget.initialPostId;
+    final targetId = _targetPostId;
     if (targetId == null) return;
 
     Map<String, dynamic>? post;
@@ -132,7 +165,14 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
         break;
       }
     }
-    if (post == null) return; // not loaded / filtered out — leave it on the feed
+    if (post == null) {
+      // Not a post we can see — the reference may be a comment id (the live
+      // comment triggers stamp those). One-shot resolve, then this runs again.
+      if (CommunityPostsProvider.instance.initialLoadDone) {
+        _tryResolveCommentRef(targetId);
+      }
+      return;
+    }
     _handledInitialPost = true;
 
     final target = post;
@@ -154,7 +194,7 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
         }
       }
       if (widget.initialOpenComments) {
-        _openCommentsSheet(target);
+        _openCommentsSheet(target, highlightCommentId: _targetCommentId);
       }
     });
   }
@@ -585,7 +625,11 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
     );
   }
 
-  void _openCommentsSheet(Map<String, dynamic> post, {String? initialReplyTo}) {
+  void _openCommentsSheet(
+    Map<String, dynamic> post, {
+    String? initialReplyTo,
+    String? highlightCommentId,
+  }) {
     if (widget.isGuest) {
       _showGuestSignupNudge();
       return;
@@ -600,19 +644,13 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
       );
       return;
     }
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      barrierColor: Colors.black.withValues(alpha: 0.45),
-      builder: (sheetCtx) => CommentsSheet(
-        post: post,
-        initialReplyTo: initialReplyTo,
-        likedComments: _likedComments,
-        onToggleLike: _toggleLike,
-        likedPosts: _likedPosts,
-        onTogglePostLike: _togglePostLike,
-      ),
+    showCommentsSheet(
+      context,
+      post: post,
+      initialReplyTo: initialReplyTo,
+      likedComments: _likedComments,
+      onToggleLike: _toggleLike,
+      highlightCommentId: highlightCommentId,
     ).whenComplete(_loadMyInteractions);
   }
 
@@ -655,59 +693,60 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
                   child: _buildNewsFeedWebBody(width, provider, visiblePosts),
                 )
               : Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 480),
-              child: Column(
-                children: [
-                  _buildTopBar(width),
-                  Expanded(
-                    child: LoadingOverlay.bodyOrSkeleton(
-                      isLoading:
-                          !provider.initialLoadDone && provider.isLoading,
-                      layout: SkeletonLayout.newsFeed,
-                      child: provider.error != null
-                          ? _buildErrorState(width, provider)
-                          : visiblePosts.isEmpty
-                          ? _animated(1, _buildEmptyState(width))
-                          : RefreshIndicator(
-                              onRefresh: () async {
-                                await CommunityPostsProvider.instance.refresh();
-                                await _loadMyInteractions();
-                              },
-                              child: ListView.separated(
-                                physics: const BouncingScrollPhysics(),
-                                padding: EdgeInsets.fromLTRB(
-                                  width * 0.04,
-                                  width * 0.035,
-                                  width * 0.04,
-                                  width * 0.04,
-                                ),
-                                itemCount: visiblePosts.length,
-                                separatorBuilder: (_, _) =>
-                                    SizedBox(height: width * 0.035),
-                                itemBuilder: (_, i) {
-                                  final post = visiblePosts[i];
-                                  final pid = post['id'] as String;
-                                  return KeyedSubtree(
-                                    key: highlightKey(pid),
-                                    child: _animated(
-                                      i + 1,
-                                      _highlightWrap(
-                                        pid,
-                                        width,
-                                        _buildPostCard(width, post),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 480),
+                    child: Column(
+                      children: [
+                        _buildTopBar(width),
+                        Expanded(
+                          child: LoadingOverlay.bodyOrSkeleton(
+                            isLoading:
+                                !provider.initialLoadDone && provider.isLoading,
+                            layout: SkeletonLayout.newsFeed,
+                            child: provider.error != null
+                                ? _buildErrorState(width, provider)
+                                : visiblePosts.isEmpty
+                                ? _animated(1, _buildEmptyState(width))
+                                : RefreshIndicator(
+                                    onRefresh: () async {
+                                      await CommunityPostsProvider.instance
+                                          .refresh();
+                                      await _loadMyInteractions();
+                                    },
+                                    child: ListView.separated(
+                                      physics: const BouncingScrollPhysics(),
+                                      padding: EdgeInsets.fromLTRB(
+                                        width * 0.04,
+                                        width * 0.035,
+                                        width * 0.04,
+                                        width * 0.04,
                                       ),
+                                      itemCount: visiblePosts.length,
+                                      separatorBuilder: (_, _) =>
+                                          SizedBox(height: width * 0.035),
+                                      itemBuilder: (_, i) {
+                                        final post = visiblePosts[i];
+                                        final pid = post['id'] as String;
+                                        return KeyedSubtree(
+                                          key: highlightKey(pid),
+                                          child: _animated(
+                                            i + 1,
+                                            _highlightWrap(
+                                              pid,
+                                              width,
+                                              _buildPostCard(width, post),
+                                            ),
+                                          ),
+                                        );
+                                      },
                                     ),
-                                  );
-                                },
-                              ),
-                            ),
+                                  ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ],
-              ),
-            ),
-          ),
+                ),
         ),
       ),
     );
@@ -745,9 +784,7 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
                       else
                         for (int i = 0; i < visiblePosts.length; i++) ...[
                           KeyedSubtree(
-                            key: highlightKey(
-                              visiblePosts[i]['id'] as String,
-                            ),
+                            key: highlightKey(visiblePosts[i]['id'] as String),
                             child: _animated(
                               i + 1,
                               _highlightWrap(
@@ -1321,8 +1358,18 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
                 children: [
                   Text(
                     () {
+                      // Staff authors carry their office (Engineering Office,
+                      // Sanitation Office, …) resolved from the official
+                      // directory — lead the meta line with it.
+                      final dept =
+                          (post['authorDept'] as String?)?.trim() ?? '';
                       final b = (post['barangay'] as String?)?.trim() ?? '';
-                      return b.isEmpty ? timeAgo : '$b · $timeAgo';
+                      final parts = [
+                        if (dept.isNotEmpty) dept,
+                        if (b.isNotEmpty) b,
+                        timeAgo,
+                      ];
+                      return parts.join(' · ');
                     }(),
                     style: TextStyle(
                       fontSize: width * 0.028,

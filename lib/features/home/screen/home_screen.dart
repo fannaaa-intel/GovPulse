@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/services/chat_service.dart';
 import 'package:flutter/services.dart';
 import '../../../features/home/screen/notification_popup.dart';
+import '../../../core/widgets/Home/Newsfeed/citizen_web_notification_panel.dart';
 import '../../../core/network/network_wrapper.dart';
 import '../../../core/utils/overlay_exit.dart';
 import '../../../core/widgets/app_snackbar.dart';
@@ -129,16 +130,20 @@ class _HomePageState extends ConsumerState<HomePage>
     final s = CitizenGuard.I.status.value;
     if (s.suspension != null) {
       _guardModalOpen = true;
-      showSuspendedModal(context, s.suspension!)
-          .whenComplete(() => _guardModalOpen = false);
+      showSuspendedModal(
+        context,
+        s.suspension!,
+      ).whenComplete(() => _guardModalOpen = false);
       return;
     }
     final r = s.restriction;
     if (r != null && r.signature != _shownRestrictionSig) {
       _shownRestrictionSig = r.signature;
       _guardModalOpen = true;
-      showRestrictionNotice(context, r)
-          .whenComplete(() => _guardModalOpen = false);
+      showRestrictionNotice(
+        context,
+        r,
+      ).whenComplete(() => _guardModalOpen = false);
     }
   }
 
@@ -402,48 +407,40 @@ class _HomePageState extends ConsumerState<HomePage>
   }
 
   void _showNotificationsDialog(double width) async {
-    await showGeneralDialog(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: 'Notifications',
-      barrierColor: Colors.transparent,
-      transitionDuration: const Duration(milliseconds: 250),
-      pageBuilder: (_, _, _) => NotificationPopup(
-        width: width,
-        onTap: (n) {
-          Navigator.pop(context); // close the sheet, then route the tap
-          routeCitizenNotificationTap(
-            context,
-            n,
-            username: widget.username,
-            isVerified: _verifStatus == VerifStatus.verified,
-            isPending: _verifStatus == VerifStatus.pending,
-            onOpenNewsFeed: ({
-              String? postId,
-              bool openComments = false,
-              bool highlight = false,
-            }) =>
-                _goToNewsFeed(
-                  postId: postId,
-                  openComments: openComments,
-                  highlight: highlight,
-                ),
-          );
-        },
-      ),
-      transitionBuilder: (_, anim, _, child) => FadeTransition(
-        opacity: anim,
-        child: ScaleTransition(
-          scale: CurvedAnimation(parent: anim, curve: Curves.easeOutBack),
-          child: child,
-        ),
-      ),
+    // Presentation is NOT decided here. This method used to call
+    // NotificationPopup directly with no kIsWeb check, which is why the bell
+    // was a centred frosted card on Home and a dropdown under the bell on every
+    // other citizen screen. showCitizenNotifications owns that choice, and the
+    // badge reload, for all of them.
+    await showCitizenNotifications(
+      context,
+      width: width,
+      onTap: (n) {
+        // Opening it IS reading it — retire it from the badge before routing,
+        // so the count drops on tap instead of waiting for a delete.
+        NotificationService.markRead(n);
+        Navigator.pop(context); // close the sheet, then route the tap
+        routeCitizenNotificationTap(
+          context,
+          n,
+          username: widget.username,
+          isVerified: _verifStatus == VerifStatus.verified,
+          isPending: _verifStatus == VerifStatus.pending,
+          onOpenNewsFeed:
+              ({
+                String? postId,
+                bool openComments = false,
+                bool highlight = false,
+              }) => _goToNewsFeed(
+                postId: postId,
+                openComments: openComments,
+                highlight: highlight,
+              ),
+        );
+      },
     );
-    // Re-sync from the DB after the sheet closes so a mid-animation Clear-All
-    // still leaves the badge accurate (it may not finish deleting every row
-    // before dismissal). load() updates NotificationService.unread; setState
-    // also refreshes any child badges that read the count directly.
-    await NotificationService.load();
+    // Refresh any child badges that read the count directly (the shared helper
+    // already reloaded NotificationService.unread).
     if (mounted) setState(() {});
   }
 
@@ -455,9 +452,7 @@ class _HomePageState extends ConsumerState<HomePage>
     showAppDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => const Center(
-        child: CircularProgressIndicator(color: Color(0xFF1A4DB8)),
-      ),
+      builder: (_) => const LogoutLoadingOverlay(),
     );
 
     try {

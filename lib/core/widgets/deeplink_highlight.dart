@@ -180,4 +180,12 @@ mixin DeepLinkHighlightMixin<T extends StatefulWidget> on State<T> {
     WidgetsBinding.instance.addPostFrameCallback((_) => flashHighlight(id));
   }
 
+  /// Re-arms [flashHighlightOnce] so the SAME id can flash again.
+  ///
+  /// Keying on the id is right for rebuilds — polling and filtering must not
+  /// re-flash — but wrong for a deliberate repeat: tapping the same "X liked
+  /// your post" notification twice is two separate requests to go look at it,
+  /// and the second was being silently dropped. Call this from `didUpdateWidget`
+  /// when a fresh deep-link target arrives, not from `build`.
+  void rearmHighlight() => _lastFlashRequest = null;
 }

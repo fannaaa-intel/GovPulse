@@ -796,7 +796,7 @@ class _TableRow extends StatelessWidget {
               flex: 4,
               child: Row(
                 children: [
-                  buildAvatar(38, u.photoUrl),
+                  AdminAvatar(size: 38, photoUrl: u.photoUrl),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
@@ -919,7 +919,7 @@ class _Card extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    buildAvatar(44, u.photoUrl),
+                    AdminAvatar(size: 44, photoUrl: u.photoUrl),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(

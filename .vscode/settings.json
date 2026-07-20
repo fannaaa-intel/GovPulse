@@ -21,5 +21,6 @@
     "http",
     "net"
   ],
-  "java.configuration.updateBuildConfiguration": "automatic"
+  "java.configuration.updateBuildConfiguration": "automatic",
+  "git.ignoreLimitWarning": true
 }

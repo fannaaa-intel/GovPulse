@@ -4,9 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_colors.dart';
-import '../../../core/widgets/Home/Newsfeed/news_feed_helpers.dart';
 import '../providers/admin_users_provider.dart';
 import '../theme/admin_ui.dart';
+import '../widgets/admin_skeleton.dart';
 import '../widgets/admin_submission_ui.dart'
     show
         AdminSearchField,
@@ -337,7 +337,7 @@ class _TableRow extends StatelessWidget {
               flex: 4,
               child: Row(
                 children: [
-                  buildAvatar(38, u.photoUrl),
+                  AdminAvatar(size: 38, photoUrl: u.photoUrl),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
@@ -435,7 +435,7 @@ class _Card extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    buildAvatar(44, u.photoUrl),
+                    AdminAvatar(size: 44, photoUrl: u.photoUrl),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(

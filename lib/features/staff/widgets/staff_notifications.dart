@@ -32,8 +32,12 @@ IconData _iconForTopic(String topic) {
       return Icons.gpp_bad_outlined;
     case 'post_heart':
     case 'comment_heart':
+    case 'post_like':
+    case 'comment_like':
       return Icons.favorite_rounded;
     case 'comment':
+    case 'post_comment':
+    case 'comment_reply':
       return Icons.mode_comment_outlined;
     default:
       return Icons.notifications_none_rounded;
@@ -84,9 +88,37 @@ class StaffNotif {
     this.referenceId,
   });
 
+  /// Topics the staff console can route a tap to (staff_console_screen's
+  /// _onNotifNavigate switch). Anything else dead-ends on 'general'.
+  static const _routable = {
+    'report', 'endorsement', 'chat', 'ticket', 'message',
+    'post_approved', 'post_rejected', 'community',
+    // Two vocabularies for the SAME engagement events: the staff/admin
+    // 'post_heart'/'comment_heart' names, and the citizen-side type values the
+    // LIVE like/comment triggers actually write ('post_like'/'comment_like'/
+    // 'post_comment'/'comment_reply' — see kHeartNotifTypes in
+    // notification_popup.dart). Accept both so a citizen liking/commenting on a
+    // staff-authored post routes instead of dead-ending on 'general'.
+    'post_heart', 'comment_heart', 'comment',
+    'post_like', 'comment_like', 'post_comment', 'comment_reply',
+  };
+
+  /// The live triggers for hearts/comments on a post pre-date the `topic`
+  /// column — they stamp the tag in `type` only (topic null or a value the
+  /// console can't route). Prefer whichever of the two the console actually
+  /// understands, so those taps land on the Community section instead of
+  /// dead-ending.
+  static String _effectiveTopic(Map<String, dynamic> r) {
+    final topic = (r['topic'] as String?)?.trim();
+    final type = (r['type'] as String?)?.trim();
+    if (topic != null && _routable.contains(topic)) return topic;
+    if (type != null && _routable.contains(type)) return type;
+    return topic?.isNotEmpty == true ? topic! : 'general';
+  }
+
   factory StaffNotif.fromRow(Map<String, dynamic> r) => StaffNotif(
         id: r['id'].toString(),
-        topic: (r['topic'] as String?) ?? 'general',
+        topic: _effectiveTopic(r),
         title: (r['title'] as String?) ?? '',
         subtitle: (r['subtitle'] as String?) ?? '',
         createdAt:
@@ -97,8 +129,24 @@ class StaffNotif {
             ? Color((r['color_value'] as num).toInt())
             : StaffUi.accent,
         actorPhotoUrl: r['actor_photo_url'] as String?,
-        referenceId: r['reference_id'] as String?,
+        referenceId: _effectiveReference(r),
       );
+
+  /// Deep-link target, from whichever column the writer used.
+  ///
+  /// Most notifications carry it in `reference_id` (notify_admins' 7th arg).
+  /// But the LIVE engagement triggers — notify_on_comment / notify_on_post_like
+  /// / notify_on_comment_like — predate that column and write the post id to
+  /// `post_id` instead, leaving reference_id null. Reading only reference_id is
+  /// why a "replied to your post" tap reached Community but had no post to
+  /// target, so it never opened the thread and behaved just like a heart.
+  /// (The citizen model has always read post_id — hence its deep-links worked.)
+  static String? _effectiveReference(Map<String, dynamic> r) {
+    final ref = (r['reference_id'] as String?)?.trim();
+    if (ref != null && ref.isNotEmpty) return ref;
+    final postId = (r['post_id'] as String?)?.trim();
+    return (postId != null && postId.isNotEmpty) ? postId : null;
+  }
 
   IconData get icon => _iconForTopic(topic);
 

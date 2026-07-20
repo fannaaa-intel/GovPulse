@@ -754,11 +754,12 @@ class _NotifCardState extends State<_NotifCard> {
               ),
               alignment: Alignment.center,
               child: Text(
-                '${widget.count}',
+                widget.count > 9 ? '9+' : '${widget.count}',
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 9,
                   fontWeight: FontWeight.w800,
+                  height: 1,
                 ),
               ),
             ),

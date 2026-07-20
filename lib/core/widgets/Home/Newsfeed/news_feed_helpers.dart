@@ -2,6 +2,39 @@ import 'package:flutter/material.dart';
 import '../../../theme/app_colors.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
+/// Above this viewport width a comment thread opens as a centred dialog rather
+/// than a bottom sheet. Lives here so the citizen feed, the staff console and
+/// the admin console all flip at exactly the same point — they used to
+/// disagree, giving staff a bottom sheet on desktop while admin showed a dialog.
+///
+/// The line is "wider than a phone", not "desktop". At the old 900 a browser
+/// window at 887 — an ordinary half-tiled desktop window — still got the phone
+/// sheet: a drag handle and an 887px-wide expanse of white with "No comments
+/// yet" marooned in the middle of it. 600 puts every tablet, landscape phone
+/// and desktop window on the dialog and leaves portrait phones (≤ ~430) on the
+/// sheet, which is the split that was actually intended.
+const double kCommentsDialogBreakpoint = 600;
+
+/// Whether the comments dialog should split into two columns — the post on the
+/// left, the thread and composer on the right — instead of stacking them.
+///
+/// True for viewports that are WIDE BUT SHORT, which in practice means a
+/// landscape phone (844x390) and the occasional squashed desktop window. Stacked,
+/// those have ~230px left for the post AND the thread once the header and
+/// composer take their cut, so you scroll past the post to reach a single
+/// comment. Splitting spends the axis landscape actually has.
+///
+/// Tall viewports stay stacked whatever their width: a 1280x800 desktop has
+/// room for the post above the thread, and that reads better than two narrow
+/// columns. Same rule on citizen, staff and admin.
+bool commentsUseSplitLayout(Size size) =>
+    size.width >= 720 && size.height < 560;
+
+/// Dialog width cap. The split layout needs room for two columns; stacked keeps
+/// the reading-width 560 it has always used.
+double commentsDialogMaxWidth(Size size) =>
+    commentsUseSplitLayout(size) ? 900 : 560;
+
 /// Small grey pill at the top of every bottom sheet.
 Widget dragHandle(double width) => Container(
   margin: EdgeInsets.only(bottom: width * 0.025),
@@ -104,9 +137,7 @@ Widget buildAuthorAvatar(
       height: size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        border: ring
-            ? Border.all(color: AppColors.green, width: 1.5)
-            : null,
+        border: ring ? Border.all(color: AppColors.green, width: 1.5) : null,
       ),
       clipBehavior: Clip.antiAlias,
       child: CachedNetworkImage(

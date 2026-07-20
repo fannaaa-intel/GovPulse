@@ -3,8 +3,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../theme/app_colors.dart';
 import '../../../providers/community_posts_provider.dart';
 import 'news_feed_helpers.dart';
-import 'image_grid.dart';
 import 'comment_item.dart';
+import 'comment_post_recap.dart';
 import 'edit_comment_sheet.dart';
 import '../../app_snackbar.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -17,25 +17,125 @@ import '../../app_dialog.dart';
 /// scale every icon, radius and pad to roughly double — against a screen that
 /// is only ~390dp tall. The sheet still spans the display; only its proportions
 /// stop chasing the display's width.
+/// Fixed sizing base for the comment thread itself.
+///
+/// The ADMIN console's panel is drawn in absolute pixels — 34px avatars, 13px
+/// names, 11px meta — and is the reference for all three surfaces. Every metric
+/// in here and in [buildCommentItem] is a `width * k` fraction, so feeding them
+/// one constant reproduces those pixel sizes exactly and, more importantly,
+/// keeps them identical on a 360dp phone, a tablet and a 1440px desktop dialog.
+/// Scaling this off the viewport is what made the same thread render at three
+/// different sizes across citizen / staff / admin.
+///
+/// Responsiveness lives in the SHELL (dialog vs bottom sheet, chosen by
+/// [kCommentsDialogBreakpoint]) and in the Expanded/Flexible layout — not in
+/// the type scale.
+const double kThreadMetrics = 400.0;
+
 double _sizingWidth(BuildContext context) =>
     MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+
+/// Opens [post]'s comment thread in the presentation that matches the viewport:
+/// a centred dialog on wide screens, the phone bottom sheet below that.
+///
+/// Every surface that shows this thread (citizen news feed, staff community
+/// feed) goes through here — presenting CommentsSheet directly is what left the
+/// staff console showing a bottom sheet on desktop while admin showed a dialog.
+Future<void> showCommentsSheet(
+  BuildContext context, {
+  required Map<String, dynamic> post,
+  required Set<String> likedComments,
+  required ValueChanged<String> onToggleLike,
+  String? highlightCommentId,
+  String? initialReplyTo,
+  String? officialName,
+}) {
+  final wide = MediaQuery.of(context).size.width >= kCommentsDialogBreakpoint;
+
+  CommentsSheet sheet({required bool asDialog}) => CommentsSheet(
+    post: post,
+    likedComments: likedComments,
+    onToggleLike: onToggleLike,
+    highlightCommentId: highlightCommentId,
+    initialReplyTo: initialReplyTo,
+    asDialog: asDialog,
+    officialName: officialName,
+  );
+
+  if (wide) {
+    // Clamped against the viewport, not fixed. 560x720 inside a 24px inset
+    // needs 608x768 to draw — more height than a 1366x768 laptop has, which
+    // clipped the composer off the bottom on exactly the machines this console
+    // runs on.
+    final size = MediaQuery.of(context).size;
+    final cap = commentsDialogMaxWidth(size);
+    // Short viewports also claw back the vertical inset: on a 390dp-tall
+    // landscape phone, 24 top and bottom is an eighth of the screen.
+    final inset = size.height < 560 ? 10.0 : 24.0;
+    return showAppDialog(
+      context: context,
+      builder: (_) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: EdgeInsets.symmetric(horizontal: 24, vertical: inset),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: size.width - 48 < cap ? size.width - 48 : cap,
+            maxHeight: size.height - inset * 2 < 720
+                ? size.height - inset * 2
+                : 720,
+          ),
+          child: sheet(asDialog: true),
+        ),
+      ),
+    );
+  }
+  return showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    barrierColor: Colors.black.withValues(alpha: 0.45),
+    builder: (_) => sheet(asDialog: false),
+  );
+}
 
 class CommentsSheet extends StatefulWidget {
   final Map<String, dynamic> post;
   final String? initialReplyTo;
   final Set<String> likedComments;
   final ValueChanged<String> onToggleLike;
-  final Set<String> likedPosts;
-  final ValueChanged<String> onTogglePostLike;
+
+  /// Comment (or reply) id to land on when the sheet opens from a notification:
+  /// its thread is auto-expanded, scrolled into view and flashed blue, so the
+  /// tap goes to THE comment rather than just the post.
+  final String? highlightCommentId;
+
+  /// Presentation mode. False (default) is the phone bottom sheet: drag handle,
+  /// rounded top only, height driven by DraggableScrollableSheet. True is the
+  /// wide-screen centred dialog — no handle, rounded all round, height supplied
+  /// by the Dialog's constraints. Set by [showCommentsSheet], which picks the
+  /// mode from the width so admin, staff and citizen all present alike.
+  final bool asDialog;
+
+  /// Non-null puts the sheet in OFFICIAL mode, for the admin/staff consoles:
+  /// the header drops its count, the composer names the identity behind a
+  /// filled send button, and each comment gets the admin panel's full-width
+  /// bubble, LGU chip and Edit/Delete text actions.
+  ///
+  /// The name is the identity the official is posting under (e.g. "LGU
+  /// Aparri"), so the composer says who the comment will come from — a console
+  /// user is acting for the LGU, not themselves, and that is worth stating.
+  /// Null (the citizen feed) leaves every one of those untouched.
+  final String? officialName;
 
   const CommentsSheet({
     super.key,
     required this.post,
+    this.asDialog = false,
     this.initialReplyTo,
+    this.officialName,
     required this.likedComments,
     required this.onToggleLike,
-    required this.likedPosts,
-    required this.onTogglePostLike,
+    this.highlightCommentId,
   });
 
   @override
@@ -51,12 +151,32 @@ class _CommentsSheetState extends State<CommentsSheet> {
   String? _replyingToUserId;
   final Set<String> _expandedReplies = {};
   bool _sending = false;
+
+  // ── Notification deep-link: flash the target comment's thread blue ────────
+  final GlobalKey _highlightBlockKey = GlobalKey();
+  bool _highlightFlash = false;
+  bool _highlightConsumed = false;
   String? _myPhotoUrl;
   String? _myPhotoPath;
   String? _myDisplayName;
 
   final SupabaseClient _supabase = Supabase.instance.client;
   String? get _currentUserId => _supabase.auth.currentUser?.id;
+
+  // ── Presentation ───────────────────────────────────────────────────────────
+  //
+  // The ADMIN console's comment thread is the reference for all three surfaces.
+  // Citizen, staff and admin draw it identically: a plain "Comments" header,
+  // full-width bubbles, an LGU chip on official authors, Edit/Delete as text
+  // actions, and a filled send disc. Nothing here branches on who is looking.
+  //
+  // Only the SHELL varies, and only by viewport — a centred dialog at/above
+  // [kCommentsDialogBreakpoint], the slide-up bottom sheet below it and in the
+  // app. That split lives in [showCommentsSheet], not here.
+  //
+  // [CommentsSheet.officialName] is a separate axis and does NOT gate any of
+  // the above: it only names the identity in the composer, which is an
+  // official-only idea — a citizen comments as themselves.
 
   @override
   void initState() {
@@ -98,7 +218,15 @@ class _CommentsSheetState extends State<CommentsSheet> {
           .eq('user_id', userId)
           .maybeSingle();
       final path = res?['profile_photo_path'] as String?;
-      if (path == null || path.isEmpty) return;
+      if (path == null || path.isEmpty) {
+        // Not a citizen. Officials (admin role 1 / staff role 2) keep their
+        // name + avatar in admin_profiles, and have no citizen_details row at
+        // all — so bailing here is what left the composer showing the grey
+        // silhouette and signing optimistic comments "You" for every staff and
+        // admin account. Their own row is readable via staff_reads_own_profile.
+        await _loadMyOfficialPhoto(userId);
+        return;
+      }
 
       if (!mounted) return;
       final nameRes = await _supabase
@@ -119,16 +247,49 @@ class _CommentsSheetState extends State<CommentsSheet> {
     } catch (_) {}
   }
 
+  /// Official (admin/staff) fallback for [_loadMyPhoto]. `photo_url` here is a
+  /// full public URL from the `admin-avatars` bucket, not a storage path, so it
+  /// is used as-is and cache-keyed on itself.
+  Future<void> _loadMyOfficialPhoto(String userId) async {
+    try {
+      final row = await _supabase
+          .from('admin_profiles')
+          .select('full_name, photo_url')
+          .eq('user_id', userId)
+          .maybeSingle();
+      if (!mounted || row == null) return;
+      final url = (row['photo_url'] as String?)?.trim();
+      final name = (row['full_name'] as String?)?.trim();
+      if ((url == null || url.isEmpty) && (name == null || name.isEmpty)) {
+        return;
+      }
+      setState(() {
+        _myPhotoPath = null; // URL is already absolute — no path to key on
+        if (url != null && url.isNotEmpty) _myPhotoUrl = url;
+        if (name != null && name.isNotEmpty) _myDisplayName = name;
+      });
+    } catch (_) {
+      /* RLS / offline — composer just keeps the silhouette */
+    }
+  }
+
+  /// The post as the provider currently holds it — single source of truth.
+  ///
+  /// [CommentsSheet.post] is the snapshot the caller had when the sheet opened,
+  /// so its likes and commentCount freeze the moment you open the thread. The
+  /// recap header must not quote a stale count while you watch the comment you
+  /// just posted appear below it.
+  Map<String, dynamic> _livePost() =>
+      CommunityPostsProvider.instance.sortedPosts.firstWhere(
+        (p) => p['id'] == widget.post['id'],
+        orElse: () => widget.post,
+      );
+
   // Always reads from the provider — single source of truth.
   // The provider's sortedPosts already merges optimistic (isSending) comments.
   List<Map<String, dynamic>> _getComments() {
     final raw = List<Map<String, dynamic>>.from(
-      (CommunityPostsProvider.instance.sortedPosts.firstWhere(
-                (p) => p['id'] == widget.post['id'],
-                orElse: () => widget.post,
-              )['comments']
-              as List<dynamic>)
-          .cast<Map<String, dynamic>>(),
+      (_livePost()['comments'] as List<dynamic>).cast<Map<String, dynamic>>(),
     );
     raw.sort((a, b) {
       final ta = a['timestamp'] as DateTime?;
@@ -242,11 +403,19 @@ class _CommentsSheetState extends State<CommentsSheet> {
       'postId': widget.post['id'],
       'parentId': _replyingToParentId,
       'authorId': userId,
-      'author': _myDisplayName ?? 'You',
+      // Officials comment AS their office, so the optimistic bubble must carry
+      // that name too — [_myDisplayName] is the person behind the account, and
+      // showing it here made a staff comment read under their own name for the
+      // second before the server row replaced it.
+      'author': widget.officialName ?? _myDisplayName ?? 'You',
       'authorPhotoUrl': _myPhotoUrl,
       'authorPhotoPath': _myPhotoPath,
       'mentionedUser': null,
       'mentionedUserId': _replyingToUserId,
+      // Officials keep their LGU chip while the comment is still in flight.
+      // Without this the chip only appeared after the reconcile, so a staff
+      // member's own comment read as a citizen's for a second or two.
+      'isOfficial': widget.officialName != null,
       'text': text,
       'likes': 0,
       'timestamp': DateTime.now(),
@@ -573,303 +742,301 @@ class _CommentsSheetState extends State<CommentsSheet> {
     }
   }
 
+  /// Top-level comment that owns [CommentsSheet.highlightCommentId] — itself,
+  /// or the parent when the target is a reply. First time it's found, schedules
+  /// the one-shot expand + scroll + blue flash.
+  String? _resolveHighlightBlock(List<Map<String, dynamic>> comments) {
+    final target = widget.highlightCommentId;
+    if (target == null) return null;
+    String? blockId;
+    var isReply = false;
+    for (final c in comments) {
+      if (c['id'] == target) {
+        blockId = c['id'] as String;
+        break;
+      }
+      final replies = (c['replies'] as List<dynamic>? ?? [])
+          .cast<Map<String, dynamic>>();
+      if (replies.any((r) => r['id'] == target)) {
+        blockId = c['id'] as String;
+        isReply = true;
+        break;
+      }
+    }
+    if (blockId == null || _highlightConsumed) return blockId;
+    _highlightConsumed = true;
+    if (isReply) _expandedReplies.add(blockId);
+    _highlightFlash = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final ctx = _highlightBlockKey.currentContext;
+      if (ctx != null) {
+        Scrollable.ensureVisible(
+          ctx,
+          duration: const Duration(milliseconds: 350),
+          curve: Curves.easeOutCubic,
+          alignment: 0.2,
+        );
+      }
+      Future.delayed(const Duration(milliseconds: 2600), () {
+        if (mounted) setState(() => _highlightFlash = false);
+      });
+    });
+    return blockId;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final width = _sizingWidth(context);
+    const width = kThreadMetrics;
     final comments = _getComments();
+    final highlightBlockId = _resolveHighlightBlock(comments);
 
-    final freshPost = CommunityPostsProvider.instance.sortedPosts.firstWhere(
-      (p) => p['id'] == widget.post['id'],
-      orElse: () => widget.post,
-    );
-
-    return DraggableScrollableSheet(
-      initialChildSize: 0.92,
-      minChildSize: 0.5,
-      maxChildSize: 0.95,
-      expand: false,
-      builder: (ctx, scrollController) => Container(
+    // Centred dialog on wide screens: the Dialog already supplies the height,
+    // so the corners round all the way and the body just fills it.
+    if (widget.asDialog) {
+      return Container(
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.vertical(
-            top: Radius.circular(width * 0.06),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.12),
-              blurRadius: 16,
-              offset: const Offset(0, -4),
-            ),
-          ],
+          borderRadius: BorderRadius.circular(16),
         ),
-        child: Column(
-          children: [
-            dragHandle(width),
-            Padding(
-              padding: EdgeInsets.fromLTRB(
-                width * 0.05,
-                0,
-                width * 0.025,
-                width * 0.025,
+        clipBehavior: Clip.antiAlias,
+        child: _sheetBody(width, comments, highlightBlockId),
+      );
+    }
+
+    // Phone / narrow: the admin panel's sheet — a fixed 92% of the viewport
+    // with a drag handle, NOT a DraggableScrollableSheet. Admin's height is not
+    // draggable, so neither is this; a thread that resizes under the thumb on
+    // two surfaces and not the third is exactly the inconsistency being fixed.
+    return Padding(
+      // No Scaffold here to resize for us, so the sheet yields to the keyboard
+      // itself — and it must happen OUTSIDE the FractionallySizedBox, or 92%
+      // is taken of the full screen and the composer ends up behind the keys.
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: FractionallySizedBox(
+        heightFactor: 0.92,
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.12),
+                blurRadius: 16,
+                offset: const Offset(0, -4),
               ),
-              child: Row(
-                children: [
-                  Text(
-                    '${freshPost['commentCount'] ?? comments.length} ${(freshPost['commentCount'] ?? comments.length) == 1 ? "Comment" : "Comments"}',
-                    style: TextStyle(
-                      fontSize: width * 0.045,
-                      fontWeight: FontWeight.w800,
-                      color: const Color(0xFF1F2937),
-                    ),
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    icon: Icon(
-                      Icons.close_rounded,
-                      size: width * 0.06,
-                      color: const Color(0xFF6B7280),
-                    ),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ],
-              ),
-            ),
-            Container(height: 1, color: const Color(0xFFE5E7EB)),
-            Expanded(
-              child: ListView(
-                controller: scrollController,
-                physics: const BouncingScrollPhysics(),
-                padding: EdgeInsets.fromLTRB(
-                  width * 0.04,
-                  width * 0.03,
-                  width * 0.04,
-                  width * 0.03,
-                ),
-                children: [
-                  _buildSheetPostSummary(
-                    width,
-                    freshPost,
-                    freshPost['commentCount'] as int? ?? comments.length,
-                  ),
-                  SizedBox(height: width * 0.035),
-                  Container(
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF3F4F6),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                  ),
-                  SizedBox(height: width * 0.025),
-                  ...comments.map(
-                    (c) => buildCommentItem(
-                      context,
-                      width,
-                      c,
-                      likedComments: widget.likedComments,
-                      onToggleLike: (id) {
-                        widget.onToggleLike(id);
-                        setState(() {});
-                      },
-                      onReply: () => _setReplyByCommentId(
-                        c['id'] as String,
-                        c['author'] as String? ?? '',
-                      ),
-                      showReplies: true,
-                      expandedReplies: _expandedReplies,
-                      onToggleExpandReplies: _toggleExpandReplies,
-                      onReplyToReply: (authorName, commentId) =>
-                          _setReplyByCommentId(commentId, authorName),
-                      currentUserId: _currentUserId,
-                      onEdit: _handleEditComment,
-                      onDelete: _handleDeleteComment,
-                    ),
-                  ),
-                  SizedBox(height: width * 0.04),
-                ],
-              ),
-            ),
-            _buildCommentInput(width),
-          ],
+            ],
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: _sheetBody(width, comments, highlightBlockId),
         ),
       ),
     );
   }
 
-  Widget _buildSheetPostSummary(
+  /// The sheet's contents. Three layouts share one set of parts:
+  ///
+  ///  - bottom sheet — drag handle, "Comments", thread, composer;
+  ///  - stacked dialog — post recap riding on top of the thread;
+  ///  - split dialog — recap in its own left column beside the thread, for
+  ///    viewports that are wide but short. See [commentsUseSplitLayout].
+  Widget _sheetBody(
     double width,
-    Map<String, dynamic> post,
-    int commentCount,
+    List<Map<String, dynamic>> comments,
+    String? highlightBlockId,
   ) {
-    final postId = post['id'] as String;
-    final isPostLiked = widget.likedPosts.contains(postId);
-    final ts = post['timestamp'] as DateTime?;
-    final timeAgo = ts != null ? formatTimeAgo(ts) : '';
+    final split =
+        widget.asDialog && commentsUseSplitLayout(MediaQuery.of(context).size);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            buildAuthorAvatar(
-              width * 0.105,
-              post['authorPhotoUrl'] as String?,
-              photoPath: post['authorPhotoPath'] as String?,
-              blank: post['blankAvatar'] == true,
-              ring: post['isOfficial'] != true,
-            ),
-            SizedBox(width: width * 0.025),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    post['author'] as String? ?? '',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: width * 0.038,
-                      color: const Color(0xFF1F2937),
+    if (split) {
+      return Column(
+        children: [
+          _header(width),
+          Container(height: 1, color: const Color(0xFFE5E7EB)),
+          Expanded(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // The post gets its own scroll so a long body or a tall photo
+                // never pushes the thread out of reach — the whole point of
+                // splitting rather than stacking on a short viewport.
+                Expanded(
+                  flex: 5,
+                  child: SingleChildScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    padding: EdgeInsets.fromLTRB(
+                      width * 0.035,
+                      width * 0.03,
+                      width * 0.035,
+                      width * 0.03,
                     ),
+                    child: CommentPostRecap(post: _livePost(), width: width),
                   ),
-                  SizedBox(height: width * 0.004),
-                  Wrap(
-                    spacing: width * 0.018,
-                    runSpacing: width * 0.005,
-                    crossAxisAlignment: WrapCrossAlignment.center,
+                ),
+                Container(width: 1, color: const Color(0xFFE5E7EB)),
+                // Thread keeps the composer pinned beneath it, so replying
+                // never means scrolling back past the post.
+                Expanded(
+                  flex: 6,
+                  child: Column(
                     children: [
-                      Text(
-                        '${post['barangay']} · $timeAgo',
-                        style: TextStyle(
-                          fontSize: width * 0.028,
-                          color: const Color(0xFF6B7280),
-                        ),
+                      Expanded(
+                        child: _thread(width, comments, highlightBlockId),
                       ),
-                      Container(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: width * 0.018,
-                          vertical: width * 0.005,
-                        ),
-                        decoration: BoxDecoration(
-                          color: post['tagColor'] as Color,
-                          borderRadius: BorderRadius.circular(width * 0.025),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.location_on_rounded,
-                              size: width * 0.028,
-                              color: Colors.white,
-                            ),
-                            SizedBox(width: width * 0.005),
-                            Text(
-                              post['tag'] as String? ?? '',
-                              style: TextStyle(
-                                fontSize: width * 0.026,
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                      _buildCommentInput(width),
                     ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
-        SizedBox(height: width * 0.03),
-        Text(
-          post['title'] as String? ?? '',
-          style: TextStyle(
-            fontSize: width * 0.045,
-            fontWeight: FontWeight.w800,
-            color: const Color(0xFF1F2937),
-            height: 1.25,
+          ),
+        ],
+      );
+    }
+
+    return Column(
+      children: [
+        if (!widget.asDialog) dragHandle(width),
+        _header(width),
+        Container(height: 1, color: const Color(0xFFE5E7EB)),
+        Expanded(
+          child: _thread(
+            width,
+            comments,
+            highlightBlockId,
+            // Stacked dialog only: the recap rides at the top of the thread's
+            // own scroll. The split layout has already placed it in its own
+            // column, and the bottom sheet deliberately opens straight into
+            // the thread — there the feed is still visible behind the sheet,
+            // and a recap is what pushed the comments off a phone screen.
+            leading: widget.asDialog
+                ? CommentPostRecap(post: _livePost(), width: width)
+                : null,
           ),
         ),
-        SizedBox(height: width * 0.012),
-        Text(
-          post['body'] as String? ?? '',
-          style: TextStyle(
-            fontSize: width * 0.034,
-            color: const Color(0xFF374151),
-            height: 1.45,
-          ),
-        ),
-        SizedBox(height: width * 0.025),
-        buildImageGrid(
-          width,
-          post['imageCount'] as int,
-          imageUrls: post['imageUrls'] as List<String>? ?? [],
-          onImageTap: (index) => openImageViewer(
-            context,
-            post['imageCount'] as int,
-            index,
-            urls: post['imageUrls'] as List<String>? ?? [],
-          ),
-        ),
-        SizedBox(height: width * 0.03),
-        Row(
-          children: [
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () {
-                widget.onTogglePostLike(postId);
-                setState(() {});
-              },
-              child: Row(
-                children: [
-                  // Filled Material heart when liked — tinting the outline
-                  // heart.webp red only produces a red outline.
-                  Icon(
-                    isPostLiked
-                        ? Icons.favorite_rounded
-                        : Icons.favorite_border_rounded,
-                    size: width * 0.046,
-                    color: isPostLiked
-                        ? const Color(0xFFEF4444)
-                        : const Color(0xFF6B7280),
+        _buildCommentInput(width),
+      ],
+    );
+  }
+
+  Widget _header(double width) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        width * 0.045,
+        widget.asDialog ? width * 0.035 : width * 0.015,
+        width * 0.025,
+        width * 0.035,
+      ),
+      child: Row(
+        children: [
+          // Dialog: the post's own title, centred, so a modal covering the
+          // feed still says which post you are reading. Bottom sheet: the
+          // plain left-aligned label, since the post is right behind it.
+          //
+          // No count either way: it drifts against optimistic comments
+          // mid-send, and the thread below already shows how many there are.
+          if (widget.asDialog)
+            Expanded(
+              child: Padding(
+                // Balances the close button so the title lands optically
+                // centred rather than centred-then-shoved-left.
+                padding: EdgeInsets.only(left: width * 0.06),
+                child: Text(
+                  "${widget.post['author'] ?? 'This'}'s Post",
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: width * 0.0425,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF1F2937),
                   ),
-                  SizedBox(width: width * 0.012),
-                  Text(
-                    '${post['likes']} likes',
-                    style: TextStyle(
-                      fontSize: width * 0.032,
-                      fontWeight: FontWeight.w600,
-                      color: isPostLiked
-                          ? const Color(0xFFEF4444)
-                          : const Color(0xFF6B7280),
-                    ),
-                  ),
-                ],
+                ),
               ),
-            ),
-            SizedBox(width: width * 0.05),
-            Image.asset(
-              'assets/images/comment.webp',
-              width: width * 0.048,
-              height: width * 0.048,
-              color: AppColors.primaryBlue,
-              colorBlendMode: BlendMode.srcIn,
-              errorBuilder: (_, _, _) => Icon(
-                Icons.chat_bubble_outline_rounded,
-                size: width * 0.048,
-                color: AppColors.primaryBlue,
-              ),
-            ),
-            SizedBox(width: width * 0.012),
+            )
+          else ...[
             Text(
-              '$commentCount comments',
+              'Comments',
               style: TextStyle(
-                fontSize: width * 0.032,
-                fontWeight: FontWeight.w600,
-                color: const Color(0xFF6B7280),
+                fontSize: width * 0.0425,
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF1F2937),
               ),
             ),
+            const Spacer(),
           ],
-        ),
+          IconButton(
+            icon: Icon(
+              Icons.close_rounded,
+              size: width * 0.06,
+              color: const Color(0xFF6B7280),
+            ),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The comment list. [leading] is prepended inside the scroll view — used by
+  /// the stacked dialog to float the post recap above the thread.
+  Widget _thread(
+    double width,
+    List<Map<String, dynamic>> comments,
+    String? highlightBlockId, {
+    Widget? leading,
+  }) {
+    return ListView(
+      physics: const BouncingScrollPhysics(),
+      padding: EdgeInsets.fromLTRB(
+        width * 0.035,
+        width * 0.03,
+        width * 0.035,
+        width * 0.03,
+      ),
+      children: [
+        ?leading,
+        ...comments.map((c) {
+          final item = buildCommentItem(
+            context,
+            width,
+            c,
+            likedComments: widget.likedComments,
+            onToggleLike: (id) {
+              widget.onToggleLike(id);
+              setState(() {});
+            },
+            onReply: () => _setReplyByCommentId(
+              c['id'] as String,
+              c['author'] as String? ?? '',
+            ),
+            showReplies: true,
+            expandedReplies: _expandedReplies,
+            onToggleExpandReplies: _toggleExpandReplies,
+            onReplyToReply: (authorName, commentId) =>
+                _setReplyByCommentId(commentId, authorName),
+            currentUserId: _currentUserId,
+            onEdit: _handleEditComment,
+            onDelete: _handleDeleteComment,
+            official: true,
+          );
+          if (highlightBlockId != c['id']) return item;
+          // Deep-link target: blue wash that melts away once seen.
+          return AnimatedContainer(
+            key: _highlightBlockKey,
+            duration: const Duration(milliseconds: 450),
+            decoration: BoxDecoration(
+              color: _highlightFlash
+                  ? AppColors.primaryBlue.withValues(alpha: 0.08)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: item,
+          );
+        }),
+        SizedBox(height: width * 0.04),
       ],
     );
   }
@@ -886,9 +1053,6 @@ class _CommentsSheetState extends State<CommentsSheet> {
             offset: const Offset(0, -2),
           ),
         ],
-      ),
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
       ),
       child: SafeArea(
         top: false,
@@ -961,17 +1125,17 @@ class _CommentsSheetState extends State<CommentsSheet> {
               ),
             Padding(
               padding: EdgeInsets.fromLTRB(
-                width * 0.04,
                 width * 0.03,
-                width * 0.04,
+                width * 0.02,
                 width * 0.03,
+                width * 0.025,
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Container(
-                    width: width * 0.105,
-                    height: width * 0.105,
+                    width: width * 0.085,
+                    height: width * 0.085,
                     decoration: const BoxDecoration(
                       shape: BoxShape.circle,
                       color: Color(0xFFE5E7EB),
@@ -1023,11 +1187,17 @@ class _CommentsSheetState extends State<CommentsSheet> {
                           maxLines: null,
                           minLines: 1,
                           keyboardType: TextInputType.multiline,
+                          // Enter sends (hardware Enter on web/desktop, Send
+                          // key on phone keyboards); Shift+Enter still inserts
+                          // a newline for multi-line comments.
+                          textInputAction: TextInputAction.send,
                           textCapitalization: TextCapitalization.sentences,
                           enabled: !_sending,
                           decoration: InputDecoration(
                             hintText: _replyingTo != null
                                 ? 'Write a reply...'
+                                : widget.officialName != null
+                                ? 'Write a comment as ${widget.officialName}…'
                                 : 'Write a comment...',
                             hintStyle: TextStyle(
                               fontSize: width * 0.035,
@@ -1058,16 +1228,17 @@ class _CommentsSheetState extends State<CommentsSheet> {
                               strokeWidth: 2,
                             ),
                           )
-                        : Image.asset(
-                            'assets/images/send.webp',
-                            width: width * 0.058,
-                            height: width * 0.058,
-                            fit: BoxFit.contain,
-                            color: AppColors.primaryBlue,
-                            errorBuilder: (_, _, _) => Icon(
-                              Icons.send_rounded,
+                        // The admin panel's filled blue disc.
+                        : Container(
+                            padding: EdgeInsets.all(width * 0.0275),
+                            decoration: const BoxDecoration(
                               color: AppColors.primaryBlue,
-                              size: width * 0.058,
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              Icons.send_rounded,
+                              color: Colors.white,
+                              size: width * 0.045,
                             ),
                           ),
                   ),

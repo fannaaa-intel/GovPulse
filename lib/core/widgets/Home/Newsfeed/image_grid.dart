@@ -191,6 +191,76 @@ class _ImageViewerState extends State<_ImageViewer> {
     super.dispose();
   }
 
+  /// One page of the viewer.
+  ///
+  /// [wide] letterboxes the image at its natural aspect ratio, the way a
+  /// desktop viewer should. Narrow keeps the phone treatment — a square frame
+  /// filled edge to edge — which is the right trade when the viewport is a
+  /// palm-sized rectangle and matches how the grid thumbnails crop.
+  Widget _page({
+    required double width,
+    required bool wide,
+    required int index,
+  }) {
+    final radius = BorderRadius.circular(width * 0.02);
+    final missing = widget.urls.length <= index;
+
+    Widget placeholder() => Container(
+      color: const Color(0xFF374151),
+      child: const Center(
+        child: CircularProgressIndicator(color: Colors.white54, strokeWidth: 2),
+      ),
+    );
+    Widget glyph(IconData icon) =>
+        Icon(icon, size: width * 0.25, color: const Color(0xFF9CA3AF));
+
+    if (wide) {
+      return Padding(
+        padding: EdgeInsets.all(width * 0.04),
+        child: missing
+            ? glyph(Icons.image_outlined)
+            : ClipRRect(
+                borderRadius: radius,
+                child: CachedNetworkImage(
+                  imageUrl: widget.urls[index],
+                  // contain, not cover: no crop, whatever shape the photo is.
+                  fit: BoxFit.contain,
+                  placeholder: (context, url) => SizedBox(
+                    width: width * 0.6,
+                    height: width * 0.6,
+                    child: placeholder(),
+                  ),
+                  errorWidget: (context, url, error) =>
+                      glyph(Icons.broken_image_outlined),
+                ),
+              ),
+      );
+    }
+
+    return AspectRatio(
+      aspectRatio: 1,
+      child: Container(
+        margin: EdgeInsets.all(width * 0.04),
+        decoration: BoxDecoration(
+          color: const Color(0xFF374151),
+          borderRadius: radius,
+        ),
+        child: missing
+            ? glyph(Icons.image_outlined)
+            : ClipRRect(
+                borderRadius: radius,
+                child: CachedNetworkImage(
+                  imageUrl: widget.urls[index],
+                  fit: BoxFit.cover,
+                  placeholder: (context, url) => placeholder(),
+                  errorWidget: (context, url, error) =>
+                      glyph(Icons.broken_image_outlined),
+                ),
+              ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     // This viewer is fullscreen, so it proportions against the SHORTEST side
@@ -198,7 +268,21 @@ class _ImageViewerState extends State<_ImageViewer> {
     // be most of a ~390dp-tall screen, while 25% of the shortest side is the
     // same comfortable size whichever way the phone is held. Portrait is
     // unchanged — there the width IS the shortest side.
-    final width = MediaQuery.of(context).size.shortestSide;
+    //
+    // CLAMPED to 480 (the same ceiling the rest of the app sizes against),
+    // because chrome is chrome: a close button should be thumb-sized, not a
+    // fraction of the display. Unclamped, a 1291x888 browser window put the
+    // counter at 30pt inside a 93px disc — the controls read as the content.
+    // Every phone's shortest side is already under 480, so this is a no-op
+    // there and only bites on tablets and desktop.
+    final size = MediaQuery.of(context).size;
+    final width = size.shortestSide.clamp(0.0, 480.0);
+
+    // Desktop/web gets the image at its NATURAL aspect ratio, letterboxed into
+    // the viewport. The square-crop below is a phone compromise — on a wide
+    // screen there is room to show the whole photo, and cropping a portrait
+    // shot to a square is the one thing an image viewer must not do.
+    final wide = size.width >= kCommentsDialogBreakpoint;
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Stack(
@@ -217,43 +301,7 @@ class _ImageViewerState extends State<_ImageViewer> {
               minScale: 1.0,
               maxScale: 4.0,
               child: Center(
-                child: AspectRatio(
-                  aspectRatio: 1,
-                  child: Container(
-                    margin: EdgeInsets.all(width * 0.04),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF374151),
-                      borderRadius: BorderRadius.circular(width * 0.02),
-                    ),
-                    child: widget.urls.length > index
-                        ? ClipRRect(
-                            borderRadius: BorderRadius.circular(width * 0.02),
-                            child: CachedNetworkImage(
-                              imageUrl: widget.urls[index],
-                              fit: BoxFit.cover,
-                              placeholder: (context, url) => Container(
-                                color: const Color(0xFF374151),
-                                child: const Center(
-                                  child: CircularProgressIndicator(
-                                    color: Colors.white54,
-                                    strokeWidth: 2,
-                                  ),
-                                ),
-                              ),
-                              errorWidget: (context, url, error) => Icon(
-                                Icons.broken_image_outlined,
-                                size: width * 0.25,
-                                color: const Color(0xFF9CA3AF),
-                              ),
-                            ),
-                          )
-                        : Icon(
-                            Icons.image_outlined,
-                            size: width * 0.25,
-                            color: const Color(0xFF9CA3AF),
-                          ),
-                  ),
-                ),
+                child: _page(width: width, wide: wide, index: index),
               ),
             ),
           ),

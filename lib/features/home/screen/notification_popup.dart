@@ -36,6 +36,14 @@ class AppNotification {
   /// isn't migrated yet or the notification has no target.
   final String? referenceId;
 
+  /// Whether the user has already opened this one (`read_at` is set).
+  ///
+  /// The badge counts UNREAD rows only, so tapping a notification retires it
+  /// from the count while the row stays in the list — the same model the admin
+  /// and staff bells use on this table. Before this existed the count was just
+  /// the list length, so it never moved until a row was deleted.
+  final bool read;
+
   AppNotification({
     this.id,
     required this.icon,
@@ -48,7 +56,23 @@ class AppNotification {
     this.actorPhotoUrl,
     this.postId,
     this.referenceId,
+    this.read = false,
   });
+
+  AppNotification copyWith({bool? read}) => AppNotification(
+        id: id,
+        icon: icon,
+        title: title,
+        subtitle: subtitle,
+        time: time,
+        color: color,
+        type: type,
+        actorId: actorId,
+        actorPhotoUrl: actorPhotoUrl,
+        postId: postId,
+        referenceId: referenceId,
+        read: read ?? this.read,
+      );
 
   String formatTimeAgo(DateTime t) {
     final diff = DateTime.now().difference(t);
@@ -60,20 +84,68 @@ class AppNotification {
   }
 
   factory AppNotification.fromRow(Map<String, dynamic> row) {
+    final type = _effectiveType(row);
     return AppNotification(
       id: row['id'] as String?,
-      icon: _iconForType(row['type'] as String? ?? 'general'),
+      icon: _iconForType(type),
       title: row['title'] as String,
       subtitle: row['subtitle'] as String,
       time: DateTime.parse(row['created_at'] as String),
       color: Color((row['color_value'] as int)),
-      type: row['type'] as String? ?? 'general',
+      type: type,
       actorId: row['actor_id'] as String?,
       actorPhotoUrl: row['actor_photo_url'] as String?,
-      postId: row['post_id'] as String?,
+      postId: _effectivePostId(row, type),
       referenceId: row['reference_id'] as String?,
+      read: row['read_at'] != null,
     );
   }
+
+  /// The social types this side routes, plus the admin/staff `topic` vocabulary
+  /// for the same events. A citizen liking a staff-authored post (or vice
+  /// versa) can be stamped with either set depending on which trigger fired, so
+  /// both are accepted and folded onto the citizen names below. Mirrors
+  /// StaffNotif._routable, which accepts both for the same reason.
+  static const Map<String, String> _typeAliases = {
+    'post_heart': 'post_like',
+    'comment_heart': 'comment_like',
+    'comment': 'post_comment',
+  };
+
+  static String _effectiveType(Map<String, dynamic> row) {
+    final raw = (row['type'] as String?)?.trim() ?? 'general';
+    return _typeAliases[raw] ?? raw;
+  }
+
+  /// The community post a social notification points at.
+  ///
+  /// Written to `reference_id` by every trigger this repo ships (see
+  /// notification_deeplink_targets_*.sql); some live triggers instead stamp a
+  /// `post_id` column that no migration here creates. Reading only `post_id`
+  /// is why a like/comment tap opened the feed but never jumped or flashed —
+  /// the id was always null. Read whichever the writer used.
+  ///
+  /// Restricted to social types on purpose: `reference_id` on a
+  /// suggestion/feedback/report notification is a submission id, not a post,
+  /// and must not be mistaken for one.
+  ///
+  /// The id may be a COMMENT id rather than a post id — the feed resolves that
+  /// case itself (see _tryResolveCommentRef in news_feed_screen.dart).
+  static String? _effectivePostId(Map<String, dynamic> row, String type) {
+    final postId = (row['post_id'] as String?)?.trim();
+    if (postId != null && postId.isNotEmpty) return postId;
+    if (!_socialTypes.contains(type)) return null;
+    final ref = (row['reference_id'] as String?)?.trim();
+    return (ref != null && ref.isNotEmpty) ? ref : null;
+  }
+
+  /// Notification types whose target is a community post (after aliasing).
+  static const Set<String> _socialTypes = {
+    'post_like',
+    'comment_like',
+    'post_comment',
+    'comment_reply',
+  };
 
   /// Maps a notification `type` to a constant icon. Using const icons (instead
   /// of building IconData from a stored code) is what lets Flutter tree-shake
@@ -98,16 +170,75 @@ class NotificationService {
 
   /// Live badge count. Every bell listens to this via [ValueListenableBuilder],
   /// so the badge updates the instant a notification is loaded / added /
-  /// removed / cleared — no navigation or manual setState needed, and it can
-  /// never drift negative because it's always exactly the list length.
+  /// removed / cleared / read — no navigation or manual setState needed, and it
+  /// can never drift negative because it's always recomputed from the list.
   static final ValueNotifier<int> unread = ValueNotifier<int>(0);
 
   /// Keep [unread] in lock-step with the backing list. Called after every
   /// mutation below.
-  static void _sync() => unread.value = notifications.length;
+  ///
+  /// Counts UNREAD rows, not the list length: a tapped notification stays in
+  /// the list (the user may want to find it again) but must stop counting, or
+  /// the badge sits there at 1 after the thing it pointed at has been opened.
+  static void _sync() =>
+      unread.value = notifications.where((n) => !n.read).length;
 
   static SupabaseClient get _db => Supabase.instance.client;
   static String? get _uid => _db.auth.currentUser?.id;
+
+  // ── Live badge updates (Supabase Realtime) ─────────────────────────────────
+  //
+  // Without this the badge only refreshed when something in-app called load()
+  // (opening the sheet, navigating back, a manual reload) — so a notification
+  // arriving while the user just sat on the home page didn't bump the number
+  // until they moved. This subscription watches the user's own rows in the
+  // `notifications` table and reloads on every INSERT/DELETE, so the count
+  // ticks up the instant one lands and back down when one is removed — even
+  // from another device — with no navigation or manual refresh. Mirrors the
+  // admin console's AdminNotifCenter.
+  static RealtimeChannel? _channel;
+  static String? _subscribedUid;
+
+  /// Start the live subscription for the signed-in user. Call once the user is
+  /// authenticated (see main.dart). Idempotent: no-ops when already live for the
+  /// same user, and re-subscribes cleanly if a different user has signed in.
+  static Future<void> startRealtime() async {
+    final uid = _uid;
+    if (uid == null) return;
+    if (_channel != null && _subscribedUid == uid) return;
+    if (_channel != null) stopRealtime(); // different user — drop the old channel
+    _subscribedUid = uid;
+
+    // Pull the current state immediately so the badge is correct the moment the
+    // subscription comes up (Realtime only delivers changes from here on).
+    await load();
+
+    _channel = _db.channel('citizen-notifs-$uid')
+      ..onPostgresChanges(
+        event: PostgresChangeEvent.all,
+        schema: 'public',
+        table: 'notifications',
+        filter: PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: 'user_id',
+          value: uid,
+        ),
+        // Any change to this user's rows → reload the list, which re-syncs
+        // `unread` (== list length). Handles both increase and decrease.
+        callback: (_) => load(),
+      )
+      ..subscribe();
+  }
+
+  /// Tear down on sign-out so the next session re-subscribes cleanly and the
+  /// badge doesn't linger on the previous user's count.
+  static void stopRealtime() {
+    _channel?.unsubscribe();
+    _channel = null;
+    _subscribedUid = null;
+    notifications = [];
+    _sync();
+  }
 
   // The device's notification tray is PushService's job, not this service's.
   // This class owns the in-app list + badge; a row inserted here reaches the
@@ -178,6 +309,41 @@ class NotificationService {
     } catch (e) {
       debugPrint('NotificationService.add error: $e');
       return false;
+    }
+  }
+
+  /// Retires [n] from the badge count by stamping `read_at`.
+  ///
+  /// The local list is updated first and unconditionally, so the badge drops
+  /// the moment the user taps even if the write is slow or refused — an
+  /// unreachable database must not leave the count stuck on a notification the
+  /// user has demonstrably seen. A realtime echo or the next [load] simply
+  /// re-affirms the same state.
+  ///
+  /// Falls back to the shared `mark_notifications_read` RPC when a direct
+  /// update is blocked by RLS, mirroring StaffNotifCenter.markAllRead.
+  static Future<void> markRead(AppNotification n) async {
+    final id = n.id;
+    if (id == null || n.read) return;
+
+    final idx = notifications.indexWhere((x) => x.id == id);
+    if (idx >= 0) {
+      notifications[idx] = notifications[idx].copyWith(read: true);
+      _sync();
+    }
+
+    final nowIso = DateTime.now().toUtc().toIso8601String();
+    try {
+      await _db.from('notifications').update({'read_at': nowIso}).eq('id', id);
+    } catch (e) {
+      debugPrint('NotificationService.markRead direct update failed: $e');
+      try {
+        await _db.rpc('mark_notifications_read', params: {'p_topics': null});
+      } catch (e2) {
+        // Local state already reflects the tap; the badge stays correct for
+        // this session and reconciles on the next successful write.
+        debugPrint('NotificationService.markRead RPC fallback failed: $e2');
+      }
     }
   }
 
@@ -254,7 +420,13 @@ class NotificationService {
     }
   }
 
-  static int get count => notifications.length;
+  /// Unread count — what every badge shows. Kept in step with [unread]; the
+  /// two must never disagree, so both are derived the same way.
+  static int get count => unread.value;
+
+  /// Total rows currently held, read or not. Only for callers that need the
+  /// list size (empty-state checks), never for a badge.
+  static int get total => notifications.length;
 }
 
 /// Reaction notification types. These navigate like any other, but never flash
@@ -303,14 +475,15 @@ void routeCitizenNotificationTap(
     case 'comment_like':
       // Anything about a comment (comment/reply/comment-like) opens the post's
       // thread; a post like just jumps to the post.
-      //
-      // Only real content landing flashes the post. A heart is ambient
-      // acknowledgement — it still scrolls you there, but singling the post out
-      // with an accent would overstate a reaction.
+      final openComments = n.type != 'post_like';
+      // The blue flash belongs to reactions, not to comments. A heart has
+      // nowhere else to land, so the ring IS the destination. A comment or
+      // reply opens the thread instead — and leaving a ring under the sheet
+      // just means finding the post still lit up after closing it.
       onOpenNewsFeed(
         postId: n.postId,
-        openComments: n.type != 'post_like',
-        highlight: !kHeartNotifTypes.contains(n.type),
+        openComments: openComments,
+        highlight: !openComments,
       );
       break;
     case 'suggestion_response':
@@ -1161,16 +1334,22 @@ class _NotifItem extends StatelessWidget {
           )
         : iconLeading;
 
+    // A tapped notification stays in the list but stops counting, so it has to
+    // LOOK spent — otherwise the badge dropping while the row is unchanged
+    // reads as the badge being wrong. Unread keeps the solid card and bold
+    // title; read recedes.
+    final unread = !n.read;
+
     return Container(
       margin: spaced ? EdgeInsets.only(bottom: w * 0.025) : EdgeInsets.zero,
       padding: EdgeInsets.all(w * 0.03),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: .65),
+        color: Colors.white.withValues(alpha: unread ? .65 : .38),
         borderRadius: borderRadius ?? BorderRadius.circular(18),
       ),
       child: Row(
         children: [
-          leading,
+          Opacity(opacity: unread ? 1 : .6, child: leading),
           SizedBox(width: w * 0.025),
           Expanded(
             child: Column(
@@ -1180,7 +1359,8 @@ class _NotifItem extends StatelessWidget {
                   n.title,
                   style: TextStyle(
                     fontSize: w * 0.036,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: unread ? FontWeight.w700 : FontWeight.w500,
+                    color: unread ? Colors.black87 : Colors.grey[700],
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -1188,7 +1368,7 @@ class _NotifItem extends StatelessWidget {
                   n.subtitle,
                   style: TextStyle(
                     fontSize: w * 0.029,
-                    color: Colors.grey[700],
+                    color: unread ? Colors.grey[700] : Colors.grey[600],
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -1199,6 +1379,15 @@ class _NotifItem extends StatelessWidget {
               ],
             ),
           ),
+          // Unread marker, mirroring the admin/staff panels.
+          if (unread) ...[
+            SizedBox(width: w * 0.02),
+            Container(
+              width: w * 0.019,
+              height: w * 0.019,
+              decoration: BoxDecoration(color: n.color, shape: BoxShape.circle),
+            ),
+          ],
         ],
       ),
     );

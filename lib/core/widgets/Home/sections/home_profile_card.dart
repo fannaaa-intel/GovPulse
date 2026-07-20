@@ -138,28 +138,39 @@ class HomeProfileCard extends StatelessWidget {
             width: width * 0.090,
             height: width * 0.090,
           ),
-          Positioned(
-            right: -width * 0.008,
-            top: -width * 0.008,
-            child: Container(
-              width: width * 0.04,
-              height: width * 0.04,
-              decoration: BoxDecoration(
-                color: AppColors.green,
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 1.5),
-              ),
-              alignment: Alignment.center,
-              child: Text(
-                '$notificationCount',
-                style: TextStyle(
-                  fontSize: width * 0.022,
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
+          // Only when there IS something unread. A fixed circle that always
+          // rendered meant an empty bell still wore a green "0".
+          if (notificationCount > 0)
+            Positioned(
+              right: -width * 0.008,
+              top: -width * 0.008,
+              // A pill that grows with its label, not a fixed circle: at two
+              // digits the old square box clipped the text. minWidth == the
+              // old diameter, so a single digit looks exactly as before.
+              child: Container(
+                constraints: BoxConstraints(
+                  minWidth: width * 0.04,
+                  minHeight: width * 0.04,
+                ),
+                padding: EdgeInsets.symmetric(horizontal: width * 0.008),
+                decoration: BoxDecoration(
+                  color: AppColors.green,
+                  borderRadius: BorderRadius.circular(width * 0.02),
+                  border: Border.all(color: Colors.white, width: 1.5),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  notificationCount > 9 ? '9+' : '$notificationCount',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: width * 0.022,
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    height: 1,
+                  ),
                 ),
               ),
             ),
-          ),
         ],
       ),
     );

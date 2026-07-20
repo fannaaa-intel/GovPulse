@@ -9,9 +9,10 @@ enum AdminSnackType { success, error, info }
 /// admin console and the citizen app share one top-anchored, palette-coloured
 /// SnackBar design.
 void showAdminSnackBar(
-  BuildContext context,
+  BuildContext? context,
   String message, {
   AdminSnackType type = AdminSnackType.info,
+  OverlayState? overlay,
 }) {
   showAppSnackBar(
     context,
@@ -21,5 +22,6 @@ void showAdminSnackBar(
       AdminSnackType.error => AppSnackType.error,
       AdminSnackType.info => AppSnackType.info,
     },
+    overlay: overlay,
   );
 }

@@ -39,6 +39,7 @@ import '../../modal/verification_required_dialog.dart';
 import '../../logout_confirm_dialog.dart';
 import '../../../../features/home/screen/home_screen.dart';
 import '../../../../features/home/screen/notification_popup.dart';
+import '../Newsfeed/citizen_web_notification_panel.dart';
 import '../Chat-bubbles/home_chat_bubble.dart';
 import '../home_enums.dart';
 
@@ -162,55 +163,50 @@ class ResponsiveNavScaffold extends ConsumerWidget {
   }
 
   // ── Notifications ──────────────────────────────────────────────────────────
-  Future<void> _showNotifications(BuildContext context, double width) async {
-    await showGeneralDialog(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: 'Notifications',
-      barrierColor: Colors.transparent,
-      transitionDuration: const Duration(milliseconds: 250),
-      pageBuilder: (_, _, _) => NotificationPopup(
-        width: width,
-        onTap: (n) {
-          Navigator.pop(context); // close the sheet, then route the tap
-          routeCitizenNotificationTap(
-            context,
-            n,
-            username: username,
-            isVerified: verifStatus == VerifStatus.verified,
-            isPending: verifStatus == VerifStatus.pending,
-            onOpenNewsFeed: ({
+  /// [verif] is the *resolved* status (screen prop → profile provider →
+  /// isVerified fallback), not the raw nullable [verifStatus]. NewsFeed and
+  /// Emergency only pass `isVerified`, so reading [verifStatus] directly here
+  /// treated a verified citizen as unverified and popped the "Verification
+  /// Required" dialog when they tapped a comment/reply notification.
+  Future<void> _showNotifications(
+    BuildContext context,
+    double width,
+    VerifStatus verif,
+  ) async {
+    final verified = verif == VerifStatus.verified;
+
+    void route(AppNotification n) {
+      // Opening it IS reading it — retire it from the badge before routing.
+      NotificationService.markRead(n);
+      Navigator.pop(context); // close the panel, then route the tap
+      routeCitizenNotificationTap(
+        context,
+        n,
+        username: username,
+        isVerified: verified,
+        isPending: verif == VerifStatus.pending,
+        onOpenNewsFeed:
+            ({
               String? postId,
               bool openComments = false,
               bool highlight = false,
-            }) =>
-                Navigator.pushNamed(
+            }) => Navigator.pushNamed(
               context,
               '/newsfeed',
               arguments: {
                 'username': username,
-                'isVerified': verifStatus == VerifStatus.verified,
+                'isVerified': verified,
                 'initialPostId': ?postId,
                 if (postId != null) 'initialOpenComments': openComments,
                 if (postId != null) 'initialHighlightPost': highlight,
               },
             ),
-          );
-        },
-      ),
-      transitionBuilder: (_, anim, _, child) => FadeTransition(
-        opacity: anim,
-        child: ScaleTransition(
-          scale: CurvedAnimation(parent: anim, curve: Curves.easeOutBack),
-          child: child,
-        ),
-      ),
-    );
-    // Re-sync the badge from the DB once the sheet closes, so a mid-animation
-    // Clear-All (which may not finish deleting every row before the sheet is
-    // dismissed) still leaves the count accurate. The bell listens to
-    // NotificationService.unread, so this reload refreshes it without setState.
-    await NotificationService.load();
+      );
+    }
+
+    // Shell + badge re-sync both live in showCitizenNotifications, so every
+    // citizen surface presents the bell identically.
+    await showCitizenNotifications(context, width: width, onTap: route);
   }
 
   // ── Logout (mirrors Home / Settings) ───────────────────────────────────────
@@ -227,9 +223,7 @@ class ResponsiveNavScaffold extends ConsumerWidget {
     showAppDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => const Center(
-        child: CircularProgressIndicator(color: Color(0xFF1A4DB8)),
-      ),
+      builder: (_) => const LogoutLoadingOverlay(),
     );
 
     try {
@@ -273,7 +267,11 @@ class ResponsiveNavScaffold extends ConsumerWidget {
   }
 
   // ── Slim app bar shown in drawer band (mirrors Home._buildDrawerAppBar) ─────
-  PreferredSizeWidget _drawerAppBar(BuildContext context, double width) {
+  PreferredSizeWidget _drawerAppBar(
+    BuildContext context,
+    double width,
+    VerifStatus verif,
+  ) {
     return AppBar(
       backgroundColor: Colors.white,
       foregroundColor: const Color(0xFF1F2937),
@@ -297,7 +295,7 @@ class ResponsiveNavScaffold extends ConsumerWidget {
       ),
       actions: [
         IconButton(
-          onPressed: () => _showNotifications(context, width),
+          onPressed: () => _showNotifications(context, width, verif),
           padding: const EdgeInsets.symmetric(horizontal: 8),
           icon: Stack(
             clipBehavior: Clip.none,
@@ -329,11 +327,12 @@ class ResponsiveNavScaffold extends ConsumerWidget {
                       ),
                       alignment: Alignment.center,
                       child: Text(
-                        '$count',
+                        count > 9 ? '9+' : '$count',
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 8,
                           fontWeight: FontWeight.w700,
+                          height: 1,
                         ),
                       ),
                     );
@@ -409,7 +408,7 @@ class ResponsiveNavScaffold extends ConsumerWidget {
         return Scaffold(
           extendBody: extendBody,
           backgroundColor: backgroundColor,
-          appBar: _drawerAppBar(context, width),
+          appBar: _drawerAppBar(context, width, effVerif),
           drawer: HomeNavDrawer(
             currentIndex: currentIndex,
             onTap: (i) => _navigate(
@@ -443,7 +442,8 @@ class ResponsiveNavScaffold extends ConsumerWidget {
                   effectiveIsVerified: effIsVerified,
                 ),
                 notificationCount: NotificationService.count,
-                onNotificationTap: () => _showNotifications(context, width),
+                onNotificationTap: () =>
+                    _showNotifications(context, width, effVerif),
                 onLogoutTap: () => _handleLogout(context),
                 compact: width < 1050,
                 username: username,
