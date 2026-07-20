@@ -193,12 +193,10 @@ class _ReportListViewState extends State<_ReportListView>
     return StaffPageBody(
       onRefresh: onRefresh,
       child: async.when(
-        loading: () => const Padding(
-          padding: EdgeInsets.only(top: 80),
-          child: Center(
-            child: CircularProgressIndicator(color: StaffUi.accent),
-          ),
-        ),
+        // Skeleton rows, not a spinner: they occupy the same space the real
+        // rows will, so the list doesn't jump when the fetch lands, and the
+        // shape tells you what is coming.
+        loading: () => const _ReportListSkeleton(),
         error: (e, _) => Padding(
           padding: const EdgeInsets.only(top: 60),
           child: StaffErrorState(
@@ -261,6 +259,79 @@ class _ReportListViewState extends State<_ReportListView>
         ),
       );
     }
+  }
+}
+
+/// Placeholder rows shown while the report list loads.
+///
+/// Deliberately shaped like [_ReportRow] — same 42px icon chip, same three text
+/// lines, same status pill — so the skeleton reads as "reports are coming"
+/// and the layout doesn't shift when the real rows replace it. One
+/// [StaffShimmer] wraps the whole list, so every row's highlight moves
+/// together rather than each animating on its own clock.
+class _ReportListSkeleton extends StatelessWidget {
+  /// Enough to fill a typical viewport without overrunning a short one; the
+  /// list scrolls, so a few extra would only ever be off-screen.
+  static const int _rows = 5;
+
+  const _ReportListSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return StaffShimmer(
+      child: Column(
+        children: [
+          for (int i = 0; i < _rows; i++)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: StaffCard(
+                padding: const EdgeInsets.all(14),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const StaffSkeletonBox(width: 42, height: 42, radius: 10),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Category + short id.
+                          Row(
+                            children: [
+                              const StaffSkeletonBox(width: 130, height: 13),
+                              const SizedBox(width: 8),
+                              const StaffSkeletonBox(width: 38, height: 10),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          // Remarks, two lines — the second short, the way
+                          // wrapped text ends.
+                          const StaffSkeletonBox(
+                            width: double.infinity,
+                            height: 11,
+                          ),
+                          const SizedBox(height: 5),
+                          StaffSkeletonBox(
+                            width: i.isEven ? 210 : 150,
+                            height: 11,
+                          ),
+                          const SizedBox(height: 10),
+                          // Status pill.
+                          const StaffSkeletonBox(
+                            width: 74,
+                            height: 18,
+                            radius: 9,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }
 

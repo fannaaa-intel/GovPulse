@@ -17,6 +17,7 @@ import 'core/router/app_router.dart';
 import 'features/onboarding/splash_screen.dart';
 import 'core/widgets/Home/Chat-bubbles/home_chat_bubble.dart';
 import 'core/services/chat_service.dart';
+import 'features/home/screen/notification_popup.dart' show NotificationService;
 
 /// Global navigator key — used by [AuthService] to push after login.
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -99,6 +100,7 @@ Future<void> _initServices() async {
     if (restored != null) {
       await ChatService.onUserAuthenticated(restored.id);
       await PushService.I.registerForUser(); // ← PUSH
+      NotificationService.startRealtime(); // ← live bell badge
     } else {
       await ChatService.I.init();
     }
@@ -109,8 +111,10 @@ Future<void> _initServices() async {
     if (user != null) {
       ChatService.onUserAuthenticated(user.id);
       PushService.I.registerForUser(); // ← PUSH
+      NotificationService.startRealtime(); // ← live bell badge
     } else if (data.event == AuthChangeEvent.signedOut) {
       ChatService.onUserSignedOut();
+      NotificationService.stopRealtime();
     }
   });
 }

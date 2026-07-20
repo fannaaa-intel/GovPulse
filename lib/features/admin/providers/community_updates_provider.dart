@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../core/identity/official_display_name.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  Community Updates — admin data layer
@@ -244,11 +245,7 @@ class CommunityComment {
   /// show them instantly and swap them for the server row on the silent reload.
   bool get isOptimistic => id.startsWith('temp_');
 
-  CommunityComment copyWith({
-    String? body,
-    int? likesCount,
-    bool? likedByMe,
-  }) {
+  CommunityComment copyWith({String? body, int? likesCount, bool? likedByMe}) {
     return CommunityComment(
       id: id,
       authorId: authorId,
@@ -311,7 +308,7 @@ class CommunityUpdatesRepository {
     final imagesByPost = await _fetchImages(ids);
     final profiles = await _fetchProfiles(authorIds);
     final roles = await _fetchRoles(authorIds);
-    final officialPhotos = await _fetchOfficialPhotos([
+    final officialProfiles = await _fetchOfficialProfiles([
       for (final e in roles.entries)
         if (e.value == 'admin' || e.value == 'staff') e.key,
     ]);
@@ -320,15 +317,25 @@ class CommunityUpdatesRepository {
       final aId = p['author_id'] as String;
       final profile = profiles[aId];
       final role = roles[aId];
-      // Admin/staff post as the official LGU account: always "LGU Aparri",
-      // with the admin's uploaded profile photo when available.
+      // Officials are named institutionally: a staff submission reads as the
+      // OFFICE that sent it, admins as the LGU. The review queue asks "which
+      // department wants this published", not "which person"; the author's
+      // photo and authorId are still there when an admin needs the individual.
       final official = role == 'admin' || role == 'staff';
+      final op = officialProfiles[aId];
+      final officialName = officialDisplayName(
+        role: role,
+        department: op?['department'],
+      );
       return CommunityUpdate(
         id: p['id'] as String,
         authorId: aId,
-        authorName: official ? 'LGU Aparri' : (profile?['name'] ?? _fallbackName(role)),
-        authorPhotoUrl:
-            official ? (officialPhotos[aId] ?? profile?['photoUrl']) : profile?['photoUrl'],
+        authorName: official
+            ? officialName
+            : (profile?['name'] ?? _fallbackName(role)),
+        authorPhotoUrl: official
+            ? (op?['photoUrl'] ?? profile?['photoUrl'])
+            : profile?['photoUrl'],
         authorRole: role ?? 'user',
         title: p['title'] as String? ?? '',
         body: p['body'] as String? ?? '',
@@ -398,19 +405,25 @@ class CommunityUpdatesRepository {
     return map;
   }
 
-  /// Profile photos for official (admin/staff) authors, read from
-  /// `admin_profiles`. Guarded so a missing row / RLS never breaks the feed.
-  Future<Map<String, String>> _fetchOfficialPhotos(List<String> userIds) async {
+  /// Identity (photo, name, department) for official (admin/staff) authors,
+  /// read from `admin_profiles`. Guarded so a missing row / RLS (the
+  /// 20260719000000 policy not applied yet) never breaks the feed.
+  Future<Map<String, Map<String, String?>>> _fetchOfficialProfiles(
+    List<String> userIds,
+  ) async {
     if (userIds.isEmpty) return const {};
     try {
       final rows = await _sb
           .from('admin_profiles')
-          .select('user_id, photo_url')
+          .select('user_id, photo_url, full_name, department')
           .inFilter('user_id', userIds);
-      final map = <String, String>{};
+      final map = <String, Map<String, String?>>{};
       for (final r in (rows as List).cast<Map<String, dynamic>>()) {
-        final url = r['photo_url'] as String?;
-        if (url != null && url.isNotEmpty) map[r['user_id'] as String] = url;
+        map[r['user_id'] as String] = {
+          'photoUrl': (r['photo_url'] as String?)?.trim(),
+          'name': (r['full_name'] as String?)?.trim(),
+          'department': (r['department'] as String?)?.trim(),
+        };
       }
       return map;
     } catch (_) {
@@ -626,7 +639,7 @@ class CommunityUpdatesRepository {
     final commentIds = list.map((r) => r['id'] as String).toList();
     final profiles = await _fetchProfiles(authorIds);
     final roles = await _fetchRoles(authorIds);
-    final officialPhotos = await _fetchOfficialPhotos([
+    final officialProfiles = await _fetchOfficialProfiles([
       for (final e in roles.entries)
         if (e.value == 'admin' || e.value == 'staff') e.key,
     ]);
@@ -638,14 +651,18 @@ class CommunityUpdatesRepository {
       final role = roles[aId] ?? 'citizen';
       final official = role == 'admin' || role == 'staff';
       final id = c['id'] as String;
+      final op = officialProfiles[aId];
+      final staffName = (op?['name']?.isNotEmpty ?? false) ? op!['name'] : null;
       return CommunityComment(
         id: id,
         authorId: aId,
         authorName: official
-            ? 'LGU Aparri'
+            ? ((role == 'staff' && staffName != null)
+                  ? staffName
+                  : 'LGU Aparri')
             : (profile?['name'] ?? 'Resident'),
         authorPhotoUrl: official
-            ? (officialPhotos[aId] ?? profile?['photoUrl'])
+            ? (op?['photoUrl'] ?? profile?['photoUrl'])
             : profile?['photoUrl'],
         authorRole: role,
         body: c['body'] as String? ?? '',
@@ -897,7 +914,10 @@ class CommunityUpdatesNotifier extends AsyncNotifier<List<CommunityUpdate>> {
   Future<void> reject(String id, String reason) async {
     final prev = _current;
     final r = reason.trim().isEmpty ? 'Rejected' : reason.trim();
-    _patch(id, (p) => p.copyWith(status: PostStatus.rejected, rejectedReason: r));
+    _patch(
+      id,
+      (p) => p.copyWith(status: PostStatus.rejected, rejectedReason: r),
+    );
     await _optimistic(prev, () => _repo.reject(id, reason));
   }
 

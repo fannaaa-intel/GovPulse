@@ -6,6 +6,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../staff/data/staff_departments.dart';
 import '../providers/admin_users_provider.dart';
 import '../theme/admin_ui.dart';
+import 'admin_skeleton.dart';
 import 'admin_snackbar.dart';
 import '../../../core/widgets/app_dialog.dart';
 
@@ -241,6 +242,10 @@ class _ModalCard extends StatelessWidget {
   final String? subtitle;
   final Widget body;
   final List<Widget> footer;
+
+  /// Optional header leading widget. When supplied (e.g. a user's profile
+  /// avatar) it replaces the default tinted [icon] square.
+  final Widget? leading;
   const _ModalCard({
     required this.icon,
     required this.accent,
@@ -248,6 +253,7 @@ class _ModalCard extends StatelessWidget {
     this.subtitle,
     required this.body,
     required this.footer,
+    this.leading,
   });
 
   @override
@@ -279,14 +285,15 @@ class _ModalCard extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(18, 16, 12, 12),
           child: Row(
             children: [
-              Container(
-                padding: const EdgeInsets.all(9),
-                decoration: BoxDecoration(
-                  color: accent.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(11),
-                ),
-                child: Icon(icon, size: 20, color: accent),
-              ),
+              leading ??
+                  Container(
+                    padding: const EdgeInsets.all(9),
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(11),
+                    ),
+                    child: Icon(icon, size: 20, color: accent),
+                  ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -422,6 +429,7 @@ class _UserActionsSheet extends StatelessWidget {
     return _ModalCard(
       icon: user.isOfficial ? Icons.badge_rounded : Icons.person_rounded,
       accent: AppColors.primaryBlue,
+      leading: AdminAvatar(size: 42, photoUrl: user.photoUrl),
       title: user.displayName,
       subtitle: '${appUserRoleLabel(user.role)}'
           '${(user.email ?? '').isNotEmpty ? ' · ${user.email}' : ''}',

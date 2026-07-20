@@ -41,15 +41,19 @@ Widget commentAction(
       mainAxisSize: MainAxisSize.min,
       children: [
         leading,
-        SizedBox(width: width * 0.008),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: width * 0.028,
-            fontWeight: FontWeight.w700,
-            color: color,
+        // Official mode passes an empty label to get the admin panel's
+        // icon-only heart; skip the gap and the empty Text entirely.
+        if (label.isNotEmpty) ...[
+          SizedBox(width: width * 0.008),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: width * 0.028,
+              fontWeight: FontWeight.w700,
+              color: color,
+            ),
           ),
-        ),
+        ],
         if (count > 0) ...[
           SizedBox(width: width * 0.008),
           Text(
@@ -66,6 +70,46 @@ Widget commentAction(
   );
 }
 
+/// The small "LGU" chip beside an official author's name in official mode.
+/// Same treatment as the admin console's comments panel.
+Widget officialChip(double width) => Container(
+  padding: EdgeInsets.symmetric(
+    horizontal: width * 0.014,
+    vertical: width * 0.002,
+  ),
+  decoration: BoxDecoration(
+    color: AppColors.primaryBlue.withValues(alpha: 0.12),
+    borderRadius: BorderRadius.circular(width * 0.01),
+  ),
+  child: Text(
+    'LGU',
+    style: TextStyle(
+      fontSize: width * 0.023,
+      fontWeight: FontWeight.w800,
+      color: AppColors.primaryBlue,
+    ),
+  ),
+);
+
+/// A plain text action ("Reply" / "Edit" / "Delete") for official mode.
+Widget commentTextAction(
+  double width, {
+  required String label,
+  required VoidCallback onTap,
+  Color color = const Color(0xFF6B7280),
+}) => GestureDetector(
+  behavior: HitTestBehavior.opaque,
+  onTap: onTap,
+  child: Text(
+    label,
+    style: TextStyle(
+      fontSize: width * 0.028,
+      fontWeight: FontWeight.w700,
+      color: color,
+    ),
+  ),
+);
+
 Widget buildCommentItem(
   BuildContext context,
   double width,
@@ -80,6 +124,13 @@ Widget buildCommentItem(
   String? currentUserId,
   ValueChanged<Map<String, dynamic>>? onEdit,
   ValueChanged<Map<String, dynamic>>? onDelete,
+
+  /// Official (admin / staff) presentation: the bubble spans the column, an
+  /// LGU chip sits beside an official author's name, and Edit / Delete appear
+  /// as text actions instead of hiding behind a long-press. Mirrors the admin
+  /// console's comments panel so the two consoles read identically. Off for the
+  /// citizen feed, whose long-press sheet is the right affordance on a phone.
+  bool official = false,
 }) {
   final id = comment['id'] as String;
   final isLiked = likedComments.contains(id);
@@ -136,18 +187,45 @@ Widget buildCommentItem(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            comment['author'] as String? ?? '',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w800,
-                              fontSize: width * 0.032,
-                              color: const Color(0xFF1F2937),
+                          // In official mode the name sits in a Row, which
+                          // takes the full width and so stretches the bubble
+                          // to match the admin panel. The citizen bubble keeps
+                          // hugging its text.
+                          if (official)
+                            Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    comment['author'] as String? ?? '',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: width * 0.032,
+                                      color: const Color(0xFF1F2937),
+                                    ),
+                                  ),
+                                ),
+                                if (comment['isOfficial'] == true) ...[
+                                  SizedBox(width: width * 0.012),
+                                  officialChip(width),
+                                ],
+                              ],
+                            )
+                          else
+                            Text(
+                              comment['author'] as String? ?? '',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: width * 0.032,
+                                color: const Color(0xFF1F2937),
+                              ),
                             ),
-                          ),
                           SizedBox(height: width * 0.006),
                           Text(
                             ProfanityFilter.maskForDisplay(
-                                comment['text'] as String? ?? ''),
+                              comment['text'] as String? ?? '',
+                            ),
                             style: TextStyle(
                               fontSize: width * 0.033,
                               color: const Color(0xFF374151),
@@ -202,7 +280,9 @@ Widget buildCommentItem(
                               ),
                               commentAction(
                                 width,
-                                label: 'Like',
+                                // Admin shows a bare heart; the citizen feed
+                                // labels it, which is clearer on a phone.
+                                label: official ? '' : 'Like',
                                 count: baseLikes,
                                 active: isLiked,
                                 activeColor: const Color(0xFFEF4444),
@@ -211,16 +291,40 @@ Widget buildCommentItem(
                                 activeIcon: Icons.favorite_rounded,
                                 onTap: () => onToggleLike(id),
                               ),
-                              commentAction(
-                                width,
-                                label: 'Reply',
-                                count: replies.length,
-                                active: false,
-                                activeColor: AppColors.primaryBlue,
-                                pngAsset: 'assets/images/comment.webp',
-                                fallbackIcon: Icons.reply_rounded,
-                                onTap: onReply,
-                              ),
+                              if (official)
+                                commentTextAction(
+                                  width,
+                                  label: 'Reply',
+                                  onTap: onReply,
+                                )
+                              else
+                                commentAction(
+                                  width,
+                                  label: 'Reply',
+                                  count: replies.length,
+                                  active: false,
+                                  activeColor: AppColors.primaryBlue,
+                                  pngAsset: 'assets/images/comment.webp',
+                                  fallbackIcon: Icons.reply_rounded,
+                                  onTap: onReply,
+                                ),
+                              // Own comment: surfaced as text actions rather
+                              // than a long-press sheet, matching admin. A
+                              // console is mouse-first — long-press is a phone
+                              // gesture and effectively hidden there.
+                              if (official && isOwner && onEdit != null)
+                                commentTextAction(
+                                  width,
+                                  label: 'Edit',
+                                  onTap: () => onEdit(comment),
+                                ),
+                              if (official && isOwner && onDelete != null)
+                                commentTextAction(
+                                  width,
+                                  label: 'Delete',
+                                  color: const Color(0xFFDC2626),
+                                  onTap: () => onDelete(comment),
+                                ),
                             ],
                           ),
                   ),
@@ -245,6 +349,7 @@ Widget buildCommentItem(
               currentUserId: currentUserId,
               onEdit: onEdit,
               onDelete: onDelete,
+              official: official,
             ),
           ),
           if (replies.length > 3)
@@ -297,6 +402,12 @@ Widget buildReplyItem(
   String? currentUserId,
   ValueChanged<Map<String, dynamic>>? onEdit,
   ValueChanged<Map<String, dynamic>>? onDelete,
+
+  /// Official presentation — see [buildCommentItem]. A reply must honour the
+  /// same flag as its parent: styling only the top-level comments left nested
+  /// replies drawing the phone treatment inside an otherwise admin-style
+  /// thread, which is exactly where the two designs visibly disagreed.
+  bool official = false,
 }) {
   final id = reply['id'] as String;
   final isLiked = likedComments.contains(id);
@@ -346,14 +457,39 @@ Widget buildReplyItem(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        reply['author'] as String? ?? '',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: width * 0.030,
-                          color: const Color(0xFF1F2937),
+                      // Row (not bare Text) so the bubble takes the full width
+                      // and the LGU chip has somewhere to sit — same as the
+                      // parent comment in official mode.
+                      if (official)
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                reply['author'] as String? ?? '',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: width * 0.030,
+                                  color: const Color(0xFF1F2937),
+                                ),
+                              ),
+                            ),
+                            if (reply['isOfficial'] == true) ...[
+                              SizedBox(width: width * 0.012),
+                              officialChip(width),
+                            ],
+                          ],
+                        )
+                      else
+                        Text(
+                          reply['author'] as String? ?? '',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: width * 0.030,
+                            color: const Color(0xFF1F2937),
+                          ),
                         ),
-                      ),
                       SizedBox(height: width * 0.005),
                       Text.rich(
                         TextSpan(
@@ -370,7 +506,8 @@ Widget buildReplyItem(
                               ),
                             TextSpan(
                               text: ProfanityFilter.maskForDisplay(
-                                  reply['text'] as String? ?? ''),
+                                reply['text'] as String? ?? '',
+                              ),
                               style: TextStyle(
                                 fontSize: width * 0.031,
                                 color: const Color(0xFF374151),
@@ -428,7 +565,7 @@ Widget buildReplyItem(
                           ),
                           commentAction(
                             width,
-                            label: 'Like',
+                            label: official ? '' : 'Like',
                             count: baseLikes,
                             active: isLiked,
                             activeColor: const Color(0xFFEF4444),
@@ -437,16 +574,36 @@ Widget buildReplyItem(
                             activeIcon: Icons.favorite_rounded,
                             onTap: () => onToggleLike(id),
                           ),
-                          commentAction(
-                            width,
-                            label: 'Reply',
-                            count: 0,
-                            active: false,
-                            activeColor: AppColors.primaryBlue,
-                            pngAsset: 'assets/images/comment.webp',
-                            fallbackIcon: Icons.reply_rounded,
-                            onTap: onReply,
-                          ),
+                          if (official)
+                            commentTextAction(
+                              width,
+                              label: 'Reply',
+                              onTap: onReply,
+                            )
+                          else
+                            commentAction(
+                              width,
+                              label: 'Reply',
+                              count: 0,
+                              active: false,
+                              activeColor: AppColors.primaryBlue,
+                              pngAsset: 'assets/images/comment.webp',
+                              fallbackIcon: Icons.reply_rounded,
+                              onTap: onReply,
+                            ),
+                          if (official && isOwner && onEdit != null)
+                            commentTextAction(
+                              width,
+                              label: 'Edit',
+                              onTap: () => onEdit(reply),
+                            ),
+                          if (official && isOwner && onDelete != null)
+                            commentTextAction(
+                              width,
+                              label: 'Delete',
+                              color: const Color(0xFFDC2626),
+                              onTap: () => onDelete(reply),
+                            ),
                         ],
                       ),
               ),

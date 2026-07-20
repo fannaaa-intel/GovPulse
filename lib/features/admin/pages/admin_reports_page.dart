@@ -1390,20 +1390,29 @@ class _OverdueChip extends StatelessWidget {
         borderRadius: BorderRadius.circular(6),
         border: Border.all(color: AppColors.orange.withValues(alpha: 0.30)),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.schedule_rounded, size: 11, color: AppColors.orange),
-          const SizedBox(width: 3),
-          Text(
-            'Overdue · ${days}d',
-            style: const TextStyle(
-              fontSize: 10.5,
-              fontWeight: FontWeight.w700,
+      // scaleDown so the pill shrinks to fit a narrow status column instead of
+      // overflowing by a hair (and stays safe for two-digit day counts).
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.schedule_rounded,
+              size: 11,
               color: AppColors.orange,
             ),
-          ),
-        ],
+            const SizedBox(width: 3),
+            Text(
+              'Overdue · ${days}d',
+              style: const TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w700,
+                color: AppColors.orange,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

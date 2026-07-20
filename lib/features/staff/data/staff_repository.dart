@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:image_picker/image_picker.dart' show XFile;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../admin/providers/admin_reports_provider.dart'
@@ -270,6 +271,12 @@ class StaffCommunityPost {
   final String? rejectedReason;
   final String barangay; // '' == city-wide
   final DateTime? createdAt;
+  final List<String> imageUrls;
+
+  /// Freshly-picked photos carried ONLY on an optimistic stand-in, so its card
+  /// can preview them from local bytes before the upload finishes and the
+  /// refetch swaps in the real network [imageUrls]. Always empty on a DB row.
+  final List<XFile> localImages;
 
   const StaffCommunityPost({
     required this.id,
@@ -281,13 +288,24 @@ class StaffCommunityPost {
     required this.rejectedReason,
     required this.barangay,
     required this.createdAt,
+    this.imageUrls = const [],
+    this.localImages = const [],
   });
 
   bool get isPending => status == 'pending_approval';
   bool get isApproved => status == 'approved';
   bool get isRejected => status == 'rejected';
 
-  factory StaffCommunityPost.fromRow(Map<String, dynamic> r) =>
+  /// An optimistic stand-in inserted the instant the composer closes, before
+  /// the server row exists — carries a `temp_` id so the list can show it in a
+  /// subtle "posting…" state and the notifier can swap it for the real row on
+  /// the refetch.
+  bool get isOptimistic => id.startsWith('temp_');
+
+  factory StaffCommunityPost.fromRow(
+    Map<String, dynamic> r, {
+    List<String> imageUrls = const [],
+  }) =>
       StaffCommunityPost(
         id: r['id'].toString(),
         title: (r['title'] as String?) ?? '',
@@ -298,6 +316,7 @@ class StaffCommunityPost {
         rejectedReason: r['rejected_reason'] as String?,
         barangay: (r['barangay'] as String?) ?? '',
         createdAt: _ts(r['created_at']),
+        imageUrls: imageUrls,
       );
 }
 
@@ -622,23 +641,62 @@ class StaffRepository {
         .eq('author_id', uid)
         .order('created_at', ascending: false)
         .limit(100);
-    return List<Map<String, dynamic>>.from(rows)
-        .map(StaffCommunityPost.fromRow)
+    final list = List<Map<String, dynamic>>.from(rows);
+    final imagesByPost =
+        await _fetchMyPostImages([for (final r in list) r['id'].toString()]);
+    return list
+        .map((r) => StaffCommunityPost.fromRow(
+              r,
+              imageUrls: imagesByPost[r['id'].toString()] ?? const [],
+            ))
         .toList();
+  }
+
+  /// Public thumbnail URLs for the staff member's own posts, keyed by post id.
+  /// Guarded: until the 20260719000002 read policy is applied the table read
+  /// 42501s — the list then just renders without thumbnails.
+  Future<Map<String, List<String>>> _fetchMyPostImages(
+    List<String> postIds,
+  ) async {
+    if (postIds.isEmpty) return const {};
+    try {
+      final rows = await _db
+          .from('community_post_images')
+          .select('post_id, storage_path, display_order')
+          .inFilter('post_id', postIds)
+          .order('display_order', ascending: true);
+      final map = <String, List<String>>{};
+      for (final r in List<Map<String, dynamic>>.from(rows)) {
+        final url = _db.storage
+            .from('community-posts')
+            .getPublicUrl(r['storage_path'] as String);
+        (map[r['post_id'].toString()] ??= []).add(url);
+      }
+      return map;
+    } catch (_) {
+      return const {};
+    }
   }
 
   /// Submits a community update as the staff member. It is inserted as
   /// `pending_approval` — the admin console picks it up in its review queue.
-  Future<void> submitCommunityPost({
+  ///
+  /// [images] are uploaded to the same `community-posts` bucket +
+  /// `community_post_images` table the admin composer uses, so an approved
+  /// staff post renders photos on the citizen feed identically. Returns the
+  /// number of photos that FAILED to upload (0 = all good) — the post itself
+  /// is already saved by then, so a photo failure is a warning, not an error.
+  Future<int> submitCommunityPost({
     required String title,
     required String body,
     required String barangay,
     required String tag,
     required String tagColorHex,
+    List<XFile> images = const [],
   }) async {
     final uid = _uid;
     if (uid == null) throw 'Your session has expired. Please log in again.';
-    await _db.from('community_posts').insert({
+    final row = {
       'author_id': uid,
       'title': title.trim(),
       'body': body.trim(),
@@ -646,8 +704,160 @@ class StaffRepository {
       'tag': tag,
       'tag_color': tagColorHex,
       'status': 'pending_approval',
-    });
+    };
+
+    // The insert and the read-back are separately permissioned, and the submit
+    // must not fail just because the read half is refused.
+    //
+    // `.insert().select().single()` throws PGRST116 when the row comes back
+    // empty — which is what happens if the INSERT policy from
+    // 20260719000001 §1 is applied but the `posts_read_own` SELECT policy from
+    // §2 is not. The post IS saved; only reading it back fails. That surfaced
+    // as staffFriendlyError's generic "The server rejected the request", so a
+    // successful submission looked like a total failure and staff re-posted.
+    //
+    // So: write first, then try to learn the id. If the id can't be read the
+    // submission still counts — only the photos, which need it, are lost.
+    String? postId;
+    try {
+      final inserted =
+          await _db.from('community_posts').insert(row).select('id').single();
+      postId = inserted['id'] as String?;
+    } on PostgrestException catch (e) {
+      // ONLY PGRST116 means "the write went through but the row could not be
+      // read back". Everything else is a genuine failure of the WRITE and must
+      // surface — the earlier version of this catch rethrew just 42501 and
+      // treated every other code as a benign read-back miss, which silently
+      // swallowed the BEFORE INSERT triggers on community_posts:
+      //   trg_rl_community_posts    → P0001, hint rate_limit_exceeded
+      //   trg_restrict_community_posts → P0001, hint user_restricted
+      // Both raise, so nothing was ever inserted — yet submit() resolved
+      // "successfully" with postId null, so the photos were skipped and the
+      // staff member was told "the update was still submitted". It never was.
+      // staffFriendlyError() already renders both hints; it just never ran.
+      if (e.code != 'PGRST116') rethrow;
+      debugPrint('submitCommunityPost: insert read-back failed (${e.code}) — '
+          'post is saved; recovering id');
+      // Best-effort recovery so photos can still attach.
+      try {
+        final found = await _db
+            .from('community_posts')
+            .select('id')
+            .eq('author_id', uid)
+            .eq('status', 'pending_approval')
+            .order('created_at', ascending: false)
+            .limit(1)
+            .maybeSingle();
+        postId = found?['id'] as String?;
+      } catch (_) {
+        // Reads are blocked too — nothing more to do. The post stands.
+      }
+    }
+
+    // No id and nothing to attach: the submission succeeded outright.
+    if (postId == null) {
+      if (images.isEmpty) return 0;
+      debugPrint('submitCommunityPost: no post id — skipping ${images.length} '
+          'photo(s); the update itself was submitted');
+      return images.length;
+    }
+
+    var failed = 0;
+    for (var i = 0; i < images.length; i++) {
+      try {
+        final f = images[i];
+        final bytes = await f.readAsBytes();
+        final ext = f.name.contains('.')
+            ? f.name.split('.').last.toLowerCase()
+            : 'jpg';
+        final stamp = DateTime.now().millisecondsSinceEpoch;
+        final path = 'posts/$uid/${stamp}_$i.$ext';
+        // Two separately-permissioned steps. Reported apart, because "a photo
+        // failed" does not say WHICH grant is missing — the storage bucket
+        // policy (20260719000001 §4) and the community_post_images INSERT
+        // policy (§3) fail identically from the caller's point of view.
+        try {
+          await _db.storage.from('community-posts').uploadBinary(
+                path,
+                bytes,
+                fileOptions:
+                    FileOptions(contentType: _imageMime(ext), upsert: false),
+              );
+        } catch (e) {
+          debugPrint('community post photo STORAGE upload failed for $path: $e '
+              '— check the community-posts bucket INSERT policy '
+              '(20260719000001 §4)');
+          rethrow;
+        }
+        try {
+          await _db.from('community_post_images').insert({
+            'post_id': postId,
+            'storage_path': path,
+            'display_order': i,
+          });
+        } catch (e) {
+          debugPrint('community post photo ROW insert failed for $path: $e '
+              '— the file uploaded but community_post_images refused the row; '
+              'check its INSERT policy (20260719000001 §3)');
+          rethrow;
+        }
+      } catch (e) {
+        failed++;
+      }
+    }
+    return failed;
   }
+
+  /// Retract (hard-delete) one of the staff member's OWN community submissions
+  /// — used from "My submissions" while a post is still awaiting review.
+  /// Removes the image rows + their storage objects first, then the post row.
+  /// Author-scoped delete relies on the `authors_delete_own_pending_posts` RLS
+  /// policy (migration 20260719000003); until that's applied the delete 42501s,
+  /// surfaced to the user as a friendly "not allowed yet" message.
+  Future<void> deleteMyCommunityPost(String postId) async {
+    final uid = _uid;
+    if (uid == null) throw 'Your session has expired. Please log in again.';
+
+    // Collect storage paths up front so we can purge the objects after the rows.
+    List<String> paths = const [];
+    try {
+      final rows = await _db
+          .from('community_post_images')
+          .select('storage_path')
+          .eq('post_id', postId);
+      paths = [
+        for (final r in List<Map<String, dynamic>>.from(rows))
+          r['storage_path'] as String,
+      ];
+    } catch (_) {/* best-effort — a read hiccup just skips storage cleanup */}
+
+    // Remove child image rows first in case the FK isn't ON DELETE CASCADE,
+    // then the storage objects, then the post itself (author-scoped).
+    try {
+      await _db.from('community_post_images').delete().eq('post_id', postId);
+    } catch (_) {}
+    if (paths.isNotEmpty) {
+      try {
+        await _db.storage.from('community-posts').remove(paths);
+      } catch (_) {/* object may already be gone — non-fatal */}
+    }
+    await _db
+        .from('community_posts')
+        .delete()
+        .eq('id', postId)
+        .eq('author_id', uid);
+  }
+
+  static String _imageMime(String ext) => switch (ext) {
+        'jpg' || 'jpeg' || 'jfif' || 'pjpeg' || 'pjp' => 'image/jpeg',
+        'png' => 'image/png',
+        'gif' => 'image/gif',
+        'webp' => 'image/webp',
+        'heic' => 'image/heic',
+        'heif' => 'image/heif',
+        'bmp' => 'image/bmp',
+        _ => 'application/octet-stream',
+      };
 
   Future<List<StaffReportMedia>> fetchReportMedia(String reportId) async {
     // `source` was added by media_source_column.sql — retry without it if the
@@ -689,4 +899,84 @@ class StaffRepository {
     }
     return out;
   }
+}
+
+/// Turns a raw Supabase/network failure into a sentence a staff member can act
+/// on — a PostgrestException dump ("42501 … row-level security") means nothing
+/// to them. Strings thrown by the repo itself (already friendly) pass through.
+String staffFriendlyError(Object e) {
+  if (e is String) return e;
+  if (e is PostgrestException) {
+    // 42501 = RLS refusal — the account genuinely isn't allowed to do this.
+    if (e.code == '42501' ||
+        e.message.toLowerCase().contains('row-level security')) {
+      return "Your account isn't allowed to do this yet. "
+          'Please ask an LGU admin to check your staff access.';
+    }
+
+    // Triggers signal intent through `hint`, not through the error code — they
+    // all raise P0001, so matching on the code alone cannot tell a moderation
+    // block from a genuine fault. These two were being swallowed by the
+    // catch-all below and reported as "the server rejected the request", which
+    // told a restricted or rate-limited staff member nothing about why, and
+    // invited them to retry something that could never succeed.
+    final hint = (e.hint ?? '').trim();
+    if (hint == 'user_restricted') {
+      // check_user_restriction() puts the admin's reason in `details`.
+      final reason = (e.details ?? '').toString().trim();
+      return reason.isNotEmpty
+          ? reason
+          : 'This feature is currently unavailable for your account. '
+              'Please contact an LGU admin.';
+    }
+    if (hint == 'rate_limit_exceeded') {
+      // enforce_rate_limit() is called with a caller-supplied sentence naming
+      // the actual cap and window ("You can only create 10 posts per day."),
+      // and that is far more use than a generic one — the community_posts
+      // limit resets tomorrow, not "in a moment", so the generic text told
+      // people to retry immediately when they could not possibly succeed.
+      final msg = e.message.trim();
+      return msg.isNotEmpty
+          ? msg
+          : "You're doing that too quickly. "
+              'Please wait a moment and try again.';
+    }
+
+    // PGRST116 = the write went through but the row could not be read back
+    // (INSERT permitted, SELECT not). Saying "rejected" here is simply untrue,
+    // and it makes people submit again — creating duplicates of something that
+    // already saved.
+    if (e.code == 'PGRST116') {
+      return 'Saved, but it could not be loaded back. '
+          'Refresh to confirm before submitting again.';
+    }
+
+    // Anything else: name the code. Without it every distinct server fault
+    // looks identical on screen, and diagnosing one means guessing at which
+    // constraint or trigger fired. The code is what makes the next report
+    // actionable.
+    final code = (e.code ?? '').trim();
+    debugPrint('staffFriendlyError: PostgrestException '
+        'code=${e.code} message=${e.message} '
+        'details=${e.details} hint=${e.hint}');
+    return code.isEmpty
+        ? 'The server rejected the request. Please try again in a moment.'
+        : 'The server rejected the request ($code). '
+            'Please try again in a moment.';
+  }
+  if (e is StorageException) {
+    return "A photo couldn't be uploaded. Please try again.";
+  }
+  if (e is AuthException) {
+    return 'Your session has expired. Please log in again.';
+  }
+  final s = e.toString().toLowerCase();
+  if (s.contains('socket') ||
+      s.contains('failed host lookup') ||
+      s.contains('connection') ||
+      s.contains('timeout') ||
+      s.contains('network')) {
+    return 'No internet connection. Check your network and try again.';
+  }
+  return 'Something went wrong. Please try again.';
 }

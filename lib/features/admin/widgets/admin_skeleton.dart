@@ -196,3 +196,46 @@ class SkeletonCircle extends StatelessWidget {
     );
   }
 }
+
+/// Neutral default silhouette shown when a user has no profile photo.
+const Color _kAvatarBg = Color(0xFFE5E7EB);
+const Color _kAvatarFg = Color(0xFF9CA3AF);
+
+/// Circular profile avatar for admin surfaces (Citizen / Team lists and the
+/// user-actions sheet). Shows a shimmering skeleton while the photo loads, the
+/// real photo once ready, and a neutral default profile silhouette when there's
+/// no photo or the fetch fails. Sizing is fully caller-driven so it stays
+/// responsive on web, tablet and phone.
+class AdminAvatar extends StatelessWidget {
+  final double size;
+  final String? photoUrl;
+  const AdminAvatar({super.key, required this.size, this.photoUrl});
+
+  @override
+  Widget build(BuildContext context) {
+    final hasPhoto = photoUrl != null && photoUrl!.isNotEmpty;
+    return Container(
+      width: size,
+      height: size,
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        color: _kAvatarBg,
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: hasPhoto
+          ? SkeletonNetworkImage(
+              url: photoUrl!,
+              fit: BoxFit.cover,
+              radius: size,
+              errorChild: _default(),
+            )
+          : _default(),
+    );
+  }
+
+  Widget _default() => Container(
+        color: _kAvatarBg,
+        alignment: Alignment.center,
+        child: Icon(Icons.person_rounded, size: size * 0.6, color: _kAvatarFg),
+      );
+}

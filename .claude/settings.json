@@ -47,7 +47,10 @@
       "PowerShell(flutter analyze lib/features/home/settings/my-submission/my_submissions_screen.dart)",
       "PowerShell(flutter test --reporter compact 2>&1)",
       "PowerShell(flutter analyze lib/features/admin/providers/admin_dashboard_provider.dart)",
-      "PowerShell(deno check supabase/functions/classify-feedback/index.ts supabase/functions/classify-report/index.ts supabase/functions/recommend-actions/index.ts 2>&1)"
+      "PowerShell(deno check supabase/functions/classify-feedback/index.ts supabase/functions/classify-report/index.ts supabase/functions/recommend-actions/index.ts 2>&1)",
+      "PowerShell(flutter analyze lib/main.dart lib/features/home/screen/notification_popup.dart 2>&1)",
+      "Bash(git stash *)",
+      "PowerShell(Get-Command supabase -ErrorAction SilentlyContinue)"
     ],
     "additionalDirectories": [
       "c:\\Users\\DELL\\.claude\\projects\\c--Users-DELL-govpulse\\memory"

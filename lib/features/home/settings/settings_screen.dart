@@ -198,9 +198,7 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
     showAppDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => const Center(
-        child: CircularProgressIndicator(color: AppColors.primaryBlue),
-      ),
+      builder: (_) => const LogoutLoadingOverlay(),
     );
 
     try {

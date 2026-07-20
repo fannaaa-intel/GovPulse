@@ -4,10 +4,14 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show Supabase;
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/deeplink_highlight.dart';
 import '../../../core/widgets/Home/Newsfeed/image_grid.dart';
+import '../../../core/widgets/Home/Newsfeed/comment_post_recap.dart';
+import '../../../core/widgets/Home/Newsfeed/comments_sheet.dart'
+    show kThreadMetrics;
 import '../../../core/widgets/Home/Newsfeed/news_feed_helpers.dart';
 import '../../../core/widgets/modal/media_picker_sheet.dart';
 import '../providers/admin_flagged_comments_provider.dart';
@@ -24,12 +28,28 @@ import '../../../core/widgets/app_dialog.dart';
 const int _kMaxImages = 6;
 
 class CommunityUpdatesPage extends ConsumerStatefulWidget {
-  /// A POST id to scroll to and flash once, when arriving from a comment
-  /// notification. (The notification is about a comment, but this console lists
-  /// posts — so the trigger sends the post's id. See
-  /// notification_deeplink_targets_3.sql §4.) Null for a normal open.
+  /// A POST id (or, from newer triggers, a COMMENT id — resolved after load)
+  /// to scroll to and flash once, when arriving from a notification.
+  /// Null for a normal open.
   final String? highlightId;
-  const CommunityUpdatesPage({super.key, this.highlightId});
+
+  /// True when the notification was about a comment/reply: after landing on
+  /// the post, its comments panel opens — with the target comment flashed blue
+  /// when the reference identified one.
+  final bool openComments;
+
+  /// Identifies the deep-link TAP, not the target. Bumped by the shell on every
+  /// notification tap so two taps on the same post are two distinct events —
+  /// comparing highlightId/openComments alone can't tell them apart, and the
+  /// second one was being swallowed.
+  final int deepLinkNonce;
+
+  const CommunityUpdatesPage({
+    super.key,
+    this.highlightId,
+    this.openComments = false,
+    this.deepLinkNonce = 0,
+  });
 
   @override
   ConsumerState<CommunityUpdatesPage> createState() =>
@@ -45,14 +65,71 @@ class _CommunityUpdatesPageState extends ConsumerState<CommunityUpdatesPage>
   /// The last target we switched tabs for. Keyed on the id (not a bool) for the
   /// same reason as [flashHighlightOnce]: this page stays mounted when a second
   /// notification arrives while it's already open, so a latch would swallow it.
+  /// Keyed on target id AND whether the thread was asked for — a heart and a
+  /// reply on the SAME post share an id, so an id-only latch let the heart tap
+  /// consume the reply tap and the comments panel never opened.
   String? _tabSwitchedFor;
+
+  /// The reference may be a comment id rather than a post id — resolved once
+  /// against community_comments when no post matches.
+  late String? _targetId = widget.highlightId;
+  String? _targetCommentId;
+  bool _triedCommentResolve = false;
+
+  @override
+  void didUpdateWidget(covariant CommunityUpdatesPage old) {
+    super.didUpdateWidget(old);
+    // `_targetId` is a `late` initialiser, so it only ever read highlightId at
+    // initState. When the admin is ALREADY on Community — the common case for a
+    // "post awaiting review" ping, since that is where they work — the shell
+    // rebuilds this page with a new highlightId but the State survives, so the
+    // target was silently dropped and the tap appeared to do nothing. Re-arm
+    // here, exactly as the staff feed tab does.
+    final newTap =
+        widget.highlightId != null && widget.deepLinkNonce != old.deepLinkNonce;
+    if (newTap) {
+      // Clear BOTH latches, not just the target. `_tabSwitchedFor` and the
+      // mixin's own latch each key on the post id, so tapping the same heart
+      // notification twice was swallowed by whichever one the first tap set.
+      _tabSwitchedFor = null;
+      rearmHighlight();
+      setState(() {
+        _targetId = widget.highlightId;
+        _targetCommentId = null;
+        _triedCommentResolve = false;
+      });
+    }
+  }
+
+  Future<void> _tryResolveCommentRef(String ref) async {
+    if (_triedCommentResolve) return;
+    _triedCommentResolve = true;
+    try {
+      final row = await Supabase.instance.client
+          .from('community_comments')
+          .select('id, post_id')
+          .eq('id', ref)
+          .maybeSingle();
+      final postId = row?['post_id'] as String?;
+      if (postId == null || !mounted) return;
+      setState(() {
+        _targetId = postId;
+        _targetCommentId = ref;
+      });
+    } catch (_) {
+      /* unresolved — the page just opens normally */
+    }
+  }
 
   /// Flashes the target once posts have loaded, first switching to the tab that
   /// actually contains it — a pending/rejected post lives on Requests, and
   /// flashing a row on a tab the admin isn't looking at accomplishes nothing.
+  /// Comment notifications then open the post's comments panel on top.
   void _flashOnce(List<CommunityUpdate> all) {
-    final id = widget.highlightId;
-    if (id == null || id.isEmpty || _tabSwitchedFor == id) return;
+    final id = _targetId;
+    if (id == null || id.isEmpty) return;
+    final latchKey = '$id|${widget.openComments}';
+    if (_tabSwitchedFor == latchKey) return;
 
     CommunityUpdate? target;
     for (final p in all) {
@@ -61,15 +138,31 @@ class _CommunityUpdatesPageState extends ConsumerState<CommunityUpdatesPage>
         break;
       }
     }
-    if (target == null) return; // not loaded / deleted — leave the tab as-is
-    _tabSwitchedFor = id;
+    if (target == null) {
+      // Not a post we know — the reference may be a comment id.
+      _tryResolveCommentRef(id);
+      return;
+    }
+    _tabSwitchedFor = latchKey;
 
-    final wanted =
-        target.status == PostStatus.approved ? _Tab.feed : _Tab.requests;
+    final wanted = target.status == PostStatus.approved
+        ? _Tab.feed
+        : _Tab.requests;
+    final panelTarget = target;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       if (_tab != wanted) setState(() => _tab = wanted);
-      flashHighlightOnce(id);
+      // Reactions flash; comments open the thread instead. Ringing the post as
+      // well would leave it still lit once the panel is closed.
+      if (!widget.openComments) flashHighlightOnce(id);
+      if (widget.openComments) {
+        showCommentsPanel(
+          context,
+          ref,
+          panelTarget,
+          highlightCommentId: _targetCommentId,
+        );
+      }
     });
   }
 
@@ -801,15 +894,14 @@ class _RejectedReapprove extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return TextButton.icon(
       onPressed: () async {
+        // Re-approving moves this rejected card to the feed, unmounting it —
+        // capture the root overlay first so the toast still shows.
+        final overlay = Overlay.of(context, rootOverlay: true);
         try {
           await ref.read(communityUpdatesProvider.notifier).approve(post.id);
-          if (context.mounted) {
-            _toast(context, 'Post approved and published.');
-          }
+          _toast(null, 'Approved and published.', overlay: overlay);
         } catch (e) {
-          if (context.mounted) {
-            _toast(context, 'Could not approve: $e', error: true);
-          }
+          _toast(null, 'Could not approve: $e', error: true, overlay: overlay);
         }
       },
       icon: const Icon(Icons.check_circle_rounded, size: 16),
@@ -851,15 +943,23 @@ class _CardMenu extends ConsumerWidget {
             }
             break;
           case 'delete':
+            // Deleting removes this card — and this context — from the tree,
+            // so `context.mounted` is false by the time the delete resolves and
+            // the success toast was silently skipped. Capture the root overlay
+            // up front and toast into it directly.
+            final overlay = Overlay.of(context, rootOverlay: true);
             final ok = await _confirmDelete(context);
             if (ok == true) {
               try {
                 await notifier.delete(post);
-                if (context.mounted) _toast(context, 'Post deleted.');
+                _toast(null, 'Post deleted.', overlay: overlay);
               } catch (e) {
-                if (context.mounted) {
-                  _toast(context, 'Could not delete: $e', error: true);
-                }
+                _toast(
+                  null,
+                  'Could not delete: $e',
+                  error: true,
+                  overlay: overlay,
+                );
               }
             }
             break;
@@ -1064,12 +1164,17 @@ class _PendingCardState extends ConsumerState<_PendingCard> {
   }
 
   Future<void> _approve() async {
+    // Approving moves the post off the Requests tab, so this card (and its
+    // context) unmounts before the write resolves. Capture the root overlay
+    // now, while mounted, and toast into it directly — a root-navigator context
+    // can't find the overlay (it's the navigator's descendant, not ancestor).
+    final overlay = Overlay.of(context, rootOverlay: true);
     setState(() => _busy = true);
     try {
       await ref.read(communityUpdatesProvider.notifier).approve(widget.post.id);
-      if (mounted) _toast(context, 'Approved and published.');
+      _toast(null, 'Approved and published.', overlay: overlay);
     } catch (e) {
-      if (mounted) _toast(context, 'Could not approve: $e', error: true);
+      _toast(null, 'Could not approve: $e', error: true, overlay: overlay);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -1077,15 +1182,18 @@ class _PendingCardState extends ConsumerState<_PendingCard> {
 
   Future<void> _reject() async {
     final reason = await _askReason(context);
-    if (reason == null) return;
+    if (reason == null || !mounted) return;
+    // Rejecting likewise removes this pending card from the tree — capture the
+    // root overlay while mounted so the confirmation toast still shows.
+    final overlay = Overlay.of(context, rootOverlay: true);
     setState(() => _busy = true);
     try {
       await ref
           .read(communityUpdatesProvider.notifier)
           .reject(widget.post.id, reason);
-      if (mounted) _toast(context, 'Post rejected.');
+      _toast(null, 'Post rejected.', overlay: overlay);
     } catch (e) {
-      if (mounted) _toast(context, 'Could not reject: $e', error: true);
+      _toast(null, 'Could not reject: $e', error: true, overlay: overlay);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -1355,11 +1463,17 @@ class _ErrorState extends StatelessWidget {
 
 // ── Toast / dialogs ─────────────────────────────────────────────────────────────
 
-void _toast(BuildContext context, String msg, {bool error = false}) {
+void _toast(
+  BuildContext? context,
+  String msg, {
+  bool error = false,
+  OverlayState? overlay,
+}) {
   showAdminSnackBar(
     context,
     msg,
     type: error ? AdminSnackType.error : AdminSnackType.success,
+    overlay: overlay,
   );
 }
 
@@ -1375,6 +1489,7 @@ Future<bool?> _confirmDelete(BuildContext context) {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(ctx, false),
+          style: TextButton.styleFrom(foregroundColor: AppColors.primaryBlue),
           child: const Text('Cancel'),
         ),
         FilledButton(
@@ -1406,6 +1521,7 @@ Future<String?> _askReason(BuildContext context) {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(ctx),
+          style: TextButton.styleFrom(foregroundColor: AppColors.primaryBlue),
           child: const Text('Cancel'),
         ),
         FilledButton(
@@ -2568,37 +2684,138 @@ class _LocalThumb extends StatelessWidget {
 void showCommentsPanel(
   BuildContext context,
   WidgetRef ref,
-  CommunityUpdate post,
-) {
-  final wide = MediaQuery.of(context).size.width >= 900;
+  CommunityUpdate post, {
+  String? highlightCommentId,
+}) {
+  final size = MediaQuery.of(context).size;
+  final wide = size.width >= kCommentsDialogBreakpoint;
   if (wide) {
     showAppDialog(
       context: context,
       builder: (_) => Dialog(
         backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+        insetPadding: EdgeInsets.symmetric(
+          horizontal: 24,
+          // Short viewports claw back the vertical inset: on a 390dp-tall
+          // landscape phone, 24 top and bottom is an eighth of the screen.
+          vertical: size.height < 560 ? 10.0 : 24.0,
+        ),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 560, maxHeight: 720),
-          child: _CommentsPanel(post: post),
+          // Clamped to the viewport — a fixed 720 inside a 24px inset needs a
+          // 768px-tall display just to draw, and clipped the composer on the
+          // 1366x768 laptops this console runs on. The cap widens when the
+          // panel splits into two columns.
+          constraints: BoxConstraints(
+            maxWidth: size.width - 48 < commentsDialogMaxWidth(size)
+                ? size.width - 48
+                : commentsDialogMaxWidth(size),
+            maxHeight: size.height < 560
+                ? size.height - 20
+                : (size.height - 48 < 720 ? size.height - 48 : 720),
+          ),
+          child: _CommentsPanel(
+            post: post,
+            highlightCommentId: highlightCommentId,
+            asDialog: true,
+          ),
         ),
       ),
     );
   } else {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        fullscreenDialog: true,
-        builder: (_) => Scaffold(
-          backgroundColor: AdminUi.surface,
-          body: SafeArea(child: _CommentsPanel(post: post)),
+    // Phone: a rounded bottom sheet, matching the staff console and the citizen
+    // feed. This used to push a full-screen route, which read as leaving the
+    // Community page rather than opening a thread on top of it — the one place
+    // the three surfaces disagreed on mobile.
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.45),
+      builder: (ctx) => Padding(
+        // No Scaffold here to resize for us, so the sheet yields to the keyboard
+        // itself — otherwise the composer sits underneath it.
+        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+        child: FractionallySizedBox(
+          heightFactor: 0.92,
+          child: Container(
+            decoration: const BoxDecoration(
+              color: AdminUi.surface,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: SafeArea(
+              top: false,
+              child: Column(
+                children: [
+                  Container(
+                    margin: const EdgeInsets.only(top: 10, bottom: 6),
+                    width: 44,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFD1D5DB),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  Expanded(
+                    child: _CommentsPanel(
+                      post: post,
+                      highlightCommentId: highlightCommentId,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );
   }
 }
 
+/// Adapts a [CommunityUpdate] onto the normalized post-map shape that
+/// [CommentPostRecap] reads, so the admin console renders the exact same recap
+/// as the citizen feed and staff console instead of a fourth lookalike.
+///
+/// Every key it needs already exists on the model; the three that don't apply
+/// here are stubbed. `authorDept` is empty because admin resolves the office
+/// into the tag, and `blankAvatar` is false because a console is never in the
+/// guest view that anonymises citizen authors.
+Map<String, dynamic> _recapMap(CommunityUpdate p) => {
+  'author': p.authorName,
+  'authorDept': '',
+  'authorPhotoUrl': p.authorPhotoUrl,
+  'authorPhotoPath': null,
+  'blankAvatar': false,
+  'isOfficial': p.isOfficial,
+  'tag': p.tag,
+  'tagColor': p.tagColorValue,
+  'barangay': p.barangayLabel,
+  'timestamp': p.createdAt,
+  'title': p.title,
+  'body': p.body,
+  'imageCount': p.images.length,
+  'imageUrls': p.imageUrls,
+  // The recap expects the citizen provider's pre-formatted String here.
+  'likes': '${p.likesCount}',
+  'commentCount': p.commentsCount,
+};
+
 class _CommentsPanel extends ConsumerStatefulWidget {
   final CommunityUpdate post;
-  const _CommentsPanel({required this.post});
+
+  /// Comment/reply to scroll to and flash blue when opened from a notification.
+  final String? highlightCommentId;
+
+  /// Wide-screen dialog rather than the phone bottom sheet. Set from the same
+  /// breakpoint [showCommentsPanel] already tests. Only the dialog shows the
+  /// post recap and the post-titled header — see [CommentPostRecap].
+  final bool asDialog;
+
+  const _CommentsPanel({
+    required this.post,
+    this.highlightCommentId,
+    this.asDialog = false,
+  });
   @override
   ConsumerState<_CommentsPanel> createState() => _CommentsPanelState();
 }
@@ -2616,6 +2833,11 @@ class _CommentsPanelState extends ConsumerState<_CommentsPanel> {
   String? _replyToId;
   String? _replyToName;
 
+  // Notification deep-link: flash the target comment blue, once, after load.
+  final GlobalKey _highlightKey = GlobalKey();
+  bool _highlightFlash = false;
+  bool _highlightConsumed = false;
+
   CommunityUpdatesRepository get _repo =>
       ref.read(communityUpdatesRepoProvider);
   CommunityUpdatesNotifier get _feed =>
@@ -2625,6 +2847,47 @@ class _CommentsPanelState extends ConsumerState<_CommentsPanel> {
   void initState() {
     super.initState();
     _load();
+  }
+
+  void _maybeFlashTarget() {
+    final target = widget.highlightCommentId;
+    if (target == null || _highlightConsumed) return;
+    final all = _comments;
+    if (all == null || !all.any((c) => c.id == target)) return;
+    _highlightConsumed = true;
+    setState(() => _highlightFlash = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final ctx = _highlightKey.currentContext;
+      if (ctx != null) {
+        Scrollable.ensureVisible(
+          ctx,
+          duration: const Duration(milliseconds: 350),
+          curve: Curves.easeOutCubic,
+          alignment: 0.2,
+        );
+      }
+      Future.delayed(const Duration(milliseconds: 2600), () {
+        if (mounted) setState(() => _highlightFlash = false);
+      });
+    });
+  }
+
+  /// Wraps [tile] in the blue deep-link wash when it is the notification's
+  /// target comment.
+  Widget _withHighlight(CommunityComment c, Widget tile) {
+    if (c.id != widget.highlightCommentId) return tile;
+    return AnimatedContainer(
+      key: _highlightKey,
+      duration: const Duration(milliseconds: 450),
+      decoration: BoxDecoration(
+        color: _highlightFlash
+            ? AppColors.primaryBlue.withValues(alpha: 0.08)
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: tile,
+    );
   }
 
   @override
@@ -2641,6 +2904,7 @@ class _CommentsPanelState extends ConsumerState<_CommentsPanel> {
           _comments = list;
           _loadError = null;
         });
+        _maybeFlashTarget();
       }
     } catch (e) {
       if (mounted) setState(() => _loadError = e);
@@ -2666,8 +2930,54 @@ class _CommentsPanelState extends ConsumerState<_CommentsPanel> {
     });
   }
 
+  /// True when the panel lays the post out beside the thread instead of above
+  /// it — wide-but-short viewports. Mirrors the citizen/staff sheet exactly.
+  bool get _split =>
+      widget.asDialog && commentsUseSplitLayout(MediaQuery.of(context).size);
+
   @override
   Widget build(BuildContext context) {
+    final body = _split
+        ? Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // The post scrolls independently, so a long body or a tall photo
+              // can never push the thread out of reach on a short screen.
+              Expanded(
+                flex: 5,
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
+                  child: CommentPostRecap(
+                    post: _recapMap(widget.post),
+                    width: kThreadMetrics,
+                  ),
+                ),
+              ),
+              const VerticalDivider(width: 1, color: AdminUi.border),
+              Expanded(
+                flex: 6,
+                child: Column(
+                  children: [
+                    Expanded(child: _buildList()),
+                    const Divider(height: 1, color: AdminUi.border),
+                    _composer(),
+                  ],
+                ),
+              ),
+            ],
+          )
+        : Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(child: _buildList()),
+              const Divider(height: 1, color: AdminUi.border),
+              _composer(),
+            ],
+          );
+
     return Material(
       color: AdminUi.surface,
       borderRadius: BorderRadius.circular(16),
@@ -2677,47 +2987,69 @@ class _CommentsPanelState extends ConsumerState<_CommentsPanel> {
         children: [
           _header(),
           const Divider(height: 1, color: AdminUi.border),
-          Flexible(child: _buildList()),
-          const Divider(height: 1, color: AdminUi.border),
-          _composer(),
+          _split ? Expanded(child: body) : Flexible(child: body),
         ],
       ),
     );
   }
 
   Widget _buildList() {
+    // Stacked dialog only. The recap rides INSIDE the scroll view rather than
+    // above it so a long post scrolls away instead of permanently eating the
+    // thread's height — and it shows in every state, because "no comments yet"
+    // on a post you can no longer see is the least useful screen in the
+    // console. When split, the post already has its own column.
+    final recap = widget.asDialog && !_split
+        ? CommentPostRecap(post: _recapMap(widget.post), width: kThreadMetrics)
+        : null;
+
+    /// Wraps a non-scrolling load/empty/error state so it can sit under the
+    /// recap. Without a recap the state is returned exactly as it was before.
+    Widget withRecap(Widget state) => recap == null
+        ? state
+        : ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            children: [recap, state],
+          );
+
     if (_loadError != null) {
-      return Padding(
-        padding: const EdgeInsets.all(24),
-        child: Text(
-          'Could not load comments: $_loadError',
-          style: const TextStyle(color: AdminUi.textMuted),
+      return withRecap(
+        Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            'Could not load comments: $_loadError',
+            style: const TextStyle(color: AdminUi.textMuted),
+          ),
         ),
       );
     }
     final all = _comments;
     if (all == null) {
-      return const AdminShimmer(
-        child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          child: Column(
-            children: [
-              _CommentSkeletonRow(),
-              _CommentSkeletonRow(),
-              _CommentSkeletonRow(),
-              _CommentSkeletonRow(),
-            ],
+      return withRecap(
+        const AdminShimmer(
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Column(
+              children: [
+                _CommentSkeletonRow(),
+                _CommentSkeletonRow(),
+                _CommentSkeletonRow(),
+                _CommentSkeletonRow(),
+              ],
+            ),
           ),
         ),
       );
     }
     if (all.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 48, horizontal: 24),
-        child: Center(
-          child: Text(
-            'No comments yet.',
-            style: TextStyle(color: AdminUi.textMuted),
+      return withRecap(
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 48, horizontal: 24),
+          child: Center(
+            child: Text(
+              'No comments yet.',
+              style: TextStyle(color: AdminUi.textMuted),
+            ),
           ),
         ),
       );
@@ -2730,24 +3062,31 @@ class _CommentsPanelState extends ConsumerState<_CommentsPanel> {
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       children: [
+        ?recap,
         for (final c in tops) ...[
-          _CommentTile(
-            comment: c,
-            onDelete: () => _delete(c),
-            onReply: () => _startReply(c.id, c.authorName),
-            onReact: () => _react(c),
-            onEdit: c.isOfficial ? () => _edit(c) : null,
+          _withHighlight(
+            c,
+            _CommentTile(
+              comment: c,
+              onDelete: () => _delete(c),
+              onReply: () => _startReply(c.id, c.authorName),
+              onReact: () => _react(c),
+              onEdit: c.isOfficial ? () => _edit(c) : null,
+            ),
           ),
           for (final r in (repliesByParent[c.id] ?? const []))
             Padding(
               padding: const EdgeInsets.only(left: 40),
-              child: _CommentTile(
-                comment: r,
-                onDelete: () => _delete(r),
-                // Replies always attach to the top-level parent.
-                onReply: () => _startReply(c.id, r.authorName),
-                onReact: () => _react(r),
-                onEdit: r.isOfficial ? () => _edit(r) : null,
+              child: _withHighlight(
+                r,
+                _CommentTile(
+                  comment: r,
+                  onDelete: () => _delete(r),
+                  // Replies always attach to the top-level parent.
+                  onReply: () => _startReply(c.id, r.authorName),
+                  onReact: () => _react(r),
+                  onEdit: r.isOfficial ? () => _edit(r) : null,
+                ),
               ),
             ),
         ],
@@ -2759,15 +3098,38 @@ class _CommentsPanelState extends ConsumerState<_CommentsPanel> {
     padding: const EdgeInsets.fromLTRB(18, 14, 10, 14),
     child: Row(
       children: [
-        const Text(
-          'Comments',
-          style: TextStyle(
-            fontSize: 17,
-            fontWeight: FontWeight.w700,
-            color: AdminUi.textPrimary,
+        // Dialog: names the post, centred, since the modal covers the feed.
+        // Bottom sheet: the plain label — the post is right behind it.
+        if (widget.asDialog)
+          Expanded(
+            // Left pad balances the close button so the title lands optically
+            // centred rather than centred-then-shoved-left.
+            child: Padding(
+              padding: const EdgeInsets.only(left: 38),
+              child: Text(
+                "${widget.post.authorName}'s Post",
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                  color: AdminUi.textPrimary,
+                ),
+              ),
+            ),
+          )
+        else ...[
+          const Text(
+            'Comments',
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              color: AdminUi.textPrimary,
+            ),
           ),
-        ),
-        const Spacer(),
+          const Spacer(),
+        ],
         IconButton(
           icon: const Icon(Icons.close_rounded, color: AdminUi.textMuted),
           onPressed: () => Navigator.of(context).pop(),
@@ -2833,6 +3195,9 @@ class _CommentsPanelState extends ConsumerState<_CommentsPanel> {
                   controller: _input,
                   minLines: 1,
                   maxLines: 4,
+                  // Enter sends; Shift+Enter inserts a newline.
+                  textInputAction: TextInputAction.send,
+                  onSubmitted: (_) => _send(),
                   style: const TextStyle(fontSize: 14),
                   decoration: InputDecoration(
                     hintText: 'Write a comment as LGU Aparri…',
@@ -2940,6 +3305,7 @@ class _CommentsPanelState extends ConsumerState<_CommentsPanel> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
+            style: TextButton.styleFrom(foregroundColor: AppColors.primaryBlue),
             child: const Text('Cancel'),
           ),
           FilledButton(

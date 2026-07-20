@@ -35,21 +35,40 @@ class AdminNotifTab {
 // citizen-style notifications (topic = null, e.g. "X liked your post"), so an
 // admin who also uses the app as a citizen doesn't see their own personal
 // notifications in the admin bell.
+// Both engagement vocabularies are listed: the admin 'post_heart'/'comment_heart'/
+// 'comment' names AND the citizen-side type values the LIVE like/comment triggers
+// actually write ('post_like'/'comment_like'/'post_comment'/'comment_reply' — see
+// kHeartNotifTypes in notification_popup.dart). A community like/comment on an
+// LGU post can arrive under either, so both must count and be fetchable.
 const List<String> kAllAdminTopics = [
   'report',
   'verification',
+  // A staff member's post awaiting review (trg_notify_admins_community_request).
+  // Omitting it here silently swallowed the notification entirely: every tab
+  // filters server-side on `topic IN kAllAdminTopics`, so the row was written
+  // and never shown, and the badge never counted it.
+  'community_request',
   'post_heart',
   'comment_heart',
   'comment',
+  'post_like',
+  'comment_like',
+  'post_comment',
+  'comment_reply',
   'feedback',
   'suggestion',
 ];
 
 // Topics grouped under "Others".
 const List<String> kOtherTopics = [
+  'community_request',
   'post_heart',
   'comment_heart',
   'comment',
+  'post_like',
+  'comment_like',
+  'post_comment',
+  'comment_reply',
   'feedback',
   'suggestion',
 ];
@@ -66,11 +85,20 @@ const List<AdminNotifTab> kPrimaryTabs = [
 
 // Second row — revealed only when "Others" is open.
 const List<AdminNotifTab> kOtherTabs = [
+  AdminNotifTab('community_request', 'Requests', [
+    'community_request',
+  ], Color(0xFFF97316)),
   AdminNotifTab('hearts', 'Hearts', [
     'post_heart',
     'comment_heart',
+    'post_like',
+    'comment_like',
   ], Color(0xFFEC4899)),
-  AdminNotifTab('comments', 'Comments', ['comment'], Color(0xFF2563EB)),
+  AdminNotifTab('comments', 'Comments', [
+    'comment',
+    'post_comment',
+    'comment_reply',
+  ], Color(0xFF2563EB)),
   AdminNotifTab('feedback', 'Feedback', ['feedback'], Color(0xFF14B8A6)),
   AdminNotifTab('suggestions', 'Suggestions', [
     'suggestion',
@@ -85,8 +113,14 @@ IconData _iconForTopic(String topic) {
       return Icons.verified_user_outlined;
     case 'post_heart':
     case 'comment_heart':
+    case 'post_like':
+    case 'comment_like':
       return Icons.favorite_rounded;
+    case 'community_request':
+      return Icons.campaign_rounded;
     case 'comment':
+    case 'post_comment':
+    case 'comment_reply':
       return Icons.mode_comment_outlined;
     case 'feedback':
       return Icons.reviews_outlined;
@@ -120,8 +154,9 @@ class AdminNotif {
   /// a tap can land on that exact item and flash it instead of dumping the
   /// admin at the top of a list to hunt for it.
   ///
-  /// Null whenever the trigger that wrote the row doesn't set `reference_id` —
-  /// the tap then still opens the right tab, just without the highlight.
+  /// Resolved by [_effectiveReference] from `reference_id` or `post_id`. Null
+  /// only when the trigger set neither — the tap then still opens the right
+  /// tab, just without the highlight.
   final String? referenceId;
 
   AdminNotif({
@@ -137,9 +172,27 @@ class AdminNotif {
     this.referenceId,
   });
 
+  /// Topics the admin shell can route a tap to (_tabIndexForTopic). Includes
+  /// both engagement vocabularies (see kAllAdminTopics).
+  static const _routable = {
+    'report', 'suggestion', 'feedback', 'verification', 'community_request',
+    'comment', 'post_heart', 'comment_heart',
+    'post_like', 'comment_like', 'post_comment', 'comment_reply',
+  };
+
+  /// Same guard as the staff bell: older live triggers stamp the tag in `type`
+  /// only — prefer whichever of topic/type the shell can actually route.
+  static String _effectiveTopic(Map<String, dynamic> r) {
+    final topic = (r['topic'] as String?)?.trim();
+    final type = (r['type'] as String?)?.trim();
+    if (topic != null && _routable.contains(topic)) return topic;
+    if (type != null && _routable.contains(type)) return type;
+    return topic?.isNotEmpty == true ? topic! : 'general';
+  }
+
   factory AdminNotif.fromRow(Map<String, dynamic> r) => AdminNotif(
     id: r['id'] as String,
-    topic: (r['topic'] as String?) ?? 'general',
+    topic: _effectiveTopic(r),
     title: (r['title'] as String?) ?? '',
     subtitle: (r['subtitle'] as String?) ?? '',
     createdAt:
@@ -149,8 +202,20 @@ class AdminNotif {
     color: Color(((r['color_value'] as num?)?.toInt() ?? 0xFF2563EB)),
     actorId: r['actor_id'] as String?,
     actorPhotoUrl: r['actor_photo_url'] as String?,
-    referenceId: r['reference_id'] as String?,
+    referenceId: _effectiveReference(r),
   );
+
+  /// Deep-link target, from whichever column the writer used. `reference_id` is
+  /// the modern one (notify_admins' 7th arg), but the LIVE engagement triggers
+  /// (notify_on_comment / notify_on_post_like / notify_on_comment_like) predate
+  /// it and write the post id to `post_id`, leaving reference_id null — so a
+  /// heart/comment on an admin's own post had nothing to flash.
+  static String? _effectiveReference(Map<String, dynamic> r) {
+    final ref = (r['reference_id'] as String?)?.trim();
+    if (ref != null && ref.isNotEmpty) return ref;
+    final postId = (r['post_id'] as String?)?.trim();
+    return (postId != null && postId.isNotEmpty) ? postId : null;
+  }
 
   IconData get icon => _iconForTopic(topic);
 
@@ -202,10 +267,6 @@ class AdminNotifCenter {
   /// Fed by AdminSettingsNotifier (persisted in SharedPreferences).
   Set<String> _mutedTopics = const {};
   Set<String> get mutedTopics => _mutedTopics;
-
-  /// Admin topics that still count toward the badge (all topics minus muted).
-  List<String> get _countedTopics =>
-      kAllAdminTopics.where((t) => !_mutedTopics.contains(t)).toList();
 
   /// Replace the muted-topic set and immediately recompute the unread badge, so
   /// muting/unmuting is reflected the instant it's toggled in Settings.
@@ -260,35 +321,104 @@ class AdminNotifCenter {
       unread.value = 0;
       return;
     }
-    final counted = _countedTopics;
-    if (counted.isEmpty) {
-      // Every admin topic is muted → nothing to badge.
-      unread.value = 0;
-      return;
-    }
     try {
+      // Counts every unread row and subtracts only what the admin has MUTED,
+      // rather than requiring membership in kAllAdminTopics.
+      //
+      // The allowlist was the bug. Live triggers that predate the `topic`
+      // column — and any added straight against the project, like whatever
+      // writes "New like on a community post" — carry a topic/type this list
+      // has never heard of, so their rows sailed past the filter and the bell
+      // sat at zero while the panel plainly listed them. An allowlist fails
+      // CLOSED on anything unknown, which for a notification badge is the
+      // wrong direction: a topic nobody predicted should still get counted.
+      // This is what the staff bell has always done, and why it never had
+      // this class of bug.
       final rows = await _sb
           .from('notifications')
-          .select('id')
+          .select('topic,type')
           .eq('user_id', uid)
-          .inFilter('topic', counted)
           .isFilter('read_at', null);
-      unread.value = (rows as List).length;
-    } catch (_) {
-      // Leave the last known value on transient errors.
+      final all = (rows as List).cast<Map<String, dynamic>>();
+      final muted = _mutedTopics;
+      // Nothing muted is the normal case — skip the per-row resolve entirely so
+      // the count can't depend on topic parsing at all.
+      unread.value = muted.isEmpty
+          ? all.length
+          : all
+              .where((r) => !muted.contains(AdminNotif._effectiveTopic(r)))
+              .length;
+    } catch (e) {
+      // Leave the last known value — but say so. A silent catch here is why two
+      // separate badge regressions looked identical from the outside: the count
+      // simply froze at whatever it was (0 on a cold start) with no signal.
+      debugPrint('AdminNotifCenter.refreshUnread failed: $e');
     }
+  }
+
+  /// Rows for [uid] whose `topic` OR `type` is one of [topics], de-duplicated
+  /// by id.
+  ///
+  /// Two queries rather than one `or=(topic.in.(…),type.in.(…))`: inside a
+  /// PostgREST `or=()` group, commas separate the group's own conditions, so
+  /// the commas belonging to a nested `in.(a,b,c)` list are ambiguous. When
+  /// that misparses the request errors, and every caller here swallows errors —
+  /// so the bell silently kept its old count instead of showing the new one.
+  /// Two unambiguous queries cost one extra round trip and can't misparse.
+  ///
+  /// Matching on `type` at all is what the engagement rows need: several live
+  /// triggers predate the `topic` column and set only `type`. This is the
+  /// server-side twin of [AdminNotif._effectiveTopic].
+  Future<List<Map<String, dynamic>>> _matchingRows(
+    String uid,
+    List<String> topics,
+    String columns, {
+    bool unreadOnly = false,
+  }) async {
+    Future<List<Map<String, dynamic>>> byColumn(String column) async {
+      var q = _sb
+          .from('notifications')
+          .select(columns)
+          .eq('user_id', uid)
+          .inFilter(column, topics);
+      if (unreadOnly) q = q.isFilter('read_at', null);
+      final rows = await q;
+      return (rows as List).cast<Map<String, dynamic>>();
+    }
+
+    final results = await Future.wait([byColumn('topic'), byColumn('type')]);
+    final merged = <String, Map<String, dynamic>>{};
+    for (final rows in results) {
+      for (final r in rows) {
+        merged[r['id'].toString()] = r;
+      }
+    }
+    return merged.values.toList();
   }
 
   Future<List<AdminNotif>> fetch(List<String>? topics) async {
     final uid = _uid;
     if (uid == null) return const [];
     try {
-      var q = _sb.from('notifications').select().eq('user_id', uid);
-      if (topics != null) q = q.inFilter('topic', topics);
-      final rows = await q.order('created_at', ascending: false).limit(100);
-      return (rows as List)
-          .map((r) => AdminNotif.fromRow(r as Map<String, dynamic>))
-          .toList();
+      final List<Map<String, dynamic>> rows;
+      if (topics == null) {
+        final res = await _sb
+            .from('notifications')
+            .select()
+            .eq('user_id', uid)
+            .order('created_at', ascending: false)
+            .limit(100);
+        rows = (res as List).cast<Map<String, dynamic>>();
+      } else {
+        // Merged client-side, so ordering and the cap are applied here too.
+        rows = await _matchingRows(uid, topics, '*')
+          ..sort(
+            (a, b) => ((b['created_at'] as String?) ?? '').compareTo(
+              (a['created_at'] as String?) ?? '',
+            ),
+          );
+      }
+      return rows.take(100).map(AdminNotif.fromRow).toList();
     } catch (_) {
       return const [];
     }
@@ -480,8 +610,15 @@ class _AdminNotifPanelState extends State<_AdminNotifPanel> {
     return kPrimaryTabs.first;
   }
 
+  /// Topics to query for [tab] — null (no filter) for "All", so the panel shows
+  /// exactly what the badge counts. Filtering All by kAllAdminTopics hid any row
+  /// whose topic the list didn't know about, which is how the bell and the panel
+  /// ended up disagreeing. Sub-tabs still filter, since that IS their job.
+  List<String>? _topicsFor(AdminNotifTab tab) =>
+      tab.id == 'all' ? null : tab.topics;
+
   void _onRevision() {
-    if (mounted) _load(_selectedTab.topics);
+    if (mounted) _load(_topicsFor(_selectedTab));
   }
 
   Future<void> _selectTab(AdminNotifTab tab) async {
@@ -497,9 +634,10 @@ class _AdminNotifPanelState extends State<_AdminNotifPanel> {
       if (!kOtherTabs.any((t) => t.id == tab.id)) _othersOpen = false;
       _loading = true;
     });
-    await _load(tab.topics);
-    await AdminNotifCenter.I.markRead(tab.topics); // opening a tab clears it
-    if (mounted) _load(tab.topics);
+    final topics = _topicsFor(tab);
+    await _load(topics);
+    await AdminNotifCenter.I.markRead(topics); // opening a tab clears it
+    if (mounted) _load(topics);
   }
 
   Future<void> _load(List<String>? topics) async {
@@ -573,8 +711,11 @@ class _AdminNotifPanelState extends State<_AdminNotifPanel> {
                   const Spacer(),
                   TextButton(
                     onPressed: () async {
-                      await AdminNotifCenter.I.markRead(kAllAdminTopics);
-                      if (mounted) _load(_selectedTab.topics);
+                      // null = every topic. "Mark all read" that quietly skipped
+                      // unknown topics would leave the badge stuck above zero
+                      // with nothing visible left to clear.
+                      await AdminNotifCenter.I.markRead(null);
+                      if (mounted) _load(_topicsFor(_selectedTab));
                     },
                     style: TextButton.styleFrom(
                       foregroundColor: const Color(0xFF2563EB),

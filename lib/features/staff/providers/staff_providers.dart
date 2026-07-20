@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart' show XFile;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../admin/providers/admin_reports_provider.dart' show ReportStatus;
@@ -236,29 +237,107 @@ class StaffCommunityNotifier extends AsyncNotifier<List<StaffCommunityPost>> {
   StaffRepository get _repo => ref.read(staffRepoProvider);
 
   @override
-  Future<List<StaffCommunityPost>> build() => _repo.fetchMyCommunityPosts();
+  Future<List<StaffCommunityPost>> build() {
+    _watchRealtime();
+    return _repo.fetchMyCommunityPosts();
+  }
+
+  /// Live "My submissions": any change to THIS staff member's own posts — an
+  /// admin approving/rejecting, or a post being taken down — silently refreshes
+  /// the list, so a pending card flips to Approved/Rejected without waiting for
+  /// the notification tap. Mirrors the admin console's realtime feed.
+  void _watchRealtime() {
+    final supabase = Supabase.instance.client;
+    final uid = supabase.auth.currentUser?.id;
+    if (uid == null) return;
+    final channel = supabase
+        .channel('staff_my_posts_$uid')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'community_posts',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'author_id',
+            value: uid,
+          ),
+          callback: (_) => _silentRefresh(),
+        )
+        .subscribe();
+    ref.onDispose(() => supabase.removeChannel(channel));
+  }
 
   Future<void> refresh() async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(_repo.fetchMyCommunityPosts);
   }
 
-  Future<void> submit({
+  /// Background reload without a loading flash — for the realtime subscription.
+  Future<void> _silentRefresh() async {
+    final next = await AsyncValue.guard(_repo.fetchMyCommunityPosts);
+    if (next.hasValue) state = next;
+  }
+
+  /// Retract one of the staff member's own pending submissions. Optimistically
+  /// drops it from the list, then hard-deletes it; restores + rethrows on
+  /// failure so the caller can surface the error.
+  Future<void> retract(String id) async {
+    final prev = state.valueOrNull ?? const <StaffCommunityPost>[];
+    state = AsyncData(prev.where((p) => p.id != id).toList());
+    try {
+      await _repo.deleteMyCommunityPost(id);
+    } catch (e) {
+      state = AsyncData(prev);
+      rethrow;
+    }
+  }
+
+  /// Returns the number of photos that failed to upload (0 = all uploaded).
+  /// The post itself is committed either way — see StaffRepository.
+  ///
+  /// Inserts an optimistic stand-in synchronously (before the first await) so
+  /// "My submissions" and the Pending KPI update the instant the composer
+  /// closes; the real row + photo thumbnails swap in on the refetch. If the
+  /// whole submission fails, the stand-in is pulled back out and the error
+  /// rethrown for the caller to surface.
+  Future<int> submit({
     required String title,
     required String body,
     required String barangay,
     required String tag,
     required String tagColorHex,
+    List<XFile> images = const [],
   }) async {
-    await _repo.submitCommunityPost(
-      title: title,
-      body: body,
-      barangay: barangay,
+    final prev = state.valueOrNull ?? const <StaffCommunityPost>[];
+    final optimistic = StaffCommunityPost(
+      id: 'temp_${DateTime.now().microsecondsSinceEpoch}',
+      title: title.trim(),
+      body: body.trim(),
       tag: tag,
-      tagColorHex: tagColorHex,
+      tagColor: tagColorHex,
+      status: 'pending_approval',
+      rejectedReason: null,
+      barangay: barangay,
+      createdAt: DateTime.now(),
+      localImages: List.of(images),
     );
-    final next = await AsyncValue.guard(_repo.fetchMyCommunityPosts);
-    if (next.hasValue) state = next;
+    state = AsyncData([optimistic, ...prev]);
+    try {
+      final failedPhotos = await _repo.submitCommunityPost(
+        title: title,
+        body: body,
+        barangay: barangay,
+        tag: tag,
+        tagColorHex: tagColorHex,
+        images: images,
+      );
+      final next = await AsyncValue.guard(_repo.fetchMyCommunityPosts);
+      state = next.hasValue ? next : AsyncData(prev);
+      return failedPhotos;
+    } catch (e) {
+      state = AsyncData(prev); // pull the stand-in back out
+      rethrow;
+    }
   }
 }
 

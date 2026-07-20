@@ -27,13 +27,22 @@ GlobalKey<_TopToastState>? _activeKey;
 ///
 /// It slides + fades DOWN into place on show, and on dismiss plays that same
 /// motion in reverse — pulling back up the way it came in.
+/// Pass [overlay] — captured from a still-mounted context BEFORE an async gap
+/// (`Overlay.of(context, rootOverlay: true)`) — to toast from a callback whose
+/// own widget has since unmounted (e.g. an admin approving a request card that
+/// then leaves the list). The root overlay lives for the app's lifetime, so the
+/// toast still shows; a root-navigator context can't be used here because the
+/// overlay is a *descendant* of that navigator, not an ancestor. When [overlay]
+/// is null the nearest root overlay above [context] is used instead.
 void showAppSnackBar(
-  BuildContext context,
+  BuildContext? context,
   String message, {
   AppSnackType type = AppSnackType.info,
+  OverlayState? overlay,
 }) {
-  final overlay = Overlay.maybeOf(context, rootOverlay: true);
-  if (overlay == null) return;
+  final ov = overlay ??
+      (context != null ? Overlay.maybeOf(context, rootOverlay: true) : null);
+  if (ov == null) return;
 
   final (Color bg, IconData icon) = switch (type) {
     AppSnackType.success => (AppColors.green, Icons.check_circle_rounded),
@@ -64,7 +73,7 @@ void showAppSnackBar(
   );
   _activeToast = entry;
   _activeKey = key;
-  overlay.insert(entry);
+  ov.insert(entry);
 }
 
 class _TopToast extends StatefulWidget {

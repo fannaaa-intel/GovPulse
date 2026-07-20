@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../identity/official_display_name.dart';
 
 /// Roles whose real identity (name + photo) is shown in the public feed.
 /// Anything not in this set is treated as a citizen and anonymised on the
@@ -123,9 +124,6 @@ class CommunityPostsProvider extends ChangeNotifier {
                 if (ocRealId != null && rid == ocRealId) return true;
                 return r['text'] == ocText && r['authorId'] == oc['authorId'];
               });
-              if (!alreadyReal && !replies.any((r) => r['id'] == tempId)) {
-                replies.add(oc);
-              }
               if (!alreadyReal && !replies.any((r) => r['id'] == tempId)) {
                 replies.add(oc);
               }
@@ -384,14 +382,16 @@ class CommunityPostsProvider extends ChangeNotifier {
         }
       }
 
-      final officialPhotos = await _officialPhotosFor(rows);
+      final officialDir = await _officialDirectoryFor(rows);
       _posts = _pinnedFirst(
         rows
-            .map((r) => _mapPostRow(
-                  r,
-                  commentsByPost[r['id']] ?? [],
-                  officialPhotos: officialPhotos,
-                ))
+            .map(
+              (r) => _mapPostRow(
+                r,
+                commentsByPost[r['id']] ?? [],
+                officialDir: officialDir,
+              ),
+            )
             .toList(),
       );
 
@@ -487,12 +487,12 @@ class CommunityPostsProvider extends ChangeNotifier {
           if (kDebugMode) debugPrint('guest comments fetch failed: $e');
         }
 
-        final officialPhotos = await _officialPhotosFor(rows);
+        final officialDir = await _officialDirectoryFor(rows);
         _posts = _pinnedFirst(
           rows.map((r) {
             final pid = r['id'] as String;
             final loaded = guestComments[pid] ?? const <Map<String, dynamic>>[];
-            final m = _mapPostRow(r, loaded, officialPhotos: officialPhotos);
+            final m = _mapPostRow(r, loaded, officialDir: officialDir);
             // If comments loaded, the count is computed from them (matches the
             // visible list). Otherwise fall back to the server-provided count.
             if (loaded.isEmpty) {
@@ -515,15 +515,17 @@ class CommunityPostsProvider extends ChangeNotifier {
         final commentsByPost = postIds.isEmpty
             ? <String, List<Map<String, dynamic>>>{}
             : await _fetchCommentsForPosts(postIds);
-        final officialPhotos = await _officialPhotosFor(rows);
+        final officialDir = await _officialDirectoryFor(rows);
 
         _posts = _pinnedFirst(
           rows
-              .map((r) => _mapPostRow(
-                    r,
-                    commentsByPost[r['id']] ?? [],
-                    officialPhotos: officialPhotos,
-                  ))
+              .map(
+                (r) => _mapPostRow(
+                  r,
+                  commentsByPost[r['id']] ?? [],
+                  officialDir: officialDir,
+                ),
+              )
               .toList(),
         );
       }
@@ -550,10 +552,14 @@ class CommunityPostsProvider extends ChangeNotifier {
     final uid = _supabase.auth.currentUser?.id;
     List<Map<String, dynamic>> rows;
     try {
-      final base =
-          _supabase.from('community_comments').select().inFilter('post_id', postIds);
+      final base = _supabase
+          .from('community_comments')
+          .select()
+          .inFilter('post_id', postIds);
       final filtered = uid != null
-          ? base.or('status.eq.approved,and(author_id.eq.$uid,status.eq.pending)')
+          ? base.or(
+              'status.eq.approved,and(author_id.eq.$uid,status.eq.pending)',
+            )
           : base.eq('status', 'approved');
       rows = List<Map<String, dynamic>>.from(
         await filtered.order('created_at', ascending: true),
@@ -674,26 +680,37 @@ class CommunityPostsProvider extends ChangeNotifier {
     };
   }
 
-  /// Official (admin/staff) author photos, read live from `admin_profiles`
-  /// (public read). Keyed by author id. Guarded so a blocked read / missing
-  /// row never breaks the feed — it just falls back to the default LGU avatar.
-  Future<Map<String, String>> _officialPhotosFor(List<dynamic> rows) async {
+  /// Official (admin/staff) author identities — name, photo, department, role —
+  /// read live via the `official_public_profiles(uuid[])` SECURITY DEFINER RPC
+  /// (works for citizens and guests whom admin_profiles RLS locks out; takes
+  /// the ids explicitly, so there's no browsable directory).
+  ///
+  /// Looked up for EVERY author id, not just role-flagged ones: the live
+  /// community_feed view resolves staff authors' role/name from citizen tables
+  /// where officials have no row ("Unknown"), so presence in this directory is
+  /// itself the signal that an author is official. Guarded so a missing RPC
+  /// (migration not applied yet) never breaks the feed.
+  Future<Map<String, Map<String, String?>>> _officialDirectoryFor(
+    List<dynamic> rows,
+  ) async {
     final ids = <String>{
       for (final r in rows)
-        if (isOfficialAuthorRole((r as Map)['author_role'] as String?) &&
-            r['author_id'] != null)
-          r['author_id'] as String,
+        if ((r as Map)['author_id'] != null) r['author_id'] as String,
     }.toList();
     if (ids.isEmpty) return const {};
     try {
-      final res = await _supabase
-          .from('admin_profiles')
-          .select('user_id, photo_url')
-          .inFilter('user_id', ids);
-      final map = <String, String>{};
+      final res = await _supabase.rpc(
+        'official_public_profiles',
+        params: {'p_user_ids': ids},
+      );
+      final map = <String, Map<String, String?>>{};
       for (final r in (res as List).cast<Map<String, dynamic>>()) {
-        final url = r['photo_url'] as String?;
-        if (url != null && url.isNotEmpty) map[r['user_id'] as String] = url;
+        map[r['user_id'] as String] = {
+          'name': (r['full_name'] as String?)?.trim(),
+          'photoUrl': (r['photo_url'] as String?)?.trim(),
+          'department': (r['department'] as String?)?.trim(),
+          'role': (r['role_id'] as int?) == 1 ? 'admin' : 'staff',
+        };
       }
       return map;
     } catch (_) {
@@ -741,26 +758,35 @@ class CommunityPostsProvider extends ChangeNotifier {
       }
     }
 
-    // Officials (admin/staff) keep their avatar in `admin_profiles`, not in
-    // public_user_profiles/profile-photos — so a comment by the LGU account
-    // would otherwise render the default icon and its public_user_profiles name
-    // ("System Admin"). Anyone with an admin_profiles row is official, so brand
-    // them as "LGU Aparri" with their uploaded avatar — matching how the SAME
-    // account renders on posts (via _officialPhotosFor).
+    // Officials (admin/staff) keep their identity in `admin_profiles`, not in
+    // public_user_profiles/profile-photos — so a comment by an official would
+    // otherwise render the default icon and a wrong name ("System Admin").
+    // Resolve them through the official_public_profiles RPC (security definer,
+    // so citizens can read it), then name them INSTITUTIONALLY: staff comment
+    // as their office, admins as the LGU. See [officialDisplayName].
     try {
-      final admins = await _supabase
-          .from('admin_profiles')
-          .select('user_id, photo_url')
-          .inFilter('user_id', userIds);
-      for (final r in (admins as List).cast<Map<String, dynamic>>()) {
+      final officials = await _supabase.rpc(
+        'official_public_profiles',
+        params: {'p_user_ids': userIds},
+      );
+      for (final r in (officials as List).cast<Map<String, dynamic>>()) {
         final id = r['user_id'] as String;
         final url = (r['photo_url'] as String?)?.trim();
+        final role = (r['role_id'] as int?) == 2 ? 'staff' : 'admin';
+        final dept = (r['department'] as String?)?.trim();
         final entry = out.putIfAbsent(
           id,
           () => {'name': null, 'photoPath': null, 'photoUrl': null},
         );
-        entry['name'] = 'LGU Aparri';
+        entry['name'] = officialDisplayName(role: role, department: dept);
+        entry['department'] = dept;
+        entry['role'] = role;
         if (url != null && url.isNotEmpty) entry['photoUrl'] = url;
+        // Anyone this RPC returns IS an official — that's what it selects for.
+        // Recorded so _mapCommentRow can flag the comment and the sheet can
+        // put an LGU chip beside the name, the way the admin panel does.
+        // Stored as a string because these entries are Map<String, String?>.
+        entry['isOfficial'] = 'true';
       }
     } catch (_) {
       // Non-fatal — officials just fall back to the default avatar/name.
@@ -772,7 +798,7 @@ class CommunityPostsProvider extends ChangeNotifier {
   Map<String, dynamic> _mapPostRow(
     Map<String, dynamic> row,
     List<Map<String, dynamic>> comments, {
-    Map<String, String> officialPhotos = const {},
+    Map<String, Map<String, String?>> officialDir = const {},
   }) {
     final imagePaths =
         (row['image_paths'] as List?)?.cast<String>() ?? const [];
@@ -799,15 +825,24 @@ class CommunityPostsProvider extends ChangeNotifier {
     // GUEST feed: citizens are anonymised ("Citizen" + default avatar);
     //   officials (LGU/admin/staff) keep their real name + photo.
     // LOGGED-IN feed: everyone is shown with their real name + photo.
-    final role = row['author_role'] as String?;
-    final official = isOfficialAuthorRole(role);
-    final rawName = (row['author_name'] as String?)?.trim() ?? '';
     final authorId = row['author_id'] as String?;
-    // Official (admin/staff) authors resolve live to the LGU brand + the admin's
-    // uploaded avatar (admin_profiles), so it applies to every post — past and
-    // future — with no per-post backfill.
-    final officialUrl =
-        (official && authorId != null) ? officialPhotos[authorId] : null;
+    // The live community_feed view resolves author name/role from CITIZEN
+    // tables, where officials have no row — a staff post came back role 'user'
+    // + name 'Unknown'. The official directory (admin_profiles via the
+    // official_public_profiles view) is authoritative: presence there makes an
+    // author official regardless of what the view said.
+    final dirEntry = authorId == null ? null : officialDir[authorId];
+    final role = dirEntry?['role'] ?? row['author_role'] as String?;
+    final official = dirEntry != null || isOfficialAuthorRole(role);
+    final rawName = (row['author_name'] as String?)?.trim() ?? '';
+    final officialUrl = dirEntry?['photoUrl'];
+    final department = role == 'staff' ? (dirEntry?['department'] ?? '') : '';
+    // Staff post as their OFFICE, admins as the LGU — never under a person's
+    // name. See [officialDisplayName].
+    final officialDisplay = officialDisplayName(
+      role: role,
+      department: department,
+    );
 
     late final String displayName;
     late final bool blankAvatar;
@@ -820,17 +855,21 @@ class CommunityPostsProvider extends ChangeNotifier {
       displayName = rawName.isEmpty ? 'Citizen' : rawName;
       blankAvatar = true;
     } else {
-      // Officials always post as "LGU Aparri"; everyone else keeps their name.
+      // Officials post under their resolved identity; citizens keep their name.
       displayName = official
-          ? 'LGU Aparri'
+          ? officialDisplay
           : (rawName.isEmpty ? 'Resident' : rawName);
       blankAvatar = false;
-      displayPhotoUrl = officialUrl ?? authorPhotoUrl;
-      displayPhotoPath = officialUrl != null
+      displayPhotoUrl =
+          (officialUrl != null && officialUrl.isNotEmpty
+              ? officialUrl
+              : null) ??
+          authorPhotoUrl;
+      displayPhotoPath = (officialUrl != null && officialUrl.isNotEmpty)
           ? null
           : ((authorPhotoPath != null && authorPhotoPath.isNotEmpty)
-              ? authorPhotoPath
-              : null);
+                ? authorPhotoPath
+                : null);
     }
 
     return {
@@ -838,6 +877,7 @@ class CommunityPostsProvider extends ChangeNotifier {
       'authorId': row['author_id'] as String?,
       'author': displayName,
       'authorRole': role ?? 'user',
+      'authorDept': department,
       'isOfficial': official,
       'blankAvatar': blankAvatar,
       'authorPhotoUrl': displayPhotoUrl,
@@ -887,6 +927,10 @@ class CommunityPostsProvider extends ChangeNotifier {
       'parentId': row['parent_comment_id'] as String?,
       'authorId': authorId,
       'author': authorInfo?['name'] ?? 'Resident',
+      // Drives the LGU chip in the comments sheet. Set by _resolveUserDetails
+      // for anyone official_public_profiles knows about; absent (so false) for
+      // citizens. The guest path sets the same key from author_role.
+      'isOfficial': authorInfo?['isOfficial'] == 'true',
       'authorPhotoUrl': authorInfo?['photoUrl'],
       'authorPhotoPath': authorInfo?['photoPath'],
       'mentionedUser': mentionedInfo?['name'],

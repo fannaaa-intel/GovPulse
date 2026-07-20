@@ -6,7 +6,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/providers/user_profile_provider.dart';
 import '../../../core/services/chat_service.dart';
-import '../../../core/widgets/deeplink_highlight.dart' show kNonFlashingNotifTopics;
 import '../../../core/services/push_service.dart';
 import '../../../core/widgets/Home/Chat-bubbles/home_chat_bubble.dart';
 import '../../../core/widgets/app_snackbar.dart';
@@ -70,30 +69,44 @@ class _StaffConsoleScreenState extends ConsumerState<StaffConsoleScreen> {
     if (target == null) return;
     StaffNotifCenter.I.openTopic.value = null; // consume
     final topic = target.topic;
+    // Engagement events carry two vocabularies: the staff 'post_heart'/
+    // 'comment_heart'/'comment' names AND the citizen-side type values the LIVE
+    // like/comment triggers actually write. Both must route to Community.
+    const engagementTopics = {
+      'post_heart', 'comment_heart', 'comment',
+      'post_like', 'comment_like', 'post_comment', 'comment_reply',
+    };
     final key = switch (topic) {
       'report' => 'reports',
       'endorsement' => 'endorsements',
       'chat' || 'ticket' || 'message' => 'conversations',
-      // Approval decisions AND engagement (hearts/comments) on the staff's own
+      // Approval decisions AND engagement (likes/comments) on the staff's own
       // post all open the Community section where their submissions live.
-      'post_approved' ||
-      'post_rejected' ||
-      'community' ||
-      'post_heart' ||
-      'comment_heart' ||
-      'comment' =>
-        'community',
+      'post_approved' || 'post_rejected' || 'community' => 'community',
+      _ when engagementTopics.contains(topic) => 'community',
       _ => null,
     };
     if (key == null || !mounted) return;
     final isExternal =
         ref.read(staffIdentityProvider).valueOrNull?.isExternal ?? false;
 
-    // Reactions navigate but never flash — see [kNonFlashingNotifTopics].
-    final flash = kNonFlashingNotifTopics.contains(topic)
-        ? null
-        : target.referenceId;
-    _goToKey(_navFor(isExternal), key, highlightId: flash);
+    if (key == 'community') {
+      // Approvals/rejections/deletions changed the submissions behind our back
+      // — refetch so the list reflects it (a deleted post must actually be
+      // gone). Engagement (likes/comments) belongs to the published feed tab.
+      ref.invalidate(staffCommunityProvider);
+      final isEngagement = engagementTopics.contains(topic);
+      _pendingCommunityTab = isEngagement ? 'feed' : 'submissions';
+      // Anything ABOUT a comment/reply opens the post's thread; a bare post
+      // like just scrolls to the post.
+      _pendingOpenComments =
+          isEngagement && topic != 'post_heart' && topic != 'post_like';
+    }
+
+    // The referenceId rides along so the feed scrolls to — and flashes — the
+    // post (or the submission row for approvals). Blue highlight on likes is
+    // intentional on the staff side.
+    _goToKey(_navFor(isExternal), key, highlightId: target.referenceId);
   }
 
   void _openPalette(List<_NavItem> nav) {
@@ -127,6 +140,19 @@ class _StaffConsoleScreenState extends ConsumerState<StaffConsoleScreen> {
   /// the next [_pageFor] so returning later doesn't re-flash a stale row.
   String? _pendingHighlightId;
 
+  /// Which Community tab a notification's target lives on ('feed' for
+  /// hearts/comments on published posts, 'submissions' for review decisions),
+  /// and whether the feed should open straight into the comment thread.
+  /// Consumed together with [_pendingHighlightId].
+  String? _pendingCommunityTab;
+  bool _pendingOpenComments = false;
+
+  /// Bumped on every deep-link tap. Sections re-arm on a CHANGE to this rather
+  /// than on the target's value, so tapping the SAME heart notification twice
+  /// still fires — identical values look like "nothing changed" and the second
+  /// tap was being dropped. Mirrors the admin shell.
+  int _deepLinkNonce = 0;
+
   /// Switches to section [i] and silently refetches its data. The staff console
   /// has no background poller (unlike admin), so refreshing on tab entry is what
   /// makes a chat/report that landed while you were on another tab show up.
@@ -135,6 +161,7 @@ class _StaffConsoleScreenState extends ConsumerState<StaffConsoleScreen> {
     setState(() {
       _index = i;
       _pendingHighlightId = highlightId;
+      if (highlightId != null) _deepLinkNonce++;
     });
     _refreshSection(nav[i].key);
   }
@@ -160,10 +187,14 @@ class _StaffConsoleScreenState extends ConsumerState<StaffConsoleScreen> {
     // One-shot read: the section mounting now owns this target. Cleared after
     // the frame, without setState — the page already has it for this build.
     final highlightId = _pendingHighlightId;
-    if (highlightId != null) {
-      WidgetsBinding.instance.addPostFrameCallback(
-        (_) => _pendingHighlightId = null,
-      );
+    final communityTab = _pendingCommunityTab;
+    final openComments = _pendingOpenComments;
+    if (highlightId != null || communityTab != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _pendingHighlightId = null;
+        _pendingCommunityTab = null;
+        _pendingOpenComments = false;
+      });
     }
 
     switch (key) {
@@ -178,7 +209,12 @@ class _StaffConsoleScreenState extends ConsumerState<StaffConsoleScreen> {
       case 'endorsements':
         return StaffEndorsementsPage(highlightId: highlightId);
       case 'community':
-        return StaffCommunityPage(highlightId: highlightId);
+        return StaffCommunityPage(
+          highlightId: highlightId,
+          initialTab: communityTab,
+          openComments: openComments,
+          deepLinkNonce: _deepLinkNonce,
+        );
       case 'history':
         return const StaffHistoryPage();
       case 'settings':
@@ -199,8 +235,7 @@ class _StaffConsoleScreenState extends ConsumerState<StaffConsoleScreen> {
     showAppDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) =>
-          const Center(child: CircularProgressIndicator(color: StaffUi.accent)),
+      builder: (_) => const LogoutLoadingOverlay(),
     );
     try {
       // Go off duty so no chats route to a signed-out staff member.

@@ -7,9 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/providers/user_profile_provider.dart';
 import '../../../core/services/chat_service.dart';
-import '../../../core/widgets/deeplink_highlight.dart' show kNonFlashingNotifTopics;
 import '../../../core/services/push_service.dart';
-import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/Home/Chat-bubbles/home_chat_bubble.dart';
 import '../../../core/widgets/logout_confirm_dialog.dart';
 import '../providers/admin_dashboard_provider.dart';
@@ -115,6 +113,9 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
   /// double-fetched — only already-loaded sections get the background refresh.
   /// Tabs without a data provider (Users/Settings) are no-ops.
   void _refreshCurrentTab() {
+    // Keep the bell badge honest even if a Realtime INSERT was missed (e.g. a
+    // dropped web socket) — recount unread on every poll tick as a backstop.
+    AdminNotifCenter.I.refreshUnread();
     switch (_selectedIndex) {
       case 0:
         if (ref.read(adminDashboardProvider).hasValue) {
@@ -158,10 +159,18 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
   /// [highlightId] deep-links to a specific row: the destination page scrolls
   /// it into view and flashes it once. One-shot — consumed by the next build so
   /// returning to the tab later doesn't re-flash a stale target.
-  void _selectTab(int i, {String? highlightId}) {
+  void _selectTab(int i, {String? highlightId, bool openComments = false}) {
     setState(() {
       _selectedIndex = i;
       _pendingHighlightId = highlightId;
+      _pendingOpenComments = openComments;
+      // Every deep-link tap gets a fresh token. Pages can't re-arm by comparing
+      // highlightId/openComments alone: tapping the SAME heart notification
+      // twice delivers identical values, so nothing looks "changed" and the
+      // second tap is dropped. (Tapping a comment in between flips
+      // openComments, which is exactly why interleaving one made the next heart
+      // tap appear to work.) A token makes each tap its own event.
+      if (highlightId != null) _deepLinkNonce++;
     });
     _refreshCurrentTab();
     _startPolling();
@@ -169,6 +178,13 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
 
   /// Deep-link target awaiting the page that owns it. See [_selectTab].
   String? _pendingHighlightId;
+
+  /// Comment/reply notifications open the post's comments panel on arrival.
+  bool _pendingOpenComments = false;
+
+  /// Bumped on every deep-link tap. Pages re-arm on a CHANGE to this rather
+  /// than on the target's value, so repeat taps on the same target still fire.
+  int _deepLinkNonce = 0;
 
   /// Opens the ⌘K command palette. Feeds it the nav list (so results can jump
   /// to any section) and the same tab-switch used by the sidebar.
@@ -189,11 +205,16 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
     final idx = _tabIndexForTopic(target.topic);
     if (idx == null || !mounted) return;
 
-    // Reactions navigate but never flash — see [kNonFlashingNotifTopics].
-    final flash = kNonFlashingNotifTopics.contains(target.topic)
-        ? null
-        : target.referenceId;
-    _selectTab(idx, highlightId: flash);
+    // Anything ABOUT a comment (comment / reply / comment-like) opens the post's
+    // comments panel; a bare post like just lands on the post.
+    const commentTopics = {
+      'comment', 'comment_heart', 'post_comment', 'comment_reply',
+      'comment_like',
+    };
+    final isCommentTopic = commentTopics.contains(target.topic);
+    // Always carry the referenceId so the post scrolls into view and flashes —
+    // engagement included (blue highlight on likes/comments is intended here).
+    _selectTab(idx, highlightId: target.referenceId, openComments: isCommentTopic);
   }
 
   /// Maps a notification topic to the nav tab that owns it. Resolved by label
@@ -204,7 +225,18 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
       'suggestion' => 'Suggestions',
       'feedback' => 'Feedback',
       'verification' => 'Verification',
-      'comment' || 'post_heart' || 'comment_heart' => 'Community',
+      // A staff submission awaiting review lands on Community too — the page
+      // itself flips to the Requests tab when the highlighted post is pending.
+      // Both engagement vocabularies route here (see kAllAdminTopics).
+      'comment' ||
+      'post_heart' ||
+      'comment_heart' ||
+      'post_like' ||
+      'comment_like' ||
+      'post_comment' ||
+      'comment_reply' ||
+      'community_request' =>
+        'Community',
       _ => null,
     };
     if (label == null) return null;
@@ -217,10 +249,12 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
     // frame so a later return to the same tab starts clean. Cleared without
     // setState — the page already has the value it needs for this build.
     final highlightId = _pendingHighlightId;
+    final openComments = _pendingOpenComments;
     if (highlightId != null) {
-      WidgetsBinding.instance.addPostFrameCallback(
-        (_) => _pendingHighlightId = null,
-      );
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _pendingHighlightId = null;
+        _pendingOpenComments = false;
+      });
     }
 
     switch (_selectedIndex) {
@@ -230,7 +264,11 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
           onNavigate: _selectTab,
         );
       case 1:
-        return CommunityUpdatesPage(highlightId: highlightId);
+        return CommunityUpdatesPage(
+          highlightId: highlightId,
+          openComments: openComments,
+          deepLinkNonce: _deepLinkNonce,
+        );
       case 2:
         return const AdminEventsPage();
       case 3:
@@ -260,9 +298,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
     showAppDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => const Center(
-        child: CircularProgressIndicator(color: AppColors.primaryBlue),
-      ),
+      builder: (_) => const LogoutLoadingOverlay(),
     );
 
     try {
