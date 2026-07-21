@@ -18,6 +18,17 @@ import '../../../../core/widgets/reveal_loading.dart';
 import '../../../../core/widgets/Home/Newsfeed/news_feed_helpers.dart'
     show formatTimeAgo;
 import '../../../../core/widgets/app_dialog.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+
+/// Image provider for a just-picked file, correct on every platform.
+///
+/// On web an [XFile.path] is a `blob:` URL, not a filesystem path, and every
+/// `dart:io` File operation throws `Unsupported operation: _Namespace`. That is
+/// what crashed the attachment preview with "Image.file is not supported on
+/// Flutter Web". Native platforms keep [FileImage]; web reads the blob through
+/// [NetworkImage], which handles `blob:` URLs.
+ImageProvider pickedImageProvider(XFile file) =>
+    kIsWeb ? NetworkImage(file.path) : FileImage(File(file.path));
 
 // ── Aparri bounding box — must match location_picker_screen.dart ──────────
 const double _riMinLat = 18.2750;
@@ -97,7 +108,11 @@ class _VideoPreviewDialogState extends State<_VideoPreviewDialog> {
   @override
   void initState() {
     super.initState();
-    _controller = VideoPlayerController.file(File(widget.file.path));
+    // Same dart:io constraint as pickedImageProvider — on web the picked file
+    // is a blob: URL, so it has to be opened as a network source.
+    _controller = kIsWeb
+        ? VideoPlayerController.networkUrl(Uri.parse(widget.file.path))
+        : VideoPlayerController.file(File(widget.file.path));
     _controller
         .initialize()
         .then((_) {
@@ -1402,7 +1417,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
       _processingPaths.add(file.path);
     });
     Future.wait([
-      precacheImage(FileImage(File(file.path)), context),
+      precacheImage(pickedImageProvider(file), context),
       Future<void>.delayed(_minReveal),
     ]).whenComplete(() {
       if (!mounted) return;
@@ -1534,7 +1549,10 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
           children: [
             Center(
               child: InteractiveViewer(
-                child: Image.file(File(file.path), fit: BoxFit.contain),
+                child: Image(
+                  image: pickedImageProvider(file),
+                  fit: BoxFit.contain,
+                ),
               ),
             ),
             Positioned(
@@ -1680,7 +1698,10 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
                         borderRadius: BorderRadius.circular(width * 0.025),
                         child: _isVideo(file)
                             ? _videoThumb(file, width)
-                            : Image.file(File(file.path), fit: BoxFit.cover),
+                            : Image(
+                                image: pickedImageProvider(file),
+                                fit: BoxFit.cover,
+                              ),
                       ),
                       // Bottom-to-top reveal while the GPS stamp bakes; it fills
                       // to the top the moment processing completes.
@@ -2282,6 +2303,13 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
           type: AppSnackType.error,
         );
       }
+    } finally {
+      // EVERY exit has to clear the spinner. Without this the button stays in
+      // its loading state after any failure — an unsupported file type, a
+      // storage error, an RLS denial — and the citizen cannot retry without
+      // killing the screen. The success path pops the route, so the mounted
+      // guard covers it.
+      if (mounted) setState(() => _isSubmitting = false);
     }
   }
 
@@ -2298,6 +2326,10 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
       context: context,
       builder: (ctx) => Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        // Without a cap, the full-width button inside stretches the card across
+        // the whole browser window. A phone screen is narrower than this, so
+        // the constraint only ever bites on web/tablet.
+        constraints: const BoxConstraints(maxWidth: 400, minWidth: 280),
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
@@ -2501,6 +2533,10 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
       context: context,
       builder: (ctx) => Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        // Without a cap, the full-width button inside stretches the card across
+        // the whole browser window. A phone screen is narrower than this, so
+        // the constraint only ever bites on web/tablet.
+        constraints: const BoxConstraints(maxWidth: 400, minWidth: 280),
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(

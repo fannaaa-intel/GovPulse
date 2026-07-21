@@ -362,6 +362,12 @@ class StaffSkeletonCircle extends StatelessWidget {
 String staffAgo(DateTime? t) {
   if (t == null) return '';
   final d = DateTime.now().difference(t);
+  // A future-dated row yields a NEGATIVE difference, which used to fall through
+  // the `< 60` check below and render as "just now". That silently masked
+  // timestamps stored 8 hours ahead (client local time written as UTC) — every
+  // message in the staff thread read "just now" regardless of age. Handled
+  // explicitly so the clamp is a decision rather than an accident.
+  if (d.isNegative) return 'just now';
   if (d.inSeconds < 60) return 'just now';
   if (d.inMinutes < 60) return '${d.inMinutes}m ago';
   if (d.inHours < 24) return '${d.inHours}h ago';

@@ -1,0 +1,57 @@
+-- P1.1 — Close privilege escalation on `notifications`.
+--
+-- The policy being dropped read the caller's role from auth metadata:
+--
+--   using (auth.uid() in (
+--     select users.id from auth.users
+--     where (users.raw_user_meta_data ->> 'role') = 'admin'))
+--
+-- `raw_user_meta_data` is user-writable through `auth.updateUser()`. Any
+-- citizen could call updateUser({data: {role: 'admin'}}) and immediately
+-- satisfy this policy. It is the only permission decision in the schema that
+-- trusts user-controlled metadata — a repo-wide grep for `raw_user_meta_data`,
+-- `user_metadata`, and `app_metadata` across `lib/` and `supabase/functions/`
+-- found only display flags (`has_password`, `full_name`) and no other
+-- authorization use.
+--
+-- Replaced with `is_admin()`, which reads `public.user_roles.role_id = 1` —
+-- the same source of truth every other admin check in the schema uses, and a
+-- table citizens cannot write (user_roles is admin-managed).
+--
+-- WHICH ADMIN CHECK THIS USES, AND WHY. `is_admin()` (no-arg) reads
+-- `user_roles.role_id = 1`. The other live variant, `is_admin(uuid)`, reads
+-- `admin_details` — a different table that can disagree. Verified on live data
+-- before writing this: the single admin account is present in both, so either
+-- variant would behave identically today. `is_admin()` is chosen because
+-- `user_roles` is the table the onboarding path maintains (`create-staff`
+-- writes it; nothing writes `admin_details`), so it is the one that will still
+-- be correct after the next admin is created.
+--
+-- DROPPED WITHOUT REPLACEMENT. An earlier draft of this migration replaced the
+-- policy with `for update using (is_admin()) with check (is_admin())`. That was
+-- wrong, and the live database is why:
+--
+--   * Nobody satisfies the policy being dropped. `raw_user_meta_data ->> 'role'`
+--     is NULL for all 7 `auth.users` rows. The escalation path was reachable on
+--     demand by any citizen, but had never been exercised.
+--   * Nothing in the app performs an admin UPDATE on notifications. Approval is
+--     not an update — `is_approved` is written at INSERT time by
+--     notification_popup.dart `adminSend` (:381) and `staffSend` (:406), both
+--     governed by the `staff_admin_send` INSERT policy. The ONLY UPDATE
+--     statements against this table anywhere in `lib/` are
+--     notification_popup.dart:337 and staff_notifications.dart:264, both
+--     `update({'read_at': ...})` on the caller's own row, both already covered
+--     by `notifications_update_own`.
+--
+-- A replacement policy would therefore move admin UPDATE reach from 0 accounts
+-- to 1, serving zero call sites. That is a widening for no benefit. The correct
+-- fix is subtraction: drop the policy, add nothing, and leave
+-- `notifications_update_own` as the only UPDATE path on this table.
+--
+-- Net effect on reachable authority: before, any of the 7 users could grant
+-- themselves admin UPDATE at will via auth.updateUser(). After, nobody has it.
+--
+-- If an approval-by-update workflow is ever built, it gets its own policy then,
+-- written against the call site that needs it — not speculatively now.
+
+drop policy if exists "admin_update" on public.notifications;

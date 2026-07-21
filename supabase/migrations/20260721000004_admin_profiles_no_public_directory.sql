@@ -1,0 +1,34 @@
+-- P1.4 (part 2 of 2) — Stop publishing the officials directory to
+-- unauthenticated callers.
+--
+-- DO NOT APPLY until BOTH of these are true:
+--   1. 20260721000003 has been applied (creates find_available_staff)
+--   2. The RUNNING build of the app calls that RPC — not just the source tree.
+--      A source change that has not shipped is not deployed.
+-- Applying this early breaks ticket routing silently: findAvailableStaffId
+-- catches its own error and returns null, which the caller reads as "nobody on
+-- duty" and hands the ticket to the bot. No exception surfaces anywhere.
+--
+-- What is wrong: "admin_profiles public read" is `for select to public using
+-- (true)`. The `public` role includes `anon`, and the anon key ships inside the
+-- APK, so the full officials directory — names, departments, photos, and
+-- critically `is_online` / `last_seen_at` — is readable by anyone who extracts
+-- that key. The presence columns reveal which officials are at their desk right
+-- now.
+--
+-- Guest mode does NOT depend on it: `lib/features/guest/` queries no tables at
+-- all, and community post attribution goes through the
+-- `official_public_profiles(uuid[])` SECURITY DEFINER RPC, which takes ids
+-- explicitly so there is no browsable directory. The comment at
+-- community_posts_provider.dart:685 says that RPC exists because
+-- "admin_profiles RLS locks out" guests — which is not true until this
+-- migration lands. This makes the database match what the Dart already assumed,
+-- which is the recurring theme of this whole remediation.
+--
+-- What officials keep afterwards:
+--   admin_profiles select own            — own row
+--   staff_reads_own_profile              — own row
+--   admin_reads_all_official_profiles    — admin sees all (is_admin(), user_roles)
+-- Citizens keep nothing direct, and route through find_available_staff instead.
+
+drop policy if exists "admin_profiles public read" on public.admin_profiles;

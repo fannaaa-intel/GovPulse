@@ -2088,6 +2088,10 @@ class _SuggestionScreenState extends State<SuggestionScreen>
       context: context,
       builder: (ctx) => Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        // Without a cap, the full-width OK button stretches the card across the
+        // whole browser window. A phone screen is narrower than this, so the
+        // constraint only ever bites on web/tablet.
+        constraints: const BoxConstraints(maxWidth: 400, minWidth: 280),
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(

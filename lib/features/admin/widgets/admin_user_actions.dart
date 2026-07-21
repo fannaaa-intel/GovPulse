@@ -109,8 +109,12 @@ Future<void> showUserActionsFlow(
       if (r == null || !context.mounted) return;
       await _run(
         context,
-        () => n.suspend(user,
-            reason: r.reason, expiresAt: r.expiresAt, notify: r.notify),
+        () => n.suspend(
+          user,
+          reason: r.reason,
+          expiresAt: r.expiresAt,
+          notify: r.notify,
+        ),
         'Account suspended.',
       );
     case _UserAction.liftSuspension:
@@ -123,8 +127,13 @@ Future<void> showUserActionsFlow(
       if (r == null || !context.mounted) return;
       await _run(
         context,
-        () => n.setDeactivated(user, true,
-            reason: r.reason, expiresAt: r.expiresAt, notify: r.notify),
+        () => n.setDeactivated(
+          user,
+          true,
+          reason: r.reason,
+          expiresAt: r.expiresAt,
+          notify: r.notify,
+        ),
         'Account deactivated.',
       );
     case _UserAction.reactivate:
@@ -155,8 +164,11 @@ Future<void> showNewStaffFlow(BuildContext context, WidgetRef ref) async {
   final n = ref.read(adminUsersProvider.notifier);
   final ok = await showAdminModal<bool>(context, _NewStaffForm(notifier: n));
   if (ok == true && context.mounted) {
-    showAdminSnackBar(context, 'Staff account created.',
-        type: AdminSnackType.success);
+    showAdminSnackBar(
+      context,
+      'Staff account created.',
+      type: AdminSnackType.success,
+    );
   }
 }
 
@@ -312,7 +324,9 @@ class _ModalCard extends StatelessWidget {
                       Text(
                         subtitle!,
                         style: const TextStyle(
-                            fontSize: 12.5, color: AdminUi.textMuted),
+                          fontSize: 12.5,
+                          color: AdminUi.textMuted,
+                        ),
                       ),
                     ],
                   ],
@@ -400,29 +414,65 @@ class _UserActionsSheet extends StatelessWidget {
       return [
         if (isCitizen) ...[
           if (user.isRestricted) ...[
-            _row(context, Icons.tune_rounded, 'Change restriction',
-                _UserAction.changeRestriction),
-            _row(context, Icons.lock_open_rounded, 'Lift restriction',
-                _UserAction.liftRestriction, color: AppColors.green),
+            _row(
+              context,
+              Icons.tune_rounded,
+              'Change restriction',
+              _UserAction.changeRestriction,
+            ),
+            _row(
+              context,
+              Icons.lock_open_rounded,
+              'Lift restriction',
+              _UserAction.liftRestriction,
+              color: AppColors.green,
+            ),
           ] else
-            _row(context, Icons.block_rounded, 'Restrict features',
-                _UserAction.restrict),
+            _row(
+              context,
+              Icons.block_rounded,
+              'Restrict features',
+              _UserAction.restrict,
+            ),
           if (user.isSuspended)
-            _row(context, Icons.play_circle_outline_rounded, 'Lift suspension',
-                _UserAction.liftSuspension, color: AppColors.green)
+            _row(
+              context,
+              Icons.play_circle_outline_rounded,
+              'Lift suspension',
+              _UserAction.liftSuspension,
+              color: AppColors.green,
+            )
           else
-            _row(context, Icons.pause_circle_outline_rounded, 'Suspend account',
-                _UserAction.suspend, color: AppColors.red),
+            _row(
+              context,
+              Icons.pause_circle_outline_rounded,
+              'Suspend account',
+              _UserAction.suspend,
+              color: AppColors.red,
+            ),
         ],
         if (canDeactivate)
           user.isDeactivated
-              ? _row(context, Icons.person_outline_rounded,
-                  'Reactivate account', _UserAction.reactivate,
-                  color: AppColors.green)
-              : _row(context, Icons.person_off_rounded, 'Deactivate account',
-                  _UserAction.deactivate, color: AppColors.red),
-        _row(context, Icons.mail_outline_rounded, 'Send message',
-            _UserAction.message),
+              ? _row(
+                  context,
+                  Icons.person_outline_rounded,
+                  'Reactivate account',
+                  _UserAction.reactivate,
+                  color: AppColors.green,
+                )
+              : _row(
+                  context,
+                  Icons.person_off_rounded,
+                  'Deactivate account',
+                  _UserAction.deactivate,
+                  color: AppColors.red,
+                ),
+        _row(
+          context,
+          Icons.mail_outline_rounded,
+          'Send message',
+          _UserAction.message,
+        ),
       ];
     }
 
@@ -430,8 +480,12 @@ class _UserActionsSheet extends StatelessWidget {
       icon: user.isOfficial ? Icons.badge_rounded : Icons.person_rounded,
       accent: AppColors.primaryBlue,
       leading: AdminAvatar(size: 42, photoUrl: user.photoUrl),
+      // The roster lists staff by department, so this card is where an admin
+      // confirms WHO holds that office — keep the person's name as the title.
       title: user.displayName,
-      subtitle: '${appUserRoleLabel(user.role)}'
+      subtitle:
+          '${appUserRoleLabel(user.role)}'
+          '${(user.department ?? '').isNotEmpty ? ' · ${user.department}' : ''}'
           '${(user.email ?? '').isNotEmpty ? ' · ${user.email}' : ''}',
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -486,7 +540,12 @@ class _RestrictResult {
   final String? reason;
   final DateTime? expiresAt;
   final bool notify;
-  const _RestrictResult(this.features, this.reason, this.expiresAt, this.notify);
+  const _RestrictResult(
+    this.features,
+    this.reason,
+    this.expiresAt,
+    this.notify,
+  );
 }
 
 class _ReasonResult {
@@ -553,30 +612,35 @@ class _RestrictFormState extends State<_RestrictForm> {
           _NoteField(controller: _note, reason: _reason),
           const SizedBox(height: 12),
           _ExpiryTile(
-              value: _expires, onChanged: (d) => setState(() => _expires = d)),
+            value: _expires,
+            onChanged: (d) => setState(() => _expires = d),
+          ),
           const SizedBox(height: 6),
           _NotifySwitch(
-              value: _notify, onChanged: (v) => setState(() => _notify = v)),
+            value: _notify,
+            onChanged: (v) => setState(() => _notify = v),
+          ),
         ],
       ),
       footer: [
         TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel')),
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
         const SizedBox(width: 8),
         FilledButton(
           style: FilledButton.styleFrom(backgroundColor: AppColors.primaryBlue),
           onPressed: _features.isEmpty
               ? null
               : () => Navigator.pop(
-                    context,
-                    _RestrictResult(
-                      _features.toList(),
-                      _composeReason(_reason, _note.text),
-                      _expires,
-                      _notify,
-                    ),
+                  context,
+                  _RestrictResult(
+                    _features.toList(),
+                    _composeReason(_reason, _note.text),
+                    _expires,
+                    _notify,
                   ),
+                ),
           child: const Text('Apply'),
         ),
       ],
@@ -628,22 +692,31 @@ class _SuspendFormState extends State<_SuspendForm> {
           _NoteField(controller: _note, reason: _reason),
           const SizedBox(height: 12),
           _ExpiryTile(
-              value: _expires, onChanged: (d) => setState(() => _expires = d)),
+            value: _expires,
+            onChanged: (d) => setState(() => _expires = d),
+          ),
           const SizedBox(height: 6),
           _NotifySwitch(
-              value: _notify, onChanged: (v) => setState(() => _notify = v)),
+            value: _notify,
+            onChanged: (v) => setState(() => _notify = v),
+          ),
         ],
       ),
       footer: [
         TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel')),
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
         const SizedBox(width: 8),
         FilledButton(
           style: FilledButton.styleFrom(backgroundColor: AppColors.red),
           onPressed: () => Navigator.pop(
             context,
-            _ReasonResult(_composeReason(_reason, _note.text), _expires, _notify),
+            _ReasonResult(
+              _composeReason(_reason, _note.text),
+              _expires,
+              _notify,
+            ),
           ),
           child: const Text('Suspend'),
         ),
@@ -696,22 +769,31 @@ class _DeactivateFormState extends State<_DeactivateForm> {
           _NoteField(controller: _note, reason: _reason),
           const SizedBox(height: 12),
           _ExpiryTile(
-              value: _expires, onChanged: (d) => setState(() => _expires = d)),
+            value: _expires,
+            onChanged: (d) => setState(() => _expires = d),
+          ),
           const SizedBox(height: 6),
           _NotifySwitch(
-              value: _notify, onChanged: (v) => setState(() => _notify = v)),
+            value: _notify,
+            onChanged: (v) => setState(() => _notify = v),
+          ),
         ],
       ),
       footer: [
         TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel')),
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
         const SizedBox(width: 8),
         FilledButton(
           style: FilledButton.styleFrom(backgroundColor: AppColors.red),
           onPressed: () => Navigator.pop(
             context,
-            _ReasonResult(_composeReason(_reason, _note.text), _expires, _notify),
+            _ReasonResult(
+              _composeReason(_reason, _note.text),
+              _expires,
+              _notify,
+            ),
           ),
           child: const Text('Deactivate'),
         ),
@@ -764,15 +846,17 @@ class _MessageFormState extends State<_MessageForm> {
           const _FieldLabel('Message'),
           const SizedBox(height: 6),
           _TextInput(
-              controller: _body,
-              hint: 'What do you want to say?',
-              maxLines: 4),
+            controller: _body,
+            hint: 'What do you want to say?',
+            maxLines: 4,
+          ),
         ],
       ),
       footer: [
         TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel')),
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
         const SizedBox(width: 8),
         FilledButton(
           style: FilledButton.styleFrom(backgroundColor: AppColors.primaryBlue),
@@ -822,8 +906,10 @@ class _NewStaffFormState extends State<_NewStaffForm> {
     final username = _username.text.trim();
     final password = _password.text;
     if (email.isEmpty || username.isEmpty || password.length < 8) {
-      setState(() => _error =
-          'Email, username and an 8+ character password are required.');
+      setState(
+        () => _error =
+            'Email, username and an 8+ character password are required.',
+      );
       return;
     }
     setState(() {
@@ -871,11 +957,10 @@ class _NewStaffFormState extends State<_NewStaffForm> {
             onChanged: (ext) => setState(() {
               _isExternal = ext;
               // Reset the selection to a valid option for the chosen type.
-              _department = (ext
-                      ? StaffDepartments.external
-                      : StaffDepartments.internal)
-                  .first
-                  .name;
+              _department =
+                  (ext ? StaffDepartments.external : StaffDepartments.internal)
+                      .first
+                      .name;
             }),
           ),
           const SizedBox(height: 12),
@@ -890,9 +975,10 @@ class _NewStaffFormState extends State<_NewStaffForm> {
           const _FieldLabel('Email'),
           const SizedBox(height: 6),
           _TextInput(
-              controller: _email,
-              hint: 'name@example.com',
-              keyboard: TextInputType.emailAddress),
+            controller: _email,
+            hint: 'name@example.com',
+            keyboard: TextInputType.emailAddress,
+          ),
           const SizedBox(height: 12),
           const _FieldLabel('Username'),
           const SizedBox(height: 6),
@@ -920,8 +1006,10 @@ class _NewStaffFormState extends State<_NewStaffForm> {
           ),
           if (_error != null) ...[
             const SizedBox(height: 12),
-            Text(_error!,
-                style: const TextStyle(fontSize: 12.5, color: AppColors.red)),
+            Text(
+              _error!,
+              style: const TextStyle(fontSize: 12.5, color: AppColors.red),
+            ),
           ],
         ],
       ),
@@ -939,7 +1027,9 @@ class _NewStaffFormState extends State<_NewStaffForm> {
                   width: 18,
                   height: 18,
                   child: CircularProgressIndicator(
-                      strokeWidth: 2, color: Colors.white),
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
                 )
               : const Text('Create'),
         ),
@@ -968,13 +1058,13 @@ class _FieldLabel extends StatelessWidget {
   const _FieldLabel(this.text);
   @override
   Widget build(BuildContext context) => Text(
-        text,
-        style: const TextStyle(
-          fontSize: 12.5,
-          fontWeight: FontWeight.w700,
-          color: AdminUi.textSecondary,
-        ),
-      );
+    text,
+    style: const TextStyle(
+      fontSize: 12.5,
+      fontWeight: FontWeight.w700,
+      color: AdminUi.textSecondary,
+    ),
+  );
 }
 
 class _TextInput extends StatelessWidget {
@@ -1008,11 +1098,15 @@ class _TextInput extends StatelessWidget {
         isDense: true,
         filled: true,
         fillColor: AdminUi.subtle,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 12,
+        ),
         suffixIcon: suffix,
-        suffixIconConstraints:
-            const BoxConstraints(minWidth: 40, minHeight: 40),
+        suffixIconConstraints: const BoxConstraints(
+          minWidth: 40,
+          minHeight: 40,
+        ),
         border: _inputBorder(AdminUi.border),
         enabledBorder: _inputBorder(AdminUi.border),
         focusedBorder: _inputBorder(AppColors.primaryBlue, 1.4),
@@ -1032,11 +1126,14 @@ class _NoteField extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _FieldLabel(
-            other ? 'Details (required for "Other")' : 'Add a note (optional)'),
+          other ? 'Details (required for "Other")' : 'Add a note (optional)',
+        ),
         const SizedBox(height: 6),
         _TextInput(
           controller: controller,
-          hint: other ? 'Explain the reason…' : 'Extra context for the citizen…',
+          hint: other
+              ? 'Explain the reason…'
+              : 'Extra context for the citizen…',
           maxLines: 2,
         ),
       ],
@@ -1071,8 +1168,10 @@ class _ReasonDropdown extends StatelessWidget {
             child: DropdownButton<String>(
               value: value,
               isExpanded: true,
-              icon: const Icon(Icons.keyboard_arrow_down_rounded,
-                  color: AdminUi.textMuted),
+              icon: const Icon(
+                Icons.keyboard_arrow_down_rounded,
+                color: AdminUi.textMuted,
+              ),
               borderRadius: BorderRadius.circular(12),
               style: const TextStyle(fontSize: 14, color: AdminUi.textPrimary),
               items: [
@@ -1119,18 +1218,22 @@ class _StaffTypeToggle extends StatelessWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(icon,
-                    size: 17,
-                    color:
-                        selected ? AppColors.primaryBlue : AdminUi.textMuted),
+                Icon(
+                  icon,
+                  size: 17,
+                  color: selected ? AppColors.primaryBlue : AdminUi.textMuted,
+                ),
                 const SizedBox(width: 7),
-                Text(label,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color:
-                          selected ? AppColors.primaryBlue : AdminUi.textSecondary,
-                    )),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: selected
+                        ? AppColors.primaryBlue
+                        : AdminUi.textSecondary,
+                  ),
+                ),
               ],
             ),
           ),
@@ -1160,8 +1263,9 @@ class _DepartmentDropdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final options =
-        isExternal ? StaffDepartments.external : StaffDepartments.internal;
+    final options = isExternal
+        ? StaffDepartments.external
+        : StaffDepartments.internal;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
@@ -1173,8 +1277,10 @@ class _DepartmentDropdown extends StatelessWidget {
         child: DropdownButton<String>(
           value: value,
           isExpanded: true,
-          icon: const Icon(Icons.keyboard_arrow_down_rounded,
-              color: AdminUi.textMuted),
+          icon: const Icon(
+            Icons.keyboard_arrow_down_rounded,
+            color: AdminUi.textMuted,
+          ),
           borderRadius: BorderRadius.circular(12),
           style: const TextStyle(fontSize: 14, color: AdminUi.textPrimary),
           hint: Text(isExternal ? 'Select agency' : 'Select department'),
@@ -1193,8 +1299,11 @@ class _CheckRow extends StatelessWidget {
   final String label;
   final bool value;
   final ValueChanged<bool> onChanged;
-  const _CheckRow(
-      {required this.label, required this.value, required this.onChanged});
+  const _CheckRow({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
   @override
   Widget build(BuildContext context) {
     return InkWell(
@@ -1216,9 +1325,10 @@ class _CheckRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 10),
-            Text(label,
-                style:
-                    const TextStyle(fontSize: 14, color: AdminUi.textPrimary)),
+            Text(
+              label,
+              style: const TextStyle(fontSize: 14, color: AdminUi.textPrimary),
+            ),
           ],
         ),
       ),
@@ -1254,13 +1364,17 @@ class _ExpiryTile extends StatelessWidget {
               value == null
                   ? 'No end date (until lifted)'
                   : 'Ends ${value!.day} ${_months[value!.month - 1]} ${value!.year}',
-              style:
-                  const TextStyle(fontSize: 13, color: AdminUi.textSecondary),
+              style: const TextStyle(
+                fontSize: 13,
+                color: AdminUi.textSecondary,
+              ),
             ),
           ),
           if (value != null)
             TextButton(
-                onPressed: () => onChanged(null), child: const Text('Clear')),
+              onPressed: () => onChanged(null),
+              child: const Text('Clear'),
+            ),
           TextButton(
             onPressed: () async {
               final now = DateTime.now();

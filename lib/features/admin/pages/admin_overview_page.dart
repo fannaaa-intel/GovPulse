@@ -170,10 +170,10 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
 
   // ── Tab bar + per-tab content (narrow layout only) ────────────────────────
   Widget _buildTabBar() => AdminSegmentedTabs(
-        labels: _tabLabels,
-        selected: _tab,
-        onSelect: (i) => setState(() => _tab = i),
-      );
+    labels: _tabLabels,
+    selected: _tab,
+    onSelect: (i) => setState(() => _tab = i),
+  );
 
   /// The sections shown under the active tab. Each tab is deliberately short so
   /// it fits with little scrolling (the whole point of the split):
@@ -413,7 +413,11 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
       );
     } catch (e) {
       if (!mounted) return;
-      showAdminSnackBar(context, 'Export failed: $e', type: AdminSnackType.error);
+      showAdminSnackBar(
+        context,
+        'Export failed: $e',
+        type: AdminSnackType.error,
+      );
     } finally {
       if (mounted) setState(() => _exporting = false);
     }
@@ -551,7 +555,10 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
             child: loading
                 ? const AdminShimmer(child: _TrendSkeleton())
                 : (data == null
-                      ? const _EmptyHint('Trend unavailable.')
+                      ? const _EmptyHint(
+                          'Trend unavailable.',
+                          icon: Icons.show_chart_rounded,
+                        )
                       : _TrendChart(dates: data.reportDates, days: _rangeDays)),
           ),
         ],
@@ -571,7 +578,7 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
           if (loading)
             const AdminShimmer(child: _DonutSkeleton())
           else if (data == null || data.totalReports == 0)
-            const _EmptyHint('No reports yet.')
+            const _EmptyHint('No reports yet.', icon: Icons.flag_outlined)
           else
             _StatusDonut(counts: data.statusCounts, total: data.totalReports),
         ],
@@ -616,7 +623,10 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
         ),
       );
     } else if (s == null || s.responses == 0) {
-      body = const _EmptyHint('No citizen ratings yet.');
+      body = const _EmptyHint(
+        'No citizen ratings yet.',
+        icon: Icons.star_border_rounded,
+      );
     } else {
       body = Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -738,9 +748,15 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
         ),
       );
     } else if (data == null) {
-      body = const _EmptyHint('Categories unavailable.');
+      body = const _EmptyHint(
+        'Categories unavailable.',
+        icon: Icons.donut_small_rounded,
+      );
     } else if (data.topCategories.isEmpty) {
-      body = const _EmptyHint('No reports yet.');
+      body = const _EmptyHint(
+        'No reports yet.',
+        icon: Icons.donut_small_rounded,
+      );
     } else {
       const palette = <Color>[
         AppColors.red,
@@ -813,9 +829,15 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
         ),
       );
     } else if (data == null) {
-      body = const _EmptyHint('Activity unavailable.');
+      body = const _EmptyHint(
+        'Activity unavailable.',
+        icon: Icons.history_rounded,
+      );
     } else if (data.recentActivity.isEmpty) {
-      body = const _EmptyHint('No recent activity yet.');
+      body = const _EmptyHint(
+        'No recent activity yet.',
+        icon: Icons.history_rounded,
+      );
     } else {
       final items = data.recentActivity;
       body = Column(
@@ -1559,7 +1581,7 @@ class _NlpInsightsCard extends StatelessWidget {
   /// Opens a sentiment/urgency item on its own console, flashed. Null → the
   /// breakdown rows stay inert (e.g. no navigation wired).
   final void Function(FeedbackInsightItem, {required bool isReport})?
-      onOpenItem;
+  onOpenItem;
   const _NlpInsightsCard({
     this.insights,
     this.loading = false,
@@ -1582,9 +1604,7 @@ class _NlpInsightsCard extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
-            (nlp?.usesAi ?? false)
-                ? Icons.bolt_rounded
-                : Icons.memory_rounded,
+            (nlp?.usesAi ?? false) ? Icons.bolt_rounded : Icons.memory_rounded,
             size: 12,
             color: AppColors.primaryBlue,
           ),
@@ -1886,8 +1906,9 @@ class _NlpSentimentState extends State<_NlpSentiment> {
     // the rating turns the ascending sort into descending; ties fall back to
     // newest-first inside [_sortedBy].
     final sorted = _sortedBy(nlp.sentimentItems, (i) => -i.rating);
-    final filtered =
-        _filter == null ? sorted : sorted.where((i) => i.sentiment == _filter).toList();
+    final filtered = _filter == null
+        ? sorted
+        : sorted.where((i) => i.sentiment == _filter).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1928,9 +1949,15 @@ class _NlpSentimentState extends State<_NlpSentiment> {
         _InsightBreakdown(
           items: filtered,
           urgencyMode: false,
-          headerLabel: _filter == null ? 'RESPONSES' : '${_cap(_filter!)} · ${filtered.length}',
-          sheetTitle: _filter == null ? 'All responses' : '${_cap(_filter!)} feedback',
-          accent: _filter == null ? AdminUi.textMuted : _sentimentColor(_filter!),
+          headerLabel: _filter == null
+              ? 'RESPONSES'
+              : '${_cap(_filter!)} · ${filtered.length}',
+          sheetTitle: _filter == null
+              ? 'All responses'
+              : '${_cap(_filter!)} feedback',
+          accent: _filter == null
+              ? AdminUi.textMuted
+              : _sentimentColor(_filter!),
           onOpenItem: widget.onOpenItem,
         ),
       ],
@@ -1959,8 +1986,9 @@ class _NlpUrgencyState extends State<_NlpUrgency> {
     final total = nlp.reportsAnalyzed;
     double share(int n) => total == 0 ? 0 : n / total;
     final sorted = _sortedBy(nlp.urgencyItems, (i) => _urgRank(i.urgency));
-    final filtered =
-        _filter == null ? sorted : sorted.where((i) => i.urgency == _filter).toList();
+    final filtered = _filter == null
+        ? sorted
+        : sorted.where((i) => i.urgency == _filter).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2001,8 +2029,12 @@ class _NlpUrgencyState extends State<_NlpUrgency> {
         _InsightBreakdown(
           items: filtered,
           urgencyMode: true,
-          headerLabel: _filter == null ? 'REPORTS' : '${_cap(_filter!)} · ${filtered.length}',
-          sheetTitle: _filter == null ? 'All reports' : '${_cap(_filter!)} urgency',
+          headerLabel: _filter == null
+              ? 'REPORTS'
+              : '${_cap(_filter!)} · ${filtered.length}',
+          sheetTitle: _filter == null
+              ? 'All reports'
+              : '${_cap(_filter!)} urgency',
           accent: _filter == null ? AdminUi.textMuted : _urgencyColor(_filter!),
           onOpenItem: widget.onOpenItem,
         ),
@@ -2055,8 +2087,10 @@ class _InsightBarRow extends StatelessWidget {
                   Container(
                     width: 8,
                     height: 8,
-                    decoration:
-                        BoxDecoration(color: color, shape: BoxShape.circle),
+                    decoration: BoxDecoration(
+                      color: color,
+                      shape: BoxShape.circle,
+                    ),
                   ),
                   const SizedBox(width: 7),
                   Flexible(
@@ -2066,7 +2100,9 @@ class _InsightBarRow extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 12.5,
-                        fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                        fontWeight: selected
+                            ? FontWeight.w700
+                            : FontWeight.w600,
                         color: selected ? color : AdminUi.textSecondary,
                       ),
                     ),
@@ -2108,8 +2144,10 @@ class _InsightBarRow extends StatelessWidget {
                   const SizedBox(width: 4),
                   Text(
                     '${(share * 100).round()}%',
-                    style:
-                        const TextStyle(fontSize: 11, color: AdminUi.textMuted),
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AdminUi.textMuted,
+                    ),
                   ),
                 ],
               ),
@@ -2241,8 +2279,11 @@ class _SeeAllRow extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 2),
-              const Icon(Icons.chevron_right_rounded,
-                  size: 15, color: AppColors.primaryBlue),
+              const Icon(
+                Icons.chevron_right_rounded,
+                size: 15,
+                color: AppColors.primaryBlue,
+              ),
             ],
           ),
         ),
@@ -2335,8 +2376,10 @@ class _BreakdownSheet extends StatelessWidget {
                 Container(
                   width: 10,
                   height: 10,
-                  decoration:
-                      BoxDecoration(color: accent, shape: BoxShape.circle),
+                  decoration: BoxDecoration(
+                    color: accent,
+                    shape: BoxShape.circle,
+                  ),
                 ),
                 const SizedBox(width: 10),
                 Text(
@@ -2376,9 +2419,7 @@ class _BreakdownSheet extends StatelessWidget {
               itemBuilder: (_, i) => _BreakdownRow(
                 item: items[i],
                 urgencyMode: urgencyMode,
-                onOpen: onOpenItem == null
-                    ? null
-                    : () => onOpenItem!(items[i]),
+                onOpen: onOpenItem == null ? null : () => onOpenItem!(items[i]),
               ),
             ),
           ),
@@ -2504,10 +2545,7 @@ class _BreakdownRow extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   time,
-                  style: const TextStyle(
-                    fontSize: 10,
-                    color: AppColors.grey,
-                  ),
+                  style: const TextStyle(fontSize: 10, color: AppColors.grey),
                 ),
               ],
             ],
@@ -2579,157 +2617,173 @@ class _NlpOutlook extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-        const _NlpSectionLabel(
-          icon: Icons.insights_rounded,
-          label: 'Predictive outlook',
-        ),
-        const SizedBox(height: 10),
-        if (recent == null)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AdminUi.subtle,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: AdminUi.border),
-            ),
-            child: const Row(
-              children: [
-                Icon(Icons.hourglass_empty_rounded,
-                    size: 15, color: AdminUi.textMuted),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Not enough dated feedback to forecast yet.',
-                    style:
-                        TextStyle(fontSize: 11.5, color: AdminUi.textMuted),
-                  ),
-                ),
-              ],
-            ),
-          )
-        else ...[
-          // Trend headline chip + signed delta.
-          Row(
-            children: [
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(icon, size: 15, color: color),
-                    const SizedBox(width: 5),
-                    Text(
-                      word,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: color,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const Spacer(),
-              if (delta != null)
-                Text(
-                  '${delta >= 0 ? '+' : ''}${delta.toStringAsFixed(1)}★',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: color,
-                  ),
-                ),
-            ],
+          const _NlpSectionLabel(
+            icon: Icons.insights_rounded,
+            label: 'Predictive outlook',
           ),
-          const SizedBox(height: 8),
-          _outlookRow('Prior 30 days', nlp.priorAvg, AdminUi.textSecondary),
-          _outlookRow('Recent 30 days', recent, color, emphasize: true),
-          // Only a real extrapolation earns the "projected" label. With one
-          // window there is nothing to project from, so explain the gap instead
-          // of printing a copy of the recent average as if it were a forecast.
-          if (forecast != null) ...[
-            _outlookRow('Forecast', forecast, color,
-                emphasize: true, italicNote: 'projected'),
-            // Show the working. A projected star rating with no stated basis
-            // reads as authority it hasn't earned — especially at barangay
-            // sample sizes, where two responses can swing it a full star.
-            Padding(
-              padding: const EdgeInsets.only(left: 4, right: 4, top: 1),
-              child: Text(
-                _forecastBasis(nlp),
-                style: const TextStyle(
-                  fontSize: 10.5,
-                  height: 1.35,
-                  color: AdminUi.textMuted,
-                ),
-              ),
-            ),
-          ] else
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 5, horizontal: 4),
-              child: Text(
-                'No forecast yet — needs rated feedback spread across at '
-                'least 3 different weeks, or two consecutive 30-day windows, '
-                'to project a trend.',
-                style: TextStyle(
-                  fontSize: 11.5,
-                  height: 1.35,
-                  color: AdminUi.textMuted,
-                ),
-              ),
-            ),
-        ],
-        if (nlp.focus.isNotEmpty || (nlp.aiSummary?.isNotEmpty ?? false)) ...[
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              const Icon(Icons.tips_and_updates_outlined,
-                  size: 14, color: AdminUi.textMuted),
-              const SizedBox(width: 6),
-              const Text(
-                'Recommended focus',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.3,
-                  color: AdminUi.textMuted,
-                ),
-              ),
-              const Spacer(),
-              // Signals whether the recommendations are AI-written or on-device.
-              _OutlookSourceChip(usesAi: nlp.outlookUsesAi),
-            ],
-          ),
-          if (nlp.aiSummary?.isNotEmpty ?? false) ...[
-            const SizedBox(height: 8),
+          const SizedBox(height: 10),
+          if (recent == null)
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(11),
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: const Color(0xFF6366F1).withValues(alpha: 0.06),
+                color: AdminUi.subtle,
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                    color: const Color(0xFF6366F1).withValues(alpha: 0.18)),
+                border: Border.all(color: AdminUi.border),
               ),
-              child: Text(
-                nlp.aiSummary!,
-                style: const TextStyle(
-                  fontSize: 12,
-                  height: 1.4,
-                  color: AdminUi.textSecondary,
+              child: const Row(
+                children: [
+                  Icon(
+                    Icons.hourglass_empty_rounded,
+                    size: 15,
+                    color: AdminUi.textMuted,
+                  ),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Not enough dated feedback to forecast yet.',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: AdminUi.textMuted,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else ...[
+            // Trend headline chip + signed delta.
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 9,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(icon, size: 15, color: color),
+                      const SizedBox(width: 5),
+                      Text(
+                        word,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: color,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Spacer(),
+                if (delta != null)
+                  Text(
+                    '${delta >= 0 ? '+' : ''}${delta.toStringAsFixed(1)}★',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: color,
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            _outlookRow('Prior 30 days', nlp.priorAvg, AdminUi.textSecondary),
+            _outlookRow('Recent 30 days', recent, color, emphasize: true),
+            // Only a real extrapolation earns the "projected" label. With one
+            // window there is nothing to project from, so explain the gap instead
+            // of printing a copy of the recent average as if it were a forecast.
+            if (forecast != null) ...[
+              _outlookRow(
+                'Forecast',
+                forecast,
+                color,
+                emphasize: true,
+                italicNote: 'projected',
+              ),
+              // Show the working. A projected star rating with no stated basis
+              // reads as authority it hasn't earned — especially at barangay
+              // sample sizes, where two responses can swing it a full star.
+              Padding(
+                padding: const EdgeInsets.only(left: 4, right: 4, top: 1),
+                child: Text(
+                  _forecastBasis(nlp),
+                  style: const TextStyle(
+                    fontSize: 10.5,
+                    height: 1.35,
+                    color: AdminUi.textMuted,
+                  ),
                 ),
               ),
-            ),
+            ] else
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 5, horizontal: 4),
+                child: Text(
+                  'No forecast yet — needs rated feedback spread across at '
+                  'least 3 different weeks, or two consecutive 30-day windows, '
+                  'to project a trend.',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    height: 1.35,
+                    color: AdminUi.textMuted,
+                  ),
+                ),
+              ),
           ],
-          const SizedBox(height: 8),
-          for (final f in nlp.focus) _FocusCard(f),
-        ],
+          if (nlp.focus.isNotEmpty || (nlp.aiSummary?.isNotEmpty ?? false)) ...[
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                const Icon(
+                  Icons.tips_and_updates_outlined,
+                  size: 14,
+                  color: AdminUi.textMuted,
+                ),
+                const SizedBox(width: 6),
+                const Text(
+                  'Recommended focus',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.3,
+                    color: AdminUi.textMuted,
+                  ),
+                ),
+                const Spacer(),
+                // Signals whether the recommendations are AI-written or on-device.
+                _OutlookSourceChip(usesAi: nlp.outlookUsesAi),
+              ],
+            ),
+            if (nlp.aiSummary?.isNotEmpty ?? false) ...[
+              const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(11),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF6366F1).withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: const Color(0xFF6366F1).withValues(alpha: 0.18),
+                  ),
+                ),
+                child: Text(
+                  nlp.aiSummary!,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    height: 1.4,
+                    color: AdminUi.textSecondary,
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(height: 8),
+            for (final f in nlp.focus) _FocusCard(f),
+          ],
         ],
       ),
     );
@@ -2776,8 +2830,13 @@ class _NlpOutlook extends StatelessWidget {
     return parts.join(' ');
   }
 
-  Widget _outlookRow(String label, double? value, Color valueColor,
-      {bool emphasize = false, String? italicNote}) {
+  Widget _outlookRow(
+    String label,
+    double? value,
+    Color valueColor, {
+    bool emphasize = false,
+    String? italicNote,
+  }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 4),
       child: Row(
@@ -2852,8 +2911,11 @@ class _OutlookSourceChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(usesAi ? Icons.auto_awesome_rounded : Icons.memory_rounded,
-              size: 10, color: color),
+          Icon(
+            usesAi ? Icons.auto_awesome_rounded : Icons.memory_rounded,
+            size: 10,
+            color: color,
+          ),
           const SizedBox(width: 3),
           Text(
             usesAi ? 'AI' : 'On-device',
@@ -2876,10 +2938,10 @@ class _FocusCard extends StatelessWidget {
   const _FocusCard(this.focus);
 
   Color get _color => switch (focus.severity) {
-        'high' => AppColors.red,
-        'medium' => AppColors.orange,
-        _ => AppColors.green,
-      };
+    'high' => AppColors.red,
+    'medium' => AppColors.orange,
+    _ => AppColors.green,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -2947,8 +3009,11 @@ class _FocusCard extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.arrow_right_alt_rounded,
-                  size: 15, color: color.withValues(alpha: 0.9)),
+              Icon(
+                Icons.arrow_right_alt_rounded,
+                size: 15,
+                color: color.withValues(alpha: 0.9),
+              ),
               const SizedBox(width: 5),
               Expanded(
                 child: Text(
@@ -3070,6 +3135,11 @@ class _Card extends StatelessWidget {
 
     if (onTap == null) {
       return Container(
+        // A card owns its whole column. Without this it shrink-wraps its child,
+        // so a panel holding nothing but "No reports yet." collapses into a
+        // small box floating in the middle of the row — the dashboard looked
+        // broken precisely when it had the least to show.
+        width: double.infinity,
         padding: padding,
         decoration: BoxDecoration(
           color: AdminUi.surface,
@@ -3095,7 +3165,10 @@ class _Card extends StatelessWidget {
         ),
         child: InkWell(
           onTap: onTap,
-          child: Padding(padding: padding, child: child),
+          child: SizedBox(
+            width: double.infinity,
+            child: Padding(padding: padding, child: child),
+          ),
         ),
       ),
     );
@@ -3162,17 +3235,51 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
+/// The "nothing here yet" body of a dashboard panel.
+///
+/// A brand-new LGU sees this in almost every panel, so it is the first
+/// impression of the console — it has to read as "ready and waiting", not as a
+/// half-loaded page. A bare line of grey text hugging the top-left did the
+/// latter. The muted glyph and the floor height give the panel a body, so an
+/// empty dashboard still looks like a dashboard.
 class _EmptyHint extends StatelessWidget {
   final String text;
-  const _EmptyHint(this.text);
+  final IconData icon;
+  const _EmptyHint(this.text, {this.icon = Icons.inbox_rounded});
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Text(
-        text,
-        style: const TextStyle(fontSize: 13, color: AdminUi.textMuted),
+    return Container(
+      width: double.infinity,
+      // A floor, not a fixed height: a taller parent (the 200px trend slot)
+      // still centres this, and nothing overflows when the card is short.
+      constraints: const BoxConstraints(minHeight: 132),
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 12),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: AdminUi.subtle,
+              shape: BoxShape.circle,
+              border: Border.all(color: AdminUi.border),
+            ),
+            child: Icon(icon, size: 20, color: AdminUi.textMuted),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            text,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 13,
+              height: 1.4,
+              color: AdminUi.textMuted,
+            ),
+          ),
+        ],
       ),
     );
   }
