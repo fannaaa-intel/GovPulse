@@ -64,14 +64,18 @@ class _AdminTeamPageState extends ConsumerState<AdminTeamPage> {
     final out = all.where((u) {
       if (!u.isOfficial) return false;
       if (q.isEmpty) return true;
+      // The person's own name still matches even though the row shows the
+      // department — an admin who only remembers "Rheinz" must still find them.
       return u.displayName.toLowerCase().contains(q) ||
+          (u.department ?? '').toLowerCase().contains(q) ||
           (u.username ?? '').toLowerCase().contains(q) ||
           (u.email ?? '').toLowerCase().contains(q);
     }).toList();
-    // Admins first, then staff; alphabetical within each role.
+    // Admins first, then staff; alphabetical within each role — by the label
+    // actually shown, so the visible order reads alphabetical.
     out.sort((a, b) {
       if (a.role != b.role) return a.role.index.compareTo(b.role.index);
-      return a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase());
+      return a.teamLabel.toLowerCase().compareTo(b.teamLabel.toLowerCase());
     });
     return out;
   }
@@ -175,7 +179,10 @@ class _Header extends ConsumerWidget {
     }
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: [Expanded(child: title), newStaff],
+      children: [
+        Expanded(child: title),
+        newStaff,
+      ],
     );
   }
 }
@@ -243,13 +250,13 @@ class _Results extends StatelessWidget {
 }
 
 List<Widget> _statusPills(ManagedUser u) => [
-      if (u.isSuspended)
-        const StatusPill(label: 'Suspended', color: AppColors.red)
-      else if (u.isDeactivated)
-        const StatusPill(label: 'Deactivated', color: AppColors.grey)
-      else
-        const StatusPill(label: 'Active', color: AppColors.green),
-    ];
+  if (u.isSuspended)
+    const StatusPill(label: 'Suspended', color: AppColors.red)
+  else if (u.isDeactivated)
+    const StatusPill(label: 'Deactivated', color: AppColors.grey)
+  else
+    const StatusPill(label: 'Active', color: AppColors.green),
+];
 
 class _RolePill extends StatelessWidget {
   final AppUserRole role;
@@ -265,8 +272,7 @@ class _RolePill extends StatelessWidget {
       ),
       child: Text(
         appUserRoleLabel(role),
-        style:
-            TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: c),
+        style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: c),
       ),
     );
   }
@@ -344,7 +350,7 @@ class _TableRow extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          u.displayName,
+                          u.teamLabel,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
@@ -359,7 +365,9 @@ class _TableRow extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                                fontSize: 11.5, color: AdminUi.textMuted),
+                              fontSize: 11.5,
+                              color: AdminUi.textMuted,
+                            ),
                           ),
                       ],
                     ),
@@ -376,11 +384,7 @@ class _TableRow extends StatelessWidget {
             ),
             Expanded(
               flex: 2,
-              child: Wrap(
-                spacing: 6,
-                runSpacing: 4,
-                children: _statusPills(u),
-              ),
+              child: Wrap(spacing: 6, runSpacing: 4, children: _statusPills(u)),
             ),
             Expanded(
               flex: 2,
@@ -388,16 +392,21 @@ class _TableRow extends StatelessWidget {
                 adminShortDate(u.joinedAt),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style:
-                    const TextStyle(fontSize: 12, color: AdminUi.textSecondary),
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AdminUi.textSecondary,
+                ),
               ),
             ),
             SizedBox(
               width: 44,
               child: IconButton(
                 tooltip: 'Manage',
-                icon: const Icon(Icons.more_horiz_rounded,
-                    size: 20, color: AdminUi.textMuted),
+                icon: const Icon(
+                  Icons.more_horiz_rounded,
+                  size: 20,
+                  color: AdminUi.textMuted,
+                ),
                 onPressed: onOpen,
               ),
             ),
@@ -445,7 +454,7 @@ class _Card extends StatelessWidget {
                             children: [
                               Flexible(
                                 child: Text(
-                                  u.displayName,
+                                  u.teamLabel,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(
@@ -465,15 +474,19 @@ class _Card extends StatelessWidget {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
-                                  fontSize: 12, color: AdminUi.textMuted),
+                                fontSize: 12,
+                                color: AdminUi.textMuted,
+                              ),
                             ),
                         ],
                       ),
                     ),
                     IconButton(
                       tooltip: 'Manage',
-                      icon: const Icon(Icons.more_horiz_rounded,
-                          color: AdminUi.textMuted),
+                      icon: const Icon(
+                        Icons.more_horiz_rounded,
+                        color: AdminUi.textMuted,
+                      ),
                       onPressed: onOpen,
                     ),
                   ],

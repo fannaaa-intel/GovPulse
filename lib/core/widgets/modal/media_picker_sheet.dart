@@ -1,63 +1,112 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
-/// A polished bottom sheet for choosing how to attach media.
+import '../app_dialog.dart';
+
+/// Below this the picker is a bottom sheet (phone); at or above it the picker is
+/// a centered dialog, like every other pop-up on web/desktop.
+const double _kSheetBreakpoint = 600;
+
+/// Ask the user where to attach media from.
 ///
 /// Returns one of: `'gallery'`, `'video'`, `'camera'`, or `null` if dismissed.
 /// Set [allowVideo] to false for flows that only accept photos.
+///
+/// Presentation follows the viewport, not the platform: a bottom sheet under
+/// [_kSheetBreakpoint] (phones, narrow browser windows), a centered dialog above
+/// it so it matches the other web pop-ups instead of a full-width sheet glued to
+/// the bottom of a desktop window.
+///
+/// On web there is no camera option — capture there goes through the browser's
+/// file picker anyway, and the GPS-stamped capture path is mobile-only. When
+/// that leaves gallery as the only choice, this resolves to `'gallery'` without
+/// showing a pop-up at all.
 Future<String?> showMediaPickerSheet(
   BuildContext context, {
   bool allowVideo = true,
 }) {
+  final allowCamera = !kIsWeb;
+  if (!allowCamera && !allowVideo) {
+    return Future.value('gallery');
+  }
+
+  final isWide = MediaQuery.sizeOf(context).width >= _kSheetBreakpoint;
+
+  if (isWide) {
+    return showAppDialog<String>(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        constraints: const BoxConstraints(maxWidth: 400, minWidth: 280),
+        child: _MediaPickerBody(
+          allowVideo: allowVideo,
+          allowCamera: allowCamera,
+          asSheet: false,
+        ),
+      ),
+    );
+  }
+
   return showModalBottomSheet<String>(
     context: context,
     backgroundColor: Colors.transparent,
     isScrollControlled: true,
-    // On wide screens (tablet / web) this keeps the sheet a sensible width and
-    // centered, instead of stretching across the whole window.
     constraints: const BoxConstraints(maxWidth: 480),
-    builder: (ctx) => _MediaPickerSheet(allowVideo: allowVideo),
+    builder: (ctx) => _MediaPickerBody(
+      allowVideo: allowVideo,
+      allowCamera: allowCamera,
+      asSheet: true,
+    ),
   );
 }
 
-class _MediaPickerSheet extends StatelessWidget {
-  const _MediaPickerSheet({required this.allowVideo});
+class _MediaPickerBody extends StatelessWidget {
+  const _MediaPickerBody({
+    required this.allowVideo,
+    required this.allowCamera,
+    required this.asSheet,
+  });
 
   final bool allowVideo;
+  final bool allowCamera;
+  final bool asSheet;
 
   @override
   Widget build(BuildContext context) {
-    // Size relative to the sheet's own width, capped so fonts and padding stay
-    // phone-sized on tablet/web (where the raw screen width would be huge).
-    final w = math.min(MediaQuery.of(context).size.width, 460).toDouble();
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Metrics scale off the pop-up's own width, not the screen's, so a
+        // 400px dialog in a 1600px window is typeset like a phone sheet rather
+        // than blown up. Clamped so a very narrow window still reads.
+        final w = math.max(math.min(constraints.maxWidth, 460), 280).toDouble();
 
-    return Container(
-      width: double.infinity,
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(w * 0.05, w * 0.03, w * 0.05, w * 0.05),
+        final body = Padding(
+          padding: EdgeInsets.fromLTRB(
+            w * 0.05,
+            asSheet ? w * 0.03 : w * 0.055,
+            w * 0.05,
+            w * 0.05,
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Grab handle
-              Center(
-                child: Container(
-                  width: w * 0.11,
-                  height: w * 0.012,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFD1D5DB),
-                    borderRadius: BorderRadius.circular(w * 0.01),
+              if (asSheet) ...[
+                Center(
+                  child: Container(
+                    width: w * 0.11,
+                    height: w * 0.012,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFD1D5DB),
+                      borderRadius: BorderRadius.circular(w * 0.01),
+                    ),
                   ),
                 ),
-              ),
-              SizedBox(height: w * 0.05),
+                SizedBox(height: w * 0.05),
+              ],
               Text(
                 'Add attachment',
                 style: TextStyle(
@@ -69,7 +118,9 @@ class _MediaPickerSheet extends StatelessWidget {
               ),
               SizedBox(height: w * 0.012),
               Text(
-                'Choose where to add your photo or video.',
+                allowVideo
+                    ? 'Choose where to add your photo or video.'
+                    : 'Choose where to add your photo.',
                 style: TextStyle(
                   fontSize: w * 0.034,
                   color: const Color(0xFF6B7280),
@@ -96,15 +147,17 @@ class _MediaPickerSheet extends StatelessWidget {
                   onTap: () => Navigator.pop(context, 'video'),
                 ),
               ],
-              SizedBox(height: w * 0.03),
-              _PickerOption(
-                w: w,
-                icon: Icons.photo_camera_rounded,
-                gradient: const [Color(0xFF22C55E), Color(0xFF16A34A)],
-                title: 'Take a Photo',
-                subtitle: 'Use your camera',
-                onTap: () => Navigator.pop(context, 'camera'),
-              ),
+              if (allowCamera) ...[
+                SizedBox(height: w * 0.03),
+                _PickerOption(
+                  w: w,
+                  icon: Icons.photo_camera_rounded,
+                  gradient: const [Color(0xFF22C55E), Color(0xFF16A34A)],
+                  title: 'Take a Photo',
+                  subtitle: 'Use your camera',
+                  onTap: () => Navigator.pop(context, 'camera'),
+                ),
+              ],
               SizedBox(height: w * 0.04),
               SizedBox(
                 width: double.infinity,
@@ -129,8 +182,21 @@ class _MediaPickerSheet extends StatelessWidget {
               ),
             ],
           ),
-        ),
-      ),
+        );
+
+        // The dialog gets its shape and background from the Dialog itself; only
+        // the sheet has to paint its own rounded top and dodge the home bar.
+        if (!asSheet) return body;
+
+        return Container(
+          width: double.infinity,
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          child: SafeArea(top: false, child: body),
+        );
+      },
     );
   }
 }

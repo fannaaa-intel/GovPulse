@@ -78,6 +78,10 @@ class ManagedUser {
   final AppUserRole role;
   final CitizenVerif verif;
 
+  /// `admin_profiles.department` — the office a staff member speaks for. Only
+  /// staff carry one; admins speak for the LGU itself and leave this null.
+  final String? department;
+
   /// When the account was created (`profiles.created_at`). Drives the "Joined"
   /// column and the newest/oldest sort.
   final DateTime? joinedAt;
@@ -104,6 +108,7 @@ class ManagedUser {
     required this.barangay,
     required this.role,
     required this.verif,
+    required this.department,
     required this.joinedAt,
     required this.isDeactivated,
     required this.restrictedFeatures,
@@ -114,8 +119,7 @@ class ManagedUser {
     required this.suspensionExpires,
   });
 
-  bool get isOfficial =>
-      role == AppUserRole.admin || role == AppUserRole.staff;
+  bool get isOfficial => role == AppUserRole.admin || role == AppUserRole.staff;
   bool get isRestricted => restrictedFeatures.isNotEmpty;
 
   String get displayName {
@@ -126,12 +130,30 @@ class ManagedUser {
         : (email ?? 'User');
   }
 
+  /// How this account is labelled in the Team roster.
+  ///
+  /// A staff account acts as its OFFICE, not as the person holding the login —
+  /// the same rule `officialDisplayName` enforces everywhere the public can see
+  /// (see core/identity/official_display_name.dart). "Rheinz" told an admin
+  /// nothing about which office a ticket would land in; "Sanitation Office"
+  /// does. Falls back to the person's name when no department is on file, so a
+  /// half-provisioned row never renders blank.
+  String get teamLabel {
+    final dept = department?.trim() ?? '';
+    if (role == AppUserRole.staff && dept.isNotEmpty) return dept;
+    return displayName;
+  }
+
   String get initials {
     final n = displayName;
-    final parts = n.split(RegExp(r'[\s@._-]+')).where((p) => p.isNotEmpty).toList();
+    final parts = n
+        .split(RegExp(r'[\s@._-]+'))
+        .where((p) => p.isNotEmpty)
+        .toList();
     if (parts.isEmpty) return 'U';
     if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
-    return (parts.first.substring(0, 1) + parts[1].substring(0, 1)).toUpperCase();
+    return (parts.first.substring(0, 1) + parts[1].substring(0, 1))
+        .toUpperCase();
   }
 }
 
@@ -215,7 +237,10 @@ class AdminUsersNotifier extends AsyncNotifier<List<ManagedUser>> {
 
     // Resolve identity, role and enforcement state in parallel.
     final results = await Future.wait([
-      _db.from('user_roles').select('user_id, role_id').inFilter('user_id', ids),
+      _db
+          .from('user_roles')
+          .select('user_id, role_id')
+          .inFilter('user_id', ids),
       _db
           .from('public_user_profiles')
           .select('user_id, first_name, last_name, profile_photo_path')
@@ -244,7 +269,7 @@ class AdminUsersNotifier extends AsyncNotifier<List<ManagedUser>> {
       // Team list falls back to username and a blank silhouette.
       _db
           .from('admin_profiles')
-          .select('user_id, full_name, organization, photo_url')
+          .select('user_id, full_name, organization, photo_url, department')
           .inFilter('user_id', ids),
     ]);
 
@@ -276,7 +301,10 @@ class AdminUsersNotifier extends AsyncNotifier<List<ManagedUser>> {
     // Rows are newest-first, so the first status seen per user is the latest.
     final verifs = <String, String>{};
     for (final r in List<Map<String, dynamic>>.from(results[5])) {
-      verifs.putIfAbsent(r['user_id'] as String, () => r['status'] as String? ?? '');
+      verifs.putIfAbsent(
+        r['user_id'] as String,
+        () => r['status'] as String? ?? '',
+      );
     }
     // Official identity (admins + staff), keyed by user_id.
     final officials = <String, Map<String, dynamic>>{
@@ -302,9 +330,12 @@ class AdminUsersNotifier extends AsyncNotifier<List<ManagedUser>> {
       final officialOrg = (official?['organization'] as String?)?.trim();
       final resolvedOfficial = (officialName != null && officialName.isNotEmpty)
           ? officialName
-          : (officialOrg != null && officialOrg.isNotEmpty ? officialOrg : null);
+          : (officialOrg != null && officialOrg.isNotEmpty
+                ? officialOrg
+                : null);
       if (resolvedOfficial != null) {
-        firstName = resolvedOfficial; // single field → displayName uses it as-is
+        firstName =
+            resolvedOfficial; // single field → displayName uses it as-is
         lastName = null;
       }
       final officialPhoto = (official?['photo_url'] as String?)?.trim();
@@ -328,6 +359,7 @@ class AdminUsersNotifier extends AsyncNotifier<List<ManagedUser>> {
         barangay: barangays[id],
         role: _roleFromId(roles[id]),
         verif: _verifFromStatus(verifs[id]),
+        department: (official?['department'] as String?)?.trim(),
         joinedAt: _parseTs(p['created_at']),
         isDeactivated: (p['is_deactivated'] as bool?) ?? false,
         restrictedFeatures: restr == null
@@ -390,12 +422,16 @@ class AdminUsersNotifier extends AsyncNotifier<List<ManagedUser>> {
     DateTime? expiresAt,
     bool notify = true,
   }) async {
-    await _db.from('profiles').update({
-      'is_deactivated': deactivated,
-      'deactivated_at':
-          deactivated ? DateTime.now().toUtc().toIso8601String() : null,
-      'deactivated_by': deactivated ? _adminId : null,
-    }).eq('id', user.id);
+    await _db
+        .from('profiles')
+        .update({
+          'is_deactivated': deactivated,
+          'deactivated_at': deactivated
+              ? DateTime.now().toUtc().toIso8601String()
+              : null,
+          'deactivated_by': deactivated ? _adminId : null,
+        })
+        .eq('id', user.id);
 
     if (notify) {
       if (deactivated) {
@@ -435,10 +471,14 @@ class AdminUsersNotifier extends AsyncNotifier<List<ManagedUser>> {
     bool notify = true,
   }) async {
     // Lift any prior active restriction first, so there's one active row.
-    await _db.from('user_restrictions').update({
-      'lifted_at': DateTime.now().toUtc().toIso8601String(),
-      'lifted_by': _adminId,
-    }).eq('user_id', user.id).isFilter('lifted_at', null);
+    await _db
+        .from('user_restrictions')
+        .update({
+          'lifted_at': DateTime.now().toUtc().toIso8601String(),
+          'lifted_by': _adminId,
+        })
+        .eq('user_id', user.id)
+        .isFilter('lifted_at', null);
 
     await _db.from('user_restrictions').insert({
       'user_id': user.id,
@@ -469,12 +509,18 @@ class AdminUsersNotifier extends AsyncNotifier<List<ManagedUser>> {
   }
 
   Future<void> liftRestriction(ManagedUser user) async {
-    await _db.from('user_restrictions').update({
-      'lifted_at': DateTime.now().toUtc().toIso8601String(),
-      'lifted_by': _adminId,
-    }).eq('user_id', user.id).isFilter('lifted_at', null);
+    await _db
+        .from('user_restrictions')
+        .update({
+          'lifted_at': DateTime.now().toUtc().toIso8601String(),
+          'lifted_by': _adminId,
+        })
+        .eq('user_id', user.id)
+        .isFilter('lifted_at', null);
 
-    final labels = user.restrictedFeatures.map(restrictionFeatureLabel).join(', ');
+    final labels = user.restrictedFeatures
+        .map(restrictionFeatureLabel)
+        .join(', ');
     await _notify(
       user.id,
       'Restriction lifted',
@@ -497,10 +543,14 @@ class AdminUsersNotifier extends AsyncNotifier<List<ManagedUser>> {
     DateTime? expiresAt,
     bool notify = true,
   }) async {
-    await _db.from('user_suspensions').update({
-      'lifted_at': DateTime.now().toUtc().toIso8601String(),
-      'lifted_by': _adminId,
-    }).eq('user_id', user.id).isFilter('lifted_at', null);
+    await _db
+        .from('user_suspensions')
+        .update({
+          'lifted_at': DateTime.now().toUtc().toIso8601String(),
+          'lifted_by': _adminId,
+        })
+        .eq('user_id', user.id)
+        .isFilter('lifted_at', null);
 
     await _db.from('user_suspensions').insert({
       'user_id': user.id,
@@ -528,10 +578,14 @@ class AdminUsersNotifier extends AsyncNotifier<List<ManagedUser>> {
   }
 
   Future<void> liftSuspension(ManagedUser user) async {
-    await _db.from('user_suspensions').update({
-      'lifted_at': DateTime.now().toUtc().toIso8601String(),
-      'lifted_by': _adminId,
-    }).eq('user_id', user.id).isFilter('lifted_at', null);
+    await _db
+        .from('user_suspensions')
+        .update({
+          'lifted_at': DateTime.now().toUtc().toIso8601String(),
+          'lifted_by': _adminId,
+        })
+        .eq('user_id', user.id)
+        .isFilter('lifted_at', null);
 
     await _notify(
       user.id,
@@ -562,11 +616,14 @@ class AdminUsersNotifier extends AsyncNotifier<List<ManagedUser>> {
     // can't tell "already gone" from "never matched", so it reported success and
     // did nothing. The overload is now genuinely dropped, leaving this argument
     // as belt-and-braces rather than the thing holding the call together.
-    final res = await _db.rpc('broadcast_notification', params: {
-      'p_title': title,
-      'p_subtitle': subtitle,
-      'p_color': 4283980779, // 0xFF2563EB
-    });
+    final res = await _db.rpc(
+      'broadcast_notification',
+      params: {
+        'p_title': title,
+        'p_subtitle': subtitle,
+        'p_color': 4283980779, // 0xFF2563EB
+      },
+    );
     final count = res is int ? res : int.tryParse('$res') ?? 0;
     await _log(
       'broadcast_sent',
@@ -659,8 +716,18 @@ class AdminUsersNotifier extends AsyncNotifier<List<ManagedUser>> {
     if (expires == null) return 'until further notice';
     final d = expires.toLocal();
     const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
     ];
     return 'until ${d.day} ${months[d.month - 1]} ${d.year}';
   }

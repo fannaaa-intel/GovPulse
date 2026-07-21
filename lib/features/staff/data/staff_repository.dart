@@ -493,7 +493,15 @@ class StaffRepository {
           'sender_id': uid,
           'sender_type': 'staff',
           'text': text, // content column is `text`, not `message`
-          'created_at': DateTime.now().toIso8601String(),
+          // created_at is deliberately NOT sent. The column defaults to now(),
+          // so every message in a thread is stamped by ONE clock — the
+          // database's. Sending DateTime.now().toIso8601String() from the client
+          // (as this did) is wrong twice over: it is local time with no offset,
+          // which Postgres reads as UTC and stores 8 hours off, and it makes
+          // message ORDER depend on whether the staff PC and the citizen's phone
+          // agree on the time. They did not, which is why the staff thread
+          // rendered all staff messages before all citizen replies while the
+          // citizen's Hive-backed view showed the true interleaving.
         })
         .select('id, sender_type, text, created_at')
         .single();

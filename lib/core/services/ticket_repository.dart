@@ -178,22 +178,32 @@ class TicketRepository {
   // ── Staff assignment ───────────────────────────────────────────────────────
 
   /// Finds an available staff member for the given department.
-  /// Reads `admin_profiles` (staff rows carry department + is_online), returning
-  /// the user_id of an online staff member, or null when nobody is on duty (the
-  /// bot then handles the concern).
+  /// Returns the user_id of an online staff member, or null when nobody is on
+  /// duty (the bot then handles the concern).
+  ///
+  /// Goes through the `find_available_staff` SECURITY DEFINER RPC rather than
+  /// reading `admin_profiles` directly. That table used to carry a
+  /// `for select to public using (true)` policy, which made the entire officials
+  /// directory — names, departments, photos, `is_online`, `last_seen_at` —
+  /// readable by anyone holding the anon key shipped in the APK. This call site
+  /// was that policy's only legitimate consumer, so the policy was dropped and
+  /// replaced with an RPC that answers just this question and returns nothing
+  /// else. Citizens have no direct read on `admin_profiles`.
+  ///
+  /// NOTE the failure mode: the catch below returns null, which the caller
+  /// treats as "nobody on duty" and routes to the bot. So a broken read here
+  /// does not surface as an error — it silently degrades ticket routing. If
+  /// tickets stop reaching staff, check that migration 20260721000003 is
+  /// applied before looking anywhere else.
   Future<String?> findAvailableStaffId(String department) async {
     if (department.isEmpty) return null;
     try {
-      final rows = await _db
-          .from('admin_profiles')
-          .select('user_id')
-          .eq('department', department)
-          .eq('is_online', true)
-          .limit(1);
-      if (rows.isNotEmpty) {
-        return rows.first['user_id']?.toString();
-      }
-      return null;
+      final res = await _db.rpc(
+        'find_available_staff',
+        params: {'p_department': department},
+      );
+      final id = res?.toString().trim() ?? '';
+      return id.isEmpty ? null : id;
     } catch (e) {
       debugPrint('findAvailableStaffId: $e');
       return null; // no on-duty staff → treat as nobody online
@@ -358,7 +368,10 @@ class TicketRepository {
       'sender_id': senderId,
       'sender_type': senderType,
       'text': message, // ← ticket_messages content column is `text`, not `message`
-      'created_at': DateTime.now().toIso8601String(),
+      // created_at omitted on purpose — the column defaults to now() so the
+      // database is the single clock for the whole thread. See the matching
+      // note in staff_repository.sendMessage: client-supplied local timestamps
+      // stored 8 hours off and made ordering depend on device clock skew.
     });
   }
 
