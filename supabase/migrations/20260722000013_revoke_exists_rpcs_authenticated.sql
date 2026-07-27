@@ -1,0 +1,71 @@
+-- ============================================================================
+-- 20260722000013  Revoke `authenticated` EXECUTE on the two signup existence
+--                 RPCs: public.email_exists(text), public.username_exists(text)
+-- ============================================================================
+-- STAGED. Do not move into supabase/migrations/ until the pre-flight has run
+-- against live and returned the expected result:
+--   supabase/diagnostics/preflight_20260722000013_exists_rpcs_authenticated.sql
+-- Move by EXACT filename, never by wildcard.
+--
+-- ── What is still open ────────────────────────────────────────────────────
+-- 20260722000012 closed both oracles to anon/PUBLIC, reproduced live:
+--
+--     POST /rest/v1/rpc/username_exists {"p_username":"mark"}
+--       anon before -> 200 true
+--       anon after  -> 401 {"code":"42501","message":"permission denied ..."}
+--
+-- `authenticated` still holds EXECUTE on both. That is the SAME enumeration
+-- oracle — is this email / username taken? — available to any citizen who
+-- signs up and logs in, and PostgREST meters none of it. Closed to anon is not
+-- closed. This is the residual tail, the exact analog of what 20260722000011
+-- did for lookup_login_email after 010.
+--
+-- ── Cleared against the three traps ───────────────────────────────────────
+-- (a) client callers ............ ZERO. Re-grepped lib/ for `email_exists` /
+--     `username_exists` at the time this file was written: one comment
+--     (auth_service.dart:12), no call site. Both checks route through
+--     functions.invoke('check-email-exists' / 'check-username-exists'), which
+--     call these RPCs server-side under service_role. There is deliberately NO
+--     client fallback to the RPCs. The facebook_username_screen path runs
+--     post-OAuth (a session exists) but also calls AuthService.checkUsername-
+--     Exists, i.e. the Edge Function — it never executes the RPC as the client
+--     session's `authenticated` role.
+-- (b) RLS policy references ..... verify via pre-flight block 2 (zero rows).
+-- (c) internal SQL callers ...... verify via pre-flight block 3 (zero rows).
+--
+-- ── service_role KEEPS EXECUTE — load-bearing ─────────────────────────────
+-- supabase/functions/check-email-exists/index.ts, check-username-exists/
+-- index.ts AND send-email-otp/index.ts (its new duplicate gate) all create
+-- their client with SUPABASE_SERVICE_ROLE_KEY and call these RPCs through it.
+-- service_role holds its own explicit EXECUTE grant, and this migration names
+-- ONLY `authenticated`, so that grant survives untouched. If service_role ever
+-- lost EXECUTE here: the two check-* endpoints FAIL OPEN ({"exists": false} =
+-- "available"), so the breakage would present as duplicate signups rather than
+-- an error; send-email-otp's gate FAILS CLOSED (500), so it would present as
+-- every signup returning "Server error". Both symptoms point back to the
+-- service_role grant, not to this revoke.
+--
+-- ── Why `authenticated` alone, and why that is not rule 9 being ignored ────
+-- Rule 9 ("revoke from public, anon explicitly") exists because Supabase grants
+-- to BOTH and revoking one leaves the other. Migration 012 already named
+-- `public, anon` together and the grants query confirmed anon = absent. This
+-- file removes the one remaining non-privileged grantee. Naming `public`/`anon`
+-- again here would be a redundant no-op. Verify the outcome with a grants query,
+-- never by reading this DDL.
+--
+-- ── Blast radius ──────────────────────────────────────────────────────────
+-- Expected: zero. After this, the only roles that can execute either function
+-- are service_role and postgres — server-side code only. The functions are NOT
+-- dropped: the Edge Functions reuse them rather than reimplementing
+-- `lower(col) = lower(trim(input))`, and drift between matchers would break the
+-- signup availability checks.
+--
+-- Rollback: supabase/rollback/20260722000013_revoke_exists_rpcs_authenticated_rollback.sql
+-- ============================================================================
+
+begin;
+
+revoke execute on function public.email_exists(text) from authenticated;
+revoke execute on function public.username_exists(text) from authenticated;
+
+commit;

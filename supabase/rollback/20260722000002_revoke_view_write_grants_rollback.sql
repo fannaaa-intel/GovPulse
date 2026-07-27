@@ -1,0 +1,46 @@
+-- ROLLBACK for 20260722000002_revoke_view_write_grants.sql
+--
+-- NOT a migration. `supabase db push` never reads this directory.
+--
+-- ⛔ THERE IS ALMOST CERTAINLY NO LEGITIMATE REASON TO RUN THIS ⛔
+--
+-- The migration this reverts is a PURE REDUCTION. It removed INSERT, UPDATE,
+-- DELETE, TRUNCATE, REFERENCES and TRIGGER grants that no application code has
+-- ever used — the Dart only ever SELECTs from these views. Verified after
+-- applying: staff reads returned the same row counts as before.
+--
+-- Reverting re-opens a CRITICAL, REPRODUCED privilege escalation. As the real
+-- Test Staff account, before the migration:
+--
+--   update staff_reports_view set is_anonymous = false ...  -> SUCCEEDED
+--   select user_id from staff_reports_view ...              -> 76159d2c-…
+--
+-- i.e. two statements de-anonymise every anonymous report in the staffer's
+-- department, defeating 20260722000000/000001 entirely. The same path exists on
+-- staff_tickets_view for the five contact columns. DELETE additionally grants
+-- destruction authority that staff have never held under any policy.
+--
+-- If the staff console breaks after this migration, the cause is NOT these
+-- grants — the app only reads. Investigate the view predicate or the RPCs
+-- first. Do not restore write access to a definer view to fix a read problem.
+--
+-- If you genuinely must revert (for example to isolate a fault), restore the
+-- MINIMUM and re-revoke immediately afterwards. The statements below are
+-- commented out deliberately: uncomment only the single line you need.
+
+-- ── Views (each line re-opens the escalation on that view) ─────────────────
+-- grant insert, update, delete, truncate, references, trigger on public.staff_reports_view     to authenticated;
+-- grant insert, update, delete, truncate, references, trigger on public.staff_tickets_view     to authenticated;
+-- grant insert, update, delete, truncate, references, trigger on public.staff_suggestions_view to authenticated;
+-- grant insert, update, delete, truncate, references, trigger on public.community_feed         to authenticated;
+-- grant insert, update, delete, truncate, references, trigger on public.public_user_profiles   to authenticated;
+-- grant insert, update, delete, truncate, references, trigger on public.reports_public         to authenticated;
+
+-- ── anon SELECT on the staff views (was meaningless — invoker views return
+--    zero rows to anon — and should stay revoked) ──────────────────────────
+-- grant select on public.staff_suggestions_view to anon;
+
+-- ── Function EXECUTE to anon ──────────────────────────────────────────────
+-- Restoring find_available_staff to anon re-opens anonymous enumeration of
+-- on-duty staff uuids by department, partially undoing 20260721000004.
+-- grant execute on function public.find_available_staff(text) to anon;

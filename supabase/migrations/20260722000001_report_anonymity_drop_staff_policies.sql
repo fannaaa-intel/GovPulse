@@ -1,0 +1,58 @@
+-- P1.3 (reports) — PHASE 2 of 2: the actual close.
+--
+-- ══ DO NOT APPLY until BOTH are true ═══════════════════════════════════════
+--   1. 20260722000000 has been applied (definer view, RPCs, six reroutes)
+--   2. The RUNNING staff build reads `staff_reports_view` and writes via
+--      `staff_set_report_status` / `staff_return_to_triage`. A source change
+--      that has not shipped is not deployed.
+--
+-- Applying this against the old client is the silent-failure case: staff reads
+-- return an empty list, and staff writes affect ZERO ROWS while returning
+-- SUCCESS. A staffer marks a report resolved, it stays open, and nothing
+-- surfaces anywhere. That is the exact failure this whole remediation has been
+-- chasing, so the ordering is not optional.
+--
+-- ══ WHAT THIS CLOSES ═══════════════════════════════════════════════════════
+-- `staff_reads_department_reports` grants staff SELECT on the WHOLE reports
+-- row without ever consulting `is_anonymous`. Reproduced 2026-07-22 as the real
+-- Test Staff account:
+--
+--   report b34a6055 | is_anonymous = true | user_id = 76159d2c-…   <- LEAKED
+--
+-- Until this statement runs, report anonymity is enforced ONLY by the Dart
+-- column list (`_reportCols` omits user_id) — the presentation-layer pattern
+-- that is this engagement's central finding. Phase 1 built the replacement;
+-- this removes the bypass.
+--
+-- `staff_updates_department_reports` is replaced by the two definer RPCs from
+-- phase 1, which re-check department ownership and RAISE on denial instead of
+-- silently affecting zero rows.
+--
+-- After this, a staff member has NO SELECT and NO UPDATE path to public.reports.
+-- Surviving policies are admin-scoped and citizen-own-row only.
+--
+-- ══ REALTIME: PUBLICATION DELIBERATELY UNTOUCHED ═══════════════════════════
+-- Dropping the staff SELECT policy is ITSELF what stops staff receiving report
+-- rows, because realtime authorises postgres_changes delivery by the
+-- subscriber's SELECT policy. Removing `reports` from supabase_realtime would
+-- be redundant for that purpose AND would break the three CITIZEN subscriptions
+-- to their own reports (my_reports_screen.dart:299,
+-- report_detail_screen.dart:320, my_submissions_screen.dart:558) — repeating
+-- the migration-7 over-correction that silently killed the citizen ticket
+-- status subscription and broke the rating card.
+--
+-- So: the table stays in the publication. Staff lose delivery via RLS and
+-- switch to the polling pattern (staffReportsStaleProvider). Citizens and
+-- admins are unaffected.
+--
+-- Noted for the findings report, not changed here: `reports` has
+-- relreplident = 'f' (FULL), unlike concern_tickets ('d'). UPDATE/DELETE
+-- payloads therefore carry the entire OLD row including user_id, not just the
+-- primary key. Not a live leak — after this migration staff receive nothing,
+-- citizens receive only their own rows, admins are entitled to all — but it is
+-- a latent amplifier: any future widening of SELECT on reports would leak the
+-- full prior row rather than a key. Changing replica identity has replication
+-- consequences beyond this migration's scope.
+
+drop policy if exists "staff_reads_department_reports"   on public.reports;
+drop policy if exists "staff_updates_department_reports" on public.reports;
