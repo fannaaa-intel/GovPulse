@@ -60,6 +60,31 @@ class StaffIdentity {
         isOnline: isOnline ?? this.isOnline,
         photoUrl: photoUrl ?? this.photoUrl,
       );
+
+  // Value equality is load-bearing, not a nicety. Every list notifier watches
+  // this object; without ==, two identical refetches compare unequal, Riverpod
+  // reports a state change, and every dependent notifier REBUILDS. That tears
+  // down and re-arms their interval timers, restarting the 30s countdown from
+  // zero each time — so a burst of identity emissions can prevent a poll from
+  // ever firing. Diagnosed 2026-07-22 from a log showing three ARMs and two
+  // teardowns in 3.4s, where the first tick survived only by luck.
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is StaffIdentity &&
+          runtimeType == other.runtimeType &&
+          userId == other.userId &&
+          email == other.email &&
+          fullName == other.fullName &&
+          title == other.title &&
+          department == other.department &&
+          isExternal == other.isExternal &&
+          isOnline == other.isOnline &&
+          photoUrl == other.photoUrl;
+
+  @override
+  int get hashCode => Object.hash(userId, email, fullName, title, department,
+      isExternal, isOnline, photoUrl);
 }
 
 class StaffConversation {
@@ -415,8 +440,15 @@ class StaffRepository {
   // ── Conversations (concern_tickets) ─────────────────────────────────────────
   Future<List<StaffConversation>> fetchConversations(String department) async {
     if (department.isEmpty) return const [];
+    // Reads through `staff_tickets_view`, NOT `concern_tickets` directly. The
+    // base table exposes five raw contact columns on every row; the view nulls
+    // all of them (and user_id) for anonymous tickets in the database, so the
+    // citizen's number never leaves Postgres for an anonymous chat. Staff have
+    // no SELECT policy on concern_tickets itself any more — see migration
+    // 20260721000007. The view is department-self-scoping, but the .eq() is
+    // kept as defence in depth and to match the ghost filter.
     final rows = await _db
-        .from('concern_tickets')
+        .from('staff_tickets_view')
         .select(
           'id, reference_code, category, department, status, assigned_staff_id, '
           'contact_name, contact_number, report_id, is_anonymous, rating, '
@@ -505,51 +537,54 @@ class StaffRepository {
         })
         .select('id, sender_type, text, created_at')
         .single();
-    // Bump the ticket so it floats to the top of the inbox.
-    await _db.from('concern_tickets').update({
-      'updated_at': DateTime.now().toIso8601String(),
-    }).eq('id', ticketId);
+    // Bump the ticket so it floats to the top of the inbox — via RPC, because
+    // staff no longer hold a direct UPDATE policy on concern_tickets. A raw
+    // update here would silently affect 0 rows. Fire-and-forget: the reply is
+    // already sent, so a failed re-sort must not fail the send.
+    try {
+      await _db.rpc('staff_touch_ticket', params: {'p_ticket': ticketId});
+    } catch (_) {/* inbox ordering only — never block a sent message */}
     return StaffMessage.fromRow(row);
   }
 
   /// Claims an unassigned ticket for the signed-in staff member.
+  ///
+  /// Goes through the `staff_claim_ticket` RPC rather than an UPDATE on
+  /// concern_tickets. Staff no longer hold an UPDATE (or SELECT) policy on that
+  /// table, and a WHERE-scoped UPDATE without a SELECT policy affects zero rows
+  /// and returns SUCCESS — the silent no-op this whole remediation kept finding.
+  /// The RPC re-checks department ownership and RAISES on denial, so a failed
+  /// claim throws here instead of pretending to work.
   Future<void> claimConversation(String ticketId) async {
     final uid = _uid;
     if (uid == null) return;
-    await _db.from('concern_tickets').update({
-      'assigned_staff_id': uid,
-      'updated_at': DateTime.now().toIso8601String(),
-    }).eq('id', ticketId);
+    await _db.rpc('staff_claim_ticket', params: {'p_ticket': ticketId});
   }
 
   Future<void> setConversationStatus(String ticketId, String status) async {
-    await _db.from('concern_tickets').update({
-      'status': status,
-      'updated_at': DateTime.now().toIso8601String(),
-    }).eq('id', ticketId);
+    // See claimConversation: definer RPC, raises on denial, never a silent
+    // no-op. resolved_at is stamped server-side for terminal statuses.
+    await _db.rpc('staff_set_ticket_status',
+        params: {'p_ticket': ticketId, 'p_status': status});
   }
 
-  /// Fires whenever a ticket in [department] changes (new waiting chat, an
-  /// assignment, a status flip) so the inbox can refresh itself live.
-  RealtimeChannel subscribeDepartmentTickets(
-    String department,
-    void Function() onChange,
-  ) {
-    return _db
-        .channel('staff_dept_tickets:$department')
-        .onPostgresChanges(
-          event: PostgresChangeEvent.all,
-          schema: 'public',
-          table: 'concern_tickets',
-          filter: PostgresChangeFilter(
-            type: PostgresChangeFilterType.eq,
-            column: 'department',
-            value: department,
-          ),
-          callback: (_) => onChange(),
-        )
-        .subscribe();
-  }
+  // subscribeDepartmentTickets was REMOVED in migration 20260721000007. It
+  // subscribed to postgres_changes on concern_tickets, which shipped the raw
+  // row — five citizen contact columns — over the socket, defeating ticket
+  // anonymity.
+  //
+  // concern_tickets IS in the realtime publication again as of migration
+  // 20260722000004 (its removal broke the citizen's rating card and protected
+  // nothing). What keeps staff from receiving these rows is that staff hold no
+  // SELECT policy on concern_tickets: realtime authorizes every change against
+  // the subscriber's own SELECT policies. So re-adding this subscription would
+  // not leak today — but it would the instant anyone grants staff a read
+  // policy, which is why that assertion is enforced in
+  // supabase/diagnostics/verify_20260722000004_ticket_realtime.sql rather than
+  // left to memory. Do not reintroduce it.
+  //
+  // The staff inbox polls instead (see staff_conversations_page). Live push
+  // returns in 7c via Broadcast with a non-identifying payload.
 
   RealtimeChannel subscribeMessages(
     String ticketId,
@@ -581,10 +616,17 @@ class StaffRepository {
   /// here once triaged (assigned_to_department set) — pending reports stay on
   /// the admin's desk. Anonymous reports ARE shown (the reporter's identity is
   /// never exposed in the staff view — only the issue itself).
+  /// Reads through `staff_reports_view`, NOT `reports` directly. The base table
+  /// exposes `user_id` on every row including anonymous ones; the view nulls it
+  /// in the database when `is_anonymous`, so an anonymous reporter's identity
+  /// never leaves Postgres. Staff have no SELECT policy on `reports` any more —
+  /// see migration 20260722000000. The view is department-self-scoping (its
+  /// WHERE calls `staff_can_see_report`), but the .eq() is kept as defence in
+  /// depth and to separate assigned from endorsed.
   Future<List<StaffReport>> fetchDepartmentReports(String department) async {
     if (department.isEmpty) return const [];
     final rows = await _db
-        .from('reports')
+        .from('staff_reports_view')
         .select(_reportCols)
         .eq('assigned_to_department', department)
         .order('created_at', ascending: false)
@@ -597,7 +639,7 @@ class StaffRepository {
   Future<List<StaffReport>> fetchEndorsedReports(String department) async {
     if (department.isEmpty) return const [];
     final rows = await _db
-        .from('reports')
+        .from('staff_reports_view')
         .select(_reportCols)
         .eq('endorsed_to_department', department)
         .order('created_at', ascending: false)
@@ -607,10 +649,15 @@ class StaffRepository {
         .toList();
   }
 
+  /// Goes through the `staff_set_report_status` RPC rather than an UPDATE on
+  /// `reports`. Staff no longer hold an UPDATE (or SELECT) policy on that table,
+  /// and a WHERE-scoped UPDATE without a SELECT policy affects zero rows and
+  /// returns SUCCESS — the silent no-op this remediation kept finding. The RPC
+  /// re-checks department ownership and RAISES on denial, so a failed status
+  /// change throws here instead of pretending to work.
   Future<void> setReportStatus(String id, ReportStatus status) async {
-    await _db
-        .from('reports')
-        .update({'status': reportStatusToDb(status)}).eq('id', id);
+    await _db.rpc('staff_set_report_status',
+        params: {'p_report': id, 'p_status': reportStatusToDb(status)});
   }
 
   /// Bounce a mis-routed report back to the admin's triage desk. Leaves an audit
@@ -628,14 +675,19 @@ class StaffRepository {
         'author_name': office,
         'body': note,
       });
-    } catch (_) {
+    } catch (e) {
       // Non-fatal — proceed with the bounce even if the note write fails.
+      // Logged rather than discarded: this is the bounce AUDIT TRAIL, and a
+      // write failure that produces no error, no log and no row is
+      // indistinguishable from success. See the findings report.
+      debugPrint('returnToTriage: audit note insert failed: $e');
     }
-    await _db.from('reports').update({
-      'status': reportStatusToDb(ReportStatus.pending),
-      'assigned_to_department': null,
-      'endorsed_to_department': null,
-    }).eq('id', id);
+    // Via RPC — staff no longer hold a direct UPDATE policy on reports, so a
+    // raw update here would silently affect 0 rows. Note the ORDER: the audit
+    // note above must be inserted BEFORE this call, because report_notes_staff_insert
+    // resolves through staff_can_see_report(), which stops matching the instant
+    // this RPC nulls both department columns. Do not reorder.
+    await _db.rpc('staff_return_to_triage', params: {'p_report': id});
   }
 
   // ── Community updates (staff submit → admin approves) ───────────────────────

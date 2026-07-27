@@ -18,17 +18,9 @@ import '../../../../core/widgets/reveal_loading.dart';
 import '../../../../core/widgets/Home/Newsfeed/news_feed_helpers.dart'
     show formatTimeAgo;
 import '../../../../core/widgets/app_dialog.dart';
+import '../../../../core/utils/submission_id.dart';
+import '../../../../core/utils/picked_media.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-
-/// Image provider for a just-picked file, correct on every platform.
-///
-/// On web an [XFile.path] is a `blob:` URL, not a filesystem path, and every
-/// `dart:io` File operation throws `Unsupported operation: _Namespace`. That is
-/// what crashed the attachment preview with "Image.file is not supported on
-/// Flutter Web". Native platforms keep [FileImage]; web reads the blob through
-/// [NetworkImage], which handles `blob:` URLs.
-ImageProvider pickedImageProvider(XFile file) =>
-    kIsWeb ? NetworkImage(file.path) : FileImage(File(file.path));
 
 // ── Aparri bounding box — must match location_picker_screen.dart ──────────
 const double _riMinLat = 18.2750;
@@ -383,6 +375,10 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
           child: Material(
             color: Colors.transparent,
             child: Container(
+              // Without a cap this confirm stretches the full viewport on web,
+              // leaving one short sentence spread across a metre of screen and
+              // the two buttons a mouse-drag apart.
+              constraints: const BoxConstraints(maxWidth: 400),
               margin: EdgeInsets.symmetric(horizontal: width * 0.07),
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
@@ -1768,7 +1764,16 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
       builder: (ctx) => StatefulBuilder(
         builder: (context, setModalState) {
           final isEn = _consentInEnglish;
-          final width = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+          final screenW = MediaQuery.of(context).size.width;
+          final width = screenW.clamp(0.0, 480.0);
+          // On web/desktop this is a block of terms to READ, not a banner: past
+          // ~520px the lines get long enough that the eye loses its place on the
+          // wrap. Cap the card there and give the surplus back as margin; on a
+          // phone the cap never binds and the old 5% inset stands.
+          final sideInset = ((screenW - 520) / 2).clamp(
+            width * 0.05,
+            screenW * 0.5,
+          );
 
           final title = isEn
               ? 'Anonymous Report Consent'
@@ -1803,7 +1808,10 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(20),
             ),
-            insetPadding: EdgeInsets.symmetric(horizontal: width * 0.05),
+            insetPadding: EdgeInsets.symmetric(
+              horizontal: sideInset,
+              vertical: 24,
+            ),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
               child: Column(
@@ -2161,6 +2169,13 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
       final supabase = Supabase.instance.client;
       final userId = supabase.auth.currentUser!.id;
 
+      // The report id is generated HERE, before anything is uploaded, so media
+      // can be keyed by the report instead of by the citizen. The old path
+      // `reports/$userId/...` put the reporter's uuid in the object key even on
+      // anonymous submissions, which let staff de-anonymise a report without
+      // reading the reports table. See lib/core/utils/submission_id.dart.
+      final reportId = uuidV4();
+
       // ── 2. Upload media files to storage ─────────────────────────────────
       final List<Map<String, String>> mediaItems = [];
       for (int i = 0; i < _attachedFiles.length; i++) {
@@ -2169,7 +2184,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
         final ext = file.name.split('.').last.toLowerCase();
         final fileName =
             '${DateTime.now().millisecondsSinceEpoch}_${i}_${file.name}';
-        final storagePath = 'reports/$userId/$fileName';
+        final storagePath = 'reports/$reportId/$fileName';
         final contentType = _isVideo(file) ? 'video/$ext' : 'image/$ext';
 
         await supabase.storage
@@ -2191,6 +2206,10 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
       final response = await supabase
           .from('reports')
           .insert({
+            // Explicit id: the media above was already uploaded under
+            // reports/$reportId/. `.insert` (never `.upsert`) so a colliding id
+            // fails on the primary key instead of overwriting someone's row.
+            'id': reportId,
             'user_id': userId,
             'category': _selectedCategory,
             'category_other': _selectedCategory == 'others'
@@ -2213,7 +2232,10 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
           .select('id')
           .single();
 
-      final reportId = response['id'] as String;
+      // `reportId` is already known — it was generated before the upload. The
+      // round-trip is kept only so a failed insert throws here rather than
+      // surfacing later as media rows pointing at a report that never existed.
+      assert(response['id'] == reportId);
 
       // ── 4. Insert media rows into report_media table ──────────────────────
       for (int i = 0; i < mediaItems.length; i++) {

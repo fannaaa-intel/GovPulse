@@ -4,18 +4,37 @@ class AuthService {
   static final _client = Supabase.instance.client;
 
   // ── Signup checks ───────────────────────────────────────────────────────
-  // These run BEFORE any session exists, so they call SECURITY DEFINER RPCs
-  // (anon-callable) that return only a boolean — never any row data. The
-  // `profiles` table itself is no longer readable by the anon key.
+  // These run BEFORE any session exists, so they go through Edge Functions
+  // deployed with verify_jwt = false. Each returns only {'exists': bool} —
+  // never any row data. The `profiles` table itself is not readable by the
+  // anon key.
+  //
+  // These used to call the `email_exists` / `username_exists` RPCs directly
+  // with the anon key. The RPCs are unmetered — PostgREST applies no rate
+  // limiting — so the enumeration oracle they expose was bounded only by
+  // network throughput. Routing through the Edge Functions puts every probe
+  // behind that layer's checkRateLimit. There is deliberately NO fallback to
+  // the RPCs: a fallback would keep the unmetered path alive and defeat the
+  // revoke that follows.
+  //
+  // The Edge Functions are themselves thin wrappers over the same two RPCs
+  // (called server-side), so the matching semantics are unchanged and remain
+  // defined in exactly one place — `lower(col) = lower(trim(input))`.
+  //
+  // The value sent is the TRIMMED input, matching what _submitSignup actually
+  // stores (signup_screen.dart:354-355). That is not a reimplementation of the
+  // match — it is sending the same string the form will submit, so the answer
+  // describes the value that will really be written.
 
   static Future<bool> checkEmailExists(String email) async {
     if (email.trim().isEmpty) return false;
     try {
-      final exists = await _client.rpc(
-        'email_exists',
-        params: {'p_email': email.trim()},
+      final response = await _client.functions.invoke(
+        'check-email-exists',
+        body: {'email': email.trim()},
       );
-      return exists == true;
+      final data = response.data;
+      return data is Map && data['exists'] == true;
     } catch (_) {
       return false;
     }
@@ -24,11 +43,12 @@ class AuthService {
   static Future<bool> checkUsernameExists(String username) async {
     if (username.trim().isEmpty) return false;
     try {
-      final exists = await _client.rpc(
-        'username_exists',
-        params: {'p_username': username.trim()},
+      final response = await _client.functions.invoke(
+        'check-username-exists',
+        body: {'username': username.trim()},
       );
-      return exists == true;
+      final data = response.data;
+      return data is Map && data['exists'] == true;
     } catch (_) {
       return false;
     }
@@ -46,51 +66,53 @@ class AuthService {
       throw 'Please enter your username and password.';
     }
 
-    // Step 1 — resolve email from username via a SECURITY DEFINER RPC, so the
-    // `profiles` table is not directly readable by the anon key. The RPC
-    // matches the username case-insensitively and returns at most one row
-    // ({email, username}); it exposes nothing else about the table.
-    final List lookup;
+    // Steps 1+2 — resolve the account AND verify the password SERVER-SIDE via
+    // the `username-login` Edge Function. The email is resolved inside the
+    // function and never returned to the client: the old two-step path called
+    // lookup_login_email, which handed the account's email to the anon key —
+    // a username→email oracle with no login. That RPC's anon EXECUTE is revoked
+    // in 10b phase 3, so there is deliberately NO client fallback to it here; a
+    // fallback would keep the oracle alive. On success the function returns only
+    // a session. Unknown-username and wrong-password are indistinguishable (both
+    // 401) by design, so their copy below MUST stay identical.
+    final FunctionResponse response;
     try {
-      lookup =
-          await _client.rpc(
-                'lookup_login_email',
-                params: {'p_username': cleanUsername},
-              )
-              as List;
+      response = await _client.functions.invoke(
+        'username-login',
+        body: {'username': cleanUsername, 'password': cleanPassword},
+      );
+    } on FunctionException catch (e) {
+      // functions_client throws FunctionException on non-2xx; the status field
+      // is `status` (int), not `statusCode`.
+      switch (e.status) {
+        case 401:
+          // MUST be the same string as a wrong password — never "user not
+          // found" — or this re-opens the enumeration the Edge Function closes.
+          throw 'Incorrect password. Please try again.';
+        case 403:
+          throw 'This account has been deactivated. Please contact the LGU to restore access.';
+        case 429:
+          throw 'Too many login attempts. Please try again in a few minutes.';
+        default: // 400, 500, or any other non-2xx
+          throw 'Something went wrong. Please try again later.';
+      }
     } catch (_) {
+      // Could not reach the function at all (network/transport).
       throw 'Unable to connect. Please check your internet connection and try again.';
     }
 
-    if (lookup.isEmpty) throw 'No account found with that username.';
-
-    final row = lookup.first as Map<String, dynamic>;
-    final email = (row['email'] as String?) ?? '';
-    final usernameFromDB = (row['username'] as String?) ?? cleanUsername;
-
-    if (email.isEmpty) throw 'No account found with that username.';
-
-    // Step 2 — sign in with email + password
+    // Establish the session from the returned refresh token. It is single-use
+    // and rotates on exchange, so a failure here is not a credentials problem —
+    // the user must sign in again. Show a retryable message, not "login failed".
+    final data = response.data;
+    final refreshToken =
+        (data is Map ? data['refresh_token'] as String? : null) ?? '';
     final String userId;
     try {
-      final authResponse = await _client.auth.signInWithPassword(
-        email: email,
-        password: cleanPassword,
-      );
-
-      if (authResponse.user == null) {
-        throw 'Login failed. Please try again.';
-      }
-      userId = authResponse.user!.id;
-    } on AuthException catch (e) {
-      switch (e.statusCode) {
-        case '400':
-          throw 'Incorrect password. Please try again.';
-        case '429':
-          throw 'Too many login attempts. Please wait a moment and try again.';
-        default:
-          throw 'Login failed. Please check your credentials and try again.';
-      }
+      final authResponse = await _client.auth.setSession(refreshToken);
+      final user = authResponse.user ?? _client.auth.currentUser;
+      if (user == null) throw 'no session';
+      userId = user.id;
     } catch (_) {
       throw 'Something went wrong. Please try again later.';
     }
@@ -127,6 +149,10 @@ class AuthService {
 
     final roleId = roleData?['role_id'] as int?;
 
-    return (username: usernameFromDB, roleId: roleId);
+    // The Edge Function returns only a session, not the account's canonical
+    // username, so echo the (trimmed) input. Previously this was the DB's
+    // stored casing; usernames match case-insensitively, so this only affects
+    // display casing on the Home greeting.
+    return (username: cleanUsername, roleId: roleId);
   }
 }

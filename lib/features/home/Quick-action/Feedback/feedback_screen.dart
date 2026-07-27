@@ -267,6 +267,10 @@ class _FeedbackScreenState extends State<FeedbackScreen>
           child: Material(
             color: Colors.transparent,
             child: Container(
+              // Without a cap this confirm stretches the full viewport on web,
+              // leaving one short sentence spread across a metre of screen and
+              // the two buttons a mouse-drag apart.
+              constraints: const BoxConstraints(maxWidth: 400),
               margin: EdgeInsets.symmetric(horizontal: width * 0.07),
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
@@ -721,7 +725,16 @@ class _FeedbackScreenState extends State<FeedbackScreen>
       builder: (ctx) => StatefulBuilder(
         builder: (context, setModalState) {
           final isEn = _consentInEnglish;
-          final width = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+          final screenW = MediaQuery.of(context).size.width;
+          final width = screenW.clamp(0.0, 480.0);
+          // On web/desktop this is a block of terms to READ, not a banner: past
+          // ~520px the lines get long enough that the eye loses its place on the
+          // wrap. Cap the card there and give the surplus back as margin; on a
+          // phone the cap never binds and the old 5% inset stands.
+          final sideInset = ((screenW - 520) / 2).clamp(
+            width * 0.05,
+            screenW * 0.5,
+          );
 
           final title = isEn
               ? 'Anonymous Feedback Consent'
@@ -758,7 +771,10 @@ class _FeedbackScreenState extends State<FeedbackScreen>
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(20),
             ),
-            insetPadding: EdgeInsets.symmetric(horizontal: width * 0.05),
+            insetPadding: EdgeInsets.symmetric(
+              horizontal: sideInset,
+              vertical: 24,
+            ),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
               child: Column(

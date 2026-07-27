@@ -15,6 +15,9 @@ import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/services/gps_stamp_service.dart';
 import '../../../../core/widgets/reveal_loading.dart';
 import '../../../../core/widgets/app_dialog.dart';
+import '../../../../core/utils/submission_id.dart';
+import '../../../../core/utils/picked_media.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 // ── Video preview dialog (same as Report) ─────────────────────────────────────
 class _VideoPreviewDialog extends StatefulWidget {
@@ -33,7 +36,10 @@ class _VideoPreviewDialogState extends State<_VideoPreviewDialog> {
   @override
   void initState() {
     super.initState();
-    _controller = VideoPlayerController.file(File(widget.file.path));
+    // On web the picked file is a blob: URL, so dart:io cannot open it.
+    _controller = kIsWeb
+        ? VideoPlayerController.networkUrl(Uri.parse(widget.file.path))
+        : VideoPlayerController.file(File(widget.file.path));
     _controller
         .initialize()
         .then((_) {
@@ -295,6 +301,10 @@ class _SuggestionScreenState extends State<SuggestionScreen>
           child: Material(
             color: Colors.transparent,
             child: Container(
+              // Without a cap this confirm stretches the full viewport on web,
+              // leaving one short sentence spread across a metre of screen and
+              // the two buttons a mouse-drag apart.
+              constraints: const BoxConstraints(maxWidth: 400),
               margin: EdgeInsets.symmetric(horizontal: width * 0.07),
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
@@ -1174,7 +1184,7 @@ class _SuggestionScreenState extends State<SuggestionScreen>
       _processingPaths.add(file.path);
     });
     Future.wait([
-      precacheImage(FileImage(File(file.path)), context),
+      precacheImage(pickedImageProvider(file), context),
       Future<void>.delayed(_minReveal),
     ]).whenComplete(() {
       if (!mounted) return;
@@ -1306,7 +1316,10 @@ class _SuggestionScreenState extends State<SuggestionScreen>
           children: [
             Center(
               child: InteractiveViewer(
-                child: Image.file(File(file.path), fit: BoxFit.contain),
+                child: Image(
+                  image: pickedImageProvider(file),
+                  fit: BoxFit.contain,
+                ),
               ),
             ),
             Positioned(
@@ -1452,7 +1465,10 @@ class _SuggestionScreenState extends State<SuggestionScreen>
                         borderRadius: BorderRadius.circular(width * 0.025),
                         child: _isVideo(file)
                             ? _videoThumb(file, width)
-                            : Image.file(File(file.path), fit: BoxFit.cover),
+                            : Image(
+                                image: pickedImageProvider(file),
+                                fit: BoxFit.cover,
+                              ),
                       ),
                       // Bottom-to-top reveal while the GPS stamp bakes; it fills
                       // to the top the moment processing completes.
@@ -1519,7 +1535,16 @@ class _SuggestionScreenState extends State<SuggestionScreen>
       builder: (ctx) => StatefulBuilder(
         builder: (context, setModalState) {
           final isEn = _consentInEnglish;
-          final width = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+          final screenW = MediaQuery.of(context).size.width;
+          final width = screenW.clamp(0.0, 480.0);
+          // On web/desktop this is a block of terms to READ, not a banner: past
+          // ~520px the lines get long enough that the eye loses its place on the
+          // wrap. Cap the card there and give the surplus back as margin; on a
+          // phone the cap never binds and the old 5% inset stands.
+          final sideInset = ((screenW - 520) / 2).clamp(
+            width * 0.05,
+            screenW * 0.5,
+          );
 
           final title = isEn
               ? 'Anonymous Suggestion Consent'
@@ -1556,7 +1581,10 @@ class _SuggestionScreenState extends State<SuggestionScreen>
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(20),
             ),
-            insetPadding: EdgeInsets.symmetric(horizontal: width * 0.05),
+            insetPadding: EdgeInsets.symmetric(
+              horizontal: sideInset,
+              vertical: 24,
+            ),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
               child: Column(
@@ -1934,6 +1962,12 @@ class _SuggestionScreenState extends State<SuggestionScreen>
 
       final userId = session.user.id;
 
+      // Generated before any upload so media is keyed by the SUBMISSION rather
+      // than the citizen — the old `suggestions/$userId/...` path exposed the
+      // author's uuid even on anonymous suggestions. See
+      // lib/core/utils/submission_id.dart.
+      final suggestionId = uuidV4();
+
       // ── Upload media ──────────────────────────────────────────────────────
       final List<Map<String, String>> mediaItems = [];
       for (int i = 0; i < _attachedFiles.length; i++) {
@@ -1942,7 +1976,7 @@ class _SuggestionScreenState extends State<SuggestionScreen>
         final ext = file.name.split('.').last.toLowerCase();
         final fileName =
             '${DateTime.now().millisecondsSinceEpoch}_${i}_${file.name}';
-        final storagePath = 'suggestions/$userId/$fileName';
+        final storagePath = 'suggestions/$suggestionId/$fileName';
         final contentType = _isVideo(file) ? 'video/$ext' : 'image/$ext';
 
         await supabase.storage
@@ -1962,6 +1996,9 @@ class _SuggestionScreenState extends State<SuggestionScreen>
 
       // ── Insert suggestion ─────────────────────────────────────────────────
       final insertPayload = {
+        // Explicit id — media was already uploaded under suggestions/$suggestionId/.
+        // `.insert` (never `.upsert`) so a colliding id fails on the primary key.
+        'id': suggestionId,
         'user_id': userId, // ← always send real user_id
         'category': _selectedCategory,
         'category_other': _selectedCategory == 'others'
@@ -1984,7 +2021,9 @@ class _SuggestionScreenState extends State<SuggestionScreen>
           .select('id')
           .single();
 
-      final suggestionId = response['id'] as String;
+      // Already known — generated before the upload. Kept so a failed insert
+      // throws here rather than surfacing as media rows pointing at nothing.
+      assert(response['id'] == suggestionId);
 
       // ── Insert media rows ─────────────────────────────────────────────────
       for (int i = 0; i < mediaItems.length; i++) {

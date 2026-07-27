@@ -139,6 +139,22 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
     _svc.sendUserText(text);
   }
 
+  /// Returns the citizen to the bot for a fresh conversation (a NEW ticket if
+  /// they escalate again — never a reopen of the resolved one). If a message
+  /// lost the send/end race, it is carried into the new composer rather than
+  /// discarded, so the citizen can send it to the bot instead.
+  Future<void> _needMoreHelp() async {
+    final draft = _svc.consumeUndeliveredText();
+    await _svc.startNewConversation();
+    if (!mounted) return;
+    if (draft != null && draft.trim().isNotEmpty) {
+      _inputCtrl.text = draft;
+      _inputCtrl.selection =
+          TextSelection.collapsed(offset: draft.length);
+      _focusNode.requestFocus();
+    }
+  }
+
   String _formatTime(DateTime t) {
     final h = t.hour % 12 == 0 ? 12 : t.hour % 12;
     final m = t.minute.toString().padLeft(2, '0');
@@ -441,17 +457,119 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
             ),
           ),
           SizedBox(height: width * 0.01),
+          // Skip never blocks the citizen behind a rating they don't want to
+          // give — it just dismisses the card and leaves the chat ended.
           TextButton(
             onPressed: () => _svc.dismissRating(),
             style: TextButton.styleFrom(foregroundColor: AppColors.hint),
             child: Text(
-              'Maybe later',
+              'Skip',
               style: TextStyle(
                 fontSize: width * 0.032,
                 fontWeight: FontWeight.w600,
               ),
             ),
           ),
+          // A way back to the bot straight from the rating card, so a citizen
+          // who still needs help isn't forced to rate first (main chat only).
+          if (_svc == ChatService.I)
+            TextButton.icon(
+              onPressed: _needMoreHelp,
+              icon: Icon(Icons.support_agent_rounded, size: width * 0.042),
+              style: TextButton.styleFrom(foregroundColor: tint),
+              label: Text(
+                'Need more help?',
+                style: TextStyle(
+                  fontSize: width * 0.032,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // ── Locked composer (chat ended) ──────────────────────────────────────────
+  /// Shown once the chat has ended and the citizen has rated or skipped. The
+  /// composer is locked with a clear notice — the database also rejects writes
+  /// to an ended ticket (migration 20260722000005 phase 3), so this is the UI
+  /// side of a control enforced on both ends, not the only guard. "Need more
+  /// help?" starts a fresh bot conversation (a new ticket if escalated, never a
+  /// reopen of this one).
+  Widget _buildEndedComposer(double width) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: AppColors.stroke, width: 1)),
+      ),
+      padding: EdgeInsets.fromLTRB(
+        width * 0.04,
+        width * 0.032,
+        width * 0.04,
+        width * 0.04,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: double.infinity,
+            padding: EdgeInsets.symmetric(
+              horizontal: width * 0.04,
+              vertical: width * 0.032,
+            ),
+            decoration: BoxDecoration(
+              color: AppColors.inputBg,
+              borderRadius: BorderRadius.circular(width * 0.055),
+              border: Border.all(color: AppColors.stroke, width: 1),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.lock_outline_rounded,
+                    size: width * 0.044, color: AppColors.hint),
+                SizedBox(width: width * 0.025),
+                Expanded(
+                  child: Text(
+                    'This conversation has ended',
+                    style: TextStyle(
+                      fontSize: width * 0.034,
+                      color: AppColors.hint,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Main chat can start over; a follow-up chat panel cannot (it is
+          // scoped to one report and has no bot kickoff).
+          if (_svc == ChatService.I) ...[
+            SizedBox(height: width * 0.028),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _needMoreHelp,
+                icon: Icon(Icons.support_agent_rounded, size: width * 0.045),
+                label: Text(
+                  'Need more help?',
+                  style: TextStyle(
+                    fontSize: width * 0.036,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primaryBlue,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: EdgeInsets.symmetric(vertical: width * 0.038),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(width * 0.028),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -499,6 +617,10 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
                 _buildCategoryChips(width),
               if (_svc.showRatingBar)
                 _buildRatingCard(width)
+              else if (_svc.stage == cm.ConversationStage.ended)
+                // Chat ended and the citizen has rated or skipped: lock the
+                // composer with a clear notice and a way back to the bot.
+                _buildEndedComposer(width)
               else if (_svc.isTerminal)
                 _buildTerminalCard(width)
               else

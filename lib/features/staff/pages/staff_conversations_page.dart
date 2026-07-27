@@ -40,19 +40,21 @@ class StaffConversationsPage extends ConsumerStatefulWidget {
 class _StaffConversationsPageState
     extends ConsumerState<StaffConversationsPage> {
   StaffConversation? _selected;
-  RealtimeChannel? _ticketChannel;
-  String? _subscribedDept;
-  Timer? _debounce;
+  // Inbox refresh is an interval POLL, not a realtime subscription — see
+  // StaffConversationsNotifier._startPolling for why postgres_changes cannot
+  // work here and when Broadcast replaces it.
+  //
+  // The timer used to live in this State. It now lives in the notifier, because
+  // a page-owned timer meant the conversation list only refreshed while THIS
+  // page was mounted: the dashboard's Waiting/Active counters and Live queue
+  // stayed frozen until someone opened the inbox. Do not reintroduce a timer
+  // here — one owner per provider.
+  //
+  // This page still drives pull-to-refresh and the stale banner's retry, both
+  // of which call the notifier directly.
 
   /// One-shot: the deep-linked ticket opens on the first build that has it.
   bool _openedDeepLink = false;
-
-  @override
-  void dispose() {
-    _debounce?.cancel();
-    _ticketChannel?.unsubscribe();
-    super.dispose();
-  }
 
   /// Opens [c]: side-by-side on a wide console, pushed as its own screen on a
   /// narrow one. Shared by a list tap and a notification deep-link so both land
@@ -107,28 +109,12 @@ class _StaffConversationsPageState
     });
   }
 
-  /// (Re)subscribes to the department's ticket stream so new waiting chats
-  /// appear live. Debounced so a burst of changes triggers one refetch.
-  void _ensureSubscribed(String? dept) {
-    if (dept == _subscribedDept) return;
-    _ticketChannel?.unsubscribe();
-    _subscribedDept = dept;
-    if (dept == null) return;
-    _ticketChannel = StaffRepository.I.subscribeDepartmentTickets(dept, () {
-      _debounce?.cancel();
-      _debounce = Timer(const Duration(milliseconds: 400), () {
-        ref.read(staffConversationsProvider.notifier).silentRefresh();
-      });
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
-    ref.listen<String?>(
-      staffDepartmentProvider,
-      (_, next) => _ensureSubscribed(next),
-    );
-    _ensureSubscribed(ref.read(staffDepartmentProvider));
+    // No _ensurePolling here any more. The notifier owns the timer and rebuilds
+    // (cancelling the old one via ref.onDispose) when the department changes,
+    // which is what this page's dept-watching restart used to do by hand.
+    final stale = ref.watch(staffConversationsStaleProvider);
     final async = ref.watch(staffConversationsProvider);
     final wide = MediaQuery.of(context).size.width >= 900;
 
@@ -136,11 +122,23 @@ class _StaffConversationsPageState
     // enough to resolve the ticket id into a conversation.
     _maybeOpenDeepLink(async, wide);
 
-    final list = _ConversationList(
-      async: async,
-      selectedId: wide ? _selected?.id : null,
-      onRefresh: () => ref.read(staffConversationsProvider.notifier).refresh(),
-      onTap: (c) => _openConversation(c, wide),
+    final list = Column(
+      children: [
+        if (stale)
+          _StaleInboxBanner(
+            onRetry: () =>
+                ref.read(staffConversationsProvider.notifier).poll(),
+          ),
+        Expanded(
+          child: _ConversationList(
+            async: async,
+            selectedId: wide ? _selected?.id : null,
+            onRefresh: () =>
+                ref.read(staffConversationsProvider.notifier).refresh(),
+            onTap: (c) => _openConversation(c, wide),
+          ),
+        ),
+      ],
     );
 
     if (!wide) return Container(color: StaffUi.pageBg, child: list);
@@ -1598,6 +1596,49 @@ class _Composer extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Shown above the staff inbox list when a background poll fails. Staleness is
+/// the failure mode accepted when concern_tickets left the realtime publication
+/// (migration 20260721000007); this makes it VISIBLE rather than letting the
+/// list silently show old data. Tapping retry re-polls immediately.
+class _StaleInboxBanner extends StatelessWidget {
+  final Future<void> Function() onRetry;
+  const _StaleInboxBanner({required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: StaffUi.warn.withValues(alpha: 0.12),
+      child: InkWell(
+        onTap: onRetry,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          child: Row(
+            children: [
+              const Icon(Icons.sync_problem_rounded,
+                  size: 18, color: StaffUi.warn),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  "Couldn't refresh — this list may be out of date.",
+                  style: TextStyle(
+                      fontSize: 12.5,
+                      color: StaffUi.textPrimary,
+                      fontWeight: FontWeight.w500),
+                ),
+              ),
+              const Text('Retry',
+                  style: TextStyle(
+                      fontSize: 12.5,
+                      color: StaffUi.warn,
+                      fontWeight: FontWeight.w700)),
+            ],
+          ),
         ),
       ),
     );

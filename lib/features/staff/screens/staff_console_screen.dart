@@ -47,21 +47,72 @@ class StaffConsoleScreen extends ConsumerStatefulWidget {
   ConsumerState<StaffConsoleScreen> createState() => _StaffConsoleScreenState();
 }
 
-class _StaffConsoleScreenState extends ConsumerState<StaffConsoleScreen> {
+class _StaffConsoleScreenState extends ConsumerState<StaffConsoleScreen>
+    with WidgetsBindingObserver {
   int _index = 0;
   final _scaffoldKey = GlobalKey<ScaffoldState>();
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // Tapping a notification row sets openTopic; map it to the owning section.
     StaffNotifCenter.I.openTopic.addListener(_onNotifNavigate);
+    // A notification arriving means a list is already stale. Refetch it now
+    // rather than waiting up to 30s for the next poll tick — this is what makes
+    // a new citizen chat appear on the DASHBOARD (not just the inbox) within a
+    // second. See StaffNotifCenter.ticketEvent for why this is the only
+    // realtime route staff legitimately hold, and why it does not cover
+    // unassigned tickets.
+    StaffNotifCenter.I.ticketEvent.addListener(_onTicketEvent);
+    StaffNotifCenter.I.reportEvent.addListener(_onReportEvent);
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     StaffNotifCenter.I.openTopic.removeListener(_onNotifNavigate);
+    StaffNotifCenter.I.ticketEvent.removeListener(_onTicketEvent);
+    StaffNotifCenter.I.reportEvent.removeListener(_onReportEvent);
     super.dispose();
+  }
+
+  void _onTicketEvent() {
+    if (!mounted) return;
+    ref.read(staffConversationsProvider.notifier).silentRefresh();
+  }
+
+  void _onReportEvent() {
+    if (!mounted) return;
+    ref.read(staffReportsProvider.notifier).silentRefresh();
+    ref.read(staffEndorsementsProvider.notifier).silentRefresh();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Three 30s timers against a mobile connection are not free while the app
+    // is backgrounded, and Android keeps firing them until the process is
+    // frozen. Pause on background; on resume refresh IMMEDIATELY rather than
+    // letting the user look at data up to 30s old while the next tick lands.
+    // Mirrors admin_dashboard_screen.dart.
+    if (state == AppLifecycleState.resumed) {
+      _resumePolling();
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      _pausePolling();
+    }
+  }
+
+  void _pausePolling() {
+    ref.read(staffConversationsProvider.notifier).pausePolling();
+    ref.read(staffReportsProvider.notifier).pausePolling();
+    ref.read(staffEndorsementsProvider.notifier).pausePolling();
+  }
+
+  void _resumePolling() {
+    ref.read(staffConversationsProvider.notifier).resumePolling();
+    ref.read(staffReportsProvider.notifier).resumePolling();
+    ref.read(staffEndorsementsProvider.notifier).resumePolling();
   }
 
   void _onNotifNavigate() {

@@ -23,6 +23,27 @@ class StaffOverviewPage extends ConsumerWidget {
     final reports = ref.watch(staffReportsProvider).valueOrNull ?? const [];
     final endorsed = ref.watch(staffEndorsementsProvider).valueOrNull ?? const [];
 
+    // A poll that failed must be visible. A dashboard showing confident counts
+    // from a refresh that silently died is worse than one admitting it is stale
+    // — that is the exact silent-success failure this remediation kept finding.
+    final staleSources = <String>[
+      if (ref.watch(staffConversationsStaleProvider)) 'conversations',
+      if (ref.watch(staffReportsStaleProvider)) 'reports',
+      if (ref.watch(staffEndorsementsStaleProvider)) 'endorsements',
+    ];
+
+    // NOTE ON LATENCY: `waiting` is the counter served by the SLOWEST path.
+    // A waiting ticket is by definition unassigned, and
+    // trg_notify_staff_ticket_assigned only fires when
+    // `assigned_staff_id IS NOT NULL AND is_ghost = false` — so an unassigned
+    // ticket produces no notification, no ticketEvent bump, and no ~1s refresh.
+    // It appears on the next 30s poll tick instead.
+    //
+    // That is exactly the case where nobody is on duty, i.e. the state most in
+    // need of visibility is the one updated slowest. If someone asks why
+    // Waiting lags while Active chats is instant, this is why. Fixing it needs
+    // a trigger that fires on unassigned inserts too (or Broadcast in 7c), not
+    // a change here.
     final waiting = convos.where((c) => c.isWaiting).length;
     final active = convos.where((c) => !c.isWaiting && !c.isResolved).length;
     final pendingReports =
@@ -54,6 +75,19 @@ class StaffOverviewPage extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (staleSources.isNotEmpty) ...[
+            _StaleDashboardBanner(
+              sources: staleSources,
+              onRetry: () async {
+                await Future.wait([
+                  ref.read(staffConversationsProvider.notifier).poll(),
+                  ref.read(staffReportsProvider.notifier).poll(),
+                  ref.read(staffEndorsementsProvider.notifier).poll(),
+                ]);
+              },
+            ),
+            const SizedBox(height: 14),
+          ],
           Text(
             '${_greeting()}${identity?.displayName != null ? ', ${identity!.displayName}' : ''}!',
             style: const TextStyle(
@@ -400,6 +434,56 @@ class _MiniReportRow extends StatelessWidget {
             const SizedBox(width: 8),
             StaffStatusPill(r.status),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Shown when any of the dashboard's three background polls failed. Names WHICH
+/// list is stale, because the dashboard aggregates three independent sources
+/// and "couldn't refresh" alone would leave staff guessing which numbers to
+/// distrust. Tapping retries all three.
+class _StaleDashboardBanner extends StatelessWidget {
+  final List<String> sources;
+  final Future<void> Function() onRetry;
+  const _StaleDashboardBanner({required this.sources, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    final what = sources.length == 1
+        ? sources.first
+        : '${sources.take(sources.length - 1).join(', ')} and ${sources.last}';
+    return Material(
+      color: StaffUi.warn.withValues(alpha: 0.12),
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        onTap: onRetry,
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          child: Row(
+            children: [
+              const Icon(Icons.sync_problem_rounded,
+                  size: 18, color: StaffUi.warn),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  "Couldn't refresh $what — these figures may be out of date.",
+                  style: const TextStyle(
+                      fontSize: 12.5,
+                      color: StaffUi.textPrimary,
+                      fontWeight: FontWeight.w500),
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Text('Retry',
+                  style: TextStyle(
+                      fontSize: 12.5,
+                      color: StaffUi.warn,
+                      fontWeight: FontWeight.w700)),
+            ],
+          ),
         ),
       ),
     );

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart' show XFile;
@@ -62,14 +64,88 @@ final staffDepartmentProvider = Provider<String?>((ref) {
   return ref.watch(staffIdentityProvider).valueOrNull?.department;
 });
 
+/// Shared interval-poll plumbing for the three staff list notifiers.
+///
+/// Each notifier arms its timer in `build()` and cancels it via `ref.onDispose`.
+/// The console pauses and resumes all three together on app lifecycle changes.
+///
+/// One timer per notifier, owned by the notifier — never by a page. A
+/// page-owned timer only runs while that page is mounted, which is what left
+/// the dashboard's Live queue frozen until someone opened the inbox.
+///
+/// UPGRADE PATH: when Broadcast lands (7c) it replaces all three timers in a
+/// single change — inbox and dashboard both become live-push, because both read
+/// these same providers. Delete the `startPolling()` calls and keep the stale
+/// flags: a dropped socket must stay as visible as a failed poll.
+mixin StaffIntervalPoll {
+  Timer? _pollTimer;
+
+  Duration get pollInterval => const Duration(seconds: 30);
+
+  /// One tick. Each notifier implements this and must raise its own stale flag
+  /// on failure rather than swallowing it.
+  Future<void> poll();
+
+  void startPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = Timer.periodic(pollInterval, (_) => poll());
+  }
+
+  /// Backgrounded: stop consuming mobile data. Safe to call repeatedly.
+  void pausePolling() {
+    _pollTimer?.cancel();
+    _pollTimer = null;
+  }
+
+  /// Foregrounded: refetch IMMEDIATELY, then restart the interval. Waiting for
+  /// the next tick would show the user up to 30s-old data on the screen they
+  /// just returned to — the staleness we accept in the background is not
+  /// acceptable in the first seconds of the foreground.
+  void resumePolling() {
+    poll();
+    startPolling();
+  }
+}
+
 // ── Conversations ────────────────────────────────────────────────────────────
-class StaffConversationsNotifier extends AsyncNotifier<List<StaffConversation>> {
+class StaffConversationsNotifier extends AsyncNotifier<List<StaffConversation>>
+    with StaffIntervalPoll {
   StaffRepository get _repo => ref.read(staffRepoProvider);
 
   @override
   Future<List<StaffConversation>> build() async {
-    final id = await ref.watch(staffIdentityProvider.future);
-    return _repo.fetchConversations(id.department);
+    // selectAsync, NOT watch(...future): this notifier must rebuild only when
+    // the DEPARTMENT changes, never on an unrelated identity emission (presence
+    // toggle, avatar change, a plain refetch). Rebuilding re-arms the interval
+    // timer below from zero, so identity churn could otherwise starve the poll
+    // indefinitely. See StaffIdentity's == for the diagnosis.
+    final dept =
+        await ref.watch(staffIdentityProvider.selectAsync((i) => i.department));
+    _startPolling();
+    return _repo.fetchConversations(dept);
+  }
+
+  /// Interval poll for the inbox, replacing the realtime subscription removed in
+  /// migration 20260721000007. It used postgres_changes on `concern_tickets`,
+  /// whose raw rows carry five citizen contact columns. The table is back in the
+  /// publication as of migration 20260722000004, but staff hold no SELECT policy
+  /// on it and realtime authorises delivery through SELECT policies — so a
+  /// postgres_changes subscription here would connect, report success, and
+  /// deliver nothing forever. Do not add one.
+  ///
+  /// The timer lives HERE rather than in the inbox page. It used to live in
+  /// StaffConversationsPage, which meant the list only refreshed while that page
+  /// was mounted — the dashboard's Waiting/Active counters and Live queue sat
+  /// frozen at their first fetch until someone opened the inbox. Reports and
+  /// endorsements already polled from their notifiers; conversations was the odd
+  /// one out. There must be exactly ONE timer per provider: two owners is the
+  /// redundancy trap, and whoever later deletes the "unused" one may delete the
+  /// live one.
+  ///
+  /// Timer mechanics live in [StaffIntervalPoll].
+  void _startPolling() {
+    startPolling();
+    ref.onDispose(pausePolling);
   }
 
   Future<void> refresh() async {
@@ -90,6 +166,28 @@ class StaffConversationsNotifier extends AsyncNotifier<List<StaffConversation>> 
   /// subscription so a new waiting chat slides in without blanking the list.
   Future<void> silentRefresh() => _reload();
 
+  /// One tick of the inbox poll. Scheduled by [_startPolling]; also called
+  /// directly by the stale banner's retry.
+  ///
+  /// Unlike [_reload], a FAILED poll is not swallowed. Staleness is the failure
+  /// mode we accept in exchange for closing the leak, and a silently-failing
+  /// refresh showing old data as if it were fresh is the very silent-success
+  /// bug this whole engagement kept finding. On failure the last good list is
+  /// kept (so the screen does not blank) AND the stale flag is raised so the UI
+  /// can say so. Cleared on the next success.
+  @override
+  Future<void> poll() async {
+    final dept = ref.read(staffDepartmentProvider);
+    if (dept == null) return;
+    final next = await AsyncValue.guard(() => _repo.fetchConversations(dept));
+    if (next.hasValue) {
+      state = next;
+      ref.read(staffConversationsStaleProvider.notifier).state = false;
+    } else {
+      ref.read(staffConversationsStaleProvider.notifier).state = true;
+    }
+  }
+
   Future<void> claim(String ticketId) async {
     await _repo.claimConversation(ticketId);
     await _reload();
@@ -106,31 +204,56 @@ final staffConversationsProvider =
   StaffConversationsNotifier.new,
 );
 
+/// True when the most recent background poll of the staff inbox FAILED, so the
+/// list on screen may be out of date. The conversations page watches this and
+/// shows a stale banner with a retry — because after migration 20260721000007
+/// the inbox polls instead of streaming, and a poll that fails silently is the
+/// silent-success failure mode in a new costume. Cleared on the next success.
+final staffConversationsStaleProvider = StateProvider<bool>((_) => false);
+
 // ── Reports (department-scoped) ───────────────────────────────────────────────
-class StaffReportsNotifier extends AsyncNotifier<List<StaffReport>> {
+class StaffReportsNotifier extends AsyncNotifier<List<StaffReport>>
+    with StaffIntervalPoll {
   StaffRepository get _repo => ref.read(staffRepoProvider);
 
   @override
   Future<List<StaffReport>> build() async {
-    final id = await ref.watch(staffIdentityProvider.future);
-    _watchRealtime();
-    return _repo.fetchDepartmentReports(id.department);
+    // selectAsync — see StaffConversationsNotifier.build for why watching the
+    // whole identity starves the timer.
+    final dept =
+        await ref.watch(staffIdentityProvider.selectAsync((i) => i.department));
+    _startPolling();
+    return _repo.fetchDepartmentReports(dept);
   }
 
-  /// Live inbox: any reports change the staff can see (RLS-scoped) — a fresh
-  /// assignment, a status move — silently refreshes the list.
-  void _watchRealtime() {
-    final supabase = Supabase.instance.client;
-    final channel = supabase
-        .channel('staff_reports_inbox')
-        .onPostgresChanges(
-          event: PostgresChangeEvent.all,
-          schema: 'public',
-          table: 'reports',
-          callback: (_) => silentRefresh(),
-        )
-        .subscribe();
-    ref.onDispose(() => supabase.removeChannel(channel));
+  /// Interval poll, replacing the realtime subscription removed in migration
+  /// 20260722000000. That subscription used postgres_changes on `reports`, and
+  /// realtime authorises delivery by the subscriber's SELECT policy — staff no
+  /// longer have one on that table, so it would receive nothing. The table is
+  /// deliberately still IN the publication (three citizen screens subscribe to
+  /// their own reports), so this is a staff-side change only.
+  void _startPolling() {
+    startPolling();
+    ref.onDispose(pausePolling);
+  }
+
+  /// Unlike [silentRefresh], a FAILED poll is not swallowed: the last good list
+  /// is kept so the screen does not blank, AND the stale flag is raised so the
+  /// UI can say the list may be out of date. Staleness is the failure mode we
+  /// accept in exchange for closing the leak; a silently-failing refresh
+  /// showing old data as fresh is the silent-success bug in a new costume.
+  @override
+  Future<void> poll() async {
+    final dept = ref.read(staffDepartmentProvider);
+    if (dept == null) return;
+    final next =
+        await AsyncValue.guard(() => _repo.fetchDepartmentReports(dept));
+    if (next.hasValue) {
+      state = next;
+      ref.read(staffReportsStaleProvider.notifier).state = false;
+    } else {
+      ref.read(staffReportsStaleProvider.notifier).state = true;
+    }
   }
 
   Future<void> refresh() async {
@@ -174,25 +297,49 @@ final staffReportsProvider =
   StaffReportsNotifier.new,
 );
 
+/// True when the most recent background poll of the staff REPORTS list failed,
+/// so the list on screen may be out of date. Same rationale as
+/// [staffConversationsStaleProvider]: after migration 20260722000000 the
+/// reports list polls instead of streaming, and a poll that fails silently is
+/// indistinguishable from success. Cleared on the next successful poll.
+final staffReportsStaleProvider = StateProvider<bool>((_) => false);
+
 // ── Endorsements (external entities) ──────────────────────────────────────────
-class StaffEndorsementsNotifier extends AsyncNotifier<List<StaffReport>> {
+class StaffEndorsementsNotifier extends AsyncNotifier<List<StaffReport>>
+    with StaffIntervalPoll {
   StaffRepository get _repo => ref.read(staffRepoProvider);
 
   @override
   Future<List<StaffReport>> build() async {
-    final id = await ref.watch(staffIdentityProvider.future);
-    final supabase = Supabase.instance.client;
-    final channel = supabase
-        .channel('staff_endorsements_inbox')
-        .onPostgresChanges(
-          event: PostgresChangeEvent.all,
-          schema: 'public',
-          table: 'reports',
-          callback: (_) => silentRefresh(),
-        )
-        .subscribe();
-    ref.onDispose(() => supabase.removeChannel(channel));
-    return _repo.fetchEndorsedReports(id.department);
+    // selectAsync — see StaffConversationsNotifier.build for why watching the
+    // whole identity starves the timer.
+    final dept =
+        await ref.watch(staffIdentityProvider.selectAsync((i) => i.department));
+    // Interval poll, replacing the postgres_changes subscription on `reports`
+    // removed in migration 20260722000000 — staff no longer hold a SELECT
+    // policy on that table, so realtime would deliver nothing to them.
+    startPolling();
+    ref.onDispose(pausePolling);
+    return _repo.fetchEndorsedReports(dept);
+  }
+
+  /// Failed polls raise the stale flag rather than silently keeping old data.
+  ///
+  /// Raises [staffEndorsementsStaleProvider], NOT the reports flag. It used to
+  /// raise the reports one, which was harmless only because nothing displayed
+  /// either — the moment a banner exists, a borrowed flag reports an
+  /// endorsements failure as a reports failure.
+  @override
+  Future<void> poll() async {
+    final dept = ref.read(staffDepartmentProvider);
+    if (dept == null) return;
+    final next = await AsyncValue.guard(() => _repo.fetchEndorsedReports(dept));
+    if (next.hasValue) {
+      state = next;
+      ref.read(staffEndorsementsStaleProvider.notifier).state = false;
+    } else {
+      ref.read(staffEndorsementsStaleProvider.notifier).state = true;
+    }
   }
 
   Future<void> refresh() async {
@@ -231,6 +378,13 @@ final staffEndorsementsProvider =
     AsyncNotifierProvider<StaffEndorsementsNotifier, List<StaffReport>>(
   StaffEndorsementsNotifier.new,
 );
+
+/// True when the most recent background poll of the ENDORSEMENTS list failed.
+/// Split out from [staffReportsStaleProvider], which the endorsements poll used
+/// to raise. Sharing a flag was invisible while nothing rendered it; with a
+/// banner on screen it would attribute an endorsements failure to reports and
+/// send staff to the wrong list looking for the problem.
+final staffEndorsementsStaleProvider = StateProvider<bool>((_) => false);
 
 // ── Community submissions ─────────────────────────────────────────────────────
 class StaffCommunityNotifier extends AsyncNotifier<List<StaffCommunityPost>> {

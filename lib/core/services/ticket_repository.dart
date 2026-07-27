@@ -92,49 +92,12 @@ class TicketRepository {
     return response;
   }
 
-  /// Fetches the logged-in citizen's contact details for attaching to a ticket.
-  /// Returns assembled name, number, address, and email (email from auth).
-  Future<Map<String, String?>> getCitizenContact() async {
-    final user = _db.auth.currentUser;
-    if (user == null) return {};
-
-    String? name, number, address;
-    try {
-      final row = await _db
-          .from('citizen_details')
-          .select(
-            'first_name, middle_name, last_name, contact_number, street, barangay',
-          )
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-      if (row != null) {
-        final parts = [
-          row['first_name'],
-          row['middle_name'],
-          row['last_name'],
-        ].where((p) => p != null && (p as String).trim().isNotEmpty).join(' ');
-        name = parts.isEmpty ? null : parts;
-
-        number = (row['contact_number'] as String?)?.trim();
-
-        final addr = [
-          row['street'],
-          row['barangay'],
-        ].where((p) => p != null && (p as String).trim().isNotEmpty).join(', ');
-        address = addr.isEmpty ? null : addr;
-      }
-    } catch (e) {
-      debugPrint('getCitizenContact: $e');
-    }
-
-    return {
-      'name': name,
-      'number': number,
-      'address': address,
-      'email': user.email, // from the auth account
-    };
-  }
+  // getCitizenContact was REMOVED in phase 2 of migration 20260722000005. It
+  // read the citizen's own citizen_details row on the client to fill a ticket's
+  // contact_* columns during promoteTicket. That derivation now happens inside
+  // the promote_ticket() SECURITY DEFINER RPC, so the client no longer touches
+  // citizen_details for this at all. If you need contact details on the client
+  // again, prefer a definer RPC that returns exactly what the caller may see.
 
   /// Deletes a ghost ticket if it was never converted to a real concern.
   Future<void> deleteGhostTicketIfUnused(String ticketId) async {
@@ -210,80 +173,40 @@ class TicketRepository {
     }
   }
 
-  /// Assigns a staff member to an existing ticket.
+  /// Assigns a staff member to an existing ticket, via the `assign_ticket_staff`
+  /// SECURITY DEFINER RPC (migration 20260722000005). The old path was a raw
+  /// UPDATE on concern_tickets under the citizen's own UPDATE policy — the
+  /// policy that let a citizen write any column on their ticket and, composed
+  /// with the DELETE gate, erase completed staff conversations. The RPC checks
+  /// ownership inside, so that policy can be dropped in phase 3.
   Future<void> assignStaff({
     required String ticketId,
     required String staffUserId,
   }) async {
-    await _db
-        .from('concern_tickets')
-        .update({'assigned_staff_id': staffUserId})
-        .eq('id', ticketId);
+    await _db.rpc('assign_ticket_staff', params: {
+      'p_ticket': ticketId,
+      'p_staff': staffUserId,
+    });
   }
 
-  /// Promotes a ghost ticket to a real, assigned live-agent ticket.
-  /// Flips is_ghost → false, assigns staff, and fills the citizen's contact
-  /// columns from their profile — UNLESS the chat is anonymous.
+  /// Promotes a ghost ticket to a real, assigned live-agent ticket, via the
+  /// `promote_ticket` SECURITY DEFINER RPC (migration 20260722000005).
   ///
-  /// A follow-up chat about an anonymous report stays anonymous: the citizen
-  /// chose to withhold their identity, so the staff member must never see it.
-  /// Anonymity is derived from the linked report (not trusted from the client),
-  /// so it holds even if the caller doesn't flag it.
+  /// Anonymity and the contact columns are now derived SERVER-SIDE. The old
+  /// path read citizen_details from the client to fill contact_name/number/
+  /// address and computed anonymity in Dart — a table the client should not
+  /// need (locked down for staff in migration 20260722000003) and a trust
+  /// boundary in the wrong place. A follow-up chat about an anonymous report
+  /// still stays anonymous: the RPC checks the ticket's own flag OR the linked
+  /// report's, so the client cannot override it.
   Future<void> promoteTicket({
     required String ticketId,
     required String staffUserId,
   }) async {
-    final anonymous = await _isTicketAnonymous(ticketId);
-
-    final update = <String, dynamic>{
-      'assigned_staff_id': staffUserId,
-      'is_ghost': false,
-      'updated_at': DateTime.now().toIso8601String(),
-    };
-
-    if (anonymous) {
-      // Never attach personal data to an anonymous chat; strip any that leaked.
-      update['is_anonymous'] = true;
-      update['contact_name'] = null;
-      update['contact_number'] = null;
-      update['contact_address'] = null;
-      update['contact_email'] = null;
-    } else {
-      final contact = await getCitizenContact();
-      update['contact_name'] = contact['name'];
-      update['contact_number'] = contact['number'];
-      update['contact_address'] = contact['address'];
-      update['contact_email'] = contact['email'];
-    }
-
-    await _db.from('concern_tickets').update(update).eq('id', ticketId);
-  }
-
-  /// True when a ticket must stay anonymous — either already flagged, or linked
-  /// to an anonymous report. Read failures fail safe (treated as NOT anonymous
-  /// only when we truly can't tell — here we default false but the report check
-  /// is best-effort so a linked anonymous report still wins).
-  Future<bool> _isTicketAnonymous(String ticketId) async {
-    try {
-      final t = await _db
-          .from('concern_tickets')
-          .select('is_anonymous, report_id')
-          .eq('id', ticketId)
-          .maybeSingle();
-      if (t == null) return false;
-      if (t['is_anonymous'] == true) return true;
-      final reportId = t['report_id']?.toString();
-      if (reportId == null) return false;
-      final r = await _db
-          .from('reports')
-          .select('is_anonymous')
-          .eq('id', reportId)
-          .maybeSingle();
-      return (r?['is_anonymous'] as bool?) ?? false;
-    } catch (e) {
-      debugPrint('_isTicketAnonymous: $e');
-      return false;
-    }
+    await _db.rpc('promote_ticket', params: {
+      'p_ticket': ticketId,
+      'p_staff': staffUserId,
+    });
   }
 
   /// Live "agent rating" for the citizen chat header: the average of every

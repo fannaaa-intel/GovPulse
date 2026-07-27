@@ -86,6 +86,15 @@ class ChatService extends ChangeNotifier {
   /// citizen is asked to rate it; [_submittedRating] locks in their score.
   bool _awaitingRating = false;
   int _submittedRating = 0;
+
+  /// A message the citizen typed that could not be delivered because the staff
+  /// member ended the chat in the same instant (the ticket_messages INSERT is
+  /// rejected with 42501 once the ticket is terminal — migration
+  /// 20260722000005 phase 3). Held so the text is never silently lost: the
+  /// "Need more help?" action carries it into the new bot conversation. See
+  /// [consumeUndeliveredText].
+  String? _undeliveredText;
+
   bool _connectAfterTicket = false;
   bool _isGhostTicket = false;
   String? _cName, _cNumber, _cAddress, _cEmail, _cNote;
@@ -144,6 +153,15 @@ class ChatService extends ChangeNotifier {
   /// chat and they haven't rated yet). Consumed by the chat screen.
   bool get showRatingBar => _awaitingRating && _submittedRating == 0;
   int get submittedRating => _submittedRating;
+
+  /// Returns (and clears) any message the citizen typed that lost the send/end
+  /// race, so the caller can drop it into the composer of the new bot
+  /// conversation. Null when there is nothing pending. See [_undeliveredText].
+  String? consumeUndeliveredText() {
+    final t = _undeliveredText;
+    _undeliveredText = null;
+    return t;
+  }
 
   String? get lastTicketReference => _lastTicketReference;
   String? get lastTicketId => _lastTicketId;
@@ -1179,7 +1197,25 @@ class ChatService extends ChangeNotifier {
     } catch (e) {
       debugPrint('sendToStaff failed: $e');
       if (session != _sessionId) return;
-      // Surface the failure so the citizen can resend or delete the bubble.
+
+      // The send/end race: staff ended the chat in the same instant the citizen
+      // hit send, so the ticket_messages INSERT was rejected by RLS with 42501
+      // (the status condition added in migration 20260722000005 phase 3). This
+      // is NOT a transient failure — resending would hit the same wall, so a
+      // "Resend" bubble would be a trap. Instead: pull the undelivered text
+      // aside so it is never lost, drop the dead bubble, and end the chat
+      // locally (locks the composer, shows the rating card + "Need more help?").
+      if (e is PostgrestException && e.code == '42501') {
+        _undeliveredText = msg.text;
+        _messages.remove(msg);
+        notifyListeners();
+        _persist();
+        _onAgentEnded(session);
+        return;
+      }
+
+      // Any other failure is treated as transient: surface it so the citizen
+      // can resend or delete the bubble.
       msg.status = MessageStatus.failed;
       notifyListeners();
       _persist();
