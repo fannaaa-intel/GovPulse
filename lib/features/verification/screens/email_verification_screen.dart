@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/widgets/web/web.dart';
 import '../../../core/widgets/mobile_form_shell.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/app_snackbar.dart';
 
 class VerificationScreen extends StatefulWidget {
   final String email;
@@ -156,23 +157,24 @@ class VerificationScreenState extends State<VerificationScreen>
     try {
       final supabase = Supabase.instance.client;
 
-      final response = await http.post(
-        Uri.parse("$baseUrl/verify-email-otp"),
-        headers: {
-          "Content-Type": "application/json",
-          "apikey": "sb_publishable_ZBDaQPQdFyC5kOHGbce9Ig_zdtIi6Mo",
-        },
-        body: jsonEncode({
+      // functions.invoke sends the publishable key automatically and
+      // JSON-decodes the response. verify-email-otp is verify_jwt=false, so no
+      // session is required (there is none yet during signup). invoke THROWS
+      // FunctionException on non-2xx, so the 409 username_taken race is handled
+      // in the catch below rather than an else-if branch.
+      final response = await supabase.functions.invoke(
+        'verify-email-otp',
+        body: {
           "email": widget.email,
           "code": code.trim(),
           "password": widget.password,
-        }),
+        },
       );
 
-      final data = jsonDecode(response.body);
+      final data = response.data;
       if (!mounted) return;
 
-      if (response.statusCode == 200 && data["success"] == true) {
+      if (data is Map && data["success"] == true) {
         try {
           final session = data["session"];
           await supabase.auth.setSession(session["access_token"] as String);
@@ -181,6 +183,28 @@ class VerificationScreenState extends State<VerificationScreen>
         }
         widget.onVerifiedSuccess();
       } else {
+        // 2xx but not success — treat as a failed verification.
+        triggerErrorAnimation();
+      }
+    } on FunctionException catch (e) {
+      if (!mounted) return;
+      final details = e.details;
+      if (e.status == 409 &&
+          details is Map &&
+          details["error"] == "username_taken") {
+        // Race: the username was claimed inside the OTP window. This is NOT a
+        // wrong-code case — shaking the boxes would tell the user to re-enter a
+        // code that is perfectly valid. verify-email-otp already rolled the
+        // incomplete signup back (guarded delete + pending_signups cleared), so
+        // send the user back to signup to choose a new username. The snackbar
+        // uses the root overlay, so it survives the pop.
+        final msg =
+            (details["message"] as String?) ??
+            "That username was just taken. Please sign up again with a different one.";
+        showAppSnackBar(context, msg, type: AppSnackType.error);
+        Navigator.of(context).pop(); // VerificationScreen was pushed from signup
+      } else {
+        // Genuine wrong / expired code (400) or any other non-2xx — keep the shake.
         triggerErrorAnimation();
       }
     } catch (e) {

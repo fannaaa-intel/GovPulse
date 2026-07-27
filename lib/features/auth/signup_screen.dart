@@ -16,8 +16,6 @@ import '../../core/network/network_wrapper.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/widgets/mobile_form_shell.dart';
 import 'dart:async';
-import 'dart:convert';
-import 'package:http/http.dart' as http;
 
 // Screens navigated to from here — imported so PageRouteBuilder can reference them.
 import '../auth/facebook_username_screen.dart';
@@ -200,6 +198,8 @@ class _SignupScreenState extends State<SignupScreen>
     if (_emailDebounce?.isActive ?? false) _emailDebounce!.cancel();
 
     _emailDebounce = Timer(const Duration(milliseconds: 600), () async {
+      setState(() => isCheckingEmail = true);
+
       final exists = await AuthService.checkEmailExists(email);
       if (!mounted) return;
       setState(() {
@@ -388,6 +388,18 @@ class _SignupScreenState extends State<SignupScreen>
         final raw =
             result?["error"] as String? ??
             "Failed to send OTP. Please try again.";
+
+        // Duplicate gate: email OR username already registered (server does not
+        // disclose which). Show a clear "already registered — log in" state,
+        // not a generic per-field error.
+        if (raw == "already_registered") {
+          const msg =
+              "This email or username is already registered. Try logging in instead.";
+          setState(() => emailErrorText = msg);
+          showAppSnackBar(context, msg, type: AppSnackType.error);
+          return;
+        }
+
         setState(() => emailErrorText = _friendly(raw));
         return;
       }
@@ -436,24 +448,41 @@ class _SignupScreenState extends State<SignupScreen>
       throw Exception(canSend['message'] as String? ?? 'Failed to send OTP');
     }
 
-    final response = await http.post(
-      Uri.parse(
-        "https://vxvflhjbafqwehuxnmeq.supabase.co/functions/v1/send-email-otp",
-      ),
-      headers: {
-        "Content-Type": "application/json",
-        "apikey": "sb_publishable_ZBDaQPQdFyC5kOHGbce9Ig_zdtIi6Mo",
-      },
-      body: jsonEncode({
-        "email": email,
-        "username": username,
-        "password": password,
-      }),
-    );
+    // functions.invoke sends the publishable key automatically (satisfies
+    // send-email-otp's verify_jwt=true at the gateway) and JSON-decodes the
+    // response. It THROWS FunctionException on any non-2xx, so the 409
+    // duplicate-gate handling lives in the catch below — mirroring
+    // AuthService.login's pattern.
+    try {
+      final response = await supabase.functions.invoke(
+        'send-email-otp',
+        body: {
+          "email": email,
+          "username": username,
+          "password": password,
+        },
+      );
 
-    final data = jsonDecode(response.body);
-    if (response.statusCode != 200 || data["success"] != true) {
-      throw Exception(data["message"] ?? "Failed to send OTP");
+      final data = response.data;
+      if (data is! Map || data["success"] != true) {
+        throw Exception(
+          (data is Map ? data["message"] : null) ?? "Failed to send OTP",
+        );
+      }
+    } on FunctionException catch (e) {
+      final details = e.details;
+      // 409 already_registered — server-side duplicate gate. Uniform by design:
+      // it does NOT say whether email or username matched. Throw a stable
+      // sentinel so _submitSignup can route to the dedicated "already
+      // registered" state instead of the generic OTP-failure text.
+      if (e.status == 409 &&
+          details is Map &&
+          details["error"] == "already_registered") {
+        throw Exception("already_registered");
+      }
+      throw Exception(
+        (details is Map ? details["message"] : null) ?? "Failed to send OTP",
+      );
     }
   }
 
