@@ -50,6 +50,53 @@ serve(async (req) => {
       return rateLimitResponse(emailLong.retryAfter, "Too many code requests for this email. Try again in an hour.")
     }
 
+    // ── Duplicate gate ────────────────────────────────────────────────────
+    // Runs BEFORE pending_signups is written and BEFORE signInWithOtp. That
+    // call has shouldCreateUser:true and REUSES an existing row, so without
+    // this gate a signup for an already-registered email mints (or re-targets)
+    // a real auth.users row, and updateUserById in verify-email-otp then resets
+    // a live account's password. This gate is the fix for both the orphan and
+    // the password-reset hijack.
+    //
+    // FAIL CLOSED: an RPC error returns 500 and stops here. The email side has
+    // NO unique backstop in profiles, so "proceed on error" would re-open the
+    // exact path this closes. A blocked legit signup is recoverable by retry;
+    // a minted orphan / a reset password is not.
+    //
+    // RAW value: the RPCs fold with lower(trim(...)); pre-normalizing in JS
+    // re-introduces the drift documented in check-email-exists.
+    //
+    // UNIFORM 409, field not revealed — same oracle discipline as
+    // username-login. The per-field UX the form needs already comes from the
+    // check-email-exists / check-username-exists calls that run earlier in the
+    // signup screen; this is the server-side backstop, not the UX surface.
+    const { data: emailTaken, error: emailErr } =
+      await supabase.rpc("email_exists", { p_email: email })
+    if (emailErr) {
+      console.error("send-email-otp: email_exists rpc failed:", emailErr.message)
+      return new Response(
+        JSON.stringify({ success: false, message: "Server error" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      )
+    }
+
+    const { data: usernameTaken, error: usernameErr } =
+      await supabase.rpc("username_exists", { p_username: username })
+    if (usernameErr) {
+      console.error("send-email-otp: username_exists rpc failed:", usernameErr.message)
+      return new Response(
+        JSON.stringify({ success: false, message: "Server error" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      )
+    }
+
+    if (emailTaken === true || usernameTaken === true) {
+      return new Response(
+        JSON.stringify({ error: "already_registered" }),
+        { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      )
+    }
+
     // Store username only — password never touches the DB
     const { error: pendingError } = await supabase
       .from("pending_signups")

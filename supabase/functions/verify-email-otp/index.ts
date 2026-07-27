@@ -120,10 +120,46 @@ serve(async (req) => {
       .upsert({ id: data.user.id, email: data.user.email, username: pending.username })
 
     if (profileError) {
-      console.log(`[verify-otp] Profile upsert failed: ${profileError.message}`)
+      console.log(`[verify-otp] Profile upsert failed (${profileError.code ?? "?"}): ${profileError.message}`)
+
+      // 23505 = unique_violation on lower(username). With the send-side gate in
+      // place this is now only a RACE — a name claimed inside the OTP window.
+      // It is NOT recoverable from this screen: the OTP UI has no username
+      // field, pending_signups still holds the taken name, and a retry re-hits
+      // the same constraint forever (the orphan loop). So roll the incomplete
+      // signup all the way back and make the user restart clean.
+      if (profileError.code === "23505") {
+        // GUARDED DELETE. The auth row was minted at send time, so deleting it
+        // is safe ONLY because data.user.id is the FAILING user's own id and it
+        // is genuinely this signup's orphan: no profile AND no role for the id.
+        // profiles-absence is load-bearing — a real user always has a profiles
+        // row; citizens are not guaranteed a user_roles row. user_roles is a
+        // secondary guard that additionally spares staff/admin accounts.
+        const { data: existingProfile } = await supabase
+          .from("profiles").select("id").eq("id", data.user.id).maybeSingle()
+        const { data: existingRole } = await supabase
+          .from("user_roles").select("user_id").eq("user_id", data.user.id).maybeSingle()
+
+        if (!existingProfile && !existingRole) {
+          await supabase.auth.admin.deleteUser(data.user.id).catch(() => {})
+          await supabase.from("pending_signups").delete().eq("email", normalizedEmail)
+        }
+
+        return new Response(JSON.stringify({
+          success: false,
+          error: "username_taken",
+          message: "That username was just taken. Please sign up again with a different one.",
+        }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } })
+      }
+
+      // Any other DB error: do NOT delete — a transient failure may succeed on
+      // retry (signInWithOtp reuses the existing row). Return a generic error;
+      // never echo profileError.message, which previously leaked the Postgres
+      // constraint string to an unauthenticated caller.
       return new Response(JSON.stringify({
-        success: false, message: profileError.message
-      }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } })
+        success: false, error: "server_error",
+        message: "Could not complete signup. Please try again.",
+      }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } })
     }
 
     // Step 5 — cleanup
