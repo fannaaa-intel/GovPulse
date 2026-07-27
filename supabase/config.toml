@@ -396,20 +396,62 @@ entrypoint = "./functions/send-email-otp/index.ts"
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/send-email-otp/*.html" ]
 
-[functions.update-password]
-enabled = true
-verify_jwt = true
-
-# Uncomment to specify a custom file path to the entrypoint.
-# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
-entrypoint = "./functions/update-password/index.ts"
-# Specifies static files to be bundled with the function. Supports glob patterns.
-# For example, if you want to serve static HTML pages in your function:
-# static_files = [ "./functions/update-password/*.html" ]
-
 [functions.sync-verification-avatar]
 enabled = true
 # Requires a signed-in caller (the admin approving the submission). The function
 # uses the service role internally and derives all paths from the DB.
 verify_jwt = true
 entrypoint = "./functions/sync-verification-avatar/index.ts"
+
+[functions.username-login]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/username-login/index.ts"
+
+[functions.check-email-exists]
+enabled = true
+# Deployed verify_jwt = true as of 2026-07-23. It was FALSE until today and
+# flipped silently when the function was redeployed while undeclared here: an
+# undeclared function takes the CLI's default (true), so the gate changed as a
+# side effect of a deploy that was not about auth at all. The in-file
+# `export const config = { auth: false }` did not prevent it — that directive is
+# inert under CLI v2.75.0.
+#
+# true is CORRECT here: Dart reaches this through functions.invoke, which sends
+# the key, so the gate is satisfied. Pinning it is the point — the value is
+# right by accident and must not be left to a default again.
+verify_jwt = true
+entrypoint = "./functions/check-email-exists/index.ts"
+
+[functions.check-username-exists]
+enabled = true
+# Same story as check-email-exists: deployed verify_jwt = true as of
+# 2026-07-23, false until today, flipped silently by a redeploy while
+# undeclared here. Correct value, arrived at by default rather than by
+# decision. Pinned.
+verify_jwt = true
+entrypoint = "./functions/check-username-exists/index.ts"
+
+[functions.verify-email-otp]
+enabled = true
+# MUST stay false. The caller is verifying an emailed code during signup and
+# has no session yet — there is no JWT to present. Entitlement is the OTP
+# itself, verified inside the function.
+#
+# This is declared defensively, not to change anything: the deployed state is
+# already false. Left undeclared, a redeploy would take the CLI default (true)
+# and break OTP verification for every new signup — exactly what happened to
+# the check-* pair above, in the direction that breaks rather than the
+# direction that happened to be right.
+verify_jwt = false
+entrypoint = "./functions/verify-email-otp/index.ts"
+
+[functions.reset-verify-otp]
+enabled = true
+# MUST stay false, for the same reason as verify-email-otp:
+# the caller is locked out by definition and holds no JWT. Entitlement is the
+# emailed reset code, verified inside the function. A redeploy while undeclared
+# would default this to true and break password reset for precisely the users
+# who cannot log in.
+verify_jwt = false
+entrypoint = "./functions/reset-verify-otp/index.ts"
