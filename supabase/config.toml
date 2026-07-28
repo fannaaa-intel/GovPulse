@@ -455,3 +455,78 @@ enabled = true
 # who cannot log in.
 verify_jwt = false
 entrypoint = "./functions/reset-verify-otp/index.ts"
+
+# ── Undeclared functions pinned 2026-07-28 ────────────────────────────────
+# All 9 confirmed verify_jwt = true live (supabase functions list --output json).
+# Pinning is a no-op for the gate — it locks the current value so a future
+# redeploy can't silently flip it via the CLI default, as happened to the
+# check-* pair on 2026-07-23.
+
+# ── Client-invoked ────────────────────────────────────────────────────────
+[functions.chat-agent]
+enabled = true
+# true. Client functions.invoke (chat_service.dart); logged-in caller sends the
+# key. Live-confirmed true.
+verify_jwt = true
+entrypoint = "./functions/chat-agent/index.ts"
+
+[functions.check-ai-image]
+enabled = true
+# true. Client invoke from feedback/report/suggestion screens; caller sends the
+# key. Live-confirmed true.
+verify_jwt = true
+entrypoint = "./functions/check-ai-image/index.ts"
+
+[functions.recommend-actions]
+enabled = true
+# true. Client invoke (admin dashboard); admin session sends the key.
+# Live-confirmed true.
+verify_jwt = true
+entrypoint = "./functions/recommend-actions/index.ts"
+
+[functions.reset-send-otp]
+enabled = true
+# true. Client http.post sends apikey + Bearer (both reset and change-pw flows).
+# Sibling reset-verify-otp is false (that's the verify leg); this send leg
+# carries a key, so true is satisfied. Live-confirmed true.
+verify_jwt = true
+entrypoint = "./functions/reset-send-otp/index.ts"
+
+[functions.create-staff]
+enabled = true
+# true. Client invoke (admin). NOTE: index.ts has `export const config =
+# { auth: false }` (L9) which is INERT under CLI v2.75.0 — live is true. Pinning
+# true to end the contradiction.
+verify_jwt = true
+entrypoint = "./functions/create-staff/index.ts"
+
+# ── Server / trigger-invoked (no client caller) ───────────────────────────
+[functions.classify-feedback]
+enabled = true
+# true. Server-only: cron/trigger net.http_post sends a service-role Bearer from
+# vault. No client caller. Bearer satisfies true. Live-confirmed true.
+verify_jwt = true
+entrypoint = "./functions/classify-feedback/index.ts"
+
+[functions.classify-report]
+enabled = true
+# true. Same pattern as classify-feedback (trigger + vault service-role Bearer).
+# Live-confirmed true.
+verify_jwt = true
+entrypoint = "./functions/classify-report/index.ts"
+
+[functions.moderate-content]
+enabled = true
+# true. Server-only: comment-insert trigger sends a service-role Bearer from
+# vault. Live-confirmed true.
+verify_jwt = true
+entrypoint = "./functions/moderate-content/index.ts"
+
+[functions.send-push]
+enabled = true
+# true. Server-only: notification trigger sends a Bearer. Live-confirmed true.
+# (Separate tracked risk: the trigger currently hardcodes a legacy anon JWT
+# instead of reading vault — see memory push-trigger-hardcoded-anon-key; does
+# NOT affect this gate value.)
+verify_jwt = true
+entrypoint = "./functions/send-push/index.ts"
