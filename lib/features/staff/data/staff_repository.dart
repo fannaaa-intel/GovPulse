@@ -96,7 +96,6 @@ class StaffConversation {
   final String? assignedStaffId;
   final String? contactName;
   final String? contactNumber;
-  final String? reportId;
   final bool isAnonymous;
   final int? rating; // 1–5, set after the citizen rates a resolved chat
   final DateTime? createdAt;
@@ -115,7 +114,6 @@ class StaffConversation {
     required this.assignedStaffId,
     required this.contactName,
     required this.contactNumber,
-    required this.reportId,
     required this.isAnonymous,
     required this.rating,
     required this.createdAt,
@@ -149,7 +147,6 @@ class StaffConversation {
       // Defensively drop identity fields for anonymous rows even if present.
       contactName: anon ? null : r['contact_name'] as String?,
       contactNumber: anon ? null : r['contact_number'] as String?,
-      reportId: r['report_id']?.toString(),
       isAnonymous: anon,
       rating: (r['rating'] as num?)?.toInt(),
       createdAt: _ts(r['created_at']),
@@ -451,7 +448,7 @@ class StaffRepository {
         .from('staff_tickets_view')
         .select(
           'id, reference_code, category, department, status, assigned_staff_id, '
-          'contact_name, contact_number, report_id, is_anonymous, rating, '
+          'contact_name, contact_number, is_anonymous, rating, '
           'created_at, updated_at',
         )
         .eq('department', department)

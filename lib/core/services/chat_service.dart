@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -60,7 +61,28 @@ class ChatService extends ChangeNotifier {
   ConversationStage _stage = ConversationStage.greeting;
   ConcernCategory? _category;
   String? _pendingDetails;
+  /// The concern ticket's OWN reference code — the `LGU-YYYYMMDD-NNNNN` value
+  /// stored in `concern_tickets.reference_code`. Set from the row the database
+  /// returns after an insert, never guessed locally.
+  ///
+  /// Deliberately SEPARATE from [_followUpReportRef]. These were one field
+  /// until migration 20260722000017: the follow-up path assigned the report's
+  /// display reference here and it was written straight into
+  /// `reference_code`, putting an 8-hex prefix of the report's uuid into a
+  /// column staff read unredacted. Keep them apart.
   String? _lastTicketReference;
+
+  /// The REPORT's human-facing display reference (`RPT-B34A6055`) for the
+  /// follow-up conversation. Display and prompt-context only: it is shown to
+  /// the citizen who filed the report, and passed to the chat-agent function so
+  /// the assistant can say which report it is looking at.
+  ///
+  /// MUST NEVER be written to `concern_tickets.reference_code` — it is derived
+  /// from the report id, and the database now rejects it (the trigger allowlists
+  /// `^LGU-\d{8}-\d{5}$`). It is also the seed for the Hive box name, which is
+  /// why it stays report-derived: see [_boxNameForReport].
+  String? _followUpReportRef;
+
   String? _followUpReportStatus;
   String? _followUpDepartment;
   String? _followUpReportId;
@@ -165,7 +187,7 @@ class ChatService extends ChangeNotifier {
 
   String? get lastTicketReference => _lastTicketReference;
   String? get lastTicketId => _lastTicketId;
-  String? get followUpReportRef => _lastTicketReference;
+  String? get followUpReportRef => _followUpReportRef;
 
   // ── Lifecycle ─────────────────────────────────────────────────────────
 
@@ -216,6 +238,7 @@ class ChatService extends ChangeNotifier {
     _followUpDepartment = null;
     _followUpReportId = null;
     _followUpReportCategory = null;
+    _followUpReportRef = null;
     _isGhostTicket = false;
     _isAgentTyping = false;
     _unreadCount = 0;
@@ -251,6 +274,7 @@ class ChatService extends ChangeNotifier {
       _followUpDepartment = null;
       _followUpReportId = null;
       _followUpReportCategory = null;
+      _followUpReportRef = null;
       _isGhostTicket = false;
       _category = null;
       _pendingDetails = null;
@@ -312,7 +336,10 @@ class ChatService extends ChangeNotifier {
     _stage = ConversationStage.followUp;
     _category = null;
     _pendingDetails = null;
-    _lastTicketReference = reportRef;
+    // The report's display reference — NOT the ticket's. _lastTicketReference
+    // stays null until the database hands back a real reference_code.
+    _followUpReportRef = reportRef;
+    _lastTicketReference = null;
     _followUpReportStatus = reportStatus;
     _followUpDepartment = reportDepartment;
     _followUpReportId = reportId;
@@ -339,7 +366,7 @@ class ChatService extends ChangeNotifier {
       'department': _followUpDepartment,
       'history': <Map>[],
       'userMessage': '__followup__',
-      'reportRef': _lastTicketReference,
+      'reportRef': _followUpReportRef,
       'reportStatus': _followUpReportStatus,
     };
 
@@ -376,7 +403,7 @@ class ChatService extends ChangeNotifier {
   }
 
   String _followUpFallbackGreeting() =>
-      'I can see your report ${_lastTicketReference ?? ''} about '
+      'I can see your report ${_followUpReportRef ?? ''} about '
       '${_followUpReportCategory ?? 'your concern'} '
       '(Status: ${_followUpReportStatus ?? 'pending'}). How can I help you po?';
 
@@ -429,7 +456,10 @@ class ChatService extends ChangeNotifier {
           .values[stageIdx.clamp(0, ConversationStage.values.length - 1)];
       final ci = b.get('category') as int?;
       _category = ci != null ? ConcernCategory.values[ci] : null;
-      _lastTicketReference = b.get('lastTicketReference') as String?;
+      _restoreReferences(b);
+      // A resumed follow-up thread must show the report it is about, even if
+      // the cached box predates the split and carried no 'followUpRef'.
+      _followUpReportRef ??= reportRef;
       _lastTicketId = b.get('lastTicketId') as String?;
       _isGhostTicket = b.get('isGhostTicket', defaultValue: false) as bool;
       _awaitingRating = b.get('awaitingRating', defaultValue: false) as bool;
@@ -829,10 +859,11 @@ class ChatService extends ChangeNotifier {
     // ── Live agent path — silent ghost ticket, then connect ───────────────
     if (_connectAfterTicket) {
       try {
-        final reference = _generateRef();
-        final ticket = await TicketRepository.I.createGhostTicket(
-          category: _category!,
-          referenceCode: reference,
+        final ticket = await _withUniqueRef(
+          (reference) => TicketRepository.I.createGhostTicket(
+            category: _category!,
+            referenceCode: reference,
+          ),
         );
         if (session != _sessionId) return;
         _lastTicketReference = ticket['reference_code'] as String?;
@@ -866,16 +897,17 @@ class ChatService extends ChangeNotifier {
         _category!.department,
       );
 
-      final reference = _generateRef();
-      final ticket = await TicketRepository.I.createTicket(
-        category: _category!,
-        details: _pendingDetails!,
-        referenceCode: reference,
-        contactName: _cName,
-        contactNumber: _cNumber,
-        contactAddress: _cAddress,
-        contactEmail: _cEmail,
-        contactNote: _cNote,
+      final ticket = await _withUniqueRef(
+        (reference) => TicketRepository.I.createTicket(
+          category: _category!,
+          details: _pendingDetails!,
+          referenceCode: reference,
+          contactName: _cName,
+          contactNumber: _cNumber,
+          contactAddress: _cAddress,
+          contactEmail: _cEmail,
+          contactNote: _cNote,
+        ),
       );
 
       if (session != _sessionId) return;
@@ -985,7 +1017,7 @@ class ChatService extends ChangeNotifier {
       'userMessage': latest.text,
       'events': events,
       if (_stage == ConversationStage.followUp) ...{
-        'reportRef': _lastTicketReference,
+        'reportRef': _followUpReportRef,
         'reportStatus': _followUpReportStatus,
       },
     };
@@ -1024,7 +1056,7 @@ class ChatService extends ChangeNotifier {
     return LocalAssistant.reply(
       userText,
       followUp: _stage == ConversationStage.followUp,
-      reportRef: _lastTicketReference,
+      reportRef: _followUpReportRef,
       reportStatus: _followUpReportStatus,
       reportCategory: _followUpReportCategory,
     );
@@ -1114,17 +1146,42 @@ class ChatService extends ChangeNotifier {
         _followUpReportCategory != null &&
         _followUpDepartment != null) {
       try {
-        final ticket = await TicketRepository.I.createFollowUpTicket(
-          reportId: _followUpReportId!,
-          category: _followUpReportCategory!,
-          department: _followUpDepartment!,
-          referenceCode: _lastTicketReference ?? _generateRef(),
+        // A GENERATED reference — never _followUpReportRef. That value is
+        // derived from the report id, and writing it here is the leak migration
+        // 20260722000017 closes; the database now rejects it outright.
+        // The report linkage travels in report_id, which staff cannot see.
+        final ticket = await _withUniqueRef(
+          (reference) => TicketRepository.I.createFollowUpTicket(
+            reportId: _followUpReportId!,
+            category: _followUpReportCategory!,
+            department: _followUpDepartment!,
+            referenceCode: reference,
+          ),
         );
         if (session != _sessionId) return;
         _lastTicketId = ticket['id']?.toString();
+        // Take the reference back from the row the database actually wrote.
+        _lastTicketReference = ticket['reference_code'] as String?;
         _isGhostTicket = true;
       } catch (e) {
-        debugPrint('follow-up ticket (retry) failed: $e');
+        // MUST NOT fall through. Without this return, control reached the
+        // "no staff available" branch below and told the citizen nobody was on
+        // duty — which is false, and sends staff chasing a staffing problem
+        // that does not exist. A ticket we could not create is our failure, and
+        // it says so.
+        debugPrint('follow-up ticket failed: $e');
+        if (session != _sessionId) return;
+        await _agentSay(
+          '⚠️ Hindi po namin ma-open ang chat para sa report na ito ngayon. '
+          'Hindi ito tungkol sa availability ng staff — may problema po sa '
+          'aming sistema. Paki-subukan po ulit mamaya.',
+          session,
+        );
+        if (session != _sessionId) return;
+        _stage = ConversationStage.followUp;
+        notifyListeners();
+        _persist();
+        return;
       }
     }
 
@@ -1425,6 +1482,7 @@ class ChatService extends ChangeNotifier {
     _followUpDepartment = null;
     _followUpReportId = null;
     _followUpReportCategory = null;
+    _followUpReportRef = null;
 
     final b = await Hive.openBox(_activeBoxName);
     await b.clear();
@@ -1534,12 +1592,176 @@ class ChatService extends ChangeNotifier {
     }
   }
 
-  String _generateRef() {
+  /// Shape of a reference produced by [_generateRef] — and, since migration
+  /// 20260722000017, the only shape `concern_tickets.reference_code` accepts.
+  static final RegExp _generatedRefPattern = RegExp(r'^LGU-\d{8}-\d{5}$');
+
+  /// True for the report follow-up surface, false for the main chat agent.
+  ///
+  /// One class backs two surfaces: [ChatService.I] (main, base box
+  /// `chat_cache`) and the per-report instances from [forReport] (base box
+  /// `chat_cache_followup_<ref>`). Report-scoped state belongs only to the
+  /// latter, and [_baseBox] is fixed at construction so this cannot drift.
+  bool get _isFollowUpSurface => _baseBox.startsWith('chat_cache_followup');
+
+  /// Reads the two reference fields out of a Hive box, healing boxes written
+  /// before the report-ref / ticket-ref split.
+  ///
+  /// Legacy boxes stored the REPORT's display reference ('RPT-B34A6055') under
+  /// `lastTicketReference`, because one field served both roles. Restoring that
+  /// verbatim would put a report-derived value back into the slot that feeds
+  /// `reference_code`. Anything not matching the generated shape is therefore
+  /// treated as what it actually was — a report reference — and moved across.
+  ///
+  /// No box is orphaned: the box NAME is still derived from the report ref
+  /// (see [_boxNameForReport]), which this change does not touch, so every
+  /// cached thread still resolves to the same box.
+  void _restoreReferences(Box b) {
+    final cached = b.get('lastTicketReference') as String?;
+    final looksGenerated =
+        cached != null && _generatedRefPattern.hasMatch(cached);
+
+    // Only a generated reference is a real ticket reference. Anything else is
+    // either a legacy report ref or junk, and must not be presented as one.
+    _lastTicketReference = looksGenerated ? cached : null;
+
+    // SURFACE-SCOPED. The main chat agent has no report context at all, so it
+    // never restores one — not from 'followUpRef', not by healing.
+    //
+    // This guard is load-bearing, not defensive dressing: the pre-split
+    // _persist() wrote `'followUpRef': _lastTicketReference`, which on the MAIN
+    // chat held that chat's own LGU- ticket reference. Reading it back
+    // unconditionally would seed _followUpReportRef on ChatService.I with a
+    // value that is not a report reference and describes no report.
+    if (!_isFollowUpSurface) {
+      _followUpReportRef = null;
+      return;
+    }
+
+    _followUpReportRef = b.get('followUpRef') as String?;
+    // Legacy follow-up box: one field served both roles, and it held the
+    // REPORT's display ref. Move it across — but only a non-empty value, so an
+    // empty string cannot become a phantom report reference.
+    if ((_followUpReportRef == null || _followUpReportRef!.isEmpty) &&
+        !looksGenerated &&
+        cached != null &&
+        cached.isNotEmpty) {
+      _followUpReportRef = cached;
+    }
+  }
+
+  /// Attempts allowed when landing a unique `reference_code`.
+  static const _refAttempts = 4;
+  static final Random _refJitter = Random();
+
+  /// Runs [create] with a freshly generated reference, retrying on a unique
+  /// violation (SQLSTATE 23505).
+  ///
+  /// WHY THIS EXISTS. `reference_code` is UNIQUE and [_generateRef] is random,
+  /// so a collision is possible however large the namespace. At 32^6 slots per
+  /// day it is genuinely rare rather than routine, but "rare" against a hard
+  /// constraint still means a citizen occasionally cannot open a chat, and the
+  /// recovery is one cheap retry.
+  ///
+  /// ON THE DELAY — it is NOT load-bearing, and an earlier version of this
+  /// comment claimed it was. That was true when the tail came from the
+  /// millisecond clock: [_generateRef] was then a pure function of the current
+  /// millisecond, an immediate retry regenerated the identical string, and
+  /// sleeping past the boundary was the only thing that made the next attempt a
+  /// different draw. With a [Random.secure] tail every call is an independent
+  /// draw regardless of timing, so that rationale is dead.
+  ///
+  /// The delay is kept as ordinary retry backoff, not as correctness: it costs
+  /// nothing on a path that has already failed, and it still helps for the one
+  /// remaining case a retry can address — a transient rejection rather than a
+  /// true value collision. If it were removed the loop would still be correct.
+  /// Documented rather than deleted so the next reader does not reconstruct the
+  /// old, wrong reason for it.
+  ///
+  /// Retries on any 23505: the only unique constraints on concern_tickets are
+  /// the primary key and reference_code, and a fresh attempt regenerates both.
+  Future<T> _withUniqueRef<T>(Future<T> Function(String reference) create) async {
+    for (var attempt = 1; attempt <= _refAttempts; attempt++) {
+      try {
+        return await create(_generateRef());
+      } on PostgrestException catch (e) {
+        if (e.code != '23505' || attempt == _refAttempts) rethrow;
+        debugPrint('reference collision (attempt $attempt), regenerating');
+        await Future<void>.delayed(
+          Duration(milliseconds: 3 + _refJitter.nextInt(40)),
+        );
+      }
+    }
+    // Unreachable: the final attempt either returns or rethrows above.
+    throw const TicketException('Could not allocate a ticket reference.');
+  }
+
+  /// Crockford base32 — the ten digits plus the twenty-two unambiguous letters.
+  /// I, L, O and U are excluded: the first three because they are misread as 1,
+  /// 1 and 0 off a screen or over a phone, and U because it is the convention's
+  /// reserved character. Exactly 32 characters; asserted in
+  /// verify_20260722000017.sql rather than trusted by eye.
+  static const _refAlphabet = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+
+  /// Cryptographic, so references are unguessable as well as unique. There is
+  /// no secret here, but enumeration of a day's references is free to deny.
+  static final Random _refRandom = Random.secure();
+
+  /// A ticket reference: `LGU-YYYYMMDD-XXXXXX`, 19 characters.
+  ///
+  /// The tail was previously the last five digits of the millisecond epoch —
+  /// about 100,000 slots per calendar day. Against a UNIQUE constraint that is
+  /// a birthday problem with even odds at ~372 tickets in one day, and, because
+  /// collisions accumulate across days, a ~50% chance of at least one collision
+  /// within a year at only TWENTY tickets a day. That is a quiet Tuesday for an
+  /// LGU, and the peak case — a typhoon or flood driving hundreds of reports in
+  /// an afternoon — is exactly when the system must not start failing.
+  ///
+  /// Six random base32 characters is 32^6 ≈ 1.07e9 slots per day, which moves
+  /// even odds out to ~38,700 tickets/day and makes the annual figure
+  /// negligible at any volume this deployment will see.
+  ///
+  /// The date prefix is kept: it is human-meaningful, it is what makes the
+  /// namespace day-scoped, and it costs nothing.
+  ///
+  /// MUST stay in sync with the database allowlist — the CHECK constraint and
+  /// the trigger in migration 20260722000017 both pin
+  /// `^LGU-[0-9]{8}-[0-9A-HJKMNP-TV-Z]{6}$`. A change here without a migration
+  /// makes every ticket insert fail.
+  /// Test hooks. The reference format is a CONTRACT WITH THE DATABASE — the
+  /// CHECK constraint and trigger in migration 20260722000017 reject anything
+  /// this method can't produce — but Dart and SQL hold two independent copies of
+  /// that 32-character alphabet and nothing else compares them. These expose the
+  /// real generator (not a reimplementation) so a test can cross-check its
+  /// output against the live regex. See test/reference_format_test.dart.
+  @visibleForTesting
+  static String generateReferenceForTest() => _generateRef();
+  @visibleForTesting
+  static String get referenceAlphabetForTest => _refAlphabet;
+
+  /// Exposes the collision-retry loop with an injectable create function, so a
+  /// test can assert WHICH failures it retries. A 4-attempt loop in front of a
+  /// rate limiter would turn one blocked request into four, so "retries only on
+  /// 23505" is a property worth proving rather than reading.
+  @visibleForTesting
+  static Future<T> withUniqueRefForTest<T>(
+    Future<T> Function(String reference) create,
+  ) =>
+      I._withUniqueRef(create);
+  @visibleForTesting
+  static int get refAttemptsForTest => _refAttempts;
+
+  static String _generateRef() {
     final n = DateTime.now();
     final d =
         '${n.year}${n.month.toString().padLeft(2, '0')}${n.day.toString().padLeft(2, '0')}';
-    final t = n.millisecondsSinceEpoch.toString();
-    return 'LGU-$d-${t.substring(t.length - 5)}';
+    final tail = String.fromCharCodes(
+      List.generate(
+        6,
+        (_) => _refAlphabet.codeUnitAt(_refRandom.nextInt(_refAlphabet.length)),
+      ),
+    );
+    return 'LGU-$d-$tail';
   }
 
   // ── Cache (Hive) ──────────────────────────────────────────────────────
@@ -1597,7 +1819,7 @@ class ChatService extends ChangeNotifier {
       'lastTicketId': _lastTicketId,
       'isGhostTicket': _isGhostTicket,
       'detailAttempts': _detailAttempts,
-      'followUpRef': _lastTicketReference,
+      'followUpRef': _followUpReportRef,
       'followUpStatus': _followUpReportStatus,
       'followUpDepartment': _followUpDepartment,
       'followUpReportId': _followUpReportId,
@@ -1626,7 +1848,7 @@ class ChatService extends ChangeNotifier {
     final ci = b.get('category') as int?;
     _category = ci != null ? ConcernCategory.values[ci] : null;
     _pendingDetails = b.get('pendingDetails') as String?;
-    _lastTicketReference = b.get('lastTicketReference') as String?;
+    _restoreReferences(b);
     _lastTicketId = b.get('lastTicketId') as String?;
     _isGhostTicket = b.get('isGhostTicket', defaultValue: false) as bool;
     _detailAttempts = b.get('detailAttempts', defaultValue: 0) as int;
