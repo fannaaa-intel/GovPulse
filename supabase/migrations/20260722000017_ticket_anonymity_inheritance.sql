@@ -1,4 +1,55 @@
 -- ============================================================================
+-- HANDOFF — READ BEFORE APPLYING
+-- ============================================================================
+-- WHAT THIS DOES
+--   Stops a follow-up concern ticket from deanonymising the reporter of an
+--   anonymous report. A ticket linked to a report now inherits that report's
+--   is_anonymous by strict equality, may only link to a report its own author
+--   filed, and can no longer carry a report-derived reference_code. The two
+--   staff views stop exposing report_id and duplicate_of. Full reasoning is in
+--   the section headers below; the leak was reference_code, not report_id.
+--
+-- MUST SHIP WITH THE CLIENT — NOT BEFORE IT
+--   This migration and the Phase 3 Flutter changes are one release. Applying
+--   this against the old client breaks the staff console in two ways:
+--     * staff_repository.dart selects report_id from staff_tickets_view; once
+--       section 4 drops that column PostgREST answers 400 and the staff
+--       conversation list dies entirely.
+--     * the old follow-up path writes 'RPT-<report id>' into reference_code,
+--       which section 3 now rejects outright.
+--   Both are fixed in commit d2d64b2, which also contains this file. If you are
+--   reading this from that commit or later, the client is ready.
+--
+-- LINE ENDINGS — APPLY THIS AND ITS ROLLBACK THROUGH THE SAME CHANNEL
+--   Postgres stores a function body verbatim, CR bytes included, so the apply
+--   channel decides what ends up in prosrc. This repo has core.autocrlf=true
+--   and no .gitattributes, so the working-tree copy may be CRLF while the
+--   committed copy is LF. Production already carries the scars: as of
+--   2026-07-29 notify_staff_ticket_assigned had MIXED endings inside a single
+--   body (31 CRLF + 6 LF) while promote_ticket was pure LF.
+--   CR is only whitespace to plpgsql, so nothing breaks either way — but if you
+--   apply this file through one channel and its rollback through another, a
+--   byte-comparison of the two function bodies will show a difference that is
+--   not a real one. Use one channel for both, and compare with CR normalised
+--   (see verify_20260722000017.sql, which does exactly that).
+--
+-- ROLLBACK
+--   supabase/rollback/20260722000017_ticket_anonymity_inheritance_rollback.sql
+--   Executed end-to-end on 2026-07-29 and proven to restore a byte-identical
+--   schema (39-key catalog fingerprint, 0 differences). It restores objects
+--   only: the section 1 backfill is NOT reversible. That was acceptable because
+--   concern_tickets held 0 rows — RE-CHECK THAT COUNT before trusting it. If
+--   rows exist, the object rollback is still correct but the data changes are
+--   permanent. Rolling back also re-opens the P1 this closes, so treat it as a
+--   deploy unblock, not a resting state.
+--
+-- VERIFY
+--   supabase/diagnostics/verify_20260722000017.sql — 19 checks, all must PASS.
+--   Safe against production: every write is inside a transaction that rolls
+--   back. Run it after applying.
+-- ============================================================================
+
+-- ============================================================================
 -- 20260722000017  Anonymity inheritance for report-linked concern tickets (7c)
 -- ============================================================================
 -- THE INVARIANT. A report's anonymity constrains everything linked to it. If a
