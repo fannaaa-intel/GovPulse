@@ -69,7 +69,7 @@ class _StaffConversationsPageState
       Navigator.of(context).push(PageRouteBuilder(
         transitionDuration: Duration.zero,
         reverseTransitionDuration: const Duration(milliseconds: 220),
-        pageBuilder: (_, _, _) => _ThreadScreen(conversation: c),
+        pageBuilder: (_, _, _) => _ThreadScreen(seed: c),
         transitionsBuilder: (_, anim, _, child) =>
             FadeTransition(opacity: anim, child: child),
       ));
@@ -165,7 +165,11 @@ class _StaffConversationsPageState
                   )
                 : StaffThreadView(
                     key: ValueKey(_selected!.id),
-                    conversation: _selected!,
+                    // Seed only. The reassignment above still keeps _selected
+                    // fresh for the LIST's selection highlight, but the thread
+                    // no longer depends on it — it resolves by id itself, so
+                    // both layouts go through one code path.
+                    seed: _selected!,
                   ),
           ),
         ],
@@ -408,9 +412,19 @@ class _TileAvatar extends StatelessWidget {
 }
 
 // ── Full-screen thread wrapper (narrow layout) ───────────────────────────────
+/// Narrow-layout wrapper: the thread pushed as its own route.
+///
+/// This route is built ONCE, by [_StaffConversationsPageState._openConversation],
+/// and the page that pushed it cannot rebuild it — a poll tick refreshes the
+/// list underneath while this route keeps whatever it was handed. So it must not
+/// be the thing that owns ticket state. It forwards [seed] and nothing else;
+/// [StaffThreadView] subscribes to [staffConversationsProvider] itself, which is
+/// what keeps this branch live despite never being rebuilt from above.
+///
+/// Do not add a StaffConversation field here that the body renders from.
 class _ThreadScreen extends StatelessWidget {
-  final StaffConversation conversation;
-  const _ThreadScreen({required this.conversation});
+  final StaffConversation seed;
+  const _ThreadScreen({required this.seed});
 
   @override
   Widget build(BuildContext context) {
@@ -420,7 +434,7 @@ class _ThreadScreen extends StatelessWidget {
       backgroundColor: StaffUi.pageBg,
       body: SafeArea(
         child: StaffThreadView(
-          conversation: conversation,
+          seed: seed,
           onBack: () => Navigator.of(context).pop(),
           animateIn: true,
         ),
@@ -433,14 +447,29 @@ class _ThreadScreen extends StatelessWidget {
 //  Thread view — messages + realtime + composer.
 // ════════════════════════════════════════════════════════════════════════════
 class StaffThreadView extends ConsumerStatefulWidget {
-  final StaffConversation conversation;
+  /// SEED ONLY — never render from this directly.
+  ///
+  /// This is a by-value snapshot of the row as it looked when the tile was
+  /// tapped. Nothing updates it: on a narrow console the thread is a pushed
+  /// route (see [_ThreadScreen]) that the list's 30s poll cannot reach, so
+  /// every field read from here freezes at tap time. That is exactly why the
+  /// citizen's post-chat rating never appeared until the staff navigated away
+  /// and back — `rating` was null in the snapshot and stayed null forever.
+  ///
+  /// The live row is resolved by id from [staffConversationsProvider] in
+  /// [_StaffThreadViewState._resolve], which is the ONLY place either layout
+  /// branch reads ticket state from. The seed survives solely as a fallback for
+  /// the frame before the provider answers, and for the case where this ticket
+  /// falls outside the polled window (fetchConversations is capped at 200 rows)
+  /// — losing the row must degrade to stale, never to a blank thread.
+  final StaffConversation seed;
   // Mobile full-screen thread: renders a back chevron in the header and slides
   // the message body up on open (the header stays put — no page-level slide).
   final VoidCallback? onBack;
   final bool animateIn;
   const StaffThreadView({
     super.key,
-    required this.conversation,
+    required this.seed,
     this.onBack,
     this.animateIn = false,
   });
@@ -457,9 +486,13 @@ class _StaffThreadViewState extends ConsumerState<StaffThreadView> {
   RealtimeChannel? _channel;
   bool _loading = true;
   bool _sending = false;
-  // Set the instant this staff ends the chat, so the thread flips to its ended
-  // state immediately even on mobile (where the pushed screen holds a stale,
-  // still-"open" conversation object that the list refresh can't update).
+  // Optimistic: set the instant this staff ends the chat so the thread flips to
+  // its ended state without waiting for the refetch inside setStatus to land.
+  //
+  // This used to compensate for the pushed mobile screen holding a stale,
+  // still-"open" conversation that the list refresh could not update. That is
+  // no longer true — ticket state is resolved live via [_resolve] on both
+  // layouts — so this is now only a latency shortcut, not a correctness crutch.
   bool _ended = false;
   // The citizen's profile photo (non-anonymous only), fetched once on open.
   String? _citizenPhotoUrl;
@@ -474,6 +507,31 @@ class _StaffThreadViewState extends ConsumerState<StaffThreadView> {
   bool _idleWarned = false;
 
   StaffRepository get _repo => ref.read(staffRepoProvider);
+
+  /// This ticket's id. Immutable for the life of the view, so it is the one
+  /// thing safe to take from the seed.
+  String get _ticketId => widget.seed.id;
+
+  /// Resolves the LIVE row for this ticket out of [list], falling back to the
+  /// seed when the list has not loaded yet or no longer carries this ticket.
+  ///
+  /// Every read of ticket state goes through here. Reading `widget.seed`
+  /// directly reintroduces the staleness this exists to remove — the citizen's
+  /// rating arrives after the chat ends, so a snapshot taken at tap time can
+  /// never contain it.
+  StaffConversation _resolve(List<StaffConversation>? list) {
+    if (list != null) {
+      for (final c in list) {
+        if (c.id == _ticketId) return c;
+      }
+    }
+    return widget.seed;
+  }
+
+  /// Live row for use OUTSIDE build (guards, callbacks). Uses `read`, so it
+  /// takes the current value without subscribing.
+  StaffConversation get _liveNow =>
+      _resolve(ref.read(staffConversationsProvider).valueOrNull);
 
   /// A staff message counts as "seen" once the citizen has sent anything after
   /// it — messages are ordered oldest-first, so any later citizen message means
@@ -508,27 +566,27 @@ class _StaffThreadViewState extends ConsumerState<StaffThreadView> {
     _idleWarnTimer?.cancel();
     _idleEndTimer?.cancel();
     _idleWarned = false;
-    final c = widget.conversation;
+    final c = _liveNow;
     if (_ended || c.isResolved || c.isWaiting) return;
     _idleWarnTimer = Timer(_kIdleWarn, _onIdleWarn);
   }
 
   void _onIdleWarn() {
-    if (!mounted || _ended || widget.conversation.isResolved) return;
+    if (!mounted || _ended || _liveNow.isResolved) return;
     if (_idleWarned) return;
     _idleWarned = true;
     // A gentle nudge the citizen sees too (sent as a normal message).
     _sendText('⏳ Are you still there po? This chat will automatically end in '
         '5 minutes if there\'s no reply. 🙏');
     _idleEndTimer = Timer(_kIdleEnd, () {
-      if (!mounted || _ended || widget.conversation.isResolved) return;
+      if (!mounted || _ended || _liveNow.isResolved) return;
       _closeChat(auto: true);
     });
   }
 
   Future<void> _load() async {
     try {
-      final msgs = await _repo.fetchMessages(widget.conversation.id);
+      final msgs = await _repo.fetchMessages(_ticketId);
       if (!mounted) return;
       setState(() {
         _messages
@@ -552,8 +610,8 @@ class _StaffThreadViewState extends ConsumerState<StaffThreadView> {
   /// Loads the citizen's real photo (non-anonymous chats only) so their header +
   /// bubbles show their face instead of an initial.
   Future<void> _loadCitizenPhoto() async {
-    if (widget.conversation.isAnonymous) return;
-    final url = await _repo.fetchCitizenPhoto(widget.conversation.id);
+    if (_liveNow.isAnonymous) return;
+    final url = await _repo.fetchCitizenPhoto(_ticketId);
     if (url != null && mounted) setState(() => _citizenPhotoUrl = url);
   }
 
@@ -563,7 +621,7 @@ class _StaffThreadViewState extends ConsumerState<StaffThreadView> {
   /// staff having to tap anything. Fires once: skipped if any staff message
   /// already exists, if the chat is still unclaimed (Waiting), or if it's ended.
   Future<void> _maybeAutoGreet() async {
-    final c = widget.conversation;
+    final c = _liveNow;
     if (c.isWaiting || c.isResolved) return;
     if (_messages.any((m) => m.isStaff)) return;
     final id = ref.read(staffIdentityProvider).valueOrNull;
@@ -585,7 +643,7 @@ class _StaffThreadViewState extends ConsumerState<StaffThreadView> {
   }
 
   void _subscribe() {
-    _channel = _repo.subscribeMessages(widget.conversation.id, (m) {
+    _channel = _repo.subscribeMessages(_ticketId, (m) {
       if (!mounted || _seenIds.contains(m.id)) return;
       setState(() {
         _seenIds.add(m.id);
@@ -639,7 +697,7 @@ class _StaffThreadViewState extends ConsumerState<StaffThreadView> {
   /// echo that already arrived), or marks it `failed` on error.
   Future<void> _deliver(StaffMessage optimistic) async {
     try {
-      final msg = await _repo.sendMessage(widget.conversation.id, optimistic.message);
+      final msg = await _repo.sendMessage(_ticketId, optimistic.message);
       if (!mounted) return;
       setState(() {
         final idx = _messages.indexWhere((m) => identical(m, optimistic));
@@ -712,14 +770,14 @@ class _StaffThreadViewState extends ConsumerState<StaffThreadView> {
   /// when the inactivity timer fired it (no staff tap) — the snackbar wording
   /// reflects that.
   Future<void> _closeChat({required bool auto}) async {
-    if (_sending || _ended || widget.conversation.isResolved) return;
+    if (_sending || _ended || _liveNow.isResolved) return;
     _idleWarnTimer?.cancel();
     _idleEndTimer?.cancel();
     setState(() => _sending = true);
     try {
       await ref
           .read(staffConversationsProvider.notifier)
-          .setStatus(widget.conversation.id, 'closed');
+          .setStatus(_ticketId, 'closed');
       if (mounted) {
         setState(() => _ended = true);
         showAppSnackBar(context,
@@ -736,7 +794,7 @@ class _StaffThreadViewState extends ConsumerState<StaffThreadView> {
   Future<void> _claim() async {
     await ref
         .read(staffConversationsProvider.notifier)
-        .claim(widget.conversation.id);
+        .claim(_ticketId);
     if (mounted) {
       showAppSnackBar(context, 'You claimed this conversation.',
           type: AppSnackType.success);
@@ -745,7 +803,11 @@ class _StaffThreadViewState extends ConsumerState<StaffThreadView> {
 
   @override
   Widget build(BuildContext context) {
-    final c = widget.conversation;
+    // LIVE, not the seed. Watching the provider here is what makes the citizen's
+    // rating appear without navigation, on BOTH layouts: the wide pane already
+    // got a fresh object pushed down from the page, and the narrow pushed route
+    // — which the page above cannot rebuild — now subscribes for itself.
+    final c = _resolve(ref.watch(staffConversationsProvider).valueOrNull);
     final identity = ref.watch(staffIdentityProvider).valueOrNull;
     final staffName = identity?.displayName;
     final department = identity?.department;
