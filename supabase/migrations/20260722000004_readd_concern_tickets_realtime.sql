@@ -62,6 +62,14 @@
 --
 -- Rollback: supabase/rollback/20260722000004_readd_concern_tickets_realtime_rollback.sql
 -- Verify:   supabase/diagnostics/verify_20260722000004_ticket_realtime.sql
+--           NOTE ON HISTORY: that file did NOT exist when this migration was
+--           applied on 2026-07-22, despite this line naming it. It was written
+--           on 2026-07-30. Between those dates the invariant below was guarded
+--           only by the apply-time `do $$ ... raise` block in this file, which
+--           runs once during `alter publication` and never again — so nothing
+--           re-checked it for eight days. The standing check exists as of the
+--           commit that added the diagnostic; it makes no claim about the
+--           window before it. Re-verified clean on 2026-07-30 (4/4 PASS).
 -- ============================================================================
 
 begin;

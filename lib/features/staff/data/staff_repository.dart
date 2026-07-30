@@ -574,11 +574,18 @@ class StaffRepository {
   // 20260722000004 (its removal broke the citizen's rating card and protected
   // nothing). What keeps staff from receiving these rows is that staff hold no
   // SELECT policy on concern_tickets: realtime authorizes every change against
-  // the subscriber's own SELECT policies. So re-adding this subscription would
+  // the subscriber's own SELECT policies — confirmed empirically on 2026-07-30
+  // with two live accounts, not inferred. So re-adding this subscription would
   // not leak today — but it would the instant anyone grants staff a read
-  // policy, which is why that assertion is enforced in
-  // supabase/diagnostics/verify_20260722000004_ticket_realtime.sql rather than
-  // left to memory. Do not reintroduce it.
+  // policy. Do not reintroduce it.
+  //
+  // That assertion is checked by
+  // supabase/diagnostics/verify_20260722000004_ticket_realtime.sql AS OF THE
+  // COMMIT THAT ADDED THAT FILE (2026-07-30). This comment previously claimed
+  // the check already enforced it; it did not — the file did not exist, and
+  // for eight days the rule lived in this comment and the migration header and
+  // nothing verified either. Run the diagnostic before trusting the invariant,
+  // and do not restore a past-tense claim here.
   //
   // The staff inbox polls instead (see staff_conversations_page). Live push
   // returns in 7c via Broadcast with a non-identifying payload.
