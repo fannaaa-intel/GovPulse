@@ -48,22 +48,32 @@
 --   Safe against production: every write is inside a transaction that rolls
 --   back. Run it after applying.
 --
--- KNOWN FILE/LIVE DIVERGENCE — section 3a HINT TEXT (2026-07-31)
+-- SECTION 3a HINT TEXT — CORRECTED 2026-07-31, AND SYNCED LIVE
 --   This migration is APPLIED. On 2026-07-31 the section 3a `hint` string was
 --   corrected here: it said 'Expected LGU-YYYYMMDD-NNNNN', which understated the
 --   tail (the CHECK and c_ref_ok both require SIX Crockford base32 characters,
 --   [0-9A-HJKMNP-TV-Z], excluding I/L/O/U). An operator following the old hint
 --   would have produced a value this same trigger rejects.
 --
---   The correction was made to THIS FILE ONLY — no re-apply, matching how
---   commit d3c4b74 corrected this migration's prose. So until
---   concern_tickets_enforce_anonymity is next recreated, the LIVE function still
---   raises the old wording; confirmed live on 2026-07-31. This is a message
---   string, not a predicate: the rule it describes is enforced identically
---   either way, and no verify check reads prosrc, so nothing fails on the
---   difference. Recreating the function purely to sync the text was judged not
---   worth a production write — fold it into the next migration that touches
---   this function.
+--   The correction landed here FIRST as a file-only edit (commit 42ec3e9),
+--   matching how commit d3c4b74 corrected this migration's prose. That left the
+--   LIVE concern_tickets_enforce_anonymity still raising the old wording — a
+--   real file-vs-production divergence in a string clients receive. It is now
+--   CLOSED by migration 20260731000006, applied and registered the same day:
+--   the live hint is character-identical to the text below, proven by raising
+--   the error for real (verify_20260731000006.sql check 2).
+--
+--   ⚠ ONE RESIDUAL, DELIBERATE DIFFERENCE: 20260731000006 changed the hint
+--   STRING only. The six-line source comment above the hint in this file was
+--   not pushed live, so prosrc still lacks it. A source comment is invisible to
+--   every client and no verify script reads prosrc, so nothing depends on it —
+--   but do not be surprised by it when diffing the body.
+--
+--   ⚠ If you ever re-apply THIS file wholesale, do it through the Management
+--   API: the live body is CRLF and this file is LF, so a different channel
+--   rewrites all 59 line endings and defeats later byte comparison. That is
+--   precisely why 20260731000006 patched the string server-side via
+--   pg_get_functiondef instead of restating the function.
 -- ============================================================================
 
 -- ============================================================================
