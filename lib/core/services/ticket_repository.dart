@@ -279,11 +279,21 @@ class TicketRepository {
   /// Call this **only after a ticket has been created** so every row has a
   /// valid ticket_id FK. Pre-ticket greeting messages stay in Hive only.
   ///
-  /// [senderType] must be one of: 'citizen' | 'bot' | 'staff'
+  /// [senderType] is a parameter, but only 'citizen' is reachable through it.
+  /// The single caller — chat_service._sendToStaff — passes that literal, and
+  /// since 20260731000004 the INSERT policy pins sender_type to the caller's
+  /// real role: a citizen writing anything else is rejected by RLS, and the
+  /// staff path writes through staff_repository.sendMessage instead.
+  ///
+  /// 'bot' is NOT storable and never was. The CHECK constraint added by
+  /// 20260731000002 admits only 'citizen' | 'staff', and [senderId] maps to a
+  /// `uuid NOT NULL` column, so the shape this docstring used to describe —
+  /// senderId: 'bot' — could not have been inserted. Bot turns live in Hive
+  /// only; see the pre-ticket greeting note above.
   Future<void> saveMessage({
     required String ticketId,
-    required String senderId, // citizen's user id OR 'bot'
-    required String senderType, // 'citizen' | 'bot' | 'staff'
+    required String senderId, // the citizen's auth.users id; must equal auth.uid()
+    required String senderType, // 'citizen' in practice — see above
     required String message,
   }) async {
     await _db.from('ticket_messages').insert({

@@ -47,6 +47,23 @@
 --   supabase/diagnostics/verify_20260722000017.sql — 19 checks, all must PASS.
 --   Safe against production: every write is inside a transaction that rolls
 --   back. Run it after applying.
+--
+-- KNOWN FILE/LIVE DIVERGENCE — section 3a HINT TEXT (2026-07-31)
+--   This migration is APPLIED. On 2026-07-31 the section 3a `hint` string was
+--   corrected here: it said 'Expected LGU-YYYYMMDD-NNNNN', which understated the
+--   tail (the CHECK and c_ref_ok both require SIX Crockford base32 characters,
+--   [0-9A-HJKMNP-TV-Z], excluding I/L/O/U). An operator following the old hint
+--   would have produced a value this same trigger rejects.
+--
+--   The correction was made to THIS FILE ONLY — no re-apply, matching how
+--   commit d3c4b74 corrected this migration's prose. So until
+--   concern_tickets_enforce_anonymity is next recreated, the LIVE function still
+--   raises the old wording; confirmed live on 2026-07-31. This is a message
+--   string, not a predicate: the rule it describes is enforced identically
+--   either way, and no verify check reads prosrc, so nothing fails on the
+--   difference. Recreating the function purely to sync the text was judged not
+--   worth a production write — fold it into the next migration that touches
+--   this function.
 -- ============================================================================
 
 -- ============================================================================
@@ -298,7 +315,15 @@ begin
     raise exception
       'reference_code must be a generated reference, got: %', new.reference_code
       using errcode = '22023',
-            hint = 'Expected LGU-YYYYMMDD-NNNNN (_generateRef). A report-derived '
+            -- The tail is SIX Crockford base32 characters, not five digits: the
+            -- constraint above and c_ref_ok both spell [0-9A-HJKMNP-TV-Z]{6},
+            -- and that alphabet deliberately omits I, L, O and U. The earlier
+            -- wording ('NNNNN') understated the length and implied digits only,
+            -- so an operator following the hint would produce a value this very
+            -- trigger rejects.
+            hint = 'Expected LGU-YYYYMMDD-XXXXXX, where XXXXXX is six Crockford '
+                || 'base32 characters [0-9A-HJKMNP-TV-Z] — I, L, O and U are not '
+                || 'in the alphabet (_generateRef). A report-derived '
                 || 'value such as RPT-<report id prefix> is exactly what this '
                 || 'rejects: the report linkage belongs in report_id, which is '
                 || 'not staff-visible.';

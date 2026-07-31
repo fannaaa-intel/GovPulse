@@ -448,6 +448,13 @@ class _ResetNewPasswordScreenState extends State<ResetNewPasswordScreen>
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(14),
                             ),
+                            // OutlinedButton's default horizontal padding of 24
+                            // leaves only 122px of the fixed 170px width for the
+                            // child, and icon + gap + "Log In" measures 122.6 —
+                            // a 0.6px RenderFlex overflow. Nothing moves
+                            // visually: the row is centred either way, this just
+                            // gives it room to lay out.
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
                           ),
                           onPressed: () => Navigator.pop(context),
                           child: Row(

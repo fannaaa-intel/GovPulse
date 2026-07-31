@@ -302,6 +302,11 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
     );
 
     try {
+      // Drop the realtime channel and zero the badge BEFORE signing out. The
+      // count and the subscription live in a process-wide singleton, so without
+      // this an admin's unread total survives into whoever signs in next on the
+      // same device. Mirrors staff_console_screen's _confirmLogout.
+      AdminNotifCenter.I.stop();
       await PushService.I.unregister();
       await Supabase.instance.client.auth.signOut();
       await ChatService.onUserSignedOut();
