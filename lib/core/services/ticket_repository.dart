@@ -299,12 +299,23 @@ class TicketRepository {
   }
 
   /// Returns all messages for a ticket, oldest first.
+  ///
+  /// The column list is EXPLICIT and must stay that way. A bare `.select()`
+  /// becomes `select *`, and since migration 20260731000003 the `authenticated`
+  /// role holds SELECT on this table per-column rather than table-wide — with
+  /// `sender_id` deliberately excluded, so that realtime.apply_rls omits it from
+  /// the socket payload. Under a column-level grant, `select *` fails outright
+  /// with 42501 rather than silently dropping the column. Do not "simplify" this
+  /// back to `.select()`.
+  ///
+  /// `sender_id` is not listed because nothing reads it: threading and bubble
+  /// sidedness key off `sender_type`.
   Future<List<Map<String, dynamic>>> getMessagesForTicket(
     String ticketId,
   ) async {
     final response = await _db
         .from('ticket_messages')
-        .select()
+        .select('id, ticket_id, sender_type, text, created_at')
         .eq('ticket_id', ticketId)
         .order('created_at', ascending: true);
 

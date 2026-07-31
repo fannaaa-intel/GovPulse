@@ -499,9 +499,21 @@ class StaffRepository {
     }
   }
 
+  /// Reads through `staff_messages_view`, NOT `ticket_messages` directly.
+  ///
+  /// The base table exposes `sender_id` on every row — the citizen's auth.users
+  /// id — including on tickets the citizen marked anonymous, which handed the
+  /// assigned officer the reporter's identity. The view is a definer view that
+  /// nulls `sender_id` when the PARENT ticket is anonymous and scopes itself to
+  /// the caller's department. Same discipline as `staff_tickets_view` /
+  /// `staff_reports_view`. See migration 20260731000003.
+  ///
+  /// Staff can no longer select `sender_id` from the base table at all (the
+  /// column was removed from the `authenticated` grant), so this cannot silently
+  /// regress to reading identity — it would 42501 instead.
   Future<List<StaffMessage>> fetchMessages(String ticketId) async {
     final rows = await _db
-        .from('ticket_messages')
+        .from('staff_messages_view')
         .select('id, sender_type, text, created_at')
         .eq('ticket_id', ticketId)
         .order('created_at', ascending: true);
@@ -589,6 +601,30 @@ class StaffRepository {
   //
   // The staff inbox polls instead (see staff_conversations_page). Live push
   // returns in 7c via Broadcast with a non-identifying payload.
+  //
+  // ── ticket_messages IS DIFFERENT, AND STAYS SUBSCRIBED DELIBERATELY ───────
+  // The subscription below is NOT an oversight and must not be "cleaned up" to
+  // match the concern_tickets treatment above. Removing ticket_messages from the
+  // publication would stop new messages appearing in the staff thread without a
+  // manual refresh — a feature outage, which the finding's acceptance criterion
+  // rejects by name (condition 4, "a regression wearing a fix's clothes").
+  //
+  // The row this subscription delivers no longer carries the citizen's identity.
+  // Migration 20260731000003 removed `sender_id` from the `authenticated` column
+  // grant, and realtime.apply_rls builds each payload only from columns the
+  // subscriber's role can SELECT — so the column is absent from the wire rather
+  // than merely unread. Measured on this project, not inferred: the delivered
+  // record's keys are exactly id, ticket_id, sender_type, text, created_at.
+  //
+  // Two consequences worth knowing before changing anything here:
+  //   * The masking is by GRANT, not by policy, and it is blanket — `sender_id`
+  //     is absent for attributed tickets too, and for the citizen's own
+  //     subscription. That is an accepted deviation (nothing reads the value),
+  //     recorded in the migration header.
+  //   * `p.newRecord` therefore has no `sender_id` key at all. StaffMessage
+  //     .fromRow already ignores it and threads on `sender_type`. Do not add a
+  //     dependency on `sender_id` to this callback — it would read as null in
+  //     production and there is no server-side path to get it back.
 
   RealtimeChannel subscribeMessages(
     String ticketId,
