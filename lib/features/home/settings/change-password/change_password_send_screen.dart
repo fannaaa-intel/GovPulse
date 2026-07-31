@@ -4,6 +4,7 @@ import '../../../../core/widgets/responsive_page.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/services/password_cooldown.dart';
 import '../../../../core/widgets/mobile_form_shell.dart';
 import 'change_password_verify_screen.dart';
 import '../../../../core/widgets/loading/loading_overlay.dart';
@@ -69,33 +70,26 @@ class _ChangePasswordSendScreenState extends State<ChangePasswordSendScreen>
     super.dispose();
   }
 
+  /// Reads the cooldown from `profiles`, NOT `citizen_details`.
+  ///
+  /// The old query hit citizen_details, whose rows exist only after a
+  /// verification submission is approved. A pending or unverified citizen has
+  /// no row there, so maybeSingle() returned null, the lock never engaged, and
+  /// the cooldown simply did not apply to them. Every account has a profiles
+  /// row. See [PasswordCooldown].
   Future<void> _checkLockStatus() async {
-    try {
-      final supabase = Supabase.instance.client;
-      final user = supabase.auth.currentUser;
-      if (user == null) {
-        setState(() => _isCheckingLock = false);
-        return;
+    final supabase = Supabase.instance.client;
+    final user = supabase.auth.currentUser;
+    if (user != null) {
+      final remaining =
+          await PasswordCooldown.remainingDays(supabase, user.id);
+      if (remaining != null && mounted) {
+        setState(() {
+          _isLocked = true;
+          _daysRemaining = remaining;
+        });
       }
-      final cd = await supabase
-          .from('citizen_details')
-          .select('last_password_changed_at')
-          .eq('user_id', user.id)
-          .maybeSingle();
-      final raw = cd?['last_password_changed_at'];
-      if (raw != null) {
-        final lastChanged = DateTime.tryParse(raw.toString());
-        if (lastChanged != null) {
-          final diff = DateTime.now().difference(lastChanged).inDays;
-          if (diff < 30) {
-            setState(() {
-              _isLocked = true;
-              _daysRemaining = (30 - diff).clamp(0, 30);
-            });
-          }
-        }
-      }
-    } catch (_) {}
+    }
     if (mounted) {
       setState(() => _isCheckingLock = false);
       _slideCtrl.forward();

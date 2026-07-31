@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/widgets/responsive_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/services/password_cooldown.dart';
 import '../../../../core/utils/password_validator.dart';
 import '../../../../core/widgets/inputs/rounded_input_field.dart';
 import '../../../../core/widgets/indicators/password_strength_bar.dart';
@@ -141,17 +142,15 @@ class _ChangePasswordNewScreenState extends State<ChangePasswordNewScreen>
       );
       if (!mounted) return;
       if (res.user != null) {
-        // ── Write last_password_changed_at to DB ──────────────────────────────
-        try {
-          await supabase
-              .from('citizen_details')
-              .update({
-                'last_password_changed_at': DateTime.now()
-                    .toUtc()
-                    .toIso8601String(),
-              })
-              .eq('user_id', res.user!.id);
-        } catch (_) {}
+        // ── Stamp the cooldown on `profiles` ─────────────────────────────────
+        // Was an UPDATE on citizen_details keyed by user_id. Pending and
+        // unverified citizens have no citizen_details row, so it matched ZERO
+        // rows, returned HTTP 200, and recorded nothing — the cooldown could
+        // never fire for them. profiles has a row for every account.
+        // Deliberately NOT an upsert into citizen_details: creating a row there
+        // fires sync_profile_status_on_citizen_insert and grant_citizen_role,
+        // which would verify a pending citizen from this screen.
+        await PasswordCooldown.stamp(supabase, res.user!.id);
 
         if (!mounted) return;
 

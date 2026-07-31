@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../../core/services/password_cooldown.dart';
 import '../../core/utils/password_validator.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/inputs/rounded_input_field.dart';
@@ -158,6 +159,29 @@ class _ResetNewPasswordScreenState extends State<ResetNewPasswordScreen>
 
       await supabase.auth.setSession(widget.refreshToken);
 
+      // ── Cooldown gate ────────────────────────────────────────────────────
+      // This flow previously had no gate and no stamp, so "forgot password" was
+      // a complete bypass of the 30-day rule for EVERY user — a citizen locked
+      // out of the change-password screen could reset here immediately.
+      //
+      // Checked AFTER setSession, not in initState: the gate reads the caller's
+      // own profiles row, which needs an authenticated identity, and this screen
+      // is reached from an OTP link with no session established yet.
+      final gateUser = supabase.auth.currentUser;
+      if (gateUser != null) {
+        final remaining =
+            await PasswordCooldown.remainingDays(supabase, gateUser.id);
+        if (remaining != null) {
+          if (!mounted) return;
+          setState(() {
+            apiError = 'You can only change your password every '
+                '${PasswordCooldown.days} days. Please try again in '
+                '$remaining ${remaining == 1 ? "day" : "days"}.';
+          });
+          return;
+        }
+      }
+
       final res = await supabase.auth.updateUser(
         UserAttributes(password: password),
       );
@@ -165,6 +189,11 @@ class _ResetNewPasswordScreenState extends State<ResetNewPasswordScreen>
       if (!mounted) return;
 
       if (res.user != null) {
+        // Same stamp as the change-password flow, so a reset starts the
+        // cooldown too. Without this, resetting repeatedly stays free.
+        await PasswordCooldown.stamp(supabase, res.user!.id);
+        if (!mounted) return;
+
         Navigator.pushReplacement(
           context,
           kIsWeb
