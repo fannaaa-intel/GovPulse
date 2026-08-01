@@ -27,7 +27,7 @@ class AppConfig {
   /// overrides it for a staging deploy.
   static const String scanBaseUrl = String.fromEnvironment(
     'SCAN_BASE_URL',
-    defaultValue: 'https://gov-pulse.vercel.app',
+    defaultValue: 'https://gov-pulse-rose.vercel.app',
   );
 
   /// Full URL encoded into the QR for [token].
