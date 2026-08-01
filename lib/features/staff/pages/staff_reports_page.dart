@@ -1,13 +1,20 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/widgets/app_snackbar.dart';
 import '../../../core/widgets/deeplink_highlight.dart';
-import '../../../core/widgets/media_source_badge.dart';
 import '../../../core/widgets/report_work_log.dart';
 import '../../../core/widgets/resolution_media.dart';
 import '../../admin/providers/admin_reports_provider.dart'
     show ReportStatus, reportStatusLabel;
+// The report detail is the admin console's, rendered with staff content — see
+// the header above _ReportDetail.
+import '../../admin/widgets/admin_detail_screen.dart';
+import '../../admin/widgets/admin_submission_ui.dart';
+import '../../admin/widgets/report_detail_kit.dart';
+import '../../admin/widgets/report_status_tracker.dart';
 import '../data/staff_repository.dart';
 import '../providers/staff_providers.dart';
 import '../theme/staff_ui.dart';
@@ -145,6 +152,90 @@ Future<String?> _showReturnDialog(BuildContext context) {
   );
 }
 
+// ── Queue shape: buckets, filters, sort ──────────────────────────────────────
+
+/// The piles an office's queue divides into.
+///
+/// Deliberately NOT the admin's buckets. Triage states belong to the admin —
+/// a report only reaches an office once it has been accepted — so there is no
+/// "Needs triage" and no "Dismissed" here. What an office sorts by is how much
+/// of the WORK is done.
+enum _Bucket { all, toAssess, working, resolved }
+
+String _bucketLabel(_Bucket b) => switch (b) {
+      _Bucket.all => 'All',
+      _Bucket.toAssess => 'To assess',
+      _Bucket.working => 'In progress',
+      _Bucket.resolved => 'Resolved',
+    };
+
+bool _inBucket(StaffReport r, _Bucket b) => switch (b) {
+      _Bucket.all => true,
+      // Pending sits here too: a freshly-routed report the office hasn't
+      // acknowledged yet is exactly "to assess".
+      _Bucket.toAssess =>
+        r.status == ReportStatus.pending || r.status == ReportStatus.underReview,
+      _Bucket.working => r.status == ReportStatus.inProgress,
+      _Bucket.resolved => r.status == ReportStatus.resolved,
+    };
+
+enum _Sort { newest, oldest }
+
+/// Everything the toolbar can narrow the list by. Held in the page rather than
+/// the notifier on purpose: the notifier owns a POLLING fetch, and rebuilding
+/// it on every keystroke would tear down and re-arm its interval timer (see
+/// StaffIdentity's equality note). The office's list is capped at 200 rows, so
+/// filtering it here costs nothing.
+class _Filters {
+  final _Bucket bucket;
+  final String query;
+  final String? categoryKey;
+  final _Sort sort;
+  final bool overdueOnly;
+  final bool anonymousOnly;
+
+  const _Filters({
+    this.bucket = _Bucket.all,
+    this.query = '',
+    this.categoryKey,
+    this.sort = _Sort.newest,
+    this.overdueOnly = false,
+    this.anonymousOnly = false,
+  });
+
+  _Filters copyWith({
+    _Bucket? bucket,
+    String? query,
+    Object? categoryKey = _unset,
+    _Sort? sort,
+    bool? overdueOnly,
+    bool? anonymousOnly,
+  }) =>
+      _Filters(
+        bucket: bucket ?? this.bucket,
+        query: query ?? this.query,
+        categoryKey: categoryKey == _unset
+            ? this.categoryKey
+            : categoryKey as String?,
+        sort: sort ?? this.sort,
+        overdueOnly: overdueOnly ?? this.overdueOnly,
+        anonymousOnly: anonymousOnly ?? this.anonymousOnly,
+      );
+
+  /// Sentinel so [copyWith] can tell "leave it" from "clear it" for a nullable
+  /// field — passing null for categoryKey has to mean "All categories".
+  static const Object _unset = Object();
+
+  /// What the Filters SHEET owns. The bucket and the query have their own
+  /// visible controls, so counting them here would badge the button for a
+  /// filter the user can already see.
+  int get sheetCount =>
+      (categoryKey != null ? 1 : 0) +
+      (sort != _Sort.newest ? 1 : 0) +
+      (overdueOnly ? 1 : 0) +
+      (anonymousOnly ? 1 : 0);
+}
+
 class _ReportListView extends StatefulWidget {
   final AsyncValue<List<StaffReport>> async;
   final String? department;
@@ -179,54 +270,132 @@ class _ReportListView extends StatefulWidget {
 
 class _ReportListViewState extends State<_ReportListView>
     with DeepLinkHighlightMixin {
+  final _searchCtrl = TextEditingController();
+  Timer? _debounce;
+  _Filters _filters = const _Filters();
+
   @override
-  Widget build(BuildContext context) {
-    final async = widget.async;
-    final onRefresh = widget.onRefresh;
-    final emptyIcon = widget.emptyIcon;
-    final emptyTitle = widget.emptyTitle;
-    final emptySubtitle = widget.emptySubtitle;
+  void dispose() {
+    _debounce?.cancel();
+    _searchCtrl.dispose();
+    super.dispose();
+  }
 
-    // Rows exist only once the fetch resolves — flash the deep-link target then.
-    if (async.hasValue) flashHighlightOnce(widget.highlightId);
+  void _set(_Filters next) => setState(() => _filters = next);
 
-    return StaffPageBody(
-      onRefresh: onRefresh,
-      child: async.when(
-        // Skeleton rows, not a spinner: they occupy the same space the real
-        // rows will, so the list doesn't jump when the fetch lands, and the
-        // shape tells you what is coming.
-        loading: () => const _ReportListSkeleton(),
-        error: (e, _) => Padding(
-          padding: const EdgeInsets.only(top: 60),
-          child: StaffErrorState(
-            message: "Couldn't load reports.",
-            onRetry: onRefresh,
-          ),
+  void _onSearchChanged(String value) {
+    _debounce?.cancel();
+    _debounce = Timer(
+      const Duration(milliseconds: 300),
+      () => _set(_filters.copyWith(query: value)),
+    );
+  }
+
+  List<StaffReport> get _all => widget.async.valueOrNull ?? const [];
+
+  /// The categories this office actually receives. Offered as the category
+  /// filter instead of the full citizen list, because an office only ever
+  /// handles a few of them — Engineering sees roads, drainage and streetlights
+  /// and would never use the other three.
+  List<({String key, String label})> get _categories {
+    final seen = <String, String>{};
+    for (final r in _all) {
+      seen.putIfAbsent(r.categoryKey, () => r.category);
+    }
+    return [for (final e in seen.entries) (key: e.key, label: e.value)]
+      ..sort((a, b) => a.label.compareTo(b.label));
+  }
+
+  List<StaffReport> _apply(List<StaffReport> items) {
+    final f = _filters;
+    final q = f.query.trim().toLowerCase();
+    final out = [
+      for (final r in items)
+        if (_inBucket(r, f.bucket) &&
+            (f.categoryKey == null || r.categoryKey == f.categoryKey) &&
+            (!f.overdueOnly || r.isOverdue) &&
+            (!f.anonymousOnly || r.isAnonymous) &&
+            (q.isEmpty ||
+                r.remarks.toLowerCase().contains(q) ||
+                (r.barangay ?? '').toLowerCase().contains(q) ||
+                (r.address ?? '').toLowerCase().contains(q) ||
+                r.category.toLowerCase().contains(q) ||
+                r.shortId.toLowerCase().contains(q)))
+          r,
+    ];
+    out.sort((a, b) {
+      final at = a.createdAt?.millisecondsSinceEpoch ?? 0;
+      final bt = b.createdAt?.millisecondsSinceEpoch ?? 0;
+      return f.sort == _Sort.newest ? bt.compareTo(at) : at.compareTo(bt);
+    });
+    return out;
+  }
+
+  void _openFilters() {
+    openAdminFilterSheet(
+      context,
+      title: widget.endorsement ? 'Filter endorsements' : 'Filter reports',
+      onReset: () => _set(
+        _filters.copyWith(
+          categoryKey: null,
+          sort: _Sort.newest,
+          overdueOnly: false,
+          anonymousOnly: false,
         ),
-        data: (items) {
-          if (items.isEmpty) {
-            return Padding(
-              padding: const EdgeInsets.only(top: 40),
-              child: StaffEmptyState(
-                icon: emptyIcon,
-                title: emptyTitle,
-                subtitle: emptySubtitle,
-              ),
-            );
+      ),
+      content: StatefulBuilder(
+        builder: (context, setSheet) {
+          // The sheet edits the page's filters directly; setSheet only repaints
+          // the sheet's own chips so the selection reads back immediately.
+          void update(_Filters next) {
+            _set(next);
+            setSheet(() {});
           }
+
+          final cats = _categories;
           return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              for (final r in items)
-                Padding(
-                  key: highlightKey(r.id),
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: _ReportRow(
-                    report: r,
-                    onTap: () => _openDetail(context, r),
-                    highlighted: isHighlighted(r.id),
-                  ),
+              if (cats.length > 1) ...[
+                FilterChoiceRow<String>(
+                  label: 'Category',
+                  value: _filters.categoryKey,
+                  options: [
+                    (value: null, text: 'All'),
+                    for (final c in cats) (value: c.key, text: c.label),
+                  ],
+                  onSelected: (v) =>
+                      update(_filters.copyWith(categoryKey: v)),
                 ),
+                const SizedBox(height: 18),
+              ],
+              FilterChoiceRow<_Sort>(
+                label: 'Sort',
+                value: _filters.sort,
+                options: const [
+                  (value: _Sort.newest, text: 'Newest'),
+                  (value: _Sort.oldest, text: 'Oldest'),
+                ],
+                onSelected: (v) {
+                  if (v != null) update(_filters.copyWith(sort: v));
+                },
+              ),
+              const SizedBox(height: 18),
+              FilterSwitchRow(
+                icon: Icons.schedule_rounded,
+                label: 'Overdue only',
+                subtitle: 'Open more than 7 days since it reached your office',
+                value: _filters.overdueOnly,
+                onChanged: (v) => update(_filters.copyWith(overdueOnly: v)),
+              ),
+              const SizedBox(height: 12),
+              FilterSwitchRow(
+                icon: Icons.visibility_off_rounded,
+                label: 'Anonymous only',
+                subtitle: 'Show only reports with a withheld identity',
+                value: _filters.anonymousOnly,
+                onChanged: (v) => update(_filters.copyWith(anonymousOnly: v)),
+              ),
             ],
           );
         },
@@ -234,228 +403,564 @@ class _ReportListViewState extends State<_ReportListView>
     );
   }
 
-  void _openDetail(BuildContext context, StaffReport r) {
-    final narrow = MediaQuery.of(context).size.width < 600;
-    final sheet = _ReportDetailSheet(
-      report: r,
-      endorsement: widget.endorsement,
-      department: widget.department,
-      onSetStatus: widget.onSetStatus,
-      onReturnToTriage: widget.onReturnToTriage,
+  @override
+  Widget build(BuildContext context) {
+    final async = widget.async;
+
+    // Rows exist only once the fetch resolves — flash the deep-link target then.
+    if (async.hasValue) flashHighlightOnce(widget.highlightId);
+
+    return StaffPageBody(
+      onRefresh: widget.onRefresh,
+      maxWidth: 1400,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _Header(items: _all, loaded: async.hasValue),
+          const SizedBox(height: 14),
+          // Buckets first: they answer "which pile am I looking at", which the
+          // search and the filters then narrow.
+          AdminPillTabs(
+            labels: [for (final b in _Bucket.values) _bucketLabel(b)],
+            counts: async.hasValue
+                ? [
+                    for (final b in _Bucket.values)
+                      _all.where((r) => _inBucket(r, b)).length,
+                  ]
+                : null,
+            selected: _Bucket.values.indexOf(_filters.bucket),
+            onSelect: (i) =>
+                _set(_filters.copyWith(bucket: _Bucket.values[i])),
+            fadeColor: StaffUi.pageBg,
+          ),
+          const SizedBox(height: 12),
+          _Toolbar(
+            searchCtrl: _searchCtrl,
+            activeCount: _filters.sheetCount,
+            onSearch: _onSearchChanged,
+            onClearSearch: () {
+              _searchCtrl.clear();
+              _set(_filters.copyWith(query: ''));
+            },
+            onOpenFilters: _openFilters,
+          ),
+          _ActiveChips(
+            filters: _filters,
+            categories: _categories,
+            onChange: _set,
+          ),
+          const SizedBox(height: 14),
+          _Results(
+            async: async,
+            filtered: _apply(_all),
+            filtering: _filters.sheetCount > 0 ||
+                _filters.query.trim().isNotEmpty ||
+                _filters.bucket != _Bucket.all,
+            onClearFilters: () {
+              _searchCtrl.clear();
+              _set(const _Filters());
+            },
+            onRetry: widget.onRefresh,
+            onOpen: (r) => _openDetail(context, r),
+            keyFor: highlightKey,
+            isHighlighted: isHighlighted,
+            emptyIcon: widget.emptyIcon,
+            emptyTitle: widget.emptyTitle,
+            emptySubtitle: widget.emptySubtitle,
+          ),
+        ],
+      ),
     );
-    if (narrow) {
-      showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: Colors.transparent,
-        builder: (_) => sheet,
-      );
-    } else {
-      showAppDialog(
-        context: context,
-        barrierColor: Colors.black.withValues(alpha: 0.45),
-        builder: (_) => Center(
-          child: Padding(padding: const EdgeInsets.all(24), child: sheet),
-        ),
-      );
-    }
+  }
+
+  void _openDetail(BuildContext context, StaffReport r) {
+    // Same presentation as the admin console's report detail: a full-screen
+    // slide-up page on a phone, a centred dialog card on the web.
+    showAdminDetail(
+      context,
+      builder: (_) => _ReportDetail(
+        report: r,
+        endorsement: widget.endorsement,
+        department: widget.department,
+        onSetStatus: widget.onSetStatus,
+        onReturnToTriage: widget.onReturnToTriage,
+      ),
+    );
   }
 }
 
-/// Placeholder rows shown while the report list loads.
-///
-/// Deliberately shaped like [_ReportRow] — same 42px icon chip, same three text
-/// lines, same status pill — so the skeleton reads as "reports are coming"
-/// and the layout doesn't shift when the real rows replace it. One
-/// [StaffShimmer] wraps the whole list, so every row's highlight moves
-/// together rather than each animating on its own clock.
-class _ReportListSkeleton extends StatelessWidget {
-  /// Enough to fill a typical viewport without overrunning a short one; the
-  /// list scrolls, so a few extra would only ever be off-screen.
-  static const int _rows = 5;
+// ── Header ───────────────────────────────────────────────────────────────────
 
-  const _ReportListSkeleton();
+/// "N reports · N anonymous", plus an overdue count when there is one.
+///
+/// Overdue is the office's own KPI — it counts reports IT has been sitting on
+/// (the clock starts when the report was routed here, not when it was filed),
+/// so it belongs at the top of the office's queue rather than in a filter.
+class _Header extends StatelessWidget {
+  final List<StaffReport> items;
+  final bool loaded;
+  const _Header({required this.items, required this.loaded});
 
   @override
   Widget build(BuildContext context) {
-    return StaffShimmer(
-      child: Column(
-        children: [
-          for (int i = 0; i < _rows; i++)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: StaffCard(
-                padding: const EdgeInsets.all(14),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const StaffSkeletonBox(width: 42, height: 42, radius: 10),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Category + short id.
-                          Row(
-                            children: [
-                              const StaffSkeletonBox(width: 130, height: 13),
-                              const SizedBox(width: 8),
-                              const StaffSkeletonBox(width: 38, height: 10),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          // Remarks, two lines — the second short, the way
-                          // wrapped text ends.
-                          const StaffSkeletonBox(
-                            width: double.infinity,
-                            height: 11,
-                          ),
-                          const SizedBox(height: 5),
-                          StaffSkeletonBox(
-                            width: i.isEven ? 210 : 150,
-                            height: 11,
-                          ),
-                          const SizedBox(height: 10),
-                          // Status pill.
-                          const StaffSkeletonBox(
-                            width: 74,
-                            height: 18,
-                            radius: 9,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+    if (!loaded) {
+      return const Text(
+        'Reports routed to your office',
+        style: TextStyle(fontSize: 13, color: StaffUi.textMuted),
+      );
+    }
+    final total = items.length;
+    final anon = items.where((r) => r.isAnonymous).length;
+    final overdue = items.where((r) => r.isOverdue).length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              '$total report${total == 1 ? '' : 's'}',
+              style: const TextStyle(fontSize: 13, color: StaffUi.textMuted),
             ),
+            if (anon > 0) ...[
+              const Text('  ·  ', style: TextStyle(color: StaffUi.textMuted)),
+              const Icon(
+                Icons.visibility_off_rounded,
+                size: 13,
+                color: kAnonColor,
+              ),
+              const SizedBox(width: 3),
+              Text(
+                '$anon anonymous',
+                style: const TextStyle(fontSize: 13, color: kAnonColor),
+              ),
+            ],
+          ],
+        ),
+        if (overdue > 0) ...[
+          const SizedBox(height: 10),
+          _HeaderStat(
+            icon: Icons.schedule_rounded,
+            label: '$overdue overdue',
+            color: StaffUi.warn,
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _HeaderStat extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  const _HeaderStat({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+              color: color,
+            ),
+          ),
         ],
       ),
     );
   }
 }
 
-class _ReportRow extends StatelessWidget {
+// ── Toolbar ──────────────────────────────────────────────────────────────────
+
+class _Toolbar extends StatelessWidget {
+  final TextEditingController searchCtrl;
+  final int activeCount;
+  final ValueChanged<String> onSearch;
+  final VoidCallback onClearSearch;
+  final VoidCallback onOpenFilters;
+  const _Toolbar({
+    required this.searchCtrl,
+    required this.activeCount,
+    required this.onSearch,
+    required this.onClearSearch,
+    required this.onOpenFilters,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, c) {
+        final searchWidth = c.maxWidth < 480 ? c.maxWidth - 128 : 320.0;
+        return Row(
+          children: [
+            SizedBox(
+              width: searchWidth.clamp(140.0, 360.0),
+              child: AdminSearchField(
+                controller: searchCtrl,
+                hint: 'Search barangay, address, remarks…',
+                onChanged: onSearch,
+                onClear: onClearSearch,
+              ),
+            ),
+            const SizedBox(width: 10),
+            FilterButton(activeCount: activeCount, onTap: onOpenFilters),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _ActiveChips extends StatelessWidget {
+  final _Filters filters;
+  final List<({String key, String label})> categories;
+  final ValueChanged<_Filters> onChange;
+  const _ActiveChips({
+    required this.filters,
+    required this.categories,
+    required this.onChange,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // No bucket chip: the pill above already shows which pile is on screen.
+    final chips = <Widget>[
+      if (filters.categoryKey != null)
+        ActiveChip(
+          label: categories
+              .firstWhere(
+                (c) => c.key == filters.categoryKey,
+                orElse: () => (key: '', label: 'Category'),
+              )
+              .label,
+          onRemove: () => onChange(filters.copyWith(categoryKey: null)),
+        ),
+      if (filters.sort != _Sort.newest)
+        ActiveChip(
+          label: 'Oldest first',
+          onRemove: () => onChange(filters.copyWith(sort: _Sort.newest)),
+        ),
+      if (filters.overdueOnly)
+        ActiveChip(
+          label: 'Overdue only',
+          onRemove: () => onChange(filters.copyWith(overdueOnly: false)),
+        ),
+      if (filters.anonymousOnly)
+        ActiveChip(
+          label: 'Anonymous only',
+          emphasize: true,
+          onRemove: () => onChange(filters.copyWith(anonymousOnly: false)),
+        ),
+    ];
+    if (chips.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Wrap(spacing: 8, runSpacing: 8, children: chips),
+    );
+  }
+}
+
+// ── Results ──────────────────────────────────────────────────────────────────
+
+class _Results extends StatelessWidget {
+  final AsyncValue<List<StaffReport>> async;
+  final List<StaffReport> filtered;
+
+  /// True when something is narrowing the list, so an empty result can say
+  /// "nothing MATCHES" (with a way out) rather than "you have nothing".
+  final bool filtering;
+  final VoidCallback onClearFilters;
+  final Future<void> Function() onRetry;
+  final void Function(StaffReport) onOpen;
+  final GlobalKey Function(String id) keyFor;
+  final bool Function(String id) isHighlighted;
+  final IconData emptyIcon;
+  final String emptyTitle;
+  final String emptySubtitle;
+
+  const _Results({
+    required this.async,
+    required this.filtered,
+    required this.filtering,
+    required this.onClearFilters,
+    required this.onRetry,
+    required this.onOpen,
+    required this.keyFor,
+    required this.isHighlighted,
+    required this.emptyIcon,
+    required this.emptyTitle,
+    required this.emptySubtitle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AdminResultsCard(
+      child: async.when(
+        loading: () => const _ReportListSkeleton(),
+        error: (e, _) => AdminResultsMessage(
+          icon: Icons.cloud_off_rounded,
+          color: StaffUi.danger,
+          text: "Couldn't load reports.",
+          action: TextButton(
+            onPressed: onRetry,
+            style: TextButton.styleFrom(foregroundColor: StaffUi.accent),
+            child: const Text('Retry'),
+          ),
+        ),
+        data: (items) {
+          if (items.isEmpty) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: StaffEmptyState(
+                icon: emptyIcon,
+                title: emptyTitle,
+                subtitle: emptySubtitle,
+              ),
+            );
+          }
+          if (filtered.isEmpty) {
+            return AdminResultsMessage(
+              icon: Icons.filter_alt_off_rounded,
+              color: StaffUi.textMuted,
+              text: 'No reports match this view.',
+              action: TextButton(
+                onPressed: onClearFilters,
+                style: TextButton.styleFrom(foregroundColor: StaffUi.accent),
+                child: const Text('Clear filters'),
+              ),
+            );
+          }
+          return LayoutBuilder(
+            builder: (context, c) {
+              if (c.maxWidth >= kReportTableFrom) {
+                return Column(
+                  children: [
+                    const _TableHeader(),
+                    for (final r in filtered)
+                      _TableRow(
+                        key: keyFor(r.id),
+                        report: r,
+                        onOpen: () => onOpen(r),
+                        highlighted: isHighlighted(r.id),
+                      ),
+                  ],
+                );
+              }
+              return Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  children: [
+                    for (final r in filtered)
+                      _ReportCard(
+                        key: keyFor(r.id),
+                        report: r,
+                        onOpen: () => onOpen(r),
+                        highlighted: isHighlighted(r.id),
+                      ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ── Wide table ───────────────────────────────────────────────────────────────
+
+/// Column widths for the wide table, in one place — the header and the rows are
+/// separate widgets that must lay out identically.
+///
+/// No SUBMITTER column, unlike the admin's table: there is no name to put in
+/// it. REPORTER carries the one fact an office is allowed to know — whether the
+/// reporter chose to stay anonymous.
+abstract final class _Col {
+  static const int category = 4;
+  static const int reporter = 2;
+  static const int barangay = 2;
+  static const int progress = 2;
+
+  /// Wider than its neighbours on purpose: this cell seats a status pill AND an
+  /// overdue chip beside it, on ONE line.
+  static const int status = 3;
+  static const int date = 2;
+
+  /// Fixed, not flexed: just an icon and a count.
+  static const double media = 30;
+}
+
+class _TableHeader extends StatelessWidget {
+  const _TableHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: const BoxDecoration(
+        color: StaffUi.subtle,
+        border: Border(bottom: BorderSide(color: StaffUi.border)),
+      ),
+      child: const Row(
+        children: [
+          _HCell('CATEGORY', flex: _Col.category),
+          _HCell('REPORTER', flex: _Col.reporter),
+          _HCell('BARANGAY', flex: _Col.barangay),
+          _HCell('PROGRESS', flex: _Col.progress),
+          _HCell('STATUS', flex: _Col.status),
+          _HCell('DATE', flex: _Col.date),
+          SizedBox(width: _Col.media),
+        ],
+      ),
+    );
+  }
+}
+
+class _HCell extends StatelessWidget {
+  final String text;
+  final int flex;
+  const _HCell(this.text, {this.flex = 1});
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      flex: flex,
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.5,
+          color: StaffUi.textMuted,
+        ),
+      ),
+    );
+  }
+}
+
+class _TableRow extends StatelessWidget {
   final StaffReport report;
-  final VoidCallback onTap;
+  final VoidCallback onOpen;
 
   /// Set when this row is the deep-link target: it flashes, then fades back.
-  /// Drawn as a ring around StaffCard rather than replacing its decoration, so
-  /// the card keeps its own surface treatment.
   final bool highlighted;
-  const _ReportRow({
+  const _TableRow({
+    super.key,
     required this.report,
-    required this.onTap,
+    required this.onOpen,
     this.highlighted = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final r = report;
-    return highlightRing(
-      highlighted: highlighted,
-      radius: 14,
-      accent: StaffUi.accent,
-      child: StaffCard(
-        onTap: onTap,
-        padding: const EdgeInsets.all(14),
-      child: Row(
-        children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              color: StaffUi.accentWash,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Icon(Icons.report_gmailerrorred_rounded,
-                color: StaffUi.accent, size: 22),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        r.category,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: StaffUi.textPrimary,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text('#${r.shortId}',
-                        style: const TextStyle(
-                            fontSize: 11, color: StaffUi.textMuted)),
-                  ],
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  r.remarks.isEmpty ? 'No description' : r.remarks,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 12.5, color: StaffUi.textSecondary),
-                ),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    StaffStatusPill(r.status),
-                    const SizedBox(width: 8),
-                    if (r.isOverdue) ...[
-                      StaffPill(
-                        label: 'Overdue ${r.ageDays}d',
-                        color: const Color(0xFFF59E0B),
-                        icon: Icons.schedule_rounded,
-                      ),
-                      const SizedBox(width: 8),
-                    ],
-                    if (r.isAnonymous) ...[
-                      const StaffPill(
-                        label: 'Anonymous',
-                        color: StaffUi.textMuted,
-                        icon: Icons.visibility_off_rounded,
-                      ),
-                      const SizedBox(width: 8),
-                    ],
-                    if ((r.barangay ?? '').isNotEmpty) ...[
-                      const Icon(Icons.location_on_outlined,
-                          size: 13, color: StaffUi.textMuted),
-                      const SizedBox(width: 2),
-                      Flexible(
-                        child: Text(
-                          r.barangay!,
+    return InkWell(
+      onTap: onOpen,
+      child: AnimatedContainer(
+        duration: kHighlightFade,
+        decoration: highlighted
+            ? highlightRowDecoration(
+                accent: StaffUi.accent,
+                divider: const BorderSide(color: StaffUi.border),
+              )
+            : BoxDecoration(
+                color: r.isAnonymous
+                    ? kAnonColor.withValues(alpha: 0.035)
+                    : null,
+                border: const Border(bottom: BorderSide(color: StaffUi.border)),
+              ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            Expanded(
+              flex: _Col.category,
+              child: Row(
+                children: [
+                  ReportCategoryIconBox(r.categoryKey, size: 30),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          r.category,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                              fontSize: 11.5, color: StaffUi.textMuted),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: StaffUi.textPrimary,
+                          ),
                         ),
-                      ),
-                    ],
-                    const Spacer(),
-                    if (r.mediaCount > 0) ...[
-                      const Icon(Icons.photo_library_outlined,
-                          size: 13, color: StaffUi.textMuted),
-                      const SizedBox(width: 2),
-                      Text('${r.mediaCount}',
+                        Text(
+                          r.shortId,
                           style: const TextStyle(
-                              fontSize: 11.5, color: StaffUi.textMuted)),
-                      const SizedBox(width: 8),
-                    ],
-                    Text(staffAgo(r.createdAt),
-                        style: const TextStyle(
-                            fontSize: 11, color: StaffUi.textMuted)),
-                  ],
-                ),
-              ],
+                            fontSize: 11,
+                            color: StaffUi.textMuted,
+                          ),
+                        ),
+                        if (r.remarks.trim().isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(
+                              r.remarks.trim(),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 11.5,
+                                color: StaffUi.textSecondary,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
+            Expanded(flex: _Col.reporter, child: _ReporterCell(r.isAnonymous)),
+            Expanded(
+              flex: _Col.barangay,
+              child: Text(
+                (r.barangay == null || r.barangay!.isEmpty) ? '—' : r.barangay!,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 13, color: StaffUi.textMuted),
+              ),
+            ),
+            Expanded(
+              flex: _Col.progress,
+              child: ReportProgressLabel(stages: _stagesOf(r)),
+            ),
+            Expanded(flex: _Col.status, child: _StatusCell(r)),
+            Expanded(
+              flex: _Col.date,
+              child: Text(
+                adminShortDate(r.createdAt),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 12, color: StaffUi.textMuted),
+              ),
+            ),
+            SizedBox(width: _Col.media, child: _MediaCount(r.mediaCount)),
           ],
         ),
       ),
@@ -463,13 +968,264 @@ class _ReportRow extends StatelessWidget {
   }
 }
 
-class _ReportDetailSheet extends StatefulWidget {
+/// Where the report has got to, in the tracker's own vocabulary — the same
+/// stages the detail's stepper draws, so the list and the detail never disagree.
+List<ReportStage> _stagesOf(StaffReport r) => buildReportStagesFrom(
+      status: r.status,
+      accepted: true,
+      isEndorsed: r.endorsedToDepartment != null,
+      owner: r.endorsedToDepartment ?? r.assignedToDepartment,
+      acceptedAt: r.assignedAt,
+    );
+
+/// The REPORTER column: whether the citizen chose to stay anonymous, which is
+/// the only thing about them an office is allowed to know.
+///
+/// The pill is a fixed ~98px in a FLEXED cell, so it goes in the shrinkable
+/// wrapper — a cell a few pixels narrower reports overflow otherwise.
+class _ReporterCell extends StatelessWidget {
+  final bool isAnonymous;
+  const _ReporterCell(this.isAnonymous);
+
+  @override
+  Widget build(BuildContext context) {
+    if (!isAnonymous) {
+      return const Text(
+        'Citizen',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(fontSize: 13, color: StaffUi.textMuted),
+      );
+    }
+    return const ShrinkableAnonPill();
+  }
+}
+
+/// The STATUS column of one row: the status pill plus the overdue flag, on ONE
+/// line. A [Wrap] here made the column ragged — a wide status ("In progress")
+/// pushed the chip onto a second line while "Pending" kept its on the first, so
+/// rows in the same table stood at different heights. The chip gives up its
+/// label as the column narrows instead; the colour, icon and tooltip carry it.
+class _StatusCell extends StatelessWidget {
+  final StaffReport report;
+  const _StatusCell(this.report);
+
+  @override
+  Widget build(BuildContext context) {
+    final r = report;
+    return LayoutBuilder(
+      builder: (context, c) {
+        // Measured against the widest pill this column has to seat ("Under
+        // review", ~85px) plus the 6px gap: the full chip needs ~100 more, the
+        // number-only form ~52, the glyph alone ~26.
+        final density = c.maxWidth >= 195
+            ? ChipDensity.full
+            : (c.maxWidth >= 145 ? ChipDensity.compact : ChipDensity.icon);
+        return Row(
+          children: [
+            Flexible(
+              child: StatusPill(
+                label: reportStatusLabel(r.status),
+                color: staffReportStatusColor(r.status),
+              ),
+            ),
+            if (r.isOverdue) ...[
+              const SizedBox(width: 6),
+              DetailOverdueChip(r.ageDays, density: density),
+            ],
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _MediaCount extends StatelessWidget {
+  final int count;
+  const _MediaCount(this.count);
+
+  @override
+  Widget build(BuildContext context) {
+    if (count <= 0) return const SizedBox(width: 30);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(Icons.image_outlined, size: 15, color: StaffUi.textMuted),
+        const SizedBox(width: 2),
+        Text(
+          '$count',
+          style: const TextStyle(fontSize: 11, color: StaffUi.textMuted),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Narrow card ──────────────────────────────────────────────────────────────
+
+class _ReportCard extends StatelessWidget {
+  final StaffReport report;
+  final VoidCallback onOpen;
+  final bool highlighted;
+  const _ReportCard({
+    super.key,
+    required this.report,
+    required this.onOpen,
+    this.highlighted = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final r = report;
+    return SubmissionListCard(
+      isAnonymous: r.isAnonymous,
+      onTap: onOpen,
+      highlighted: highlighted,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              ReportCategoryIconBox(r.categoryKey, size: 38),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  r.category,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: StaffUi.textPrimary,
+                  ),
+                ),
+              ),
+              StatusPill(
+                label: reportStatusLabel(r.status),
+                color: staffReportStatusColor(r.status),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ReportProgressLabel(stages: _stagesOf(r)),
+          if (r.isAnonymous || r.isOverdue) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                if (r.isAnonymous) const AnonPill(),
+                if (r.isOverdue) DetailOverdueChip(r.ageDays),
+              ],
+            ),
+          ],
+          if (r.remarks.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              r.remarks,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 12.5,
+                height: 1.35,
+                color: StaffUi.textSecondary,
+              ),
+            ),
+          ],
+          const SizedBox(height: 8),
+          Text(
+            [
+              r.shortId,
+              if (r.barangay != null && r.barangay!.isNotEmpty) r.barangay!,
+              adminShortDate(r.createdAt),
+              if (r.mediaCount > 0)
+                '${r.mediaCount} file${r.mediaCount == 1 ? '' : 's'}',
+            ].join('  ·  '),
+            style: const TextStyle(fontSize: 11.5, color: StaffUi.textMuted),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Placeholder rows shown while the list loads — shaped like the real rows so
+/// the layout doesn't shift when the fetch lands.
+class _ReportListSkeleton extends StatelessWidget {
+  const _ReportListSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.all(16),
+      child: StaffShimmer(
+        child: Column(
+          children: [
+            _SkeletonRow(),
+            _SkeletonRow(),
+            _SkeletonRow(),
+            _SkeletonRow(),
+            _SkeletonRow(),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SkeletonRow extends StatelessWidget {
+  const _SkeletonRow();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: 11),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          StaffSkeletonBox(width: 30, height: 30, radius: 8),
+          SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                StaffSkeletonBox(width: 140, height: 12),
+                SizedBox(height: 8),
+                StaffSkeletonBox(width: 90, height: 10),
+              ],
+            ),
+          ),
+          SizedBox(
+            width: 70,
+            child: StaffSkeletonBox(width: 70, height: 20, radius: 20),
+          ),
+        ],
+      ),
+    );
+  }
+}
+// ═════════════════════════════════════════════════════════════════════════════
+//  Report detail
+//
+//  The SAME two-pane detail the admin console uses (see report_detail_kit.dart)
+//  — "Update Report Status" beside "Report Details", one pane at a time once
+//  the viewport is too narrow to seat both. What differs is the CONTENT, and
+//  deliberately so:
+//
+//    • the office can MOVE the report through the working states, which the
+//      admin's read-only pane cannot — that control sits under the stage card;
+//    • there is no reporter identity here, ever. The staff view carries no
+//      name, anonymous or not, so "Reported By" says what is known and no more;
+//    • the only triage action an office has is handing the report back.
+// ═════════════════════════════════════════════════════════════════════════════
+
+class _ReportDetail extends ConsumerStatefulWidget {
   final StaffReport report;
   final bool endorsement;
   final String? department;
   final _SetStatus onSetStatus;
   final _ReturnToTriage onReturnToTriage;
-  const _ReportDetailSheet({
+  const _ReportDetail({
     required this.report,
     required this.endorsement,
     required this.department,
@@ -478,20 +1234,50 @@ class _ReportDetailSheet extends StatefulWidget {
   });
 
   @override
-  State<_ReportDetailSheet> createState() => _ReportDetailSheetState();
+  ConsumerState<_ReportDetail> createState() => _ReportDetailState();
 }
 
-class _ReportDetailSheetState extends State<_ReportDetailSheet> {
+class _ReportDetailState extends ConsumerState<_ReportDetail> {
   late ReportStatus _status = widget.report.status;
   bool _busy = false;
 
-  // Staff own the WORKING states only. Triage states (pending / rejected) belong
-  // to the admin — a report only reaches staff once accepted (under_review+).
+  /// Which tab of the status pane is showing: 0 = Timeline, 1 = Work log.
+  int _trackerTab = 0;
+
+  /// Which PANE is showing, when the layout is too narrow to seat both side by
+  /// side: 0 = Report Details, 1 = Update Report Status.
+  int _paneTab = 0;
+
+  /// Fetched ONCE, here. Built inside build() (as the old sheet's media strip
+  /// did) it re-ran on every rebuild, so each status tap re-signed the media
+  /// URLs and flashed the attachments back to their skeleton.
+  late final Future<List<DetailMediaItem>> _mediaFuture = ref
+      .read(staffRepoProvider)
+      .fetchReportMedia(widget.report.id)
+      .then(
+        (media) => [
+          for (final m in media)
+            DetailMediaItem(
+              url: m.url,
+              isVideo: m.isVideo,
+              isGpsVerified: m.isGpsVerified,
+            ),
+        ],
+      );
+
+  // Staff own the WORKING states only. Triage states (pending / rejected)
+  // belong to the admin — a report only reaches staff once accepted.
   static const _flow = [
     ReportStatus.underReview,
     ReportStatus.inProgress,
     ReportStatus.resolved,
   ];
+
+  /// The office that owns this report — the agency it was endorsed to, or the
+  /// department it was assigned to.
+  String? get _owner => widget.endorsement
+      ? (widget.report.endorsedToDepartment ?? widget.department)
+      : (widget.report.assignedToDepartment ?? widget.department);
 
   Future<void> _apply(ReportStatus s) async {
     if (s == _status || _busy) return;
@@ -533,288 +1319,547 @@ class _ReportDetailSheetState extends State<_ReportDetailSheet> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
+  /// The facts behind the routing, shown in the stage card's inset strip: when
+  /// the report reached this office, and which office owns it.
+  List<({String label, String value})> _routingFacts() {
     final r = widget.report;
-    final narrow = MediaQuery.of(context).size.width < 600;
-    final content = Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (narrow)
-          Center(
-            child: Container(
-              margin: const EdgeInsets.only(top: 10, bottom: 4),
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: StaffUi.borderStrong,
-                borderRadius: BorderRadius.circular(2),
+    return [
+      (
+        label: widget.endorsement ? 'Endorsed on' : 'Routed on',
+        value: adminLongDateTime(r.assignedAt ?? r.createdAt),
+      ),
+      if (_owner != null)
+        (
+          label: widget.endorsement ? 'Endorsed to' : 'Assigned department',
+          value: _owner!,
+        ),
+    ];
+  }
+
+  /// Copy + colour for the illustrated stage card — "where does this report
+  /// stand right now", read from the office's side of the work.
+  ({String chip, String headline, String blurb, Color accent}) _stageCopy() {
+    switch (_status) {
+      case ReportStatus.rejected:
+        return (
+          chip: 'Rejected',
+          headline: 'This report was closed.',
+          blurb: 'The LGU admin rejected the report, so no further work is '
+              'expected from your office.',
+          accent: StaffUi.danger,
+        );
+      case ReportStatus.resolved:
+        return (
+          chip: 'Completed',
+          headline: 'This report has been resolved.',
+          blurb: 'Your office marked the work complete. Attach proof of '
+              'completion under Work log so the admin can close it out.',
+          accent: StaffUi.online,
+        );
+      case ReportStatus.inProgress:
+        return (
+          chip: 'Ongoing',
+          headline: 'Work is underway.',
+          blurb: 'Your office is carrying out the work. Log progress under '
+              'Work log — the admin reads it, the citizen never does.',
+          accent: StaffUi.accentSoft,
+        );
+      case ReportStatus.underReview:
+        return (
+          chip: 'For assessment',
+          headline: 'This report is being assessed.',
+          blurb: 'Your office is assessing the issue. Move it to In progress '
+              'once the work actually starts.',
+          accent: StaffUi.accentSoft,
+        );
+      case ReportStatus.pending:
+        return (
+          chip: 'Not Started',
+          headline: 'This report hasn\'t started yet.',
+          blurb: 'It was routed to your office and is waiting to be assessed. '
+              'If it isn\'t yours, hand it back to triage.',
+          accent: StaffUi.warn,
+        );
+    }
+  }
+
+  // ── Panes ─────────────────────────────────────────────────────────────────
+
+  /// Left pane — the stepper, the stage card, the status control that is the
+  /// office's one write on the lifecycle, and the Timeline / Work log tabs.
+  Widget _statusPane() {
+    final r = widget.report;
+    final stages = buildReportStagesFrom(
+      status: _status,
+      // A report only reaches an office once the admin has passed triage.
+      accepted: true,
+      isEndorsed: widget.endorsement,
+      owner: _owner,
+      acceptedAt: r.assignedAt,
+    );
+    final copy = _stageCopy();
+
+    return DetailPane(
+      title: 'Update Report Status',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 4),
+          ReportStepperRail(stages: stages),
+          const SizedBox(height: 20),
+          ReportStageCard(
+            chip: copy.chip,
+            headline: copy.headline,
+            blurb: copy.blurb,
+            accent: copy.accent,
+            facts: _routingFacts(),
+          ),
+          const SizedBox(height: 18),
+          _StatusControl(
+            flow: _flow,
+            current: _status,
+            busy: _busy,
+            onPick: _apply,
+          ),
+          const SizedBox(height: 18),
+          AdminUnderlineTabs(
+            labels: const ['Timeline', 'Work log'],
+            selected: _trackerTab,
+            onSelect: (i) => setState(() => _trackerTab = i),
+          ),
+          const SizedBox(height: 16),
+          if (_trackerTab == 0) ...[
+            const Text(
+              'Timeline Progress',
+              style: TextStyle(
+                fontSize: 14.5,
+                fontWeight: FontWeight.w700,
+                color: StaffUi.textPrimary,
               ),
             ),
+            const SizedBox(height: 14),
+            ReportTimelineProgress(stages: stages),
+          ] else
+            _workLogTab(),
+        ],
+      ),
+    );
+  }
+
+  /// "Work log" tab — the internal thread between this office and the admin,
+  /// plus the completion photos once the work is done.
+  Widget _workLogTab() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Log progress or reply to the admin. The citizen never sees this.',
+          style: TextStyle(
+            fontSize: 12.5,
+            height: 1.45,
+            color: StaffUi.textMuted,
           ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(18, 14, 8, 8),
-          child: Row(
+        ),
+        const SizedBox(height: 10),
+        ReportWorkLog(
+          reportId: widget.report.id,
+          authorRole: 'staff',
+          authorName: widget.department ?? 'Staff',
+        ),
+        if (_status == ReportStatus.resolved) ...[
+          const SizedBox(height: 20),
+          ResolutionMediaSection(reportId: widget.report.id, canEdit: true),
+        ],
+      ],
+    );
+  }
+
+  /// Right pane — what was reported, and the one action an office has on it.
+  Widget _detailsPane() {
+    final r = widget.report;
+    return DetailPane(
+      title: 'Report Details',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (widget.endorsement && r.endorsedToDepartment != null) ...[
+            StaffPill(
+              label: 'Endorsed to ${r.endorsedToDepartment}',
+              color: StaffUi.accent,
+              icon: Icons.forward_to_inbox_rounded,
+            ),
+            const SizedBox(height: 14),
+          ],
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              DetailHeroThumb(future: _mediaFuture, categoryKey: r.categoryKey),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(r.category,
-                        style: const TextStyle(
-                          fontSize: 16.5,
-                          fontWeight: FontWeight.w800,
-                          color: StaffUi.textPrimary,
-                        )),
-                    const SizedBox(height: 2),
-                    Text('#${r.shortId} · ${staffAgo(r.createdAt)}',
-                        style: const TextStyle(
-                            fontSize: 12, color: StaffUi.textMuted)),
+                    DetailKvRow(
+                      label: 'Status',
+                      trailing: Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          StatusPill(
+                            label: reportStatusLabel(_status),
+                            color: staffReportStatusColor(_status),
+                          ),
+                          if (r.isOverdue) DetailOverdueChip(r.ageDays),
+                        ],
+                      ),
+                    ),
+                    DetailKvRow(label: 'ID', value: '#RPT-${r.shortId}'),
+                    DetailKvRow(
+                      label: 'Date Reported',
+                      value: adminShortDate(r.createdAt),
+                    ),
+                    DetailKvRow(
+                      label: 'Time Reported',
+                      value: adminClockTime(r.createdAt),
+                    ),
                   ],
                 ),
               ),
-              IconButton(
-                icon: const Icon(Icons.close_rounded, color: StaffUi.textMuted),
-                onPressed: () => Navigator.pop(context),
+            ],
+          ),
+          const SizedBox(height: 18),
+          const Divider(height: 1, color: StaffUi.border),
+          const SizedBox(height: 18),
+          DetailIconSection(
+            icon: reportCategoryIcon(r.categoryKey),
+            title: 'Category',
+            child: Text(
+              r.category,
+              style: const TextStyle(
+                fontSize: 13,
+                height: 1.4,
+                color: StaffUi.textSecondary,
+              ),
+            ),
+          ),
+          DetailIconSection(
+            icon: Icons.location_on_rounded,
+            title: 'Location',
+            child: DetailLocationBlock(barangay: r.barangay, address: r.address),
+          ),
+          DetailIconSection(
+            icon: Icons.person_rounded,
+            title: 'Reported By',
+            child: _ReporterBlock(isAnonymous: r.isAnonymous),
+          ),
+          DetailIconSection(
+            icon: Icons.description_rounded,
+            title: 'Details',
+            child: Text(
+              r.remarks.trim().isEmpty ? '—' : r.remarks,
+              style: const TextStyle(
+                fontSize: 13,
+                height: 1.5,
+                color: StaffUi.textSecondary,
+              ),
+            ),
+          ),
+          DetailIconSection(
+            icon: Icons.attach_file_rounded,
+            title: 'Attachments',
+            isLast: true,
+            child: DetailMediaGallery(
+              future: _mediaFuture,
+              placeholderCount: r.mediaCount,
+            ),
+          ),
+          const SizedBox(height: 18),
+          const Divider(height: 1, color: StaffUi.border),
+          const SizedBox(height: 16),
+          DetailActionSection(
+            buttons: [
+              DetailActionButton(
+                label: 'Not my department — return to triage',
+                icon: Icons.reply_rounded,
+                color: StaffUi.accent,
+                outlined: true,
+                onTap: _busy ? null : _returnToTriage,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final narrow = MediaQuery.of(context).size.width < kAdminDetailNarrowBelow;
+
+    // One pane at a time, for the phone and for a dialog too narrow to seat two
+    // columns. Details leads — it's what was reported.
+    Widget paneTabs() => AdminSegmentedTabs(
+          labels: const ['Report Details', 'Update Report Status'],
+          selected: _paneTab,
+          onSelect: (i) => setState(() => _paneTab = i),
+        );
+
+    Widget activePane() => SingleChildScrollView(
+          padding: const EdgeInsets.all(14),
+          child: _paneTab == 0 ? _detailsPane() : _statusPane(),
+        );
+
+    if (narrow) {
+      return AdminDetailScaffold(
+        title: 'Report details',
+        child: Container(
+          color: StaffUi.pageBg,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
+                child: paneTabs(),
+              ),
+              Expanded(child: activePane()),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Dialog(
+      backgroundColor: StaffUi.pageBg,
+      // Vertical inset is deliberately tight: the panes are long, and every
+      // pixel given back here is a pixel nobody has to scroll.
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1120, maxHeight: 900),
+        child: LayoutBuilder(
+          builder: (context, c) {
+            // Two columns only once the details pane can still hold a readable
+            // column beside the tracker; below that, one pane at a time.
+            //
+            // Stacking the two panes into one scroll was tried here instead and
+            // REVERTED: it turned a narrow window into a scroll the length of
+            // both panes with no way to skip past one. Don't retry it.
+            if (c.maxWidth < kReportDetailTwoPaneFrom) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
+                    child: Row(
+                      children: [
+                        Expanded(child: paneTabs()),
+                        const SizedBox(width: 10),
+                        const DetailPaneCloseButton(),
+                      ],
+                    ),
+                  ),
+                  Flexible(child: activePane()),
+                ],
+              );
+            }
+            return Stack(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: AdminTwoPaneRow(
+                    main: _statusPane(),
+                    side: _detailsPane(),
+                  ),
+                ),
+                // Pinned rather than scrolled with the pane — the way out stays
+                // put however far down you are.
+                const Positioned(
+                  top: 22,
+                  right: 22,
+                  child: DetailPaneCloseButton(),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+/// The office's one write on the lifecycle: which working state the report is
+/// in. The admin's equivalent pane is read-only, so this has no counterpart
+/// there — it sits under the stage card, where the pane's title promises it.
+class _StatusControl extends StatelessWidget {
+  final List<ReportStatus> flow;
+  final ReportStatus current;
+  final bool busy;
+  final ValueChanged<ReportStatus> onPick;
+  const _StatusControl({
+    required this.flow,
+    required this.current,
+    required this.busy,
+    required this.onPick,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Move this report',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: StaffUi.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'The citizen sees this change on their own report.',
+          style: TextStyle(fontSize: 11.5, color: StaffUi.textMuted),
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final s in flow)
+              _StatusChip(
+                label: reportStatusLabel(s),
+                color: staffReportStatusColor(s),
+                selected: current == s,
+                onTap: busy || current == s ? null : () => onPick(s),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _StatusChip extends StatelessWidget {
+  final String label;
+  final Color color;
+  final bool selected;
+  final VoidCallback? onTap;
+  const _StatusChip({
+    required this.label,
+    required this.color,
+    required this.selected,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(StaffUi.controlRadius),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+          decoration: BoxDecoration(
+            color: selected ? color : StaffUi.subtle,
+            borderRadius: BorderRadius.circular(StaffUi.controlRadius),
+            border: Border.all(color: selected ? color : StaffUi.border),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (selected) ...[
+                const Icon(Icons.check_rounded, size: 15, color: Colors.white),
+                const SizedBox(width: 5),
+              ],
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: selected ? Colors.white : StaffUi.textSecondary,
+                ),
               ),
             ],
           ),
         ),
-        const Divider(height: 1, color: StaffUi.border),
-        Flexible(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(18, 14, 18, 16),
+      ),
+    );
+  }
+}
+
+/// "Reported By", from the office's side.
+///
+/// There is no name to show here for ANY report: `staff_reports_view` nulls the
+/// reporter for anonymous rows in the database, and the staff console never
+/// fetches a profile for the rest. So this states what is actually known rather
+/// than borrowing the admin's identity block, which would imply a name is being
+/// withheld from the screen when there isn't one to withhold.
+class _ReporterBlock extends StatelessWidget {
+  final bool isAnonymous;
+  const _ReporterBlock({required this.isAnonymous});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = isAnonymous ? kAnonColor : StaffUi.textMuted;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: isAnonymous ? kAnonColor.withValues(alpha: 0.07) : StaffUi.subtle,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color:
+              isAnonymous ? kAnonColor.withValues(alpha: 0.30) : StaffUi.border,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.14),
+              shape: BoxShape.circle,
+              border: Border.all(color: color.withValues(alpha: 0.35)),
+            ),
+            child: Icon(
+              isAnonymous ? Icons.visibility_off_rounded : Icons.person_rounded,
+              size: 21,
+              color: color,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    if (widget.endorsement && r.endorsedToDepartment != null)
-                      StaffPill(
-                        label: 'Endorsed to ${r.endorsedToDepartment}',
-                        color: StaffUi.accent,
-                        icon: Icons.forward_to_inbox_rounded,
-                      ),
-                    if (r.isAnonymous)
-                      const StaffPill(
-                        label: 'Anonymous reporter',
-                        color: StaffUi.textMuted,
-                        icon: Icons.visibility_off_rounded,
-                      ),
-                  ],
-                ),
-                if (widget.endorsement && r.endorsedToDepartment != null ||
-                    r.isAnonymous)
-                  const SizedBox(height: 12),
-                const _Label('Description'),
-                const SizedBox(height: 4),
-                Text(r.remarks.isEmpty ? 'No description provided.' : r.remarks,
-                    style: const TextStyle(
-                        fontSize: 13.5, color: StaffUi.textSecondary, height: 1.4)),
-                const SizedBox(height: 14),
-                if ((r.address ?? r.barangay) != null) ...[
-                  const _Label('Location'),
-                  const SizedBox(height: 4),
-                  Text(
-                    [r.address, r.barangay]
-                        .where((e) => (e ?? '').isNotEmpty)
-                        .join(', '),
-                    style: const TextStyle(
-                        fontSize: 13.5, color: StaffUi.textSecondary),
+                Text(
+                  isAnonymous ? 'Anonymous reporter' : 'Citizen',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: isAnonymous ? kAnonColor : StaffUi.textPrimary,
                   ),
-                  const SizedBox(height: 14),
-                ],
-                if (r.mediaCount > 0) ...[
-                  const _Label('Attachments'),
-                  const SizedBox(height: 6),
-                  _MediaStrip(reportId: r.id),
-                  const SizedBox(height: 14),
-                ],
-                const _Label('Update status'),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final s in _flow)
-                      ChoiceChip(
-                        label: Text(reportStatusLabel(s)),
-                        selected: _status == s,
-                        onSelected: _busy ? null : (_) => _apply(s),
-                        labelStyle: TextStyle(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w600,
-                          color: _status == s
-                              ? Colors.white
-                              : StaffUi.textSecondary,
-                        ),
-                        selectedColor: staffReportStatusColor(s),
-                        backgroundColor: StaffUi.subtle,
-                        side: BorderSide(
-                          color: _status == s
-                              ? staffReportStatusColor(s)
-                              : StaffUi.border,
-                        ),
-                        showCheckmark: false,
-                      ),
-                  ],
                 ),
-                if (_status == ReportStatus.resolved) ...[
-                  const SizedBox(height: 16),
-                  ResolutionMediaSection(reportId: r.id, canEdit: true),
-                ],
-                const SizedBox(height: 16),
-                const _Label('Work log'),
-                const SizedBox(height: 6),
-                const Text(
-                  'Log progress or reply to the admin. The citizen never sees this.',
-                  style: TextStyle(fontSize: 12, color: StaffUi.textMuted, height: 1.4),
-                ),
-                const SizedBox(height: 8),
-                ReportWorkLog(
-                  reportId: r.id,
-                  authorRole: 'staff',
-                  authorName: widget.department ?? 'Staff',
-                ),
-                const SizedBox(height: 16),
-                const Divider(height: 1, color: StaffUi.border),
-                const SizedBox(height: 10),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    onPressed: _busy ? null : _returnToTriage,
-                    icon: const Icon(Icons.reply_rounded, size: 17),
-                    label: const Text('Not my department — return to triage'),
-                    style: TextButton.styleFrom(
-                      foregroundColor: StaffUi.textMuted,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 6),
-                    ),
+                const SizedBox(height: 2),
+                Text(
+                  isAnonymous
+                      ? 'Identity withheld and never retrieved'
+                      : 'Reporter details stay with the LGU admin',
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    color: StaffUi.textMuted,
                   ),
                 ),
               ],
             ),
           ),
-        ),
-      ],
-    );
-
-    return Material(
-      color: StaffUi.surface,
-      borderRadius: narrow
-          ? const BorderRadius.vertical(top: Radius.circular(22))
-          : BorderRadius.circular(20),
-      clipBehavior: Clip.antiAlias,
-      child: narrow
-          ? SafeArea(
-              top: false,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxHeight: MediaQuery.of(context).size.height * 0.9,
-                ),
-                child: content,
-              ),
-            )
-          : ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 520, maxHeight: 680),
-              child: content,
-            ),
-    );
-  }
-}
-
-class _Label extends StatelessWidget {
-  final String text;
-  const _Label(this.text);
-  @override
-  Widget build(BuildContext context) => Text(
-        text.toUpperCase(),
-        style: const TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.5,
-          color: StaffUi.textMuted,
-        ),
-      );
-}
-
-class _MediaStrip extends ConsumerWidget {
-  final String reportId;
-  const _MediaStrip({required this.reportId});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final repo = ref.read(staffRepoProvider);
-    return FutureBuilder<List<StaffReportMedia>>(
-      future: repo.fetchReportMedia(reportId),
-      builder: (context, snap) {
-        if (snap.connectionState == ConnectionState.waiting) {
-          return const SizedBox(
-            height: 90,
-            child: Center(
-              child: SizedBox(
-                width: 20,
-                height: 20,
-                child:
-                    CircularProgressIndicator(strokeWidth: 2, color: StaffUi.accent),
-              ),
-            ),
-          );
-        }
-        final media = snap.data ?? const [];
-        if (media.isEmpty) {
-          return const Text('No attachments could be loaded.',
-              style: TextStyle(fontSize: 12.5, color: StaffUi.textMuted));
-        }
-        return SizedBox(
-          height: 90,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: media.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 8),
-            itemBuilder: (_, i) {
-              final m = media[i];
-              return ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: SizedBox(
-                  width: 120,
-                  height: 90,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      m.isVideo
-                          ? Container(
-                              color: StaffUi.subtle,
-                              child: const Icon(
-                                  Icons.play_circle_outline_rounded,
-                                  color: StaffUi.accent,
-                                  size: 30),
-                            )
-                          : Image.network(
-                              m.url,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, _, _) => Container(
-                                color: StaffUi.subtle,
-                                child: const Icon(Icons.broken_image_outlined,
-                                    color: StaffUi.textMuted),
-                              ),
-                            ),
-                      Positioned(
-                        top: 5,
-                        left: 5,
-                        child: MediaSourceBadge(verified: m.isGpsVerified),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-        );
-      },
+        ],
+      ),
     );
   }
 }

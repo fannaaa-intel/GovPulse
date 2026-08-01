@@ -25,59 +25,66 @@ class StaffSettingsPage extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          StaffCard(
-            child: Row(
-              children: [
-                _EditableAvatar(
-                  photoUrl: id?.photoUrl,
-                  initials: id?.initials ?? 'S',
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        id?.displayName ?? 'Staff',
-                        style: const TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w800,
-                          color: StaffUi.textPrimary,
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Row(
-                        children: [
-                          StaffPill(
-                            label: id?.isExternal == true
-                                ? 'External entity'
-                                : 'Staff',
-                            color: StaffUi.accent,
-                          ),
-                          const SizedBox(width: 6),
-                          Flexible(
-                            child: Text(
-                              id?.department ?? '',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  fontSize: 12.5, color: StaffUi.textMuted),
-                            ),
-                          ),
-                        ],
-                      ),
-                      if ((id?.email ?? '').isNotEmpty) ...[
-                        const SizedBox(height: 3),
-                        Text(id!.email,
-                            style: const TextStyle(
-                                fontSize: 12, color: StaffUi.textMuted)),
-                      ],
-                    ],
+          // Until the identity lands there is no name, department or photo to
+          // show — shimmer the card rather than rendering the "Staff" / blank
+          // fallbacks, which read as a real (wrong) profile. A *failed* fetch
+          // still falls through to those fallbacks; pull-to-refresh retries.
+          if (id == null && async.isLoading)
+            const _ProfileCardSkeleton()
+          else
+            StaffCard(
+              child: Row(
+                children: [
+                  _EditableAvatar(
+                    photoUrl: id?.photoUrl,
+                    initials: id?.initials ?? 'S',
                   ),
-                ),
-              ],
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          id?.displayName ?? 'Staff',
+                          style: const TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                            color: StaffUi.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Row(
+                          children: [
+                            StaffPill(
+                              label: id?.isExternal == true
+                                  ? 'External entity'
+                                  : 'Staff',
+                              color: StaffUi.accent,
+                            ),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                id?.department ?? '',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    fontSize: 12.5, color: StaffUi.textMuted),
+                              ),
+                            ),
+                          ],
+                        ),
+                        if ((id?.email ?? '').isNotEmpty) ...[
+                          const SizedBox(height: 3),
+                          Text(id!.email,
+                              style: const TextStyle(
+                                  fontSize: 12, color: StaffUi.textMuted)),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
           const SizedBox(height: 12),
           StaffCard(
             padding: EdgeInsets.zero,
@@ -108,6 +115,47 @@ class StaffSettingsPage extends ConsumerWidget {
     );
   }
 
+}
+
+/// The identity card while [staffIdentityProvider] is loading. Mirrors the real
+/// card — 56px avatar, name line, pill + department row, email line — inside the
+/// same [StaffCard], so the page holds its layout on phone and web alike. The
+/// text bars are `Expanded`/fixed-width rather than absolute, so the row stays
+/// intact on narrow screens.
+class _ProfileCardSkeleton extends StatelessWidget {
+  const _ProfileCardSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return StaffCard(
+      child: StaffShimmer(
+        child: Row(
+          children: const [
+            StaffSkeletonCircle(size: 56),
+            SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  StaffSkeletonBox(width: 150, height: 16),
+                  SizedBox(height: 9),
+                  Row(
+                    children: [
+                      StaffSkeletonBox(width: 54, height: 16, radius: 8),
+                      SizedBox(width: 6),
+                      StaffSkeletonBox(width: 104, height: 11),
+                    ],
+                  ),
+                  SizedBox(height: 8),
+                  StaffSkeletonBox(width: 178, height: 11),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 /// The staff member's avatar in Settings — tap to pick a new photo, which is
@@ -181,6 +229,11 @@ class _EditableAvatarState extends ConsumerState<_EditableAvatar> {
                 ? CachedNetworkImage(
                     imageUrl: url,
                     fit: BoxFit.cover,
+                    // Shimmer while the photo downloads, matching the card's
+                    // own loading state rather than flashing the initials.
+                    placeholder: (_, _) => const StaffShimmer(
+                      child: StaffSkeletonCircle(size: 56),
+                    ),
                     errorWidget: (_, _, _) => _initials(widget.initials),
                   )
                 : _initials(widget.initials),

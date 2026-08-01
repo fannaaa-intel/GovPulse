@@ -586,68 +586,64 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
           ),
           SizedBox(width: width * 0.035),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  fullName ?? widget.username,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: width * 0.045,
-                    fontWeight: FontWeight.w700,
-                    color: const Color(0xFF1F2937),
-                  ),
-                ),
-                if (email != null) ...[
-                  SizedBox(height: width * 0.005),
-                  Builder(
-                    builder: (context) {
-                      final user = Supabase.instance.client.auth.currentUser;
-                      final identities = user?.identities ?? [];
-                      final hasPasswordMeta =
-                          user?.userMetadata?['has_password'] == true;
-                      final isFacebookOnly =
-                          identities.any((i) => i.provider == 'facebook') &&
-                          !hasPasswordMeta &&
-                          !identities.any((i) => i.provider == 'email');
-                      if (isFacebookOnly) return const SizedBox.shrink();
-                      return Text(
-                        email,
+            child: profileLoading
+                ? _buildProfileCardSkeleton(width)
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        fullName ?? widget.username,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: width * 0.030,
-                          color: AppColors.hint,
+                          fontSize: width * 0.045,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF1F2937),
                         ),
-                      );
-                    },
-                  ),
-                ],
-                SizedBox(height: width * 0.012),
-                Container(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: width * 0.025,
-                    vertical: width * 0.012,
-                  ),
-                  decoration: BoxDecoration(
-                    color: badge.bg,
-                    borderRadius: BorderRadius.circular(width * 0.03),
-                    border: Border.all(color: badge.border),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      profileLoading
-                          ? SizedBox(
-                              width: width * 0.022,
-                              height: width * 0.022,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 1.5,
-                                color: badge.dot,
+                      ),
+                      if (email != null) ...[
+                        SizedBox(height: width * 0.005),
+                        Builder(
+                          builder: (context) {
+                            final user =
+                                Supabase.instance.client.auth.currentUser;
+                            final identities = user?.identities ?? [];
+                            final hasPasswordMeta =
+                                user?.userMetadata?['has_password'] == true;
+                            final isFacebookOnly =
+                                identities.any(
+                                  (i) => i.provider == 'facebook',
+                                ) &&
+                                !hasPasswordMeta &&
+                                !identities.any((i) => i.provider == 'email');
+                            if (isFacebookOnly) return const SizedBox.shrink();
+                            return Text(
+                              email,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: width * 0.030,
+                                color: AppColors.hint,
                               ),
-                            )
-                          : Container(
+                            );
+                          },
+                        ),
+                      ],
+                      SizedBox(height: width * 0.012),
+                      Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: width * 0.025,
+                          vertical: width * 0.012,
+                        ),
+                        decoration: BoxDecoration(
+                          color: badge.bg,
+                          borderRadius: BorderRadius.circular(width * 0.03),
+                          border: Border.all(color: badge.border),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
                               width: width * 0.010,
                               height: width * 0.010,
                               decoration: BoxDecoration(
@@ -655,23 +651,51 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
                                 shape: BoxShape.circle,
                               ),
                             ),
-                      SizedBox(width: width * 0.012),
-                      Text(
-                        profileLoading ? 'Loading...' : badge.label,
-                        style: TextStyle(
-                          fontSize: width * 0.028,
-                          color: badge.text,
-                          fontWeight: FontWeight.w600,
+                            SizedBox(width: width * 0.012),
+                            Text(
+                              badge.label,
+                              style: TextStyle(
+                                fontSize: width * 0.028,
+                                color: badge.text,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
                   ),
-                ),
-              ],
-            ),
           ),
         ],
       ),
+    );
+  }
+
+  /// Name · email · status pill, shimmered while the profile is in flight.
+  /// Sized off the same design width as the real block so the card holds its
+  /// height on phone, tablet and the wide web banner alike.
+  Widget _buildProfileCardSkeleton(double width) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        AppShimmerBox(
+          width: width * 0.46,
+          height: width * 0.045,
+          radius: width * 0.012,
+        ),
+        SizedBox(height: width * 0.016),
+        AppShimmerBox(
+          width: width * 0.34,
+          height: width * 0.030,
+          radius: width * 0.008,
+        ),
+        SizedBox(height: width * 0.018),
+        AppShimmerBox(
+          width: width * 0.30,
+          height: width * 0.052,
+          radius: width * 0.03,
+        ),
+      ],
     );
   }
 
@@ -683,21 +707,12 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
   ) {
     final size = width * 0.16;
 
-    if (profileLoading) {
-      return Container(
-        color: const Color(0xFFE5E7EB),
-        child: const Center(
-          child: SizedBox(
-            width: 16,
-            height: 16,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: AppColors.primaryBlue,
-            ),
-          ),
-        ),
-      );
-    }
+    // Shimmer for both "profile fetching" and "photo downloading" so the avatar
+    // matches the shimmered name/email beside it instead of spinning.
+    Widget shimmer() =>
+        AppShimmerBox(width: size, height: size, radius: size / 2);
+
+    if (profileLoading) return shimmer();
 
     if (facePhotoUrl != null && facePhotoUrl.isNotEmpty) {
       return CachedNetworkImage(
@@ -707,19 +722,7 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
         width: size,
         height: size,
         fit: BoxFit.cover,
-        placeholder: (context, url) => Container(
-          color: const Color(0xFFE5E7EB),
-          child: const Center(
-            child: SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: AppColors.primaryBlue,
-              ),
-            ),
-          ),
-        ),
+        placeholder: (context, url) => shimmer(),
         errorWidget: (context, url, error) =>
             Image.asset('assets/images/profilenew.webp', fit: BoxFit.cover),
       );

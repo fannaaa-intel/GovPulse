@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../theme/app_colors.dart';
+import '../../loading/loading_overlay.dart';
 import '../home_enums.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
@@ -67,23 +68,13 @@ class HomeProfileCard extends StatelessWidget {
   Widget _buildAvatar(double width) {
     final size = width * 0.17;
 
-    if (profileLoading) {
-      return Container(
-        width: size,
-        height: size,
-        color: const Color(0xFFE5E7EB),
-        child: Center(
-          child: SizedBox(
-            width: size * 0.40,
-            height: size * 0.40,
-            child: const CircularProgressIndicator(
-              strokeWidth: 2,
-              color: AppColors.primaryBlue,
-            ),
-          ),
-        ),
-      );
-    }
+    // Both the "profile row still fetching" and the "photo still downloading"
+    // states shimmer rather than spin, so the avatar reads as the same
+    // placeholder the rest of the card uses instead of a second loading idiom.
+    Widget shimmer() =>
+        AppShimmerBox(width: size, height: size, radius: size / 2);
+
+    if (profileLoading) return shimmer();
 
     if (facePhotoUrl != null && facePhotoUrl!.isNotEmpty) {
       return CachedNetworkImage(
@@ -95,21 +86,7 @@ class HomeProfileCard extends StatelessWidget {
         fit: BoxFit.cover,
         fadeInDuration: const Duration(milliseconds: 300),
         fadeOutDuration: const Duration(milliseconds: 100),
-        placeholder: (context, url) => Container(
-          width: size,
-          height: size,
-          color: const Color(0xFFE5E7EB),
-          child: Center(
-            child: SizedBox(
-              width: size * 0.40,
-              height: size * 0.40,
-              child: const CircularProgressIndicator(
-                strokeWidth: 2,
-                color: AppColors.primaryBlue,
-              ),
-            ),
-          ),
-        ),
+        placeholder: (context, url) => shimmer(),
         errorWidget: (context, url, error) => Image.asset(
           'assets/images/profilenew.webp',
           fit: BoxFit.cover,
@@ -124,6 +101,34 @@ class HomeProfileCard extends StatelessWidget {
       fit: BoxFit.cover,
       width: size,
       height: size,
+    );
+  }
+
+  /// Name + handle + status badge, shimmered while the profile row is in
+  /// flight. Widths are fractions of the design width so the block keeps its
+  /// proportions on phone, landscape and the 480-capped web column.
+  Widget _buildIdentitySkeleton(double width) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        AppShimmerBox(
+          width: width * 0.44,
+          height: width * 0.052,
+          radius: width * 0.012,
+        ),
+        SizedBox(height: width * 0.016),
+        AppShimmerBox(
+          width: width * 0.26,
+          height: width * 0.030,
+          radius: width * 0.008,
+        ),
+        SizedBox(height: width * 0.018),
+        AppShimmerBox(
+          width: width * 0.34,
+          height: width * 0.055,
+          radius: width * 0.03,
+        ),
+      ],
     );
   }
 
@@ -256,62 +261,55 @@ class HomeProfileCard extends StatelessWidget {
                 Expanded(
                   child: Padding(
                     padding: EdgeInsets.only(top: width * 0.012),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          fullName ?? username,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: width * 0.052,
-                            fontWeight: FontWeight.w700,
-                            color: const Color(0xFF1F2937),
-                          ),
-                        ),
-                        if (fullName != null) ...[
-                          SizedBox(height: width * 0.004),
-                          Text(
-                            '@$username',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: width * 0.030,
-                              fontWeight: FontWeight.w400,
-                              color: const Color(0xFF6B7280),
-                            ),
-                          ),
-                        ],
-                        if (!isVerified) ...[
-                          SizedBox(height: width * 0.008),
-                          AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 350),
-                            child: Container(
-                              key: ValueKey(verifStatus),
-                              padding: EdgeInsets.symmetric(
-                                horizontal: width * 0.025,
-                                vertical: width * 0.012,
-                              ),
-                              decoration: BoxDecoration(
-                                color: badge.bg,
-                                borderRadius: BorderRadius.circular(
-                                  width * 0.03,
+                    child: profileLoading
+                        ? _buildIdentitySkeleton(width)
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                fullName ?? username,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: width * 0.052,
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFF1F2937),
                                 ),
-                                border: Border.all(color: badge.border),
                               ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  profileLoading
-                                      ? SizedBox(
-                                          width: width * 0.022,
-                                          height: width * 0.022,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 1.5,
-                                            color: badge.dot,
-                                          ),
-                                        )
-                                      : Container(
+                              if (fullName != null) ...[
+                                SizedBox(height: width * 0.004),
+                                Text(
+                                  '@$username',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: width * 0.030,
+                                    fontWeight: FontWeight.w400,
+                                    color: const Color(0xFF6B7280),
+                                  ),
+                                ),
+                              ],
+                              if (!isVerified) ...[
+                                SizedBox(height: width * 0.008),
+                                AnimatedSwitcher(
+                                  duration: const Duration(milliseconds: 350),
+                                  child: Container(
+                                    key: ValueKey(verifStatus),
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: width * 0.025,
+                                      vertical: width * 0.012,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: badge.bg,
+                                      borderRadius: BorderRadius.circular(
+                                        width * 0.03,
+                                      ),
+                                      border: Border.all(color: badge.border),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Container(
                                           width: width * 0.010,
                                           height: width * 0.010,
                                           decoration: BoxDecoration(
@@ -319,35 +317,60 @@ class HomeProfileCard extends StatelessWidget {
                                             shape: BoxShape.circle,
                                           ),
                                         ),
-                                  SizedBox(width: width * 0.012),
-                                  Flexible(
-                                    child: Text(
-                                      profileLoading
-                                          ? 'Loading...'
-                                          : badge.label,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        fontSize: width * 0.030,
-                                        color: badge.text,
-                                      ),
+                                        SizedBox(width: width * 0.012),
+                                        Flexible(
+                                          child: Text(
+                                            badge.label,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontSize: width * 0.030,
+                                              color: badge.text,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
-                                ],
-                              ),
-                            ),
+                                ),
+                              ],
+                            ],
                           ),
-                        ],
-                      ],
-                    ),
                   ),
                 ),
                 _buildNotificationBadge(width),
               ],
             ),
 
+            // ── Loading body ──
+            // Stands in for the description + action button so the card keeps
+            // roughly its final height and doesn't snap taller once the profile
+            // lands. Nothing below renders while loading — the verification
+            // state isn't known yet, and guessing it would flash "Verify Now"
+            // at an already-verified citizen.
+            if (profileLoading) ...[
+              SizedBox(height: width * 0.04),
+              AppShimmerBox(
+                width: double.infinity,
+                height: width * 0.030,
+                radius: width * 0.008,
+              ),
+              SizedBox(height: width * 0.014),
+              AppShimmerBox(
+                width: width * 0.62,
+                height: width * 0.030,
+                radius: width * 0.008,
+              ),
+              SizedBox(height: width * 0.045),
+              AppShimmerBox(
+                width: double.infinity,
+                height: width * 0.12,
+                radius: width * 0.03,
+              ),
+            ],
+
             // ── Description (non-verified) ──
-            if (desc.isNotEmpty) ...[
+            if (!profileLoading && desc.isNotEmpty) ...[
               SizedBox(height: width * 0.04),
               AnimatedSwitcher(
                 duration: const Duration(milliseconds: 400),
@@ -364,13 +387,13 @@ class HomeProfileCard extends StatelessWidget {
             ],
 
             // ── Verified shimmer strip ──
-            if (isVerified) ...[
+            if (!profileLoading && isVerified) ...[
               SizedBox(height: width * 0.038),
               _VerifiedStripShimmer(width: width),
             ],
 
             // ── Action button (non-verified) ──
-            if (!isVerified) ...[
+            if (!profileLoading && !isVerified) ...[
               SizedBox(height: width * 0.045),
               SizedBox(
                 width: double.infinity,

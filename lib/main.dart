@@ -15,6 +15,7 @@ import 'core/services/push_service.dart';
 import 'firebase_options.dart';
 import 'core/router/app_router.dart';
 import 'features/onboarding/splash_screen.dart';
+import 'features/scan/scan_page.dart';
 import 'core/widgets/Home/Chat-bubbles/home_chat_bubble.dart';
 import 'core/services/chat_service.dart';
 import 'features/home/screen/notification_popup.dart' show NotificationService;
@@ -122,8 +123,29 @@ Future<void> _initServices() async {
 class GovPulseApp extends StatelessWidget {
   const GovPulseApp({super.key});
 
+  /// The route the app was launched with — on web, whatever is in the address
+  /// bar at load. Read once, here, because Navigator consumes it.
+  static String? get _launchRoute =>
+      WidgetsBinding.instance.platformDispatcher.defaultRouteName;
+
   @override
   Widget build(BuildContext context) {
+    // ── Public scan deep link ────────────────────────────────────────────────
+    // An agency officer's phone opens /#/scan/<token> straight from a printed
+    // QR code. That has to bypass the whole startup flow, and specifically it
+    // has to bypass the SPLASH: GovPulseSplashScreen unconditionally
+    // pushReplacement()s to /login, Home, or a console once its animation
+    // finishes (splash_screen.dart _navigateNext), so mounting it here would
+    // load the scan page and then throw it away about three seconds later,
+    // landing an unauthenticated visitor on a login form.
+    //
+    // Making the scan page the `home` widget avoids that entirely — the splash
+    // is never built, so there is nothing to redirect. Everything else is
+    // untouched: the branch is keyed on the /scan/ prefix alone, so the guest
+    // flow, the newsfeed, and every normal launch still start at the splash
+    // exactly as before.
+    final scanToken = scanTokenFrom(_launchRoute);
+
     return MaterialApp(
       navigatorKey: navigatorKey,
       debugShowCheckedModeBanner: false,
@@ -132,7 +154,9 @@ class GovPulseApp extends StatelessWidget {
         scaffoldBackgroundColor: Colors.white, // ← add
       ),
       navigatorObservers: [homeRouteObserver],
-      home: const GovPulseSplashScreen(),
+      home: scanToken != null
+          ? ScanPage(token: scanToken)
+          : const GovPulseSplashScreen(),
       routes: appRoutes,
       onGenerateRoute: onGenerateRoute,
 

@@ -208,6 +208,35 @@ class AdminReport {
   }
 }
 
+/// What the server hands back when a report is endorsed — everything needed to
+/// print the letter and brief the receiving agency.
+///
+/// ⚠ [pin] is PLAINTEXT and EPHEMERAL. The database stores only a bcrypt hash,
+/// so this object holds the only copy in existence. Show it to the admin, let
+/// them note it down, and never persist it anywhere — not in a log, not in
+/// shared preferences, and not in the PDF (which travels with the QR and would
+/// defeat the point of having two factors).
+class EndorsementCredentials {
+  /// Unguessable per-report token; the QR encodes the scan URL built from it.
+  final String token;
+
+  /// 4-digit PIN the agency must key in to advance the report. Sent to them
+  /// through a channel separate from the letter.
+  final String pin;
+
+  /// Human-facing reference printed on the letter, e.g. `END-1A2B3C4D`.
+  final String reference;
+
+  final String agency;
+
+  const EndorsementCredentials({
+    required this.token,
+    required this.pin,
+    required this.reference,
+    required this.agency,
+  });
+}
+
 /// A media item attached to a report, resolved to a public URL for the detail
 /// dialog gallery.
 class ReportMedia {
@@ -607,30 +636,62 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
   // owns it — so the detail's stepper can never show a stage that nothing in
   // the record accounts for.
 
-  /// Endorses an out-of-LGU-scope report to an external entity (e.g. DPWH).
-  /// The endorsed report then appears in that entity's staff-console inbox.
-  /// Passing null clears the endorsement.
-  Future<void> endorse(String id, String? department) async {
-    final now = DateTime.now().toUtc().toIso8601String();
-    final uid = _db.auth.currentUser?.id;
-    final update = <String, dynamic>{
-      'endorsed_to_department': department,
-      'endorsed_at': department == null ? null : now,
-      'endorsed_by': department == null ? null : uid,
-    };
-    if (department != null) {
-      // Endorsing = accepting the report OUT to an external entity. Ownership
-      // leaves the LGU, so clear any internal assignment, and auto-advance a
-      // still-Pending report to Under review (never leave it looking ignored).
-      update['assigned_to_department'] = null;
-      update['assigned_at'] = null;
-      final matches = _all.where((r) => r.id == id);
-      final current = matches.isEmpty ? null : matches.first;
-      if (current != null && current.status == ReportStatus.pending) {
-        update['status'] = reportStatusToDb(ReportStatus.underReview);
-      }
-    }
-    await _tryUpdate(id, update, ['assigned_to_department', 'assigned_at']);
+  /// Endorses an out-of-LGU-scope report to an external entity (e.g. DPWH),
+  /// with the admin's written [reason].
+  ///
+  /// Goes through the `endorse_report_to_agency` RPC rather than an UPDATE
+  /// because the write is not just a column change: the server mints a signed
+  /// token and a 4-digit PIN, stores only a bcrypt hash of the PIN, records the
+  /// transition, and mirrors the routing columns onto the report — all in one
+  /// transaction. It also re-checks admin rights and the reason, so neither
+  /// depends on this client behaving.
+  ///
+  /// Returns the credentials for the endorsement letter. **The plaintext PIN in
+  /// the result is the only copy that will ever exist** — the server keeps only
+  /// its hash, so if it is not shown to the admin now it is unrecoverable and
+  /// the report must be re-endorsed.
+  ///
+  /// Re-endorsing a report that is already endorsed mints a FRESH token and
+  /// PIN, which invalidates any letter already printed.
+  Future<EndorsementCredentials> endorse(
+    String id,
+    String department,
+    String reason,
+  ) async {
+    final res = await _db.rpc(
+      'endorse_report_to_agency',
+      params: {
+        'p_report': id,
+        'p_agency': department,
+        'p_reason': reason,
+      },
+    );
+    final row = Map<String, dynamic>.from(res as Map);
+    await _reload();
+    return EndorsementCredentials(
+      token: row['token'] as String,
+      pin: row['pin'] as String,
+      reference: row['reference'] as String,
+      agency: (row['agency'] as String?) ?? department,
+    );
+  }
+
+  /// Clears an endorsement — the report comes back into the LGU's queue.
+  ///
+  /// Deliberately separate from [endorse]: this is a plain column reset with no
+  /// credentials involved. The `report_endorsements` row is left in place so the
+  /// transition history survives; a later re-endorsement overwrites it with a
+  /// new token, which is what stops a withdrawn letter's QR from still working.
+  Future<void> clearEndorsement(String id) async {
+    await _tryUpdate(
+      id,
+      {
+        'endorsed_to_department': null,
+        'endorsed_at': null,
+        'endorsed_by': null,
+      },
+      const [],
+    );
   }
 
   /// Admin ACCEPTS a pending report INTO an internal LGU office. Sets the owning

@@ -4,7 +4,7 @@ import 'package:flutter/services.dart'
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../services/chat_service.dart';
 import '../../../theme/app_colors.dart';
-import 'Chat_bubbles_model.dart';
+import 'chat_bubbles_model.dart';
 import 'chat_bubbles_widget.dart';
 import '../Chat-agent/chat_models.dart' as cm;
 import '../Chat-agent/chat_models.dart' show ConversationStage;

@@ -1069,19 +1069,11 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
         width: size,
         height: size,
         fit: BoxFit.cover,
-        placeholder: (context, url) => Container(
-          color: const Color(0xFFE5E7EB),
-          child: const Center(
-            child: SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: AppColors.primaryBlue,
-              ),
-            ),
-          ),
-        ),
+        // Shimmer, not a spinner — the page's own loading state is the
+        // editProfile skeleton, so the avatar keeps the same idiom while the
+        // photo itself is still coming down.
+        placeholder: (context, url) =>
+            AppShimmerBox(width: size, height: size, radius: size / 2),
         errorWidget: (context, url, error) =>
             Image.asset('assets/images/profilenew.webp', fit: BoxFit.cover),
       );

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../admin/providers/admin_reports_provider.dart'
     show ReportStatus, reportStatusLabel;
+import '../../admin/widgets/report_detail_kit.dart' show ReportCategoryIconBox;
 import '../data/staff_repository.dart';
 import '../providers/staff_providers.dart';
 import '../theme/staff_ui.dart';
@@ -357,15 +358,10 @@ class _ReportCard extends StatelessWidget {
       padding: const EdgeInsets.all(13),
       child: Row(
         children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(11),
-            ),
-            child: Icon(Icons.flag_rounded, size: 18, color: color),
-          ),
+          // The category's illustration, same as the Reports list — the card is
+          // labelled by category, so the icon should say the same thing. The
+          // status still reads from the pill beside the barangay.
+          ReportCategoryIconBox(r.categoryKey, size: 40),
           const SizedBox(width: 12),
           Expanded(
             child: Column(

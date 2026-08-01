@@ -53,6 +53,11 @@ dependencies:
   fl_chart: ^1.2.0
   pdf: ^3.11.3
   printing: ^5.13.4
+  # Already resolved transitively via `pdf`; declared directly because the
+  # endorsement QR is drawn from it on screen (core/widgets/qr_view.dart) as
+  # well as inside the PDF, and a direct import of a transitive dependency
+  # breaks the moment `pdf` drops it.
+  barcode: ^2.2.9
 
 dev_dependencies:
   flutter_test:

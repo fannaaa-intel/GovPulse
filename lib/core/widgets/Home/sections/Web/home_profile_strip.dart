@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../loading/loading_overlay.dart';
 import '../../home_enums.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
@@ -141,13 +142,18 @@ class HomeProfileStrip extends StatelessWidget {
             fullName: fullName,
             greeting: _greeting(),
             verifStatus: verifStatus,
+            loading: profileLoading,
           ),
         ),
         const SizedBox(width: 20),
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (isVerified)
+            // The verification stat is profile data, so it shimmers too — the
+            // status isn't known yet and a default would read as "unverified".
+            if (profileLoading)
+              const _StatCardSkeleton()
+            else if (isVerified)
               _StatCard(
                 icon: Icons.shield_rounded,
                 iconColor: const Color(0xFF22C55E),
@@ -190,6 +196,7 @@ class HomeProfileStrip extends StatelessWidget {
                 fullName: fullName,
                 greeting: _greeting(),
                 verifStatus: verifStatus,
+                loading: profileLoading,
               ),
             ),
             _NotifCard(
@@ -199,7 +206,15 @@ class HomeProfileStrip extends StatelessWidget {
             ),
           ],
         ),
-        if (!isVerified) ...[
+        if (profileLoading) ...[
+          const SizedBox(height: 14),
+          const AppShimmerBox(
+            width: double.infinity,
+            height: 41,
+            radius: 12,
+            dark: true,
+          ),
+        ] else if (!isVerified) ...[
           const SizedBox(height: 14),
           _VerifyBanner(isPending: isPending, onTap: onVerifyTap),
         ],
@@ -227,6 +242,11 @@ class _Avatar extends StatelessWidget {
     required this.isVerified,
     this.size = 60,
   });
+
+  /// Shimmer tuned for the strip's navy surface — the light grey placeholder
+  /// used elsewhere would read as a hole punched through the gradient.
+  static Widget _shimmer(double size) =>
+      AppShimmerBox(width: size, height: size, radius: size / 2, dark: true);
 
   @override
   Widget build(BuildContext context) {
@@ -264,20 +284,7 @@ class _Avatar extends StatelessWidget {
             width: size,
             height: size,
             child: loading
-                ? Container(
-                    color: const Color(0xFF1E3A5F),
-                    child: Center(
-                      child: SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white.withOpacity(0.6),
-                        ),
-                      ),
-                    ),
-                  )
-                // AFTER
+                ? _shimmer(size)
                 : (url != null && url!.isNotEmpty)
                 ? CachedNetworkImage(
                     imageUrl: url!,
@@ -285,19 +292,7 @@ class _Avatar extends StatelessWidget {
                     fit: BoxFit.cover,
                     width: size,
                     height: size,
-                    placeholder: (_, _) => Container(
-                      color: const Color(0xFF1E3A5F),
-                      child: Center(
-                        child: SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white.withOpacity(0.6),
-                          ),
-                        ),
-                      ),
-                    ),
+                    placeholder: (_, _) => _shimmer(size),
                     errorWidget: (_, _, _) => Image.asset(
                       'assets/images/profilenew.webp',
                       fit: BoxFit.cover,
@@ -320,12 +315,14 @@ class _NameBlock extends StatelessWidget {
   final String? fullName;
   final String greeting;
   final VerifStatus verifStatus;
+  final bool loading;
 
   const _NameBlock({
     required this.username,
     required this.fullName,
     required this.greeting,
     required this.verifStatus,
+    required this.loading,
   });
 
   /// Returns a short motivational/status saying for each verification state.
@@ -362,8 +359,28 @@ class _NameBlock extends StatelessWidget {
     }
   }
 
+  /// Mirrors the four stacked lines below (greeting · name · saying · handle)
+  /// so the strip holds its height and nothing shifts when the profile lands.
+  Widget _skeleton() {
+    return const Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        AppShimmerBox(width: 96, height: 12, radius: 4, dark: true),
+        SizedBox(height: 7),
+        AppShimmerBox(width: 210, height: 22, radius: 6, dark: true),
+        SizedBox(height: 9),
+        AppShimmerBox(width: 240, height: 11, radius: 4, dark: true),
+        SizedBox(height: 8),
+        AppShimmerBox(width: 170, height: 12, radius: 4, dark: true),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (loading) return _skeleton();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -640,6 +657,41 @@ class _StatCardState extends State<_StatCard> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// The verification [_StatCard] while the profile is still loading. Keeps the
+/// same chrome, padding and 36px icon slot so the row doesn't reflow when the
+/// real card swaps in.
+class _StatCardSkeleton extends StatelessWidget {
+  const _StatCardSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.09),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withOpacity(0.14), width: 1),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AppShimmerBox(width: 36, height: 36, radius: 9, dark: true),
+          SizedBox(width: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AppShimmerBox(width: 84, height: 11, radius: 4, dark: true),
+              SizedBox(height: 5),
+              AppShimmerBox(width: 62, height: 13, radius: 4, dark: true),
+            ],
+          ),
+        ],
       ),
     );
   }

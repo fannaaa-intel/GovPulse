@@ -54,31 +54,60 @@ class AnonPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-      decoration: BoxDecoration(
-        color: kAnonColor.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: kAnonColor.withValues(alpha: 0.28)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: const [
-          Icon(Icons.visibility_off_rounded, size: 12, color: kAnonColor),
-          SizedBox(width: 5),
-          Text(
-            'Anonymous',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: kAnonColor,
-              letterSpacing: 0.2,
+    return Tooltip(
+      message: 'Anonymous — identity withheld',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+        decoration: BoxDecoration(
+          color: kAnonColor.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: kAnonColor.withValues(alpha: 0.28)),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.visibility_off_rounded, size: 12, color: kAnonColor),
+            SizedBox(width: 5),
+            Text(
+              'Anonymous',
+              maxLines: 1,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: kAnonColor,
+                letterSpacing: 0.2,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
+}
+
+/// [AnonPill] made safe for a FLEXED cell.
+///
+/// The pill is a fixed ~98px, so a table column narrower than that reports
+/// overflow instead of adapting. scaleDown shrinks it to fit by however much it
+/// has to — usually a percent or two, which is invisible.
+///
+/// Deliberately NOT a LayoutBuilder, which is the obvious way to write this and
+/// is wrong: these pills also sit inside [SubmissionListCard], whose
+/// IntrinsicHeight asks its subtree for an intrinsic height, and a
+/// LayoutBuilder cannot answer that — it throws. Same reason the overdue chip
+/// uses this trick rather than measuring.
+class ShrinkableAnonPill extends StatelessWidget {
+  const ShrinkableAnonPill({super.key});
+
+  @override
+  Widget build(BuildContext context) => const Align(
+        alignment: Alignment.centerLeft,
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: AnonPill(),
+        ),
+      );
 }
 
 /// Real submitter avatar: profile photo, or a coloured initial fallback.
@@ -175,7 +204,9 @@ class SubmitterInline extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (isAnonymous) {
-      return const Align(alignment: Alignment.centerLeft, child: AnonPill());
+      // Shrinkable: this sits in a flexed table cell that can be narrower than
+      // the pill's fixed width.
+      return const ShrinkableAnonPill();
     }
     return Row(
       children: [

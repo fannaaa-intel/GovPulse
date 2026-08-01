@@ -1,6 +1,5 @@
 import 'dart:typed_data';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -10,6 +9,7 @@ import '../../../core/widgets/modal/media_picker_sheet.dart';
 import '../providers/admin_profile_provider.dart';
 import '../theme/admin_ui.dart';
 import '../widgets/admin_dialog_back.dart';
+import '../widgets/admin_skeleton.dart';
 import '../widgets/admin_snackbar.dart';
 import '../../../core/widgets/app_dialog.dart';
 
@@ -160,7 +160,15 @@ class _AdminProfileFormState extends ConsumerState<_AdminProfileForm> {
       }
     });
 
-    final email = ref.watch(adminProfileProvider).valueOrNull?.email ?? '';
+    final profileAsync = ref.watch(adminProfileProvider);
+    final email = profileAsync.valueOrNull?.email ?? '';
+
+    // Opened before the profile landed: shimmer the form instead of showing
+    // blank fields the user could type into and then have overwritten by the
+    // seed above, or an avatar slot that reads as "no photo set". Gated on
+    // isLoading, not on absence of a value — a failed fetch must fall through
+    // to the real (empty) form rather than shimmer forever.
+    final loading = !_seeded && profileAsync.isLoading;
 
     return Material(
       color: AdminUi.surface,
@@ -207,25 +215,29 @@ class _AdminProfileFormState extends ConsumerState<_AdminProfileForm> {
                     minHeight: widget.fullScreen ? c.maxHeight - 40 : 0,
                   ),
                   child: Center(
-                    child: Form(
-                      key: _formKey,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Center(child: _buildAvatar()),
-                          const SizedBox(height: 20),
-                          _field(_name, 'Full name',
-                              hint: 'e.g. Juan Dela Cruz'),
-                          const SizedBox(height: 12),
-                          _field(_title, 'Title', hint: 'e.g. Administrator'),
-                          const SizedBox(height: 12),
-                          _field(_org, 'Organization', hint: 'e.g. LGU Aparri'),
-                          const SizedBox(height: 12),
-                          _readOnlyEmail(email),
-                        ],
-                      ),
-                    ),
+                    child: loading
+                        ? const _FormSkeleton()
+                        : Form(
+                            key: _formKey,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Center(child: _buildAvatar()),
+                                const SizedBox(height: 20),
+                                _field(_name, 'Full name',
+                                    hint: 'e.g. Juan Dela Cruz'),
+                                const SizedBox(height: 12),
+                                _field(_title, 'Title',
+                                    hint: 'e.g. Administrator'),
+                                const SizedBox(height: 12),
+                                _field(_org, 'Organization',
+                                    hint: 'e.g. LGU Aparri'),
+                                const SizedBox(height: 12),
+                                _readOnlyEmail(email),
+                              ],
+                            ),
+                          ),
                   ),
                 ),
               ),
@@ -261,7 +273,7 @@ class _AdminProfileFormState extends ConsumerState<_AdminProfileForm> {
                   child: SizedBox(
                     height: 52,
                     child: FilledButton.icon(
-                      onPressed: _saving ? null : _save,
+                      onPressed: (_saving || loading) ? null : _save,
                       icon: _saving
                           ? const SizedBox(
                               width: 18,
@@ -314,10 +326,13 @@ class _AdminProfileFormState extends ConsumerState<_AdminProfileForm> {
             child: _pickedBytes != null
                 ? Image.memory(_pickedBytes!, fit: BoxFit.cover)
                 : (_photoUrl != null && _photoUrl!.isNotEmpty)
-                    ? CachedNetworkImage(
-                        imageUrl: _photoUrl!,
+                    // Shimmers while the photo downloads, matching the account
+                    // chip and the rest of the console.
+                    ? SkeletonNetworkImage(
+                        url: _photoUrl!,
                         fit: BoxFit.cover,
-                        errorWidget: (_, _, _) => const Icon(
+                        radius: 48,
+                        errorChild: const Icon(
                           Icons.person_rounded,
                           size: 42,
                           color: AppColors.primaryBlue,
@@ -438,4 +453,47 @@ class _AdminProfileFormState extends ConsumerState<_AdminProfileForm> {
         borderRadius: BorderRadius.circular(AdminUi.controlRadius),
         borderSide: BorderSide(color: c),
       );
+}
+
+/// The editor body while [adminProfileProvider] is still loading. Mirrors the
+/// real layout — 96px avatar, then four label + control pairs — so the dialog
+/// keeps its height and the fields don't jump when the profile arrives. Widths
+/// are `double.infinity`, so it reflows with the dialog on web and with the
+/// full-screen page on phones.
+class _FormSkeleton extends StatelessWidget {
+  const _FormSkeleton();
+
+  Widget _row() => const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SkeletonBox(width: 74, height: 11),
+          SizedBox(height: 8),
+          SkeletonBox(
+            width: double.infinity,
+            height: 40,
+            radius: AdminUi.controlRadius,
+          ),
+        ],
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    return AdminShimmer(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Center(child: SkeletonCircle(size: 96)),
+          const SizedBox(height: 20),
+          _row(),
+          const SizedBox(height: 12),
+          _row(),
+          const SizedBox(height: 12),
+          _row(),
+          const SizedBox(height: 12),
+          _row(),
+        ],
+      ),
+    );
+  }
 }

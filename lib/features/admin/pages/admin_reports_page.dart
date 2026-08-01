@@ -1,14 +1,10 @@
 import 'dart:async';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:video_player/video_player.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/deeplink_highlight.dart';
-import '../../../core/widgets/media_source_badge.dart';
 import '../../../core/widgets/report_work_log.dart';
 import '../../../core/widgets/resolution_media.dart';
-import '../../../core/widgets/ai_detection_badge.dart';
 import '../../staff/data/staff_departments.dart';
 import '../theme/admin_ui.dart';
 import '../providers/admin_reports_provider.dart';
@@ -16,67 +12,19 @@ import '../utils/report_pdf.dart';
 import '../widgets/accept_assign_dialog.dart';
 import '../widgets/admin_detail_screen.dart';
 import '../widgets/endorse_entity_dialog.dart';
+import '../widgets/endorsement_success_dialog.dart';
 import '../widgets/admin_moderation.dart';
 import '../providers/admin_identity_reveal_provider.dart';
 import '../widgets/admin_submission_ui.dart';
+import '../widgets/report_detail_kit.dart';
 import '../widgets/report_status_tracker.dart';
 import '../widgets/revealable_submitter.dart';
-import '../widgets/admin_skeleton.dart';
 import '../widgets/admin_snackbar.dart';
 import '../../../core/widgets/app_dialog.dart';
 
-// ── Category visuals — the same webp illustrations the citizen form uses ──────
-String _categoryAsset(String key) {
-  switch (key) {
-    case 'road':
-      return 'assets/images/report/roadtwo.webp';
-    case 'waste':
-      return 'assets/images/report/bin.webp';
-    case 'drainage':
-      return 'assets/images/report/road.webp';
-    case 'streetlight':
-      return 'assets/images/report/lamppost.webp';
-    case 'environment':
-      return 'assets/images/report/leaf.webp';
-    case 'others':
-    default:
-      return 'assets/images/report/menu.webp';
-  }
-}
-
-IconData _categoryIcon(String key) {
-  switch (key) {
-    case 'road':
-      return Icons.add_road_rounded;
-    case 'waste':
-      return Icons.delete_outline_rounded;
-    case 'drainage':
-      return Icons.water_drop_rounded;
-    case 'streetlight':
-      return Icons.lightbulb_rounded;
-    case 'environment':
-      return Icons.park_rounded;
-    default:
-      return Icons.flag_rounded;
-  }
-}
-
-Color _categoryColor(String key) {
-  switch (key) {
-    case 'road':
-      return const Color(0xFF3B82F6);
-    case 'waste':
-      return const Color(0xFF84CC16);
-    case 'drainage':
-      return const Color(0xFF06B6D4);
-    case 'streetlight':
-      return const Color(0xFFF59E0B);
-    case 'environment':
-      return const Color(0xFF22C55E);
-    default:
-      return const Color(0xFF64748B);
-  }
-}
+// The category visuals, the detail panes, the attachment grid and its viewers
+// all live in report_detail_kit.dart — the staff console shows the same report
+// from the office's side and renders it with the same pieces.
 
 Color _statusColor(ReportStatus s) {
   switch (s) {
@@ -89,32 +37,6 @@ Color _statusColor(ReportStatus s) {
       return AppColors.green;
     case ReportStatus.rejected:
       return AppColors.red;
-  }
-}
-
-class _CategoryIconBox extends StatelessWidget {
-  final String categoryKey;
-  final double size;
-  const _CategoryIconBox(this.categoryKey, {this.size = 40});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = _categoryColor(categoryKey);
-    return Container(
-      width: size,
-      height: size,
-      padding: EdgeInsets.all(size * 0.16),
-      decoration: BoxDecoration(
-        color: AdminUi.subtle,
-        borderRadius: BorderRadius.circular(size * 0.28),
-      ),
-      child: Image.asset(
-        _categoryAsset(categoryKey),
-        fit: BoxFit.contain,
-        errorBuilder: (_, _, _) =>
-            Icon(_categoryIcon(categoryKey), size: size * 0.5, color: c),
-      ),
-    );
   }
 }
 
@@ -590,7 +512,7 @@ class _Results extends StatelessWidget {
           }
           return LayoutBuilder(
             builder: (context, constraints) {
-              if (constraints.maxWidth >= 720) {
+              if (constraints.maxWidth >= kReportTableFrom) {
                 return Column(
                   children: [
                     const _TableHeader(),
@@ -639,7 +561,10 @@ abstract final class _Col {
   static const int submitter = 3;
   static const int barangay = 2;
   static const int progress = 2;
-  static const int status = 2;
+
+  /// Wider than its neighbours on purpose: this cell seats a status pill AND
+  /// up to two flag chips beside it, and it has to do that on ONE line.
+  static const int status = 3;
   static const int date = 2;
 
   /// Fixed, not flexed: just an icon and a count.
@@ -732,7 +657,7 @@ class _TableRow extends StatelessWidget {
               flex: _Col.category,
               child: Row(
                 children: [
-                  _CategoryIconBox(r.categoryKey, size: 30),
+                  ReportCategoryIconBox(r.categoryKey, size: 30),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
@@ -788,25 +713,7 @@ class _TableRow extends StatelessWidget {
                 stages: buildReportStages(r, r.status),
               ),
             ),
-            Expanded(
-              flex: _Col.status,
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Wrap(
-                  spacing: 6,
-                  runSpacing: 4,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    StatusPill(
-                      label: reportStatusLabel(r.status),
-                      color: _statusColor(r.status),
-                    ),
-                    if (r.isOverdue) _OverdueChip(r.ageDays),
-                    if (r.isCorroborated) _ConfirmedChip(r.reporterCount),
-                  ],
-                ),
-              ),
-            ),
+            Expanded(flex: _Col.status, child: _StatusCell(r)),
             Expanded(
               flex: _Col.date,
               child: Text(
@@ -820,6 +727,58 @@ class _TableRow extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// The STATUS column of one table row: the status pill, plus the overdue and
+/// corroboration flags when they apply.
+///
+/// Lays out on ONE line, always. This was a [Wrap], which is what made the
+/// column ragged: a wide status ("In progress") pushed the overdue chip onto a
+/// second line while its neighbours ("Pending") kept theirs on the first, so
+/// rows in the same table stood at different heights and the pills stopped
+/// lining up — the one thing a column of pills exists to do.
+///
+/// Instead the secondary chips give up their labels as the column narrows
+/// (see [ChipDensity]) and the pill itself flexes last. The meaning survives
+/// in the colour, the icon, and the tooltip.
+class _StatusCell extends StatelessWidget {
+  final AdminReport report;
+  const _StatusCell(this.report);
+
+  @override
+  Widget build(BuildContext context) {
+    final r = report;
+    return LayoutBuilder(
+      builder: (context, c) {
+        // Measured against the widest pill this column has to seat ("Under
+        // review", ~85px) plus the 6px gap: the full chip needs ~100 more, the
+        // number-only form ~52, the glyph alone ~26.
+        final density = c.maxWidth >= 195
+            ? ChipDensity.full
+            : (c.maxWidth >= 145 ? ChipDensity.compact : ChipDensity.icon);
+        return Row(
+          children: [
+            // Flexible, so an extreme squeeze ellipsizes the label rather than
+            // overflowing the cell.
+            Flexible(
+              child: StatusPill(
+                label: reportStatusLabel(r.status),
+                color: _statusColor(r.status),
+              ),
+            ),
+            if (r.isOverdue) ...[
+              const SizedBox(width: 6),
+              DetailOverdueChip(r.ageDays, density: density),
+            ],
+            if (r.isCorroborated) ...[
+              const SizedBox(width: 6),
+              _ConfirmedChip(r.reporterCount, density: density),
+            ],
+          ],
+        );
+      },
     );
   }
 }
@@ -1376,48 +1335,6 @@ class _PresetCard extends StatelessWidget {
   );
 }
 
-/// Amber "Overdue · Nd" pill for a report that has aged past its SLA.
-class _OverdueChip extends StatelessWidget {
-  final int days;
-  const _OverdueChip(this.days);
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(
-        color: AppColors.orange.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: AppColors.orange.withValues(alpha: 0.30)),
-      ),
-      // scaleDown so the pill shrinks to fit a narrow status column instead of
-      // overflowing by a hair (and stays safe for two-digit day counts).
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(
-              Icons.schedule_rounded,
-              size: 11,
-              color: AppColors.orange,
-            ),
-            const SizedBox(width: 3),
-            Text(
-              'Overdue · ${days}d',
-              style: const TextStyle(
-                fontSize: 10.5,
-                fontWeight: FontWeight.w700,
-                color: AppColors.orange,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 /// "N reports" — this issue was independently reported by more than one citizen.
 ///
 /// Deliberately blue, not orange: corroboration is a PRIORITY signal, not a
@@ -1425,37 +1342,52 @@ class _OverdueChip extends StatelessWidget {
 /// chip is what makes that visible next to AI urgency.
 class _ConfirmedChip extends StatelessWidget {
   final int reporterCount;
-  const _ConfirmedChip(this.reporterCount);
+  final ChipDensity density;
+  const _ConfirmedChip(this.reporterCount, {this.density = ChipDensity.full});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(
-        color: AppColors.primaryBlue.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(
-          color: AppColors.primaryBlue.withValues(alpha: 0.30),
+    final label = switch (density) {
+      ChipDensity.full => '$reporterCount reports',
+      ChipDensity.compact => '$reporterCount',
+      ChipDensity.icon => null,
+    };
+    return Tooltip(
+      message: '$reporterCount citizens reported this issue',
+      child: Container(
+        padding: EdgeInsets.symmetric(
+          horizontal: label == null ? 4 : 7,
+          vertical: 2,
         ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(
-            Icons.groups_rounded,
-            size: 11,
-            color: AppColors.primaryBlue,
+        decoration: BoxDecoration(
+          color: AppColors.primaryBlue.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: AppColors.primaryBlue.withValues(alpha: 0.30),
           ),
-          const SizedBox(width: 3),
-          Text(
-            '$reporterCount reports',
-            style: const TextStyle(
-              fontSize: 10.5,
-              fontWeight: FontWeight.w700,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.groups_rounded,
+              size: 11,
               color: AppColors.primaryBlue,
             ),
-          ),
-        ],
+            if (label != null) ...[
+              const SizedBox(width: 3),
+              Text(
+                label,
+                maxLines: 1,
+                style: const TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.primaryBlue,
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -1507,7 +1439,7 @@ class _Card extends StatelessWidget {
         children: [
           Row(
             children: [
-              _CategoryIconBox(r.categoryKey, size: 38),
+              ReportCategoryIconBox(r.categoryKey, size: 38),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
@@ -1542,7 +1474,7 @@ class _Card extends StatelessWidget {
               runSpacing: 6,
               children: [
                 if (r.isEndorsed) _EndorsedBadge(r.endorsedToDepartment!),
-                if (r.isOverdue) _OverdueChip(r.ageDays),
+                if (r.isOverdue) DetailOverdueChip(r.ageDays),
                 if (r.isCorroborated) _ConfirmedChip(r.reporterCount),
               ],
             ),
@@ -1592,7 +1524,10 @@ class _ReportDetailDialog extends ConsumerStatefulWidget {
 
 class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
   late ReportStatus _status;
-  late Future<List<ReportMedia>> _mediaFuture;
+
+  /// The report's attachments, mapped into the kit's neutral item so the hero
+  /// thumb and the gallery are the same widgets the staff console uses.
+  late Future<List<DetailMediaItem>> _mediaFuture;
 
   /// Open reports that might be the same issue. Loaded once alongside the media
   /// so the pane doesn't refetch on every rebuild.
@@ -1627,7 +1562,19 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
     _status = widget.report.status;
     _mediaFuture = ref
         .read(adminReportsProvider.notifier)
-        .fetchMedia(widget.report.id);
+        .fetchMedia(widget.report.id)
+        .then(
+          (media) => [
+            for (final m in media)
+              DetailMediaItem(
+                url: m.url,
+                isVideo: m.isVideo,
+                isGpsVerified: m.isGpsVerified,
+                aiScore: m.aiScore,
+                aiStatus: m.aiStatus,
+              ),
+          ],
+        );
     // Only worth asking on the triage desk: that's where a duplicate should be
     // caught, before an office starts work on a twin of a job it already has.
     _dupFuture = widget.report.needsTriage && !widget.report.isDismissed
@@ -1748,24 +1695,45 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
   }
 
   /// Endorses this report to an external entity (out-of-LGU-scope). The report
-  /// then lands in that entity's staff-console inbox.
+  /// then lands in that entity's staff-console inbox, and the server mints the
+  /// token + PIN that back the printed endorsement letter.
   Future<void> _endorse() async {
     final picked = await showEndorseEntityDialog(
       context,
       currentEndorsement: widget.report.endorsedToDepartment,
     );
     if (picked == null || !mounted) return;
+
     setState(() => _busy = true);
     try {
-      await ref
+      if (picked.isClear) {
+        await ref
+            .read(adminReportsProvider.notifier)
+            .clearEndorsement(widget.report.id);
+        if (!mounted) return;
+        setState(() => _busy = false);
+        showAdminSnackBar(
+          context,
+          'Endorsement cleared.',
+          type: AdminSnackType.success,
+        );
+        return;
+      }
+
+      final credentials = await ref
           .read(adminReportsProvider.notifier)
-          .endorse(widget.report.id, picked.isEmpty ? null : picked);
+          .endorse(widget.report.id, picked.agency, picked.reason);
       if (!mounted) return;
       setState(() => _busy = false);
-      showAdminSnackBar(
+
+      // Straight into the success dialog rather than a toast. The PIN it
+      // carries exists nowhere else — the server kept only a hash — so this
+      // must not be something the admin can miss while looking elsewhere.
+      await showEndorsementSuccessDialog(
         context,
-        picked.isEmpty ? 'Endorsement cleared.' : 'Endorsed to $picked.',
-        type: AdminSnackType.success,
+        report: widget.report,
+        credentials: credentials,
+        reason: picked.reason,
       );
     } catch (e) {
       if (!mounted) return;
@@ -2020,7 +1988,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
     );
     final copy = _stageCopy();
 
-    return _Pane(
+    return DetailPane(
       title: 'Update Report Status',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2067,7 +2035,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
   Widget _historyTab() {
     final r = report;
     if (!r.isAssigned && !r.isEndorsed) {
-      return const _EmptyNote(
+      return const DetailEmptyNote(
         icon: Icons.history_rounded,
         text:
             'No history yet. Once this report is accepted and routed to a '
@@ -2297,7 +2265,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
 
   Widget _detailsPane() {
     final r = report;
-    return _Pane(
+    return DetailPane(
       title: 'Report Details',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2314,13 +2282,13 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _HeroThumb(future: _mediaFuture, categoryKey: r.categoryKey),
+              DetailHeroThumb(future: _mediaFuture, categoryKey: r.categoryKey),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _KvRow(
+                    DetailKvRow(
                       label: 'Status',
                       trailing: Wrap(
                         spacing: 6,
@@ -2331,17 +2299,17 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
                             label: reportStatusLabel(_status),
                             color: _statusColor(_status),
                           ),
-                          if (r.isOverdue) _OverdueChip(r.ageDays),
+                          if (r.isOverdue) DetailOverdueChip(r.ageDays),
                           if (r.isCorroborated) _ConfirmedChip(r.reporterCount),
                         ],
                       ),
                     ),
-                    _KvRow(label: 'ID', value: '#RPT-${r.shortId}'),
-                    _KvRow(
+                    DetailKvRow(label: 'ID', value: '#RPT-${r.shortId}'),
+                    DetailKvRow(
                       label: 'Date Reported',
                       value: adminShortDate(r.createdAt),
                     ),
-                    _KvRow(
+                    DetailKvRow(
                       label: 'Time Reported',
                       value: adminClockTime(r.createdAt),
                     ),
@@ -2353,8 +2321,8 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
           const SizedBox(height: 18),
           const Divider(height: 1, color: AdminUi.border),
           const SizedBox(height: 18),
-          _IconSection(
-            icon: _categoryIcon(r.categoryKey),
+          DetailIconSection(
+            icon: reportCategoryIcon(r.categoryKey),
             title: 'Category',
             child: Text(
               r.category,
@@ -2365,12 +2333,12 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
               ),
             ),
           ),
-          _IconSection(
+          DetailIconSection(
             icon: Icons.location_on_rounded,
             title: 'Location',
-            child: _LocationBlock(report: r),
+            child: DetailLocationBlock(barangay: r.barangay, address: r.address),
           ),
-          _IconSection(
+          DetailIconSection(
             icon: Icons.person_rounded,
             title: 'Reported By',
             child: RevealableSubmitter(
@@ -2383,7 +2351,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
               subject: 'reporter',
             ),
           ),
-          _IconSection(
+          DetailIconSection(
             icon: Icons.description_rounded,
             title: 'Details',
             child: Text(
@@ -2395,17 +2363,17 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
               ),
             ),
           ),
-          _IconSection(
+          DetailIconSection(
             icon: Icons.attach_file_rounded,
             title: 'Attachments',
             isLast: !r.isCorroborated,
-            child: _MediaGallery(
+            child: DetailMediaGallery(
               future: _mediaFuture,
               placeholderCount: r.mediaCount,
             ),
           ),
           if (r.isCorroborated)
-            _IconSection(
+            DetailIconSection(
               icon: Icons.groups_rounded,
               title: 'Confirmations',
               isLast: true,
@@ -2433,15 +2401,15 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
     if (!r.isDismissed) {
       if (r.needsTriage) {
         buttons.add(
-          _ActionRow(
+          DetailActionRow(
             children: [
-              _ActionButton(
+              DetailActionButton(
                 label: 'Accept Report',
                 icon: Icons.check_circle_rounded,
                 color: AppColors.green,
                 onTap: _busy ? null : _accept,
               ),
-              _ActionButton(
+              DetailActionButton(
                 label: 'Reject Report',
                 icon: Icons.cancel_rounded,
                 color: AppColors.red,
@@ -2451,7 +2419,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
           ),
         );
         buttons.add(
-          _ActionButton(
+          DetailActionButton(
             label: 'Endorse to external entity',
             icon: Icons.forward_to_inbox_rounded,
             color: AppColors.primaryBlue,
@@ -2461,7 +2429,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
         );
       } else if (rejected) {
         buttons.add(
-          _ActionButton(
+          DetailActionButton(
             label: 'Reopen Report',
             icon: Icons.restart_alt_rounded,
             color: AppColors.primaryBlue,
@@ -2473,17 +2441,17 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
         // Being worked by an office or an external entity — the admin oversees:
         // they can pull it back (reject) or re-route an endorsement.
         buttons.add(
-          _ActionRow(
+          DetailActionRow(
             children: [
               if (r.isEndorsed)
-                _ActionButton(
+                DetailActionButton(
                   label: 'Change endorsement',
                   icon: Icons.swap_horiz_rounded,
                   color: AppColors.primaryBlue,
                   outlined: true,
                   onTap: _busy ? null : _endorse,
                 ),
-              _ActionButton(
+              DetailActionButton(
                 label: 'Reject Report',
                 icon: Icons.cancel_rounded,
                 color: AppColors.red,
@@ -2496,7 +2464,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
     }
 
     buttons.add(
-      _ActionButton(
+      DetailActionButton(
         label: 'Download Report',
         icon: Icons.download_rounded,
         color: AppColors.primaryBlue,
@@ -2504,24 +2472,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
       ),
     );
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Action',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-            color: AdminUi.textPrimary,
-          ),
-        ),
-        const SizedBox(height: 10),
-        for (var i = 0; i < buttons.length; i++) ...[
-          if (i > 0) const SizedBox(height: 10),
-          buttons[i],
-        ],
-      ],
-    );
+    return DetailActionSection(buttons: buttons);
   }
 
   @override
@@ -2577,8 +2528,13 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
           builder: (context, c) {
             // Two columns only once the details pane can still hold a readable
             // ~330px next to the tracker; below that the dialog falls back to
-            // the phone's one-pane-at-a-time tabs.
-            if (c.maxWidth < _kTwoPaneFrom) {
+            // the one-pane-at-a-time tabs.
+            //
+            // Stacking the two panes into one scroll was tried here instead and
+            // REVERTED: it turned a narrow window into a scroll the length of
+            // both panes with no way to skip past one, which is worse than a
+            // switcher that keeps each to about a screen. Don't retry it.
+            if (c.maxWidth < kReportDetailTwoPaneFrom) {
               return Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -2588,7 +2544,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
                       children: [
                         Expanded(child: paneTabs()),
                         const SizedBox(width: 10),
-                        const _PaneCloseButton(),
+                        const DetailPaneCloseButton(),
                       ],
                     ),
                   ),
@@ -2608,7 +2564,11 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
                 // Floats over the details pane's title row (left-aligned, so
                 // the corner is free). Pinned rather than scrolled with the
                 // pane — the way out stays put however far down you are.
-                const Positioned(top: 22, right: 22, child: _PaneCloseButton()),
+                const Positioned(
+                  top: 22,
+                  right: 22,
+                  child: DetailPaneCloseButton(),
+                ),
               ],
             );
           },
@@ -2617,750 +2577,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
     );
   }
 }
-
-/// The dialog's way out, styled to sit on a pane's top-right corner.
-class _PaneCloseButton extends StatelessWidget {
-  const _PaneCloseButton();
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: AdminUi.subtle,
-      shape: const CircleBorder(),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: () => Navigator.pop(context),
-        child: Tooltip(
-          message: 'Close',
-          child: Container(
-            width: 32,
-            height: 32,
-            alignment: Alignment.center,
-            decoration: const BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.fromBorderSide(BorderSide(color: AdminUi.border)),
-            ),
-            child: const Icon(
-              Icons.close_rounded,
-              size: 18,
-              color: AdminUi.textSecondary,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Width at which the detail splits into the reference's two-column layout.
-const double _kTwoPaneFrom = 900;
 
 // ── Detail building blocks ───────────────────────────────────────────────────
 
-/// A titled white card — one of the two panes of the report detail.
-class _Pane extends StatelessWidget {
-  final String title;
-  final Widget child;
-  const _Pane({required this.title, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: AdminUi.surface,
-        borderRadius: BorderRadius.circular(AdminUi.cardRadius),
-        border: Border.all(color: AdminUi.border),
-        boxShadow: AdminUi.cardShadow,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-              color: AdminUi.textPrimary,
-              letterSpacing: -0.4,
-            ),
-          ),
-          const SizedBox(height: 16),
-          child,
-        ],
-      ),
-    );
-  }
-}
-
-/// Square preview of the report's first photo, beside the id/date block.
-/// Falls back to the category illustration when there's no image to show.
-class _HeroThumb extends StatelessWidget {
-  final Future<List<ReportMedia>> future;
-  final String categoryKey;
-  const _HeroThumb({required this.future, required this.categoryKey});
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<List<ReportMedia>>(
-      future: future,
-      builder: (context, snap) {
-        final media = snap.data ?? const <ReportMedia>[];
-        final photos = media.where((m) => !m.isVideo);
-        final url = photos.isEmpty ? null : photos.first.url;
-        final videos = media.where((m) => m.isVideo).toList();
-
-        Widget inner;
-        if (snap.connectionState != ConnectionState.done) {
-          // Shimmer, not a spinner: the box is already the image's final size,
-          // so the placeholder should read as the image arriving rather than as
-          // a control sitting in a hole.
-          inner = const AdminShimmer(
-            child: ColoredBox(color: kSkeletonBase, child: SizedBox.expand()),
-          );
-        } else if (url == null && videos.isNotEmpty) {
-          // Video-only: there IS media here, so the category illustration would
-          // read as "nothing attached". Show a play tile that opens the clip.
-          inner = GestureDetector(
-            onTap: () => showAppDialog(
-              context: context,
-              barrierColor: Colors.black87,
-              builder: (_) => _NetworkVideoDialog(url: videos.first.url),
-            ),
-            child: const Stack(
-              fit: StackFit.expand,
-              children: [
-                ColoredBox(color: Color(0xFF1F2937)),
-                Center(
-                  child: Icon(
-                    Icons.play_circle_fill_rounded,
-                    color: Colors.white70,
-                    size: 32,
-                  ),
-                ),
-              ],
-            ),
-          );
-        } else if (url == null) {
-          inner = _CategoryIconBox(categoryKey, size: 88);
-        } else {
-          inner = GestureDetector(
-            onTap: () => showAppDialog(
-              context: context,
-              barrierColor: Colors.black87,
-              builder: (_) => _FullscreenImageDialog(url: url),
-            ),
-            child: SkeletonNetworkImage(
-              url: url,
-              errorChild: _CategoryIconBox(categoryKey, size: 88),
-            ),
-          );
-        }
-
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(10),
-          child: Container(
-            width: 88,
-            height: 88,
-            color: AdminUi.subtle,
-            child: inner,
-          ),
-        );
-      },
-    );
-  }
-}
-
-/// "Label: value" line in the details pane's id block. Pass [value] for plain
-/// text or [trailing] for a widget (the status pill).
-class _KvRow extends StatelessWidget {
-  final String label;
-  final String? value;
-  final Widget? trailing;
-  const _KvRow({required this.label, this.value, this.trailing});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '$label: ',
-            style: const TextStyle(
-              fontSize: 12.5,
-              fontWeight: FontWeight.w700,
-              color: AdminUi.textPrimary,
-            ),
-          ),
-          Expanded(
-            child:
-                trailing ??
-                Text(
-                  value ?? '—',
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    height: 1.35,
-                    color: AdminUi.textSecondary,
-                  ),
-                ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// An icon + heading with its content indented beneath — the repeating unit of
-/// the details pane (Category, Location, Reported By, Details, Attachments).
-class _IconSection extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final Widget child;
-  final bool isLast;
-  const _IconSection({
-    required this.icon,
-    required this.title,
-    required this.child,
-    this.isLast = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(bottom: isLast ? 0 : 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 15, color: AppColors.primaryBlue),
-              const SizedBox(width: 7),
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: AdminUi.textPrimary,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Padding(padding: const EdgeInsets.only(left: 22), child: child),
-        ],
-      ),
-    );
-  }
-}
-
-/// Lays action buttons side by side, dropping to a stack when the pane is too
-/// narrow to keep both labels on one line.
-class _ActionRow extends StatelessWidget {
-  final List<Widget> children;
-  const _ActionRow({required this.children});
-
-  @override
-  Widget build(BuildContext context) {
-    if (children.length == 1) return children.first;
-    return LayoutBuilder(
-      builder: (context, c) {
-        if (c.maxWidth < 300) {
-          return Column(
-            children: [
-              for (var i = 0; i < children.length; i++) ...[
-                if (i > 0) const SizedBox(height: 10),
-                children[i],
-              ],
-            ],
-          );
-        }
-        return Row(
-          children: [
-            for (var i = 0; i < children.length; i++) ...[
-              if (i > 0) const SizedBox(width: 10),
-              Expanded(child: children[i]),
-            ],
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _ActionButton extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final Color color;
-  final bool outlined;
-  final VoidCallback? onTap;
-  const _ActionButton({
-    required this.label,
-    required this.icon,
-    required this.color,
-    this.onTap,
-    this.outlined = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final style = ButtonStyle(
-      padding: const WidgetStatePropertyAll(
-        EdgeInsets.symmetric(horizontal: 10, vertical: 13),
-      ),
-      shape: WidgetStatePropertyAll(
-        RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AdminUi.controlRadius),
-        ),
-      ),
-    );
-    final content = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 17),
-        const SizedBox(width: 7),
-        Flexible(
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
-          ),
-        ),
-      ],
-    );
-
-    return SizedBox(
-      width: double.infinity,
-      child: outlined
-          ? OutlinedButton(
-              onPressed: onTap,
-              style: style.merge(
-                OutlinedButton.styleFrom(
-                  foregroundColor: color,
-                  side: BorderSide(color: color.withValues(alpha: 0.45)),
-                ),
-              ),
-              child: content,
-            )
-          : FilledButton(
-              onPressed: onTap,
-              style: style.merge(
-                FilledButton.styleFrom(backgroundColor: color),
-              ),
-              child: content,
-            ),
-    );
-  }
-}
-
-/// Muted placeholder for a section that has nothing to show yet.
-class _EmptyNote extends StatelessWidget {
-  final IconData icon;
-  final String text;
-  const _EmptyNote({required this.icon, required this.text});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AdminUi.subtle,
-        borderRadius: BorderRadius.circular(AdminUi.controlRadius),
-        border: Border.all(color: AdminUi.border),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 16, color: AdminUi.textMuted),
-          const SizedBox(width: 9),
-          Expanded(
-            child: Text(
-              text,
-              style: const TextStyle(
-                fontSize: 12.5,
-                height: 1.45,
-                color: AdminUi.textMuted,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// The reported location as one line — "Brgy. Maura, Zone 1". Sits under the
-/// Location heading in the details pane, which already supplies the pin icon,
-/// so this stays plain text rather than a box of its own.
-class _LocationBlock extends StatelessWidget {
-  final AdminReport report;
-  const _LocationBlock({required this.report});
-
-  @override
-  Widget build(BuildContext context) {
-    final r = report;
-    final parts = [
-      if (r.barangay != null && r.barangay!.isNotEmpty) r.barangay!,
-      if (r.address != null && r.address!.isNotEmpty) r.address!,
-    ];
-    if (parts.isEmpty) {
-      return const Text(
-        'No location provided.',
-        style: TextStyle(fontSize: 13, color: AdminUi.textMuted),
-      );
-    }
-    return Text(
-      parts.join(', '),
-      style: const TextStyle(
-        fontSize: 13,
-        height: 1.4,
-        color: AdminUi.textSecondary,
-      ),
-    );
-  }
-}
-
 // ── Media gallery + viewers ────────────────────────────────────────────────────
-
-class _MediaGallery extends StatelessWidget {
-  final Future<List<ReportMedia>> future;
-
-  /// How many thumbs to shape the skeleton with. The list row already knows the
-  /// media count, so the placeholder grid matches the real one and the pane
-  /// doesn't reflow when the signed URLs land.
-  final int placeholderCount;
-  const _MediaGallery({required this.future, this.placeholderCount = 0});
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<List<ReportMedia>>(
-      future: future,
-      builder: (context, snap) {
-        final media = snap.data ?? const <ReportMedia>[];
-        final loading = snap.connectionState != ConnectionState.done;
-        if (loading && placeholderCount == 0) return const SizedBox.shrink();
-        if (!loading && media.isEmpty) {
-          return const Text(
-            'No attachments.',
-            style: TextStyle(fontSize: 13, color: AdminUi.textMuted),
-          );
-        }
-        // Tiles size to the pane rather than a hardcoded 92, so the grid ends
-        // flush on a narrow details column and stays tappable on a phone. The
-        // skeleton uses the same maths, so nothing reflows when the URLs land.
-        return LayoutBuilder(
-          builder: (context, c) {
-            final tile = attachmentTileSize(c.maxWidth);
-            if (loading) {
-              // One shimmer over the whole group, so the sweep crosses the grid
-              // as a single band rather than each tile animating on its own.
-              return AdminShimmer(
-                child: Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    for (var i = 0; i < placeholderCount; i++)
-                      SkeletonBox(width: tile, height: tile, radius: 10),
-                  ],
-                ),
-              );
-            }
-            return Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [
-                for (final m in media) _MediaThumb(item: m, size: tile),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-}
-
-class _MediaThumb extends StatelessWidget {
-  final ReportMedia item;
-
-  /// Side of the square tile. The gallery sizes this to the pane it's in — see
-  /// [attachmentTileSize].
-  final double size;
-  const _MediaThumb({required this.item, this.size = 92});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () {
-        if (item.isVideo) {
-          showAppDialog(
-            context: context,
-            barrierColor: Colors.black87,
-            builder: (_) => _NetworkVideoDialog(url: item.url),
-          );
-        } else {
-          showAppDialog(
-            context: context,
-            barrierColor: Colors.black87,
-            builder: (_) => _FullscreenImageDialog(url: item.url),
-          );
-        }
-      },
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(10),
-        child: Container(
-          width: size,
-          height: size,
-          color: AdminUi.subtle,
-          child: item.isVideo
-              ? Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    const ColoredBox(color: Color(0xFF1F2937)),
-                    const Center(
-                      child: Icon(
-                        Icons.play_circle_fill_rounded,
-                        color: Colors.white70,
-                        size: 34,
-                      ),
-                    ),
-                    const Positioned(
-                      left: 5,
-                      bottom: 5,
-                      child: Icon(
-                        Icons.videocam_rounded,
-                        size: 14,
-                        color: Colors.white70,
-                      ),
-                    ),
-                    Positioned(
-                      top: 5,
-                      left: 5,
-                      child: MediaSourceBadge(verified: item.isGpsVerified),
-                    ),
-                    // AI-generated-image flag (top-right, opposite the source
-                    // badge). Compact on the small 92px thumb to avoid collision.
-                    Positioned(
-                      top: 5,
-                      right: 5,
-                      child: AiDetectionBadge(
-                        score: item.aiScore,
-                        status: item.aiStatus,
-                        compact: true,
-                      ),
-                    ),
-                  ],
-                )
-              : Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    SkeletonNetworkImage(
-                      url: item.url,
-                      errorChild: const ColoredBox(
-                        color: AdminUi.subtle,
-                        child: Icon(
-                          Icons.broken_image_rounded,
-                          color: AdminUi.textMuted,
-                          size: 22,
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      right: 5,
-                      bottom: 5,
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.45),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: const Icon(
-                          Icons.zoom_in_rounded,
-                          size: 13,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      top: 5,
-                      left: 5,
-                      child: MediaSourceBadge(verified: item.isGpsVerified),
-                    ),
-                    // AI-generated-image flag (top-right, opposite the source
-                    // badge). Compact on the small 92px thumb to avoid collision.
-                    Positioned(
-                      top: 5,
-                      right: 5,
-                      child: AiDetectionBadge(
-                        score: item.aiScore,
-                        status: item.aiStatus,
-                        compact: true,
-                      ),
-                    ),
-                  ],
-                ),
-        ),
-      ),
-    );
-  }
-}
-
-class _FullscreenImageDialog extends StatelessWidget {
-  final String url;
-  const _FullscreenImageDialog({required this.url});
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      insetPadding: EdgeInsets.zero,
-      child: Stack(
-        children: [
-          Center(
-            child: InteractiveViewer(
-              // Cached like the thumbs: the full-size photo is the console's
-              // heaviest fetch, and reopening the same one shouldn't pay for it
-              // twice. Shares the thumbnail's cache entry — same signed url.
-              child: CachedNetworkImage(
-                imageUrl: url,
-                fit: BoxFit.contain,
-                placeholder: (_, _) => const SizedBox(
-                  width: 56,
-                  height: 56,
-                  child: Center(
-                    child: CircularProgressIndicator(color: Colors.white54),
-                  ),
-                ),
-                errorWidget: (_, _, _) => const Icon(
-                  Icons.broken_image_rounded,
-                  color: Colors.white54,
-                  size: 40,
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            top: 40,
-            right: 16,
-            child: _CloseButton(onTap: () => Navigator.pop(context)),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _CloseButton extends StatelessWidget {
-  final VoidCallback onTap;
-  const _CloseButton({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.5),
-          shape: BoxShape.circle,
-        ),
-        child: const Icon(Icons.close_rounded, color: Colors.white),
-      ),
-    );
-  }
-}
-
-class _NetworkVideoDialog extends StatefulWidget {
-  final String url;
-  const _NetworkVideoDialog({required this.url});
-
-  @override
-  State<_NetworkVideoDialog> createState() => _NetworkVideoDialogState();
-}
-
-class _NetworkVideoDialogState extends State<_NetworkVideoDialog> {
-  late VideoPlayerController _controller;
-  bool _ready = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url));
-    _controller
-        .initialize()
-        .then((_) {
-          if (!mounted) return;
-          setState(() => _ready = true);
-          _controller.play();
-        })
-        .catchError((Object e) {
-          debugPrint('Video init error: $e');
-          return null;
-        });
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      insetPadding: EdgeInsets.zero,
-      child: Stack(
-        children: [
-          Center(
-            child: _ready
-                ? AspectRatio(
-                    aspectRatio: _controller.value.aspectRatio,
-                    child: VideoPlayer(_controller),
-                  )
-                : const CircularProgressIndicator(color: Colors.white),
-          ),
-          if (_ready)
-            Center(
-              child: GestureDetector(
-                onTap: () => setState(() {
-                  _controller.value.isPlaying
-                      ? _controller.pause()
-                      : _controller.play();
-                }),
-                child: Container(
-                  color: Colors.transparent,
-                  width: double.infinity,
-                  height: double.infinity,
-                ),
-              ),
-            ),
-          if (_ready)
-            Positioned(
-              bottom: 60,
-              left: 16,
-              right: 16,
-              child: VideoProgressIndicator(
-                _controller,
-                allowScrubbing: true,
-                colors: const VideoProgressColors(
-                  playedColor: Colors.white,
-                  bufferedColor: Colors.white38,
-                  backgroundColor: Colors.white24,
-                ),
-              ),
-            ),
-          Positioned(
-            top: 40,
-            right: 16,
-            child: _CloseButton(onTap: () => Navigator.pop(context)),
-          ),
-        ],
-      ),
-    );
-  }
-}

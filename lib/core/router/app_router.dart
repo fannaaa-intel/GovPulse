@@ -50,6 +50,7 @@ import '../../features/home/settings/privacy-policy/privacy_policy_screen.dart';
 import '../../features/home/settings/about/about_govpulse_screen.dart';
 import '../../features/admin/screens/admin_dashboard_screen.dart';
 import '../../features/staff/screens/staff_console_screen.dart';
+import '../../features/scan/scan_page.dart';
 
 /// Required by [MaterialApp.navigatorObservers] for home route tracking.
 final RouteObserver<ModalRoute<void>> homeRouteObserver =
@@ -127,7 +128,45 @@ Map<String, WidgetBuilder> get appRoutes => {
 
 // ─── onGenerateRoute ──────────────────────────────────────────────────────────
 
+/// URL prefix of the public endorsement scan page. A token is appended.
+const String kScanRoutePrefix = '/scan/';
+
+/// The token in `/scan/<token>`, or null when [name] is not a scan route.
+///
+/// Shared by the router and by `main()`, which has to recognise the deep link
+/// BEFORE the app is built — see the note on [onGenerateRoute]'s scan case.
+String? scanTokenFrom(String? name) {
+  if (name == null || !name.startsWith(kScanRoutePrefix)) return null;
+  final token = name.substring(kScanRoutePrefix.length);
+  // Strip a query string or trailing slash a scanner or share sheet may append.
+  final clean = token.split('?').first.split('#').first.replaceAll('/', '');
+  return clean.isEmpty ? null : clean;
+}
+
 Route<dynamic>? onGenerateRoute(RouteSettings settings) {
+  // ── Public endorsement scan page ───────────────────────────────────────────
+  // Matched by PREFIX, before anything else, because the token is part of the
+  // path and the switch below can only compare whole route names.
+  //
+  // It must also come before the argRequiredRoutes guard: that guard sends
+  // argument-less routes to the splash, and the splash then redirects to
+  // login — which for an unauthenticated agency officer scanning a QR code is
+  // exactly the wrong destination.
+  //
+  // No NetworkWrapper, unlike every other route here. NetworkWrapper is built
+  // for signed-in users; this page has no session, and its own error states
+  // already cover being offline.
+  final scanToken = scanTokenFrom(settings.name);
+  if (scanToken != null) {
+    return PageRouteBuilder(
+      settings: settings,
+      transitionDuration: Duration.zero,
+      reverseTransitionDuration: Duration.zero,
+      pageBuilder: (_, _, _) => ScanPage(token: scanToken),
+      transitionsBuilder: (_, _, _, child) => child,
+    );
+  }
+
   // ── Web refresh / deep-link safety ─────────────────────────────────────────
   // These routes carry in-memory arguments (a report, an event, verification
   // data, …) that are LOST when the browser is refreshed directly on that URL.

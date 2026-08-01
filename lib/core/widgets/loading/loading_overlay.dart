@@ -344,18 +344,38 @@ class _DefaultSpinner extends StatelessWidget {
 }
 
 // ── Shimmer box ───────────────────────────────────────────────────────────────
-class _Shimmer extends StatefulWidget {
+
+/// A single shimmering placeholder block — the citizen-side equivalent of the
+/// admin console's `SkeletonBox` / the staff console's `StaffSkeletonBox`.
+///
+/// The full-page skeletons below are built from these, but it is also public so
+/// that surfaces which render a *profile inline* (the home card, the web profile
+/// strip, the Settings summary card, Edit Profile's avatar) can shimmer just the
+/// parts that are still loading instead of dropping a spinner into the layout.
+/// Sizing is entirely caller-driven — pass width/height derived from the design
+/// width so it stays proportional on phone, tablet and web.
+///
+/// [dark] swaps the fill for a translucent-white pair, for placements on a dark
+/// surface (the navy web profile strip) where the default grey reads as a hole.
+class AppShimmerBox extends StatefulWidget {
   final double width;
   final double height;
   final double radius;
+  final bool dark;
 
-  const _Shimmer({required this.width, required this.height, this.radius = 8});
+  const AppShimmerBox({
+    super.key,
+    required this.width,
+    required this.height,
+    this.radius = 8,
+    this.dark = false,
+  });
 
   @override
-  State<_Shimmer> createState() => _ShimmerState();
+  State<AppShimmerBox> createState() => _AppShimmerBoxState();
 }
 
-class _ShimmerState extends State<_Shimmer>
+class _AppShimmerBoxState extends State<AppShimmerBox>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
   late final Animation<double> _anim;
@@ -378,6 +398,10 @@ class _ShimmerState extends State<_Shimmer>
 
   @override
   Widget build(BuildContext context) {
+    final colors = widget.dark
+        ? const [Color(0x1FFFFFFF), Color(0x3DFFFFFF), Color(0x1FFFFFFF)]
+        : const [Color(0xFFE5E7EB), Color(0xFFF3F4F6), Color(0xFFE5E7EB)];
+
     return AnimatedBuilder(
       animation: _anim,
       builder: (_, _) => Container(
@@ -388,16 +412,25 @@ class _ShimmerState extends State<_Shimmer>
           gradient: LinearGradient(
             begin: Alignment(-1.5 + _anim.value * 3, 0),
             end: Alignment(-0.5 + _anim.value * 3, 0),
-            colors: const [
-              Color(0xFFE5E7EB),
-              Color(0xFFF3F4F6),
-              Color(0xFFE5E7EB),
-            ],
+            colors: colors,
           ),
         ),
       ),
     );
   }
+}
+
+/// Internal alias kept so the skeleton screens below stay terse.
+class _Shimmer extends StatelessWidget {
+  final double width;
+  final double height;
+  final double radius;
+
+  const _Shimmer({required this.width, required this.height, this.radius = 8});
+
+  @override
+  Widget build(BuildContext context) =>
+      AppShimmerBox(width: width, height: height, radius: radius);
 }
 
 // ── Skeleton screen router ────────────────────────────────────────────────────

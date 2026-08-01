@@ -15,15 +15,37 @@ import '../theme/admin_ui.dart';
 //  agencies today, but the list is meant to grow) and the notify-banner from the
 //  design.
 //
-//  Contract with the caller (unchanged from the old picker so endorse logic
-//  stays put): resolves to
-//    • null  → cancelled / dismissed, do nothing;
-//    • ''    → clear the current endorsement;
-//    • name  → endorse to that agency's canonical [StaffDept] name.
+//  Contract with the caller: resolves to
+//    • null                  → cancelled / dismissed, do nothing;
+//    • EndorseChoice.clear   → clear the current endorsement;
+//    • EndorseChoice(...)    → endorse to that agency's canonical [StaffDept]
+//                              name, with the reason the admin typed.
 //  Responsiveness mirrors the Accept dialog — see that file's header.
 // ════════════════════════════════════════════════════════════════════════════
 
 const Color _selectBlue = Color(0xFF2563EB);
+
+/// Longest reason accepted. The reason is reproduced verbatim in the body of a
+/// printed one-page letter, so this is a layout constraint as much as a data
+/// one.
+const int kEndorseReasonMaxLength = 600;
+
+/// What the dialog resolves to. See the file header for the full contract.
+class EndorseChoice {
+  /// Canonical [StaffDepartments.external] name, or empty to clear.
+  final String agency;
+
+  /// Why the report is being endorsed. Required when [agency] is set; printed
+  /// on the endorsement letter and shown on the agency's scan page.
+  final String reason;
+
+  const EndorseChoice({required this.agency, required this.reason});
+
+  /// Drop the current endorsement and return the report to the LGU.
+  static const EndorseChoice clear = EndorseChoice(agency: '', reason: '');
+
+  bool get isClear => agency.isEmpty;
+}
 
 /// One external agency as shown on a card. [name] is the canonical
 /// [StaffDepartments.external] value returned to the caller; [display] is the
@@ -102,11 +124,11 @@ const List<_AgencyData> _agencies = [
 /// endorsed) starts selected so "Change endorsement" opens on the current pick
 /// and enables the clear affordance. See the contract in the file header for
 /// the resolved value.
-Future<String?> showEndorseEntityDialog(
+Future<EndorseChoice?> showEndorseEntityDialog(
   BuildContext context, {
   String? currentEndorsement,
 }) {
-  return showAppDialog<String>(
+  return showAppDialog<EndorseChoice>(
     context: context,
     builder: (_) =>
         _EndorseEntityDialog(currentEndorsement: currentEndorsement),
@@ -124,6 +146,39 @@ class _EndorseEntityDialog extends StatefulWidget {
 class _EndorseEntityDialogState extends State<_EndorseEntityDialog> {
   late String? _selected = widget.currentEndorsement;
   String _query = '';
+
+  final TextEditingController _reason = TextEditingController();
+
+  /// Set once Send has been pressed with an empty reason, so the field only
+  /// turns red after the admin has actually tried to submit — not while they
+  /// are still picking an agency.
+  bool _reasonTouched = false;
+
+  @override
+  void dispose() {
+    _reason.dispose();
+    super.dispose();
+  }
+
+  String get _reasonText => _reason.text.trim();
+  bool get _reasonMissing => _reasonText.isEmpty;
+
+  /// Validates, then resolves the dialog. Endorsing is irreversible from the
+  /// citizen's point of view (ownership leaves the LGU) and mints a printed
+  /// letter, so both fields are checked here as well as on the server.
+  void _submit() {
+    final agency = _selected;
+    if (agency == null || agency.isEmpty) return;
+
+    if (_reasonMissing) {
+      setState(() => _reasonTouched = true);
+      return;
+    }
+
+    Navigator.of(context).pop(
+      EndorseChoice(agency: agency, reason: _reasonText),
+    );
+  }
 
   List<_AgencyData> get _filtered {
     final q = _query.trim().toLowerCase();
@@ -316,8 +371,111 @@ class _EndorseEntityDialogState extends State<_EndorseEntityDialog> {
               );
             },
           ),
+        const SizedBox(height: 20),
+        _reasonField(narrow),
         const SizedBox(height: 18),
         _notifyBanner(),
+      ],
+    );
+  }
+
+  /// Required free-text justification.
+  ///
+  /// Not a formality: this sentence is reproduced verbatim in the body of the
+  /// printed endorsement letter and shown to the receiving agency on the scan
+  /// page, so it is the only place the LGU explains WHY the report is being
+  /// handed over. The server enforces it too — a client-side-only requirement
+  /// is not a requirement.
+  Widget _reasonField(bool narrow) {
+    final showError = _reasonTouched && _reasonMissing;
+
+    OutlineInputBorder border(Color c, [double w = 1]) => OutlineInputBorder(
+      borderRadius: BorderRadius.circular(10),
+      borderSide: BorderSide(color: c, width: w),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Flexible, not a bare Text: a Row hands its non-flex children an
+        // UNBOUNDED main-axis constraint, so the label would never wrap and
+        // would simply overflow once it outgrew the dialog — which it does on a
+        // 360px phone at large system text scales.
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Flexible(
+              child: Text(
+                'Reason for endorsement',
+                style: TextStyle(
+                  fontSize: narrow ? 16 : 18,
+                  fontWeight: FontWeight.w700,
+                  color: AdminUi.textPrimary,
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            const Text(
+              '*',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: AppColors.red,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Explain why this report falls outside LGU scope. This appears on the '
+          'printed endorsement letter.',
+          style: TextStyle(fontSize: 12.5, color: AdminUi.textMuted),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _reason,
+          maxLines: narrow ? 3 : 4,
+          minLines: 3,
+          maxLength: kEndorseReasonMaxLength,
+          textCapitalization: TextCapitalization.sentences,
+          onChanged: (_) {
+            // Once the admin starts typing, clear the error state on the first
+            // keystroke rather than making them submit again to find out.
+            if (_reasonTouched) setState(() {});
+          },
+          style: const TextStyle(fontSize: 13.5, color: AdminUi.textPrimary),
+          decoration: InputDecoration(
+            hintText:
+                'e.g. The affected road is a national highway under DPWH '
+                'jurisdiction, outside municipal maintenance authority.',
+            hintStyle: const TextStyle(
+              fontSize: 13,
+              height: 1.4,
+              color: AdminUi.textMuted,
+            ),
+            errorText: showError
+                ? 'A reason is required before this report can be endorsed.'
+                : null,
+            counterStyle: const TextStyle(
+              fontSize: 11,
+              color: AdminUi.textMuted,
+            ),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 12,
+            ),
+            filled: true,
+            fillColor: AdminUi.subtle,
+            border: border(AdminUi.border),
+            enabledBorder: border(showError ? AppColors.red : AdminUi.border),
+            focusedBorder: border(
+              showError ? AppColors.red : _selectBlue,
+              1.5,
+            ),
+            errorBorder: border(AppColors.red),
+            focusedErrorBorder: border(AppColors.red, 1.5),
+          ),
+        ),
       ],
     );
   }
@@ -568,7 +726,7 @@ class _EndorseEntityDialogState extends State<_EndorseEntityDialog> {
     final canClear = (widget.currentEndorsement ?? '').isNotEmpty;
 
     final clear = TextButton.icon(
-      onPressed: () => Navigator.of(context).pop(''),
+      onPressed: () => Navigator.of(context).pop(EndorseChoice.clear),
       style: TextButton.styleFrom(
         foregroundColor: AppColors.red,
         textStyle: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
@@ -589,8 +747,11 @@ class _EndorseEntityDialogState extends State<_EndorseEntityDialog> {
       child: const Text('Cancel'),
     );
 
+    // Note the button stays ENABLED when the reason is blank. Greying it out
+    // would leave the admin hunting for what is missing; pressing it surfaces
+    // the error on the field itself, which says so.
     final send = FilledButton.icon(
-      onPressed: canSend ? () => Navigator.of(context).pop(_selected) : null,
+      onPressed: canSend ? _submit : null,
       style: FilledButton.styleFrom(
         backgroundColor: _selectBlue,
         disabledBackgroundColor: const Color(0xFFB9C7E8),

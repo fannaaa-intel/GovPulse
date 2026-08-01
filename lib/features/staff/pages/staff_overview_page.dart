@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../admin/providers/admin_reports_provider.dart' show ReportStatus;
+import '../../admin/widgets/report_detail_kit.dart' show ReportCategoryIconBox;
 import '../data/staff_repository.dart' show StaffConversation, StaffReport;
 import '../providers/staff_providers.dart';
 import '../theme/staff_ui.dart';
@@ -398,16 +399,9 @@ class _MiniReportRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: Row(
           children: [
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: StaffUi.accentWash,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Icon(Icons.report_gmailerrorred_rounded,
-                  color: StaffUi.accent, size: 17),
-            ),
+            // The category's illustration, same as the Reports list — the row
+            // is labelled by category, so the icon should say the same thing.
+            ReportCategoryIconBox(r.categoryKey, size: 32),
             const SizedBox(width: 10),
             Expanded(
               child: Column(

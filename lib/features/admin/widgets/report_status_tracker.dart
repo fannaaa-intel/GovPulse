@@ -57,8 +57,7 @@ class ReportStage {
 }
 
 /// How far the report has travelled, as a count of COMPLETED stages (0–4).
-int _completedStages(AdminReport r, ReportStatus status) {
-  final accepted = r.isAssigned || r.isEndorsed;
+int _completedStages(bool accepted, ReportStatus status) {
   switch (status) {
     case ReportStatus.resolved:
       return 4;
@@ -81,8 +80,30 @@ List<ReportStage> buildReportStages(
   AdminReport r,
   ReportStatus status, {
   String? acceptedByName,
+}) => buildReportStagesFrom(
+  status: status,
+  accepted: r.isAssigned || r.isEndorsed,
+  isEndorsed: r.isEndorsed,
+  owner: r.isEndorsed ? r.endorsedToDepartment : r.assignedToDepartment,
+  acceptedAt: r.isEndorsed ? r.endorsedAt : r.assignedAt,
+  acceptedByName: acceptedByName,
+);
+
+/// The same four stages from plain values rather than an [AdminReport] — the
+/// staff console renders this tracker from its own [StaffReport], which carries
+/// only the facts an office is allowed to see.
+///
+/// [accepted] is "triage has passed this on": an office owns it, by assignment
+/// or by endorsement.
+List<ReportStage> buildReportStagesFrom({
+  required ReportStatus status,
+  required bool accepted,
+  bool isEndorsed = false,
+  String? owner,
+  DateTime? acceptedAt,
+  String? acceptedByName,
 }) {
-  final completed = _completedStages(r, status);
+  final completed = _completedStages(accepted, status);
   final rejected = status == ReportStatus.rejected;
 
   ReportStageState stateFor(int step) {
@@ -91,9 +112,6 @@ List<ReportStage> buildReportStages(
     if (step == completed + 1) return ReportStageState.current;
     return ReportStageState.upcoming;
   }
-
-  final owner = r.isEndorsed ? r.endorsedToDepartment : r.assignedToDepartment;
-  final acceptedAt = r.isEndorsed ? r.endorsedAt : r.assignedAt;
 
   return [
     ReportStage(
@@ -108,7 +126,7 @@ List<ReportStage> buildReportStages(
           (label: 'Accepted by', value: acceptedByName),
         if (owner != null)
           (
-            label: r.isEndorsed ? 'Endorsed to' : 'Assigned department',
+            label: isEndorsed ? 'Endorsed to' : 'Assigned department',
             value: owner,
           ),
       ],
