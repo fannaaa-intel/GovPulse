@@ -34,6 +34,10 @@ import 'package:cached_network_image/cached_network_image.dart';
 // All inner decisions key off the card's own width via LayoutBuilder.
 // ---------------------------------------------------------------------------
 
+/// Identifies the overlapping profile card so a layout test can measure its
+/// true bounds. See home_hero_overlap_test.dart.
+const Key kHomeHeroProfileCardKey = Key('home-hero-profile-card');
+
 class HomeHeroSection extends StatelessWidget {
   final String username;
   final String? fullName;
@@ -96,56 +100,90 @@ class HomeHeroSection extends StatelessWidget {
     // How much the card overlaps the hero image from the bottom.
     final double cardOverhang = screenWidth < 1024 ? 32.0 : 40.0;
 
-    return Stack(
-      clipBehavior: Clip.none,
+    // ── Why this is a Column + Transform, not a Stack + Positioned ──────────
+    // The card used to be Positioned(bottom: 0) inside a Stack whose height was
+    // a CONSTANT (heroHeight + cardOverhang + 40). Anchoring to the bottom means
+    // a taller card grows UPWARD, so the overlap was really `cardHeight -
+    // cardOverhang - 40` — it depended on the card's own height, which is the
+    // one thing that changes most across the responsive range.
+    //
+    // On desktop the card is a short single row and it happened to work out.
+    // On a phone the card falls back to its tall STACKED layout, grew upward,
+    // and buried the hero subtitle completely (reported from a real phone,
+    // 2026-08-01; pinned by home_hero_overlap_test.dart at 320-430px).
+    //
+    // Laying the card out in normal Column flow makes its height accounted for,
+    // and Transform.translate lifts it by EXACTLY cardOverhang without changing
+    // layout — so the overlap is now a fixed amount no matter how tall the card
+    // gets. Transform also transforms hit-testing, so taps still land.
+    // The trailing gap is trimmed by the same amount to keep the whitespace
+    // below the card at the intended ~40px.
+    return Column(
       children: [
         // ── Hero image ──────────────────────────────────────────────────────
         Column(
           children: [
-            SizedBox(
-              width: double.infinity,
-              height: heroHeight,
+            // minHeight, not a fixed height: the hero is allowed to GROW when
+            // its copy needs more room. The text block below is the Stack's
+            // only non-positioned child, so it is what sizes the Stack, and it
+            // reserves cardOverhang at the foot — which makes it structurally
+            // impossible for the copy to end up underneath the profile card.
+            //
+            // A fixed height cannot promise that. The copy wraps to more lines
+            // at narrow widths and at large system text scales (an accessibility
+            // setting, not an edge case), and at ~1.5x the subtitle needs a
+            // third and fourth line that a 280px band has no room for.
+            ConstrainedBox(
+              constraints: BoxConstraints(minHeight: heroHeight),
               child: Stack(
-                fit: StackFit.expand,
+                // Applies to the non-positioned text child, preserving the
+                // vertically-centred look the fixed-height version had.
+                alignment: Alignment.center,
                 children: [
                   // Background image
-                  Image.asset(
-                    'assets/images/bghome.webp',
-                    fit: BoxFit.cover,
-                    alignment: const Alignment(0, 0.3),
-                    errorBuilder: (_, _, _) => Container(
-                      decoration: const BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [Color(0xFFBFE3FF), Color(0xFF7FB8E6)],
+                  Positioned.fill(
+                    child: Image.asset(
+                      'assets/images/bghome.webp',
+                      fit: BoxFit.cover,
+                      alignment: const Alignment(0, 0.3),
+                      errorBuilder: (_, _, _) => Container(
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [Color(0xFFBFE3FF), Color(0xFF7FB8E6)],
+                          ),
                         ),
                       ),
                     ),
                   ),
 
                   // Left-side light scrim
-                  Container(
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.centerLeft,
-                        end: Alignment.centerRight,
-                        colors: [
-                          Color(0x80FFFFFF),
-                          Color(0x10FFFFFF),
-                          Color(0x00FFFFFF),
-                        ],
-                        stops: [0.0, 0.5, 1.0],
+                  const Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                          colors: [
+                            Color(0x80FFFFFF),
+                            Color(0x10FFFFFF),
+                            Color(0x00FFFFFF),
+                          ],
+                          stops: [0.0, 0.5, 1.0],
+                        ),
                       ),
                     ),
                   ),
 
                   // Bottom fade into page background
-                  Align(
-                    alignment: Alignment.bottomCenter,
-                    child: Container(
-                      height: 80,
-                      decoration: const BoxDecoration(
+                  const Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    height: 80,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
                         gradient: LinearGradient(
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
@@ -155,38 +193,50 @@ class HomeHeroSection extends StatelessWidget {
                     ),
                   ),
 
-                  // Hero text — fluid font sizes, aligned to the same band
-                  Center(
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(maxWidth: contentMaxWidth),
-                      child: Padding(
-                        padding: EdgeInsets.fromLTRB(
-                          pad,
-                          screenWidth < 600 ? 36 : 56,
-                          pad,
-                          0,
+                  // Hero text — the Stack's ONLY non-positioned child, so it is
+                  // what gives the Stack its height. A Row (not a Center) does
+                  // the horizontal centring: Row wraps to its child's height,
+                  // whereas Center/Align would expand to fill and defeat the
+                  // whole point of sizing the Stack from the copy.
+                  //
+                  // The bottom padding is the collision guarantee — it reserves
+                  // the strip the profile card is lifted into.
+                  Padding(
+                    padding: EdgeInsets.only(
+                      top: screenWidth < 600 ? 36 : 56,
+                      bottom: cardOverhang + 16,
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Flexible(
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth: contentMaxWidth,
+                            ),
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(horizontal: pad),
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: _HeroText(screenWidth: screenWidth),
+                              ),
+                            ),
+                          ),
                         ),
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: _HeroText(screenWidth: screenWidth),
-                        ),
-                      ),
+                      ],
                     ),
                   ),
                 ],
               ),
             ),
 
-            // Space reserved so the overlapping card doesn't clip page content
-            SizedBox(height: cardOverhang + 40),
           ],
         ),
 
         // ── Profile card — left-aligned, matched to the community column ─────
-        Positioned(
-          left: 0,
-          right: 0,
-          bottom: 0,
+        Transform.translate(
+          offset: Offset(0, -cardOverhang),
           child: Center(
             child: ConstrainedBox(
               constraints: BoxConstraints(maxWidth: contentMaxWidth),
@@ -195,6 +245,11 @@ class HomeHeroSection extends StatelessWidget {
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: SizedBox(
+                    // Keyed so a layout test can measure the card's real
+                    // bounds. Measuring a text INSIDE it silently passes: the
+                    // copy sits below the card's top edge, which is exactly
+                    // where the hero-overlap bug happens.
+                    key: kHomeHeroProfileCardKey,
                     width: cardWidth,
                     child: _ProfileCard(
                       username: username,
@@ -211,6 +266,11 @@ class HomeHeroSection extends StatelessWidget {
             ),
           ),
         ),
+
+        // Lifting the card by cardOverhang leaves that much slack at the foot
+        // of the Column, so only the remainder is added to reach the intended
+        // ~40px of breathing room before the dashboard starts.
+        SizedBox(height: (40 - cardOverhang).clamp(0.0, 40.0)),
       ],
     );
   }
@@ -742,7 +802,11 @@ class _FullAccessChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: _kActionWidth,
-      height: _kActionHeight,
+      // minHeight, not height: the chip stacks an icon over a label, and at
+      // raised system text scales that column needs more than 56px. A fixed
+      // height clips it and logs a RenderFlex overflow.
+      constraints: const BoxConstraints(minHeight: _kActionHeight),
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: const Color(0xFFF0FDF4),
@@ -776,7 +840,11 @@ class _PendingChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: _kActionWidth,
-      height: _kActionHeight,
+      // minHeight, not height: the chip stacks an icon over a label, and at
+      // raised system text scales that column needs more than 56px. A fixed
+      // height clips it and logs a RenderFlex overflow.
+      constraints: const BoxConstraints(minHeight: _kActionHeight),
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: const Color(0xFFFEFCE8),
@@ -825,8 +893,10 @@ class _VerifyNowButtonState extends State<_VerifyNowButton> {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
           curve: Curves.easeOut,
-          height: _kActionHeight,
-          padding: const EdgeInsets.symmetric(horizontal: 18),
+          // See the chips above: minHeight so a scaled-up label grows the
+          // button instead of overflowing it.
+          constraints: const BoxConstraints(minHeight: _kActionHeight),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
           alignment: Alignment.center,
           decoration: BoxDecoration(
             gradient: LinearGradient(
