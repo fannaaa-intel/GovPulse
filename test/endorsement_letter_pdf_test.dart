@@ -8,6 +8,8 @@
 // reason long enough to push onto a second page) and that the PIN never reaches
 // the page.
 
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:govpulse/features/admin/providers/admin_reports_provider.dart';
 import 'package:govpulse/features/admin/utils/endorsement_letter_pdf.dart';
@@ -47,6 +49,35 @@ const _reason =
     'road under DPWH jurisdiction, and is outside the maintenance authority of '
     'this Municipality.';
 
+/// Every FlateDecode stream in [bytes], inflated and concatenated — i.e. the
+/// words actually printed on the page. Streams that are not zlib (embedded
+/// images) fail to inflate and are skipped.
+String _pdfText(List<int> bytes) {
+  final raw = String.fromCharCodes(bytes);
+  final out = StringBuffer();
+  var i = 0;
+  while (true) {
+    final s = raw.indexOf('stream', i);
+    if (s < 0) break;
+    final e = raw.indexOf('endstream', s);
+    if (e < 0) break;
+    var start = s + 'stream'.length;
+    while (start < e &&
+        (raw.codeUnitAt(start) == 13 || raw.codeUnitAt(start) == 10)) {
+      start++;
+    }
+    try {
+      out.write(
+        String.fromCharCodes(ZLibDecoder().convert(bytes.sublist(start, e))),
+      );
+    } catch (_) {
+      // not a flate stream (image data, etc.)
+    }
+    i = e + 'endstream'.length;
+  }
+  return out.toString();
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -75,14 +106,26 @@ void main() {
       now: DateTime(2026, 8, 1),
     );
 
-    // Uncompressed text is searchable in the raw bytes; the reference IS
-    // expected to be there, which is what proves this search can find a short
-    // string at all rather than passing vacuously.
-    final raw = String.fromCharCodes(bytes);
-    expect(raw.contains('END-3F2A1B6C'), isTrue,
-        reason: 'control: the reference should be findable');
-    expect(raw.contains(_credentials.pin), isFalse,
+    // ⚠ Page content is zlib-compressed, so scanning the RAW bytes for a
+    // printed word finds nothing and any "PIN is absent" assertion built on
+    // that passes vacuously. Inflate first, then search. The control below
+    // uses a word that appears ONLY in page text — not in the document title
+    // metadata, which is stored uncompressed and would make a raw-bytes search
+    // look like it works when it does not.
+    //
+    // The control word is taken from the BODY PROSE, not a heading: headings
+    // carry letterSpacing, which the pdf package emits as separate text-showing
+    // operators, so a spaced heading never appears as one contiguous string.
+    // Body prose renders through the same path a leaked PIN would, which is
+    // exactly what this control needs to exercise.
+    final text = _pdfText(bytes);
+    expect(text.contains('Maharlika'), isTrue,
+        reason: 'control: printed page text must be searchable');
+
+    expect(text.contains(_credentials.pin), isFalse,
         reason: 'the PIN must never be printed on the letter');
+    expect(String.fromCharCodes(bytes).contains(_credentials.pin), isFalse,
+        reason: 'the PIN must not leak through document metadata either');
   });
 
   test('survives the awkward reports a real queue contains', () async {
