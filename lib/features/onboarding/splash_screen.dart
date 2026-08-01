@@ -12,6 +12,7 @@ import '../../core/providers/community_posts_provider.dart';
 import '../home/screen/home_screen.dart';
 import '../admin/screens/admin_dashboard_screen.dart';
 import '../staff/screens/staff_console_screen.dart';
+import '../auth/facebook_username_screen.dart';
 
 /// ===============================
 /// SPLASH SCREEN
@@ -148,6 +149,66 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
         } catch (_) {}
 
         if (!mounted) return;
+
+        // ── Finish an OAuth sign-up that a page reload interrupted ──────────
+        // On mobile the Facebook round trip happens in an external browser and
+        // hands control back to the STILL-RUNNING app, so login_screen can
+        // await it and push the username picker itself.
+        //
+        // On web there is no running app to come back to: signInWithOAuth
+        // navigates the whole page away, and the redirect back is a cold start.
+        // Every await in that flow is gone, so a first-time Facebook user would
+        // otherwise land straight in Home having never chosen a username.
+        //
+        // Catching it here is the only place that survives the reload. Scoped
+        // to provider == 'facebook' AND a blank username so it cannot divert an
+        // ordinary email account, which always has a username from signup.
+        final provider = user.appMetadata['provider'] as String?;
+        if (username.trim().isEmpty && provider == 'facebook') {
+          final fbName =
+              (user.userMetadata?['full_name'] ??
+                      user.userMetadata?['name'] ??
+                      '')
+                  as String;
+          Navigator.of(context).pushReplacement(
+            PageRouteBuilder(
+              transitionDuration: Duration.zero,
+              reverseTransitionDuration: Duration.zero,
+              pageBuilder: (_, _, _) => NetworkWrapper(
+                child: FacebookUsernameScreen(
+                  facebookName: fbName,
+                  onComplete: (picked) async {
+                    await Supabase.instance.client
+                        .from('profiles')
+                        .update({'username': picked})
+                        .eq('id', user.id);
+                    if (!mounted) return;
+                    CommunityPostsProvider.instance
+                        .resetForAuthenticatedUser();
+                    Navigator.of(context).pushAndRemoveUntil(
+                      PageRouteBuilder(
+                        transitionDuration: Duration.zero,
+                        reverseTransitionDuration: Duration.zero,
+                        pageBuilder: (_, _, _) =>
+                            NetworkWrapper(child: HomePage(username: picked)),
+                      ),
+                      (route) => false,
+                    );
+                  },
+                  onCancel: () async {
+                    await Supabase.instance.client.auth.signOut();
+                    if (!mounted) return;
+                    Navigator.of(context).pushAndRemoveUntil(
+                      onGenerateRoute(const RouteSettings(name: '/login'))!,
+                      (route) => false,
+                    );
+                  },
+                ),
+              ),
+            ),
+          );
+          return;
+        }
 
         // Make sure the community feed is in authenticated (non-guest) mode.
         CommunityPostsProvider.instance.resetForAuthenticatedUser();

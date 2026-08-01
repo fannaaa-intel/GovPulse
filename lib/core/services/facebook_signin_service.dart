@@ -1,8 +1,29 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class FacebookSignInService {
   static final _client = Supabase.instance.client;
+
+  /// Where the provider sends the browser back to once Facebook is done.
+  ///
+  /// ⚠ THIS MUST DIFFER BY PLATFORM. `io.supabase.govpulse://login-callback` is
+  /// a custom URL SCHEME: an Android/iOS deep link that hands control back to
+  /// the running app. A web browser cannot navigate to it at all, so using it
+  /// on web dead-ends the round trip after Facebook authenticates — which is
+  /// exactly how this failed in production.
+  ///
+  /// On web the return target is the page the user started from.
+  /// `Uri.base.origin` is used rather than a hardcoded production URL so the
+  /// flow also works on localhost during development and on Vercel preview
+  /// deployments, each of which has a different origin.
+  ///
+  /// Whatever this resolves to must ALSO be listed in Supabase →
+  /// Authentication → URL Configuration → Redirect URLs, or the provider
+  /// silently falls back to Site URL.
+  static String get _redirectTo => kIsWeb
+      ? Uri.base.origin
+      : 'io.supabase.govpulse://login-callback';
 
   /// Shown when Facebook returns no email (e.g. phone-only accounts) — the
   /// app's email/password login cannot work without one.
@@ -71,7 +92,7 @@ class FacebookSignInService {
     try {
       await _client.auth.signInWithOAuth(
         OAuthProvider.facebook,
-        redirectTo: 'io.supabase.govpulse://login-callback',
+        redirectTo: _redirectTo,
       );
     } catch (e) {
       await finishWithError(e); // launching the browser itself failed
