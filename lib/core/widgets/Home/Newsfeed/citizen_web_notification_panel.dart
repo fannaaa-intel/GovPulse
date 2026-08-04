@@ -277,15 +277,7 @@ class _CitizenWebNotificationPanelState
   );
 
   Widget _body() {
-    if (_loading) {
-      return const Center(
-        child: SizedBox(
-          width: 22,
-          height: 22,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-      );
-    }
+    if (_loading) return const _NotifListSkeleton();
     if (_items.isEmpty) {
       return const Center(
         child: Text(
@@ -400,4 +392,179 @@ class _CitizenWebNotificationPanelState
     ),
     child: Icon(n.icon, color: n.color, size: 18),
   );
+}
+
+// ── Loading skeleton ────────────────────────────────────────────────────────
+//
+// The rest of the app answers "the data is on its way" with a shaped
+// placeholder, never a spinner: admin's _NotifListSkeleton, staff's, and the
+// phone popup's _NotifLoadingSkeleton all draw rows in the shape of the real
+// ones, so the list doesn't jump when the data lands. This panel was the last
+// citizen surface still spinning.
+//
+// The shape mirrors [_row]: a 34px leading square, then three text bars. The
+// two lower bars are FRACTIONS of the row rather than fixed widths, because
+// this panel is 380px on desktop but stretches to the viewport (up to ~528px)
+// as a narrow-screen modal — fixed bars would sit stranded on the left there.
+
+/// Base fill of the placeholder shapes, and the highlight swept across it.
+/// Same pair the admin/staff/phone skeletons use, so all four read as one
+/// effect.
+const Color _kSkeletonBase = Color(0xFFE7EBF1);
+const Color _kSkeletonHighlight = Color(0xFFF5F7FB);
+
+class _NotifListSkeleton extends StatelessWidget {
+  const _NotifListSkeleton();
+
+  /// One placeholder row: 34px leading, 46px of bars, 11px padding each side.
+  static const double _rowExtent = 68;
+
+  @override
+  Widget build(BuildContext context) {
+    // Draw only as many rows as actually fit, then clip. The panel's height is
+    // whatever the viewport allows (240–560), so a fixed count would overflow a
+    // short window — a landscape phone browser is the tight case.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxH = constraints.maxHeight.isFinite
+            ? constraints.maxHeight - 12 // the 6+6 outer padding below
+            : _rowExtent * 6;
+        final count = (maxH / _rowExtent).floor().clamp(1, 8);
+        return _PanelShimmer(
+          child: ClipRect(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: List.generate(count, (_) => const _NotifSkeletonRow()),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _NotifSkeletonRow extends StatelessWidget {
+  const _NotifSkeletonRow();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      // Matches _row's own padding, so the bars land where the text will.
+      padding: EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _SkeletonBox(width: 34, height: 34, radius: 10),
+          SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _SkeletonBox(width: double.infinity, height: 12),
+                SizedBox(height: 7),
+                _SkeletonBar(widthFactor: 0.62, height: 11),
+                SizedBox(height: 7),
+                _SkeletonBar(widthFactor: 0.28, height: 9),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SkeletonBox extends StatelessWidget {
+  final double? width;
+  final double height;
+  final double radius;
+
+  const _SkeletonBox({this.width, required this.height, this.radius = 6});
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: width,
+    height: height,
+    decoration: BoxDecoration(
+      color: _kSkeletonBase,
+      borderRadius: BorderRadius.circular(radius),
+    ),
+  );
+}
+
+/// A bar sized as a share of the row — keeps its proportions whether the panel
+/// is the 380px desktop dropdown or a stretched narrow-screen modal.
+class _SkeletonBar extends StatelessWidget {
+  final double widthFactor;
+  final double height;
+
+  const _SkeletonBar({required this.widthFactor, required this.height});
+
+  @override
+  Widget build(BuildContext context) => Align(
+    alignment: Alignment.centerLeft,
+    child: FractionallySizedBox(
+      widthFactor: widthFactor,
+      child: _SkeletonBox(height: height),
+    ),
+  );
+}
+
+/// Sweeps one highlight band across everything inside it, so a group of shapes
+/// animates as a single surface instead of each shape pulsing on its own.
+class _PanelShimmer extends StatefulWidget {
+  final Widget child;
+  const _PanelShimmer({required this.child});
+
+  @override
+  State<_PanelShimmer> createState() => _PanelShimmerState();
+}
+
+class _PanelShimmerState extends State<_PanelShimmer>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1250),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) => ShaderMask(
+        blendMode: BlendMode.srcATop,
+        shaderCallback: (bounds) => LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: const [
+            _kSkeletonBase,
+            _kSkeletonHighlight,
+            _kSkeletonBase,
+          ],
+          stops: const [0.25, 0.5, 0.75],
+          // Reused from the phone popup — same sweep, one implementation.
+          transform: GradientTranslation(
+            (_controller.value * 2 - 1) * bounds.width,
+          ),
+        ).createShader(bounds),
+        child: child,
+      ),
+      child: widget.child,
+    );
+  }
 }
