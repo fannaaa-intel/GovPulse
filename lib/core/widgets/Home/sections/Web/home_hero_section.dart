@@ -1,6 +1,7 @@
 // lib/core/widgets/Home/sections/Web/home_hero_section.dart
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import '../../home_enums.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 // ---------------------------------------------------------------------------
@@ -61,6 +62,13 @@ class HomeHeroSection extends StatelessWidget {
   static const double _kColGap = 28;
   static const double _kCommunityFlex = 0.62;
 
+  // Whitespace under the profile card. The dashboard below adds its own 16px
+  // top padding, so this lands the card → "Latest Updates" gap on the same
+  // ~20px the dashboard panels use between each other. Keep it small: a bigger
+  // figure here reads as the card being orphaned from the page (reported from a
+  // phone browser, 2026-08-04 — the gap was 56px against the panels' 20px).
+  static const double _kGapAfterCard = 4;
+
   const HomeHeroSection({
     super.key,
     required this.username,
@@ -113,11 +121,8 @@ class HomeHeroSection extends StatelessWidget {
     // 2026-08-01; pinned by home_hero_overlap_test.dart at 320-430px).
     //
     // Laying the card out in normal Column flow makes its height accounted for,
-    // and Transform.translate lifts it by EXACTLY cardOverhang without changing
-    // layout — so the overlap is now a fixed amount no matter how tall the card
-    // gets. Transform also transforms hit-testing, so taps still land.
-    // The trailing gap is trimmed by the same amount to keep the whitespace
-    // below the card at the intended ~40px.
+    // and _LiftedOverlap lifts it by EXACTLY cardOverhang — so the overlap is a
+    // fixed amount no matter how tall the card gets, and taps still land.
     return Column(
       children: [
         // ── Hero image ──────────────────────────────────────────────────────
@@ -235,8 +240,8 @@ class HomeHeroSection extends StatelessWidget {
         ),
 
         // ── Profile card — left-aligned, matched to the community column ─────
-        Transform.translate(
-          offset: Offset(0, -cardOverhang),
+        _LiftedOverlap(
+          lift: cardOverhang,
           child: Center(
             child: ConstrainedBox(
               constraints: BoxConstraints(maxWidth: contentMaxWidth),
@@ -267,12 +272,82 @@ class HomeHeroSection extends StatelessWidget {
           ),
         ),
 
-        // Lifting the card by cardOverhang leaves that much slack at the foot
-        // of the Column, so only the remainder is added to reach the intended
-        // ~40px of breathing room before the dashboard starts.
-        SizedBox(height: (40 - cardOverhang).clamp(0.0, 40.0)),
+        // _LiftedOverlap gives the lift back to the layout, so this is the
+        // whole of the hero's trailing whitespace — no slack to subtract.
+        const SizedBox(height: _kGapAfterCard),
       ],
     );
+  }
+}
+
+// ── Lift-and-close-the-gap ──────────────────────────────────────────────────
+/// Paints [child] `lift` pixels higher than it was laid out AND takes up that
+/// much less vertical space, so whatever follows moves up with it.
+///
+/// `Transform.translate` can only do the first half: it moves paint and
+/// hit-testing but leaves the child's full height sitting in the parent's
+/// layout. That leftover slack is invisible under the hero — it just looks like
+/// whitespace — which is how the profile card ended up 56px clear of "Latest
+/// Updates" while the two dashboard panels below it were only 20px apart.
+class _LiftedOverlap extends SingleChildRenderObjectWidget {
+  final double lift;
+  const _LiftedOverlap({required this.lift, required super.child});
+
+  @override
+  _RenderLiftedOverlap createRenderObject(BuildContext context) =>
+      _RenderLiftedOverlap(lift);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderLiftedOverlap renderObject,
+  ) {
+    renderObject.lift = lift;
+  }
+}
+
+class _RenderLiftedOverlap extends RenderShiftedBox {
+  _RenderLiftedOverlap(this._lift) : super(null);
+
+  double _lift;
+  double get lift => _lift;
+  set lift(double value) {
+    if (value == _lift) return;
+    _lift = value;
+    markNeedsLayout();
+  }
+
+  @override
+  double computeMinIntrinsicHeight(double width) =>
+      (super.computeMinIntrinsicHeight(width) - _lift).clamp(0.0, double.infinity);
+
+  @override
+  double computeMaxIntrinsicHeight(double width) =>
+      (super.computeMaxIntrinsicHeight(width) - _lift).clamp(0.0, double.infinity);
+
+  @override
+  void performLayout() {
+    final RenderBox? child = this.child;
+    if (child == null) {
+      size = constraints.smallest;
+      return;
+    }
+    child.layout(constraints, parentUsesSize: true);
+    (child.parentData! as BoxParentData).offset = Offset(0, -_lift);
+    size = constraints.constrain(
+      Size(
+        child.size.width,
+        (child.size.height - _lift).clamp(0.0, double.infinity),
+      ),
+    );
+  }
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    // Deliberately NOT gated on our own (shortened) box — same reasoning as
+    // RenderTransform. The strip of the card lifted above us holds the avatar
+    // and the Verify Now button; gating would make those untappable.
+    return hitTestChildren(result, position: position);
   }
 }
 

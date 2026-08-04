@@ -91,6 +91,32 @@ void main() {
     });
   }
 
+  // The other half of the overlap: lifting the card used to leave its full
+  // height in the layout, so the hero ran on for ~40px of dead space below the
+  // card before the dashboard even added its own 16px. On a phone that read as
+  // the card floating far away from "Latest Updates" while the panels below it
+  // sat 20px apart (reported 2026-08-04). The lift now costs layout height, so
+  // the hero ends just under the card.
+  for (final w in <double>[320, 390, 412, 600, 900, 1280]) {
+    testWidgets('hero ends flush under the profile card at ${w.toInt()}px',
+        (tester) async {
+      await _pump(tester, w);
+
+      final heroRect =
+          tester.getRect(find.byType(HomeHeroSection));
+      final cardRect = tester.getRect(find.byKey(kHomeHeroProfileCardKey));
+
+      expect(
+        heroRect.bottom - cardRect.bottom,
+        lessThanOrEqualTo(8.0),
+        reason: 'at ${w}px the hero leaves a gutter under the card '
+            '(hero=$heroRect, card=$cardRect)',
+      );
+      // …but the card is still the last thing in the hero, not hanging out.
+      expect(heroRect.bottom - cardRect.bottom, greaterThanOrEqualTo(0.0));
+    });
+  }
+
   // Large system text is an accessibility setting, not an edge case, and it is
   // the case a FIXED hero height cannot survive: the copy needs more lines than
   // the band was drawn for. The hero grows instead, so the guarantee holds.
