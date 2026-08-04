@@ -29,6 +29,7 @@ Duration _motion(BuildContext context) => MediaQuery.disableAnimationsOf(context
 // is private to the shell's State, so pages can't resolve it by label — these
 // mirror it. Keep in sync if the nav order ever changes.
 const int _kTabReports = 3;
+const int _kTabSuggestions = 4;
 const int _kTabFeedback = 5;
 
 class AdminOverviewPage extends ConsumerStatefulWidget {
@@ -828,7 +829,10 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
       // Nothing to act on → no card. An "everything's fine" placeholder would
       // compete with the panels that do carry findings.
       if (nlp.focus.isNotEmpty || (nlp.aiSummary?.isNotEmpty ?? false))
-        _NeedsAttentionCard(nlp),
+        _NeedsAttentionCard(
+          nlp,
+          onOpenFocus: widget.onNavigate == null ? null : _openFocus,
+        ),
       _Card(
         child: nlp.reportsAnalyzed == 0
             ? const _EmptyPanel(
@@ -890,6 +894,24 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
       'Sentiment · $s feedback   ·   Urgency · $u report'
       '${nlp.reportsAnalyzed == 1 ? '' : 's'}',
     );
+  }
+
+  /// Opens the console a focus area is about and flashes the newest submission
+  /// behind it — the same deep-link treatment tapping a report or a
+  /// notification gets, so the finding lands the admin on the actual row.
+  ///
+  /// A focus area covers a set of submissions, so the flashed row is the way
+  /// in, not the whole finding; the destination's own filters take it from
+  /// there. [highlightId] is null for AI-written focus, which still navigates.
+  void _openFocus(OutlookFocus focus) {
+    final index = switch (focus.target) {
+      FocusTarget.reports => _kTabReports,
+      FocusTarget.suggestions => _kTabSuggestions,
+      FocusTarget.feedback => _kTabFeedback,
+      null => null,
+    };
+    if (index == null) return;
+    widget.onNavigate!(index, highlightId: focus.highlightId);
   }
 
   /// Sentiment rows are feedback; urgency rows are reports. Jump to the console
@@ -1766,7 +1788,11 @@ class _AiHeaderCard extends StatelessWidget {
 /// the eye against four analytics panels sitting under it.
 class _NeedsAttentionCard extends StatelessWidget {
   final NlpInsights nlp;
-  const _NeedsAttentionCard(this.nlp);
+
+  /// Opens the console that owns a finding. Null → the rows stay inert (no
+  /// navigation wired, e.g. in tests).
+  final void Function(OutlookFocus)? onOpenFocus;
+  const _NeedsAttentionCard(this.nlp, {this.onOpenFocus});
 
   @override
   Widget build(BuildContext context) {
@@ -1829,7 +1855,13 @@ class _NeedsAttentionCard extends StatelessWidget {
             ),
           ],
           const SizedBox(height: 12),
-          for (final f in nlp.focus) _FocusCard(f),
+          for (final f in nlp.focus)
+            _FocusCard(
+              f,
+              onTap: (onOpenFocus == null || f.target == null)
+                  ? null
+                  : () => onOpenFocus!(f),
+            ),
         ],
       ),
     );
@@ -2922,9 +2954,15 @@ class _OutlookSourceChip extends StatelessWidget {
 
 /// One recommended-focus card: a coloured severity dot, the issue + its metric,
 /// and the concrete suggested action beneath.
+///
+/// Tapping it opens the console holding the submissions behind the finding —
+/// the card tells the admin to "review and reply with a decision", so it has to
+/// be the thing that takes them there. Inert only when the focus carries no
+/// [OutlookFocus.target].
 class _FocusCard extends StatelessWidget {
   final OutlookFocus focus;
-  const _FocusCard(this.focus);
+  final VoidCallback? onTap;
+  const _FocusCard(this.focus, {this.onTap});
 
   Color get _color => switch (focus.severity) {
     'high' => AppColors.red,
@@ -2932,9 +2970,35 @@ class _FocusCard extends StatelessWidget {
     _ => AppColors.green,
   };
 
+  /// Names the destination, so the row promises only what the tap delivers.
+  String get _actionLabel => switch (focus.target) {
+    FocusTarget.reports => 'Review reports',
+    FocusTarget.suggestions => 'Review suggestions',
+    FocusTarget.feedback => 'Review feedback',
+    null => '',
+  };
+
   @override
   Widget build(BuildContext context) {
     final color = _color;
+    final card = _buildCard(color);
+    if (onTap == null) return card;
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: Semantics(
+        button: true,
+        label: '${focus.title}. $_actionLabel',
+        child: GestureDetector(
+          onTap: onTap,
+          behavior: HitTestBehavior.opaque,
+          child: card,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCard(Color color) {
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 8),
@@ -3016,6 +3080,26 @@ class _FocusCard extends StatelessWidget {
               ),
             ],
           ),
+          // Without this the card looks like a static callout — the advice to
+          // "reply with a decision" reads as instructions to go find it
+          // yourself rather than as something to click.
+          if (onTap != null) ...[
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Text(
+                  _actionLabel,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                    color: color,
+                  ),
+                ),
+                Icon(Icons.chevron_right_rounded, size: 16, color: color),
+              ],
+            ),
+          ],
         ],
       ),
     );

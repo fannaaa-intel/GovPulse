@@ -63,6 +63,8 @@ AdminDashboardData _data() => AdminDashboardData(
         metric: '1 suggestion',
         suggestion: 'Raised by a citizen — review and reply with a decision.',
         severity: 'low',
+        target: FocusTarget.suggestions,
+        highlightId: 'sug-1',
       ),
     ],
   ),
@@ -76,7 +78,15 @@ AdminDashboardData _data() => AdminDashboardData(
   ],
 );
 
-Future<void> _pump(WidgetTester tester, Size size) async {
+/// Records what the page asked the shell to open, so navigation can be asserted
+/// without standing up the whole admin shell.
+typedef _NavCall = ({int index, String? highlightId});
+
+Future<void> _pump(
+  WidgetTester tester,
+  Size size, {
+  List<_NavCall>? navLog,
+}) async {
   tester.view
     ..physicalSize = size
     ..devicePixelRatio = 1.0;
@@ -88,7 +98,15 @@ Future<void> _pump(WidgetTester tester, Size size) async {
         adminDashboardProvider.overrideWith(() => _FakeDashboard(_data())),
       ],
       child: MaterialApp(
-        home: Scaffold(body: AdminOverviewPage(selectedIndex: 0)),
+        home: Scaffold(
+          body: AdminOverviewPage(
+            selectedIndex: 0,
+            onNavigate: navLog == null
+                ? null
+                : (i, {String? highlightId}) =>
+                    navLog.add((index: i, highlightId: highlightId)),
+          ),
+        ),
       ),
     ),
   );
@@ -210,6 +228,41 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
       await tester.pumpAndSettle();
       expect(find.text('Citizen satisfaction'), findsOneWidget);
+    });
+  });
+
+  group('the attention card opens what it is about', () {
+    // The card tells the admin to "review and reply with a decision". If it
+    // isn't the thing that takes them there, it is just a label — they have to
+    // find the Suggestions console and the right row themselves.
+    testWidgets('tapping a finding opens its console and flashes the row',
+        (tester) async {
+      final nav = <_NavCall>[];
+      await _pump(tester, const Size(1400, 2400), navLog: nav);
+
+      await tester.tap(find.text('Public Service'));
+      await tester.pumpAndSettle();
+
+      // Suggestions is nav index 4, and the suggestion behind the finding is
+      // carried through so the destination scrolls to it and highlights it —
+      // the same deep-link treatment a notification tap gets.
+      expect(nav, hasLength(1));
+      expect(nav.single.index, 4);
+      expect(nav.single.highlightId, 'sug-1');
+    });
+
+    testWidgets('names the destination it will open', (tester) async {
+      final nav = <_NavCall>[];
+      await _pump(tester, const Size(1400, 2400), navLog: nav);
+
+      expect(find.text('Review suggestions'), findsOneWidget);
+    });
+
+    testWidgets('stays inert when no navigation is wired', (tester) async {
+      await _pump(tester, const Size(1400, 2400));
+
+      // No onNavigate → no affordance promising a tap that goes nowhere.
+      expect(find.text('Review suggestions'), findsNothing);
     });
   });
 

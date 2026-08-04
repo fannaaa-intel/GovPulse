@@ -561,4 +561,88 @@ void main() {
       expect(nlp.outlookUsesAi, isFalse);
     });
   });
+
+  // Every focus area is a claim the admin should act on, so it has to carry
+  // WHERE to act — which console owns the submissions, and which row to open.
+  // Inferring that from the title in the widget is not possible: "Public
+  // Service" is a suggestion category and "Wait time" is a feedback aspect, and
+  // neither says so.
+  group('focus areas route to the submissions behind them', () {
+    test('a suggestion category points at the newest suggestion', () {
+      final older = {
+        'id': 'sg-old',
+        'category': 'infrastructure',
+        'category_other': null,
+        'created_at':
+            _now.subtract(const Duration(days: 3)).toIso8601String(),
+      };
+      final newer = {
+        'id': 'sg-new',
+        'category': 'infrastructure',
+        'category_other': null,
+        'created_at':
+            _now.subtract(const Duration(hours: 1)).toIso8601String(),
+      };
+
+      final nlp = _run(
+        feedback: [_feedback(3, _now.subtract(const Duration(days: 2)))],
+        suggestions: [older, newer],
+      );
+
+      final f = nlp.focus.firstWhere((f) => f.scope == 'Citizen suggestions');
+      expect(f.target, FocusTarget.suggestions);
+      expect(f.highlightId, 'sg-new');
+    });
+
+    test('high-urgency reports point at a high-urgency report', () {
+      final nlp = _run(
+        feedback: const [],
+        reports: [
+          {
+            'id': 'rp-urgent',
+            'category': 'drainage',
+            'remarks': 'Dangerous flooding, urgent',
+            'barangay': 'Macanaya (Pescaria)',
+            'created_at':
+                _now.subtract(const Duration(hours: 2)).toIso8601String(),
+          },
+        ],
+      );
+
+      final f = _focusTitled(nlp, 'High-urgency reports');
+      expect(f, isNotNull);
+      expect(f!.target, FocusTarget.reports);
+      expect(f.highlightId, 'rp-urgent',
+          reason: 'must open a report that is actually high urgency');
+    });
+
+    test('a weak service dimension points at a response that rated it', () {
+      final nlp = _run(
+        feedback: [
+          _feedback(1, _now.subtract(const Duration(days: 1)),
+              office: 'Municipal Health Office', clarity: 1),
+        ],
+      );
+
+      final f = _focusTitled(nlp, 'Process clarity');
+      expect(f, isNotNull);
+      expect(f!.target, FocusTarget.feedback);
+      expect(f.highlightId, isNotNull);
+      expect(f.highlightId, startsWith('fb-'));
+    });
+
+    test('an AI focus reads its destination out of its own wording', () {
+      // The AI writes free-form titles, so the target is inferred rather than
+      // recorded. It navigates without a flash — there is no row id to carry.
+      final nlp = _run(
+        feedback: [_feedback(3, _now.subtract(const Duration(days: 3)))],
+        insight: _insight(_now),
+      );
+
+      final f = _focusTitled(nlp, 'Road Reports');
+      expect(f, isNotNull);
+      expect(f!.target, FocusTarget.reports);
+      expect(f.highlightId, isNull);
+    });
+  });
 }

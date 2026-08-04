@@ -91,6 +91,15 @@ class SatisfactionStats {
 /// data was fitted/compared and barely moved.
 enum InsightTrend { improving, declining, stable, unknown }
 
+/// Which console owns the submissions behind a focus area, so the dashboard can
+/// hand the admin straight to the place they can act on it.
+///
+/// Recorded here rather than inferred from the copy in the UI: this is the only
+/// layer that knows whether a finding came from reports, suggestions or
+/// feedback, and a title like "Public Service" is indistinguishable from an
+/// office name once it reaches the widget.
+enum FocusTarget { reports, suggestions, feedback }
+
 /// A single actionable focus area under the predictive outlook: what's weak,
 /// the number behind it, and a concrete suggested action.
 class OutlookFocus {
@@ -106,12 +115,25 @@ class OutlookFocus {
   final String suggestion; // concrete recommended action
   final String severity; // 'high' | 'medium' | 'low' → colour
 
+  /// The console holding the submissions this finding is about. Null when the
+  /// destination isn't known (an AI-written focus that named no source), in
+  /// which case the card stays inert rather than guessing a landing page.
+  final FocusTarget? target;
+
+  /// The newest submission behind the finding, so opening the card scrolls that
+  /// row into view and flashes it — the same deep-link treatment a notification
+  /// gets. A focus area covers a *set* of rows, so this is the entry point into
+  /// it, not the whole of it. Null when nothing concrete backs it (AI focus).
+  final String? highlightId;
+
   const OutlookFocus({
     required this.title,
     this.scope,
     required this.metric,
     required this.suggestion,
     required this.severity,
+    this.target,
+    this.highlightId,
   });
 }
 
@@ -1154,8 +1176,9 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
     final useAiOutlook = hasFeedbackSignal &&
         aiIsFresh &&
         (aiFocus.isNotEmpty || (aiSummary?.isNotEmpty ?? false));
-    final focus =
-        useAiOutlook ? aiFocus : _buildFocus(feedbackRows, suggestionRows, high);
+    final focus = useAiOutlook
+        ? aiFocus
+        : _buildFocus(feedbackRows, suggestionRows, high, urgencyItems);
 
     int newestFirst(FeedbackInsightItem a, FeedbackInsightItem b) {
       final at = a.createdAt?.millisecondsSinceEpoch ?? 0;
@@ -1275,19 +1298,50 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
       // `scope` is written by newer deploys of recommend-actions; rows from an
       // older deploy simply lack it, and the card omits the line.
       final scope = (e['scope'] as String?)?.trim();
+      final cleanScope =
+          (scope == null || scope.isEmpty || scope.toLowerCase() == 'null')
+              ? null
+              : scope;
       out.add(
         OutlookFocus(
           title: title,
-          scope: (scope == null || scope.isEmpty || scope.toLowerCase() == 'null')
-              ? null
-              : scope,
+          scope: cleanScope,
           metric: (e['metric'] as String?)?.trim() ?? '',
           suggestion: suggestion,
           severity: severity,
+          target: _aiTarget(e['target'], title, cleanScope),
         ),
       );
     }
     return out.take(4).toList();
+  }
+
+  /// Resolves an AI focus entry to the console that owns it.
+  ///
+  /// Prefers an explicit `target` from the function; failing that, reads the
+  /// source out of the wording it already writes ("Citizen suggestions",
+  /// "3 reports"). Returns null when neither says — the card is then inert,
+  /// which is better than sending an admin to a console with nothing on it.
+  static FocusTarget? _aiTarget(dynamic raw, String title, String? scope) {
+    const byName = {
+      'reports': FocusTarget.reports,
+      'report': FocusTarget.reports,
+      'suggestions': FocusTarget.suggestions,
+      'suggestion': FocusTarget.suggestions,
+      'feedback': FocusTarget.feedback,
+      'feedbacks': FocusTarget.feedback,
+    };
+    if (raw is String) {
+      final explicit = byName[raw.trim().toLowerCase()];
+      if (explicit != null) return explicit;
+    }
+    final text = '$title ${scope ?? ''}'.toLowerCase();
+    if (text.contains('suggestion')) return FocusTarget.suggestions;
+    if (text.contains('report')) return FocusTarget.reports;
+    if (text.contains('feedback') || text.contains('response')) {
+      return FocusTarget.feedback;
+    }
+    return null;
   }
 
   // Aspect key → (display label, suggested action). The action is stored WITHOUT
@@ -1321,20 +1375,54 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
   ///  3. the most-requested citizen suggestion category, and
   ///  4. the most common complaint theme among negative feedback (when AI
   ///     themes are available).
+  /// Id of the newest row in [rows], for the deep-link flash. Rows without a
+  /// timestamp still qualify (better to flash something than nothing), they
+  /// just lose to any dated row.
+  static String? _newestId(Iterable<Map<String, dynamic>> rows) {
+    String? bestId;
+    DateTime? bestTs;
+    for (final r in rows) {
+      final id = (r['id'] as String?)?.trim();
+      if (id == null || id.isEmpty) continue;
+      final ts = _parseTs(r['created_at']);
+      if (bestId == null ||
+          (ts != null && (bestTs == null || ts.isAfter(bestTs)))) {
+        bestId = id;
+        bestTs = ts;
+      }
+    }
+    return bestId;
+  }
+
   List<OutlookFocus> _buildFocus(
     List<Map<String, dynamic>> feedbackRows,
     List<Map<String, dynamic>> suggestionRows,
     int urgentHigh,
+    List<FeedbackInsightItem> urgencyItems,
   ) {
     final out = <OutlookFocus>[];
 
     if (urgentHigh > 0) {
+      // Newest high-urgency report — the one an admin would open first.
+      String? newestHigh;
+      DateTime? newestHighTs;
+      for (final i in urgencyItems) {
+        if (i.urgency != 'high' || i.id.isEmpty) continue;
+        final ts = i.createdAt;
+        if (newestHigh == null ||
+            (ts != null && (newestHighTs == null || ts.isAfter(newestHighTs)))) {
+          newestHigh = i.id;
+          newestHighTs = ts;
+        }
+      }
       out.add(
         OutlookFocus(
           title: 'High-urgency reports',
           metric: _plural(urgentHigh, 'report'),
           suggestion: 'Triage and dispatch these before routine items.',
           severity: 'high',
+          target: FocusTarget.reports,
+          highlightId: newestHigh,
         ),
       );
     }
@@ -1379,6 +1467,13 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
       final meta = _aspectActions[weakestKey]!;
       final hasOffice = weakestOffice.isNotEmpty;
       final responses = _plural(weakestN, 'response');
+      // Flash a response that actually rated this aspect at this office —
+      // landing on an unrelated row would not evidence the finding.
+      final backing = feedbackRows.where((r) {
+        final office = (r['office_label'] as String?)?.trim() ?? '';
+        final v = r[weakestKey];
+        return office == weakestOffice && v is num && v > 0;
+      });
       out.add(
         OutlookFocus(
           title: meta.$1,
@@ -1387,6 +1482,8 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
           suggestion:
               hasOffice ? '${meta.$2} at $weakestOffice.' : '${meta.$2}.',
           severity: weakestAvg < 2.5 ? 'high' : 'medium',
+          target: FocusTarget.feedback,
+          highlightId: _newestId(backing),
         ),
       );
     }
@@ -1408,16 +1505,26 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
       final top = suggestionCounts.entries.reduce(
         (a, b) => a.value >= b.value ? a : b,
       );
+      final backing = suggestionRows.where(
+        (s) =>
+            suggestionCategoryLabel(
+              s['category'] as String?,
+              s['category_other'] as String?,
+            ).trim() ==
+            top.key,
+      );
       out.add(
         OutlookFocus(
           title: top.key,
           scope: 'Citizen suggestions',
           metric: _plural(top.value, 'suggestion'),
+          highlightId: _newestId(backing),
           // Phrased by weight of evidence: one suggestion is not a mandate.
           suggestion: top.value >= 2
               ? 'Most-requested by citizens — review these and reply with a decision.'
               : 'Raised by a citizen — review and reply with a decision.',
           severity: 'low',
+          target: FocusTarget.suggestions,
         ),
       );
     }
@@ -1438,12 +1545,20 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
       );
       if (top.value >= 2) {
         final label = top.key[0].toUpperCase() + top.key.substring(1);
+        final backing = feedbackRows.where(
+          (r) =>
+              (r['ai_sentiment'] as String?)?.trim().toLowerCase() ==
+                  'negative' &&
+              (r['ai_theme'] as String?)?.trim().toLowerCase() == top.key,
+        );
         out.add(
           OutlookFocus(
             title: label,
             metric: '${top.value} mentions',
             suggestion: 'Investigate recurring "${top.key}" complaints.',
             severity: 'medium',
+            target: FocusTarget.feedback,
+            highlightId: _newestId(backing),
           ),
         );
       }
