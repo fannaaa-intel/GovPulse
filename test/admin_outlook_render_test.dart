@@ -34,12 +34,19 @@ Map<String, dynamic> _feedback(
 /// card. (The sibling sentiment/urgency panels are deliberately out of scope:
 /// their fixed-width count/percent boxes overflow under the Ahem test font,
 /// which is a test-environment artifact, not a real layout bug.)
-Future<String> _render(WidgetTester tester, NlpInsights nlp) async {
+Future<String> _render(
+  WidgetTester tester,
+  NlpInsights nlp, {
+  Widget? widget,
+}) async {
   await tester.pumpWidget(
     MaterialApp(
       home: Scaffold(
         body: SingleChildScrollView(
-          child: SizedBox(width: 440, child: nlpOutlookForTesting(nlp)),
+          child: SizedBox(
+            width: 440,
+            child: widget ?? nlpOutlookForTesting(nlp),
+          ),
         ),
       ),
     ),
@@ -121,6 +128,9 @@ void main() {
         reason: 'the fallback wording must not describe a fitted forecast');
   });
 
+  // The recommended-focus block now renders in the "Needs your attention" card
+  // at the top of the AI rail, not at the foot of the outlook panel. Same copy,
+  // same guarantees — asserted through the card that owns it now.
   testWidgets('focus names the office and the citizen suggestion',
       (tester) async {
     final nlp = _notifier.analyseNlp(
@@ -149,7 +159,9 @@ void main() {
       _now,
     );
 
-    final text = await _render(tester, nlp);
+    final text = await _render(tester, nlp, widget: needsAttentionForTesting(nlp));
+
+    expect(text, contains('Needs your attention'));
 
     // Was "Process clarity · 2.5★" with no office. Now it says where.
     expect(text, contains('Process clarity'));

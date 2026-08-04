@@ -17,6 +17,14 @@ import '../widgets/admin_snackbar.dart';
 import '../widgets/admin_submission_ui.dart';
 import '../../../core/widgets/app_dialog.dart';
 
+/// The dashboard's one transition length, collapsed to zero when the OS asks
+/// for reduced motion (`prefers-reduced-motion` on web, "Remove animations" on
+/// iOS/Android). Everything here animates a colour or an opacity, so removing
+/// the tween just makes the change instant — nothing is lost but the movement.
+Duration _motion(BuildContext context) => MediaQuery.disableAnimationsOf(context)
+    ? Duration.zero
+    : const Duration(milliseconds: 150);
+
 // Nav tab indices owned by the shell (AdminDashboardScreen.navItems). That list
 // is private to the shell's State, so pages can't resolve it by label — these
 // mirror it. Keep in sync if the nav order ever changes.
@@ -62,11 +70,11 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
     'Ratings',
   ];
 
-  /// Below this available width the dashboard splits into tabs to cut scrolling
-  /// (the phone app). At or above it — tablets landscape, desktop, web — the
-  /// full single-scroll layout is kept, since the wide side-by-side rows
-  /// already make it compact and there's room to show everything at once.
-  static const double _kTabbedMaxWidth = 900;
+  /// The one breakpoint the dashboard has. Below it — phones, and mobile web —
+  /// the grid is replaced by tabs, so each section is one short screen instead
+  /// of a single long scroll. At or above it there is room for the full
+  /// two-column grid, and the tab bar does not render at all.
+  static const double _kTabbedMaxWidth = 1024;
 
   @override
   Widget build(BuildContext context) {
@@ -81,7 +89,12 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
     );
   }
 
-  // ── Wide / web layout: the original full single-scroll dashboard ──────────
+  // ── Wide / web layout: stat cards over a two-column grid ──────────────────
+  //
+  // Left (2fr) carries the reporting narrative — what came in, what happened,
+  // what it was about, how citizens rated it. Right (1fr) is the AI rail, led
+  // by the one card that asks for a decision, so the actionable item is the
+  // first thing in the reading path rather than the last.
   Widget _buildFullLayout(AsyncValue<AdminDashboardData> async, double pad) {
     return RefreshIndicator(
       onRefresh: () => ref.read(adminDashboardProvider.notifier).refresh(),
@@ -100,15 +113,28 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
                   _buildErrorBanner(),
                   const SizedBox(height: 16),
                 ],
-                _buildKpiRow(async),
+                _buildKpiRow(async, wide: true),
                 const SizedBox(height: 16),
-                _buildAiHero(async),
-                const SizedBox(height: 16),
-                _buildChartsRow(async),
-                const SizedBox(height: 16),
-                _buildQualityRow(async),
-                const SizedBox(height: 16),
-                _buildActivitySection(async),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      flex: 2,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: _gap(_buildMainColumn(async)),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      flex: 1,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: _gap(_buildAiRail(async)),
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -116,6 +142,23 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
       ),
     );
   }
+
+  /// The left column's cards, top to bottom.
+  List<Widget> _buildMainColumn(AsyncValue<AdminDashboardData> async) => [
+    _buildTrendCard(async),
+    _buildStatusCard(async),
+    _buildActivityCard(async),
+    _buildCategoriesCard(async),
+    _buildSatisfactionCard(async),
+  ];
+
+  /// Inserts the standard 16px gutter between a column's cards.
+  static List<Widget> _gap(List<Widget> children) => [
+    for (var i = 0; i < children.length; i++) ...[
+      children[i],
+      if (i != children.length - 1) const SizedBox(height: 16),
+    ],
+  ];
 
   // ── Narrow / app layout: pinned header + tabs to minimise scrolling ───────
   Widget _buildTabbedLayout(AsyncValue<AdminDashboardData> async, double pad) {
@@ -179,27 +222,26 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
   /// it fits with little scrolling (the whole point of the split):
   ///  • Overview — headline KPIs + recent activity
   ///  • Reports  — volume trend, status mix, top categories
-  ///  • AI       — the NLP insights hero
+  ///  • AI       — the AI rail, in the same order as the wide layout's
   ///  • Ratings  — citizen satisfaction
   List<Widget> _buildTabSections(AsyncValue<AdminDashboardData> async) {
     switch (_tab) {
       case 1:
-        return [
-          _buildChartsRow(async),
-          const SizedBox(height: 16),
+        return _gap([
+          _buildTrendCard(async),
+          _buildStatusCard(async),
           _buildCategoriesCard(async),
-        ];
+        ]);
       case 2:
-        return [_buildAiHero(async)];
+        return _gap(_buildAiRail(async));
       case 3:
         return [_buildSatisfactionCard(async)];
       case 0:
       default:
-        return [
-          _buildKpiRow(async),
-          const SizedBox(height: 16),
-          _buildActivitySection(async),
-        ];
+        return _gap([
+          _buildKpiRow(async, wide: false),
+          _buildActivityCard(async),
+        ]);
     }
   }
 
@@ -270,7 +312,7 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
             GestureDetector(
               onTap: () => setState(() => _rangeDays = d),
               child: AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
+                duration: _motion(context),
                 padding: const EdgeInsets.symmetric(
                   horizontal: 14,
                   vertical: 8,
@@ -453,7 +495,14 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
   }
 
   // ── 1. KPI row ───────────────────────────────────────────────────────────
-  Widget _buildKpiRow(AsyncValue<AdminDashboardData> async) {
+  /// [wide] is the layout mode, not a width guess: the wide grid always gets
+  /// four across and the tabbed layout always gets two. Re-deriving this from
+  /// the row's own width put 4 cards on a 950px phone-web window, which is on
+  /// the tabbed side of the breakpoint.
+  Widget _buildKpiRow(
+    AsyncValue<AdminDashboardData> async, {
+    required bool wide,
+  }) {
     final data = async.valueOrNull;
     final loading = async.isLoading && data == null;
 
@@ -502,32 +551,10 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
 
     return LayoutBuilder(
       builder: (context, c) {
-        final cols = c.maxWidth > 900 ? 4 : (c.maxWidth >= 340 ? 2 : 1);
+        // Single column only on genuinely tiny widths, where two cards would
+        // squeeze the 28px figures into an ellipsis.
+        final cols = wide ? 4 : (c.maxWidth >= 340 ? 2 : 1);
         return _kpiGrid(cards, cols);
-      },
-    );
-  }
-
-  // ── 2. Charts row: trend + status donut ──────────────────────────────────
-  Widget _buildChartsRow(AsyncValue<AdminDashboardData> async) {
-    return LayoutBuilder(
-      builder: (context, c) {
-        final wide = c.maxWidth >= 860;
-        final trend = _buildTrendCard(async);
-        final donut = _buildStatusCard(async);
-        if (wide) {
-          return IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(flex: 62, child: trend),
-                const SizedBox(width: 16),
-                Expanded(flex: 38, child: donut),
-              ],
-            ),
-          );
-        }
-        return Column(children: [trend, const SizedBox(height: 16), donut]);
       },
     );
   }
@@ -586,46 +613,29 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
     );
   }
 
-  // ── Quality row: satisfaction + top categories (full layout only) ─────────
-  Widget _buildQualityRow(AsyncValue<AdminDashboardData> async) {
-    return LayoutBuilder(
-      builder: (context, c) {
-        final wide = c.maxWidth >= 860;
-        final sat = _buildSatisfactionCard(async);
-        final cats = _buildCategoriesCard(async);
-        if (wide) {
-          return IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(child: sat),
-                const SizedBox(width: 16),
-                Expanded(child: cats),
-              ],
-            ),
-          );
-        }
-        return Column(children: [sat, const SizedBox(height: 16), cats]);
-      },
-    );
-  }
-
   Widget _buildSatisfactionCard(AsyncValue<AdminDashboardData> async) {
     final data = async.valueOrNull;
     final loading = async.isLoading && data == null;
     final s = data?.satisfaction;
 
+    // Nothing rated yet is the normal state for a new LGU, so the panel becomes
+    // a titled empty state rather than a titled card wrapped around a shrug.
+    if (!loading && (s == null || s.responses == 0)) {
+      return const _Card(
+        child: _EmptyPanel(
+          icon: Icons.star_border_rounded,
+          title: 'Citizen satisfaction',
+          message: "No citizen ratings yet — they'll appear here once submitted.",
+        ),
+      );
+    }
+
     Widget body;
-    if (loading) {
+    if (loading || s == null) {
       body = AdminShimmer(
         child: Column(
           children: List.generate(3, (_) => const _CategorySkeletonRow()),
         ),
-      );
-    } else if (s == null || s.responses == 0) {
-      body = const _EmptyHint(
-        'No citizen ratings yet.',
-        icon: Icons.star_border_rounded,
       );
     } else {
       body = Column(
@@ -790,14 +800,95 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
     );
   }
 
-  // ── AI & NLP hero — promoted, full-width main content ─────────────────────
-  Widget _buildAiHero(AsyncValue<AdminDashboardData> async) {
+  // ── AI & NLP rail ─────────────────────────────────────────────────────────
+  //
+  // One card per insight, in a fixed order that both layouts share so the phone
+  // app and the desktop grid read the same way. "Needs your attention" leads:
+  // it is the only card here that asks the admin to *do* something, and burying
+  // an action under three analytics panels is how it gets missed.
+  //
+  // Each panel owns its own empty state. A brand-new LGU has no feedback and no
+  // forecast, so those two are empty far more often than not — they have to
+  // look deliberate, not broken.
+  List<Widget> _buildAiRail(AsyncValue<AdminDashboardData> async) {
     final data = async.valueOrNull;
-    return _NlpInsightsCard(
-      insights: data?.nlp,
-      loading: async.isLoading && data == null,
-      hero: true,
-      onOpenItem: widget.onNavigate == null ? null : _openInsightItem,
+    final loading = async.isLoading && data == null;
+    final nlp = data?.nlp;
+    final open = widget.onNavigate == null ? null : _openInsightItem;
+
+    if (loading || nlp == null) {
+      return [
+        const _AiHeaderCard(null),
+        _Card(child: const _NlpLoading()),
+      ];
+    }
+
+    return [
+      _AiHeaderCard(nlp),
+      // Nothing to act on → no card. An "everything's fine" placeholder would
+      // compete with the panels that do carry findings.
+      if (nlp.focus.isNotEmpty || (nlp.aiSummary?.isNotEmpty ?? false))
+        _NeedsAttentionCard(nlp),
+      _Card(
+        child: nlp.reportsAnalyzed == 0
+            ? const _EmptyPanel(
+                icon: Icons.priority_high_rounded,
+                title: 'Urgency triage',
+                message: 'Unlocks with citizen reports — 0 so far.',
+              )
+            : _NlpUrgency(
+                nlp,
+                onOpenItem: open == null
+                    ? null
+                    : (i) => open(i, isReport: true),
+              ),
+      ),
+      _Card(
+        child: nlp.analyzed == 0
+            ? const _EmptyPanel(
+                icon: Icons.sentiment_satisfied_alt_rounded,
+                title: 'Citizen sentiment',
+                message: 'Unlocks with citizen feedback — 0 so far.',
+              )
+            : _NlpSentiment(
+                nlp,
+                onOpenItem: open == null
+                    ? null
+                    : (i) => open(i, isReport: false),
+              ),
+      ),
+      _Card(
+        child: nlp.recentAvg == null && nlp.forecastRating == null
+            ? _EmptyPanel(
+                icon: Icons.insights_rounded,
+                title: 'Predictive outlook',
+                // Your mockup said "10+ dated entries", but the forecast gate
+                // is 3 populated weekly buckets (or two 30-day windows) — see
+                // the regression in AdminDashboardNotifier._nlp. Stating the
+                // count that actually unlocks it keeps the promise honest.
+                message:
+                    'Forecasts unlock after 3 weeks of dated ratings — '
+                    'you have ${nlp.forecastWeeks}.',
+              )
+            : _NlpOutlook(nlp),
+      ),
+      _Card(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        child: _aiFootnote(nlp),
+      ),
+    ];
+  }
+
+  Widget _aiFootnote(NlpInsights nlp) {
+    final s = nlp.aiClassified > 0
+        ? 'AI ${nlp.aiClassified}/${nlp.analyzed}'
+        : '${nlp.analyzed}';
+    final u = nlp.reportsAiClassified > 0
+        ? 'AI ${nlp.reportsAiClassified}/${nlp.reportsAnalyzed}'
+        : '${nlp.reportsAnalyzed}';
+    return _NlpFootnote(
+      'Sentiment · $s feedback   ·   Urgency · $u report'
+      '${nlp.reportsAnalyzed == 1 ? '' : 's'}',
     );
   }
 
@@ -810,11 +901,6 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
       isReport ? _kTabReports : _kTabFeedback,
       highlightId: item.id,
     );
-  }
-
-  // ── Recent activity (full-width, now that the AI card is its own hero) ────
-  Widget _buildActivitySection(AsyncValue<AdminDashboardData> async) {
-    return _buildActivityCard(async);
   }
 
   Widget _buildActivityCard(AsyncValue<AdminDashboardData> async) {
@@ -1556,225 +1642,196 @@ class _ActivityRow extends StatelessWidget {
   }
 }
 
-// ── AI & NLP insights (awaiting pipeline) ────────────────────────────────────
+// ── AI & NLP insights ────────────────────────────────────────────────────────
 //
-// GovPulse's NLP layer classifies feedback by sentiment, urgency, and category
-// (see the research paper). Those columns don't exist in Supabase yet, so this
-// renders as a clearly-labelled placeholder zone — designed and ready to wire,
-// not faked. When the pipeline writes sentiment/urgency, populate the
-// AdminDashboardData model and swap the placeholders for the real widgets.
+// GovPulse's NLP layer classifies feedback by sentiment and reports by urgency,
+// and projects a rating trend (see the research paper). Everything below is
+// computed from real submissions — on-device when the Edge Functions haven't
+// labelled a row, AI when they have. The rail's cards are assembled by
+// _AdminOverviewPageState._buildAiRail; each one here renders a single insight.
+
 /// Test seam for the predictive-outlook panel. Lets tests render the real
 /// widget from plain [NlpInsights] and read back the copy an admin would see,
 /// without standing up the whole dashboard page and its providers.
 @visibleForTesting
 Widget nlpOutlookForTesting(NlpInsights nlp) => _NlpOutlook(nlp);
 
-class _NlpInsightsCard extends StatelessWidget {
-  final NlpInsights? insights;
-  final bool loading;
+/// Test seam for the "Needs your attention" card — the recommended-focus copy
+/// moved here out of the outlook panel, so its assertions moved with it.
+@visibleForTesting
+Widget needsAttentionForTesting(NlpInsights nlp) => _NeedsAttentionCard(nlp);
 
-  /// When true the card renders as a prominent, full-width "hero": a tinted
-  /// gradient header and — on wide screens — the three insight panels laid out
-  /// side-by-side, so it reads as the dashboard's headline feature.
-  final bool hero;
-
-  /// Opens a sentiment/urgency item on its own console, flashed. Null → the
-  /// breakdown rows stay inert (e.g. no navigation wired).
-  final void Function(FeedbackInsightItem, {required bool isReport})?
-  onOpenItem;
-  const _NlpInsightsCard({
-    this.insights,
-    this.loading = false,
-    this.hero = false,
-    this.onOpenItem,
-  });
+/// The rail's section header: what these panels are, and where their labels
+/// came from (a real model vs. the on-device fallback).
+class _AiHeaderCard extends StatelessWidget {
+  final NlpInsights? nlp;
+  const _AiHeaderCard(this.nlp);
 
   @override
   Widget build(BuildContext context) {
-    final nlp = insights;
-    final hasData = !loading && nlp != null && nlp.hasData;
-
-    final badge = Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-      decoration: BoxDecoration(
-        color: AppColors.primaryBlue.withValues(alpha: hero ? 0.14 : 0.10),
-        borderRadius: BorderRadius.circular(20),
-      ),
+    final usesAi = nlp?.usesAi ?? false;
+    return _Card(
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            (nlp?.usesAi ?? false) ? Icons.bolt_rounded : Icons.memory_rounded,
-            size: 12,
-            color: AppColors.primaryBlue,
-          ),
-          const SizedBox(width: 4),
-          Text(
-            (nlp?.usesAi ?? false) ? 'Hybrid AI' : 'On-device NLP',
-            style: const TextStyle(
-              fontSize: 10.5,
-              fontWeight: FontWeight.w700,
-              color: AppColors.primaryBlue,
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF6366F1), AppColors.primaryBlue],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(
+              Icons.auto_awesome_rounded,
+              size: 20,
+              color: Colors.white,
             ),
           ),
-        ],
-      ),
-    );
-
-    final header = Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          width: hero ? 40 : 30,
-          height: hero ? 40 : 30,
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF6366F1), AppColors.primaryBlue],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(hero ? 12 : 9),
-          ),
-          child: Icon(
-            Icons.auto_awesome_rounded,
-            size: hero ? 22 : 17,
-            color: Colors.white,
-          ),
-        ),
-        SizedBox(width: hero ? 12 : 8),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Flexible(
-                    child: Text(
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Wraps rather than truncates: the rail is the narrow column,
+                // and the provenance badge is not something to clip away.
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    const Text(
                       'AI & NLP insights',
                       style: TextStyle(
-                        fontSize: hero ? 17 : 15,
+                        fontSize: 16,
                         fontWeight: FontWeight.w700,
                         letterSpacing: -0.3,
                         color: AdminUi.textPrimary,
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  badge,
-                ],
-              ),
-              const SizedBox(height: 3),
-              const Text(
-                'Sentiment from feedback · urgency from reports · rating forecast',
-                style: TextStyle(fontSize: 12, color: AdminUi.textMuted),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-
-    // The header is its own slim banner card so it reads as the section title.
-    final headerCard = _Card(
-      padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
-      child: header,
-    );
-
-    if (loading) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          headerCard,
-          const SizedBox(height: 12),
-          _Card(child: const _NlpLoading()),
-        ],
-      );
-    }
-    if (!hasData) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          headerCard,
-          const SizedBox(height: 12),
-          _Card(child: const _NlpEmpty()),
-        ],
-      );
-    }
-
-    // Three distinct containers — one per insight — so nothing feels crowded.
-    // Wide screens lay them side-by-side (equal height); narrow screens stack.
-    final sentiment = _Card(
-      child: _NlpSentiment(
-        nlp,
-        onOpenItem: onOpenItem == null
-            ? null
-            : (i) => onOpenItem!(i, isReport: false),
-      ),
-    );
-    final urgency = _Card(
-      child: _NlpUrgency(
-        nlp,
-        onOpenItem: onOpenItem == null
-            ? null
-            : (i) => onOpenItem!(i, isReport: true),
-      ),
-    );
-    final outlook = _Card(child: _NlpOutlook(nlp));
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        headerCard,
-        const SizedBox(height: 12),
-        LayoutBuilder(
-          builder: (context, c) {
-            if (c.maxWidth >= 900) {
-              // IntrinsicHeight gives the Row a bounded height (the tallest
-              // card) so `stretch` can equalise the three cards — a plain
-              // `stretch` would force infinite height inside the scroll view.
-              return IntrinsicHeight(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Expanded(child: sentiment),
-                    const SizedBox(width: 12),
-                    Expanded(child: urgency),
-                    const SizedBox(width: 12),
-                    Expanded(child: outlook),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.primaryBlue.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            usesAi ? Icons.bolt_rounded : Icons.memory_rounded,
+                            size: 12,
+                            color: AppColors.primaryBlue,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            usesAi ? 'Hybrid AI' : 'On-device NLP',
+                            style: const TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.primaryBlue,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
-              );
-            }
-            return Column(
-              children: [
-                sentiment,
-                const SizedBox(height: 12),
-                urgency,
-                const SizedBox(height: 12),
-                outlook,
+                const SizedBox(height: 3),
+                const Text(
+                  'Sentiment · urgency · rating forecast',
+                  style: TextStyle(fontSize: 12, color: AdminUi.textMuted),
+                ),
               ],
-            );
-          },
-        ),
-        const SizedBox(height: 12),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: _footnote(nlp),
-        ),
-      ],
+            ),
+          ),
+        ],
+      ),
     );
   }
+}
 
-  Widget _footnote(NlpInsights nlp) {
-    final s = nlp.aiClassified > 0
-        ? 'AI ${nlp.aiClassified}/${nlp.analyzed}'
-        : '${nlp.analyzed}';
-    final u = nlp.reportsAiClassified > 0
-        ? 'AI ${nlp.reportsAiClassified}/${nlp.reportsAnalyzed}'
-        : '${nlp.reportsAnalyzed}';
-    return _NlpFootnote(
-      'Sentiment · $s feedback   ·   Urgency · $u report'
-      '${nlp.reportsAnalyzed == 1 ? '' : 's'}',
+/// The rail's one actionable card: the data-backed focus areas, each with a
+/// concrete suggested action.
+///
+/// Green 2px border, deliberately heavier than every other card's hairline —
+/// this is the only panel asking the admin to *do* something, and it has to win
+/// the eye against four analytics panels sitting under it.
+class _NeedsAttentionCard extends StatelessWidget {
+  final NlpInsights nlp;
+  const _NeedsAttentionCard(this.nlp);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AdminUi.surface,
+        borderRadius: BorderRadius.circular(AdminUi.cardRadius),
+        border: Border.all(color: AppColors.green, width: 2),
+        boxShadow: AdminUi.cardShadow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.arrow_right_alt_rounded,
+                size: 18,
+                color: AppColors.green,
+              ),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Needs your attention',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: AdminUi.textPrimary,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Says whether the recommendations were AI-written or derived
+              // on-device, same as they carried inside the outlook panel.
+              _OutlookSourceChip(usesAi: nlp.outlookUsesAi),
+            ],
+          ),
+          if (nlp.aiSummary?.isNotEmpty ?? false) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(11),
+              decoration: BoxDecoration(
+                color: const Color(0xFF6366F1).withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: const Color(0xFF6366F1).withValues(alpha: 0.18),
+                ),
+              ),
+              child: Text(
+                nlp.aiSummary!,
+                style: const TextStyle(
+                  fontSize: 12,
+                  height: 1.4,
+                  color: AdminUi.textSecondary,
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          for (final f in nlp.focus) _FocusCard(f),
+        ],
+      ),
     );
   }
 }
@@ -1800,35 +1857,6 @@ class _NlpLoading extends StatelessWidget {
           SkeletonBox(width: 110, height: 12),
           SizedBox(height: 10),
           SkeletonBox(width: double.infinity, height: 20),
-        ],
-      ),
-    );
-  }
-}
-
-class _NlpEmpty extends StatelessWidget {
-  const _NlpEmpty();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-      decoration: BoxDecoration(
-        color: AdminUi.subtle,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AdminUi.border),
-      ),
-      child: const Row(
-        children: [
-          Icon(Icons.forum_outlined, size: 15, color: AdminUi.textMuted),
-          SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              'No feedback to analyze yet — insights appear once citizens submit feedback.',
-              style: TextStyle(fontSize: 11.5, color: AdminUi.textMuted),
-            ),
-          ),
         ],
       ),
     );
@@ -2070,7 +2098,7 @@ class _InsightBarRow extends StatelessWidget {
     // stands out.
     final dim = filterActive && !selected;
     final row = AnimatedOpacity(
-      duration: const Duration(milliseconds: 150),
+      duration: _motion(context),
       opacity: dim ? 0.45 : 1,
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 6),
@@ -2126,30 +2154,37 @@ class _InsightBarRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 10),
+            // Fixed width keeps the bars aligned down the column; the
+            // scale-down keeps a wide value ("128 100%") inside it instead of
+            // overflowing the row.
             SizedBox(
               width: 50,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                crossAxisAlignment: CrossAxisAlignment.baseline,
-                textBaseline: TextBaseline.alphabetic,
-                children: [
-                  Text(
-                    '$count',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
-                      color: color,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerRight,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    Text(
+                      '$count',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: color,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    '${(share * 100).round()}%',
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: AdminUi.textMuted,
+                    const SizedBox(width: 4),
+                    Text(
+                      '${(share * 100).round()}%',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: AdminUi.textMuted,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ],
@@ -2735,55 +2770,9 @@ class _NlpOutlook extends StatelessWidget {
                 ),
               ),
           ],
-          if (nlp.focus.isNotEmpty || (nlp.aiSummary?.isNotEmpty ?? false)) ...[
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                const Icon(
-                  Icons.tips_and_updates_outlined,
-                  size: 14,
-                  color: AdminUi.textMuted,
-                ),
-                const SizedBox(width: 6),
-                const Text(
-                  'Recommended focus',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.3,
-                    color: AdminUi.textMuted,
-                  ),
-                ),
-                const Spacer(),
-                // Signals whether the recommendations are AI-written or on-device.
-                _OutlookSourceChip(usesAi: nlp.outlookUsesAi),
-              ],
-            ),
-            if (nlp.aiSummary?.isNotEmpty ?? false) ...[
-              const SizedBox(height: 8),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(11),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF6366F1).withValues(alpha: 0.06),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: const Color(0xFF6366F1).withValues(alpha: 0.18),
-                  ),
-                ),
-                child: Text(
-                  nlp.aiSummary!,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    height: 1.4,
-                    color: AdminUi.textSecondary,
-                  ),
-                ),
-              ),
-            ],
-            const SizedBox(height: 8),
-            for (final f in nlp.focus) _FocusCard(f),
-          ],
+          // The recommended-focus block used to sit here. It moved up the rail
+          // into "Needs your attention" (_NeedsAttentionCard) so the one
+          // actionable thing on the dashboard isn't the last thing on it.
         ],
       ),
     );
@@ -3275,6 +3264,71 @@ class _EmptyHint extends StatelessWidget {
             textAlign: TextAlign.center,
             style: const TextStyle(
               fontSize: 13,
+              height: 1.4,
+              color: AdminUi.textMuted,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A whole panel in its "nothing yet" state: centred glyph, the panel's own
+/// title, and one line saying what will make it fill in.
+///
+/// Distinct from [_EmptyHint], which is the empty *body* of a card that already
+/// has a title above it. This one IS the card's content — used where a panel is
+/// empty in the normal low-data state (a new LGU has no feedback and no
+/// forecast for weeks), so it has to read as ready-and-waiting rather than as a
+/// panel that failed to load. The title is what keeps it identifiable: a lone
+/// grey sentence in a white box tells the admin nothing about which panel it is.
+class _EmptyPanel extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String message;
+  const _EmptyPanel({
+    required this.icon,
+    required this.title,
+    required this.message,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      constraints: const BoxConstraints(minHeight: 132),
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: AdminUi.subtle,
+              shape: BoxShape.circle,
+              border: Border.all(color: AdminUi.border),
+            ),
+            child: Icon(icon, size: 20, color: AdminUi.textMuted),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: AdminUi.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 12,
               height: 1.4,
               color: AdminUi.textMuted,
             ),

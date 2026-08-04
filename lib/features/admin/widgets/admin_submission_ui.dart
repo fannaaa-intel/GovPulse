@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/deeplink_highlight.dart';
 import '../theme/admin_ui.dart';
@@ -335,7 +336,14 @@ class SubmitterBlock extends StatelessWidget {
 ///
 /// Used by the dashboard's narrow layout and by the report detail's phone
 /// pane switcher.
-class AdminSegmentedTabs extends StatelessWidget {
+/// Keyboard-operable segmented control.
+///
+/// Follows the standard tab-list interaction: Tab moves the caret INTO the bar
+/// (landing on the active segment, never stepping through all of them), then
+/// the arrow keys move the selection, wrapping at both ends. Home/End jump to
+/// the extremes. Selection follows focus, so an arrow press both moves the ring
+/// and switches the pane — one key, one result.
+class AdminSegmentedTabs extends StatefulWidget {
   final List<String> labels;
   final int selected;
   final ValueChanged<int> onSelect;
@@ -348,45 +356,163 @@ class AdminSegmentedTabs extends StatelessWidget {
   });
 
   @override
+  State<AdminSegmentedTabs> createState() => _AdminSegmentedTabsState();
+}
+
+class _AdminSegmentedTabsState extends State<AdminSegmentedTabs> {
+  late List<FocusNode> _nodes;
+
+  @override
+  void initState() {
+    super.initState();
+    _nodes = _makeNodes(widget.labels.length);
+  }
+
+  @override
+  void didUpdateWidget(covariant AdminSegmentedTabs old) {
+    super.didUpdateWidget(old);
+    if (old.labels.length != widget.labels.length) {
+      _disposeNodes();
+      _nodes = _makeNodes(widget.labels.length);
+    }
+  }
+
+  @override
+  void dispose() {
+    _disposeNodes();
+    super.dispose();
+  }
+
+  List<FocusNode> _makeNodes(int n) => List.generate(n, (i) {
+    // Repaint the ring as focus arrives/leaves.
+    return FocusNode(debugLabel: 'AdminSegmentedTab $i')
+      ..addListener(_onFocusChanged);
+  });
+
+  void _disposeNodes() {
+    for (final n in _nodes) {
+      n
+        ..removeListener(_onFocusChanged)
+        ..dispose();
+    }
+  }
+
+  void _onFocusChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void _select(int i) {
+    widget.onSelect(i);
+    _nodes[i].requestFocus();
+  }
+
+  /// Wraps, so the selection never dead-ends on the first/last segment.
+  void _move(int delta) {
+    final n = widget.labels.length;
+    if (n == 0) return;
+    _select((widget.selected + delta + n) % n);
+  }
+
+  KeyEventResult _onKey(KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    final key = event.logicalKey;
+    // Vertical arrows are accepted too: the bar stacks visually on narrow
+    // screens, and pressing Down on a row of tabs is a common reflex.
+    if (key == LogicalKeyboardKey.arrowRight ||
+        key == LogicalKeyboardKey.arrowDown) {
+      _move(1);
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.arrowLeft ||
+        key == LogicalKeyboardKey.arrowUp) {
+      _move(-1);
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.home) {
+      _select(0);
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.end) {
+      _select(widget.labels.length - 1);
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: AdminUi.surface,
-        borderRadius: BorderRadius.circular(AdminUi.controlRadius),
-        border: Border.all(color: AdminUi.border),
-      ),
-      child: Row(
-        children: [
-          for (var i = 0; i < labels.length; i++)
-            Expanded(child: _segment(labels[i], i)),
-        ],
+    return Semantics(
+      container: true,
+      explicitChildNodes: true,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: AdminUi.surface,
+          borderRadius: BorderRadius.circular(AdminUi.controlRadius),
+          border: Border.all(color: AdminUi.border),
+        ),
+        child: Row(
+          children: [
+            for (var i = 0; i < widget.labels.length; i++)
+              Expanded(child: _segment(context, widget.labels[i], i)),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _segment(String label, int i) {
-    final isSelected = i == selected;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () => onSelect(i),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 6),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: isSelected ? AppColors.primaryBlue : Colors.transparent,
-          borderRadius: BorderRadius.circular(AdminUi.controlRadius - 3),
-        ),
-        child: Text(
-          label,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-            color: isSelected ? Colors.white : AdminUi.textSecondary,
+  Widget _segment(BuildContext context, String label, int i) {
+    final isSelected = i == widget.selected;
+    final node = _nodes[i];
+    // Roving tab stop: only the active segment is reachable by Tab, so the bar
+    // costs one keystroke to enter instead of one per tab.
+    node.skipTraversal = !isSelected;
+
+    final radius = BorderRadius.circular(AdminUi.controlRadius - 3);
+    final duration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : const Duration(milliseconds: 150);
+
+    return Semantics(
+      button: true,
+      selected: isSelected,
+      label: label,
+      child: Focus(
+        focusNode: node,
+        onKeyEvent: (_, event) => _onKey(event),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => _select(i),
+          child: AnimatedContainer(
+            duration: duration,
+            padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 6),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: isSelected ? AppColors.primaryBlue : Colors.transparent,
+              borderRadius: radius,
+              // The ring has to read against BOTH fills — blue when selected,
+              // white when not — so it sits inside the segment as a contrasting
+              // outline rather than tinting the fill.
+              border: node.hasFocus
+                  ? Border.all(
+                      color: isSelected ? Colors.white : AppColors.primaryBlue,
+                      width: 2,
+                    )
+                  : Border.all(color: Colors.transparent, width: 2),
+            ),
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                color: isSelected ? Colors.white : AdminUi.textSecondary,
+              ),
+            ),
           ),
         ),
       ),
