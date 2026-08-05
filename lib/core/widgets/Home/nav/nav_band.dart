@@ -55,3 +55,72 @@ NavBand resolveNavBand(Size size) {
   if (size.width >= kNavTopBreakpoint) return NavBand.topNav;
   return NavBand.drawer;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Citizen web shell — how many columns the persistent shell shows.
+//
+//  This lives HERE, next to [resolveNavBand], for the reason the file header
+//  gives: the width rule for the citizen web chrome gets exactly one home. The
+//  old `home_nav_layout.dart` was a second copy of the band rule that drifted
+//  out of use entirely and was deleted; a second copy of the SHELL rule would
+//  rot the same way.
+//
+//  The shell is an addition to the topNav band, not a replacement for it. Below
+//  [kNavTopBreakpoint] nothing changes — the drawer band and the phone band
+//  behave exactly as they do today, which is what keeps the mobile app and the
+//  narrow-browser layout untouched by the shell work.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// How the persistent citizen shell arranges itself for a given viewport.
+///
+/// The columns are dropped in order of how much they earn their width: the
+/// right sidebar first (quick actions fold into the centre pane), then the left
+/// rail's labels (it stays, as icons). The centre pane is never dropped — it is
+/// the thing the shell exists to hold.
+enum ShellLayout {
+  /// Left rail (labelled) + centre + right sidebar.
+  threeColumn,
+
+  /// Left rail (labelled) + centre. No right sidebar.
+  railLabels,
+
+  /// Left rail collapsed to icons + centre. No right sidebar.
+  railIcons,
+
+  /// No shell. The existing drawer / bottom-nav chrome, unchanged.
+  drawer,
+}
+
+/// Width at/above which all three shell columns are shown.
+const double kShellThreeColumnMin = 1280;
+
+/// Width at/above which the left rail shows labels rather than icons only.
+/// Between this and [kShellThreeColumnMin] the rail keeps its labels but the
+/// right sidebar is dropped.
+const double kShellRailLabelsMin = 1024;
+
+/// The shell arrangement for [size].
+///
+///   • width >= 1280        → three columns
+///   • 1024 ..< 1280        → drop the right sidebar
+///   •  900 ..< 1024        → left rail becomes icon-only
+///   • below 900, or phone  → [ShellLayout.drawer] (no shell at all)
+///
+/// Delegates its lower bound to [resolveNavBand] instead of re-testing the
+/// width, so the shell can never disagree with the nav chrome about where the
+/// desktop layout starts — including the shortest-side phone rule, which is why
+/// a rotated handset gets [ShellLayout.drawer] rather than a three-column web
+/// shell crammed into a ~390dp-tall viewport.
+ShellLayout resolveShellLayout(Size size) {
+  if (resolveNavBand(size) != NavBand.topNav) return ShellLayout.drawer;
+  if (size.width >= kShellThreeColumnMin) return ShellLayout.threeColumn;
+  if (size.width >= kShellRailLabelsMin) return ShellLayout.railLabels;
+  return ShellLayout.railIcons;
+}
+
+/// Whether [layout] shows the right quick-actions sidebar.
+bool shellHasRightSidebar(ShellLayout layout) =>
+    layout == ShellLayout.threeColumn;
+
+/// Whether [layout] shows a left rail at all (labelled or icon-only).
+bool shellHasLeftRail(ShellLayout layout) => layout != ShellLayout.drawer;
