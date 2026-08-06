@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../shell/citizen_shell_dialogs.dart' show FormDialogGuard;
 import '../../../../core/widgets/responsive_page.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/modal/media_picker_sheet.dart';
@@ -150,15 +151,44 @@ class _VideoPreviewDialogState extends State<_VideoPreviewDialog> {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-class SuggestionScreen extends StatefulWidget {
+/// Standalone Share a Suggestion page — the full-screen route the mobile app and the
+/// live web route open. Chrome only; the form itself is [SuggestionForm].
+class SuggestionScreen extends StatelessWidget {
   final String username;
   const SuggestionScreen({super.key, required this.username});
 
   @override
-  State<SuggestionScreen> createState() => _SuggestionScreenState();
+  Widget build(BuildContext context) =>
+      SuggestionForm(username: username);
 }
 
-class _SuggestionScreenState extends State<SuggestionScreen>
+/// The Share a Suggestion form.
+///
+/// `embedded: false` (the default) renders the whole page — PopScope discard
+/// guard, Scaffold, the ResponsivePageBody hero panel and the in-page header —
+/// exactly as before, which is what mobile and the live route still get.
+///
+/// `embedded: true` renders ONLY the scrolling form, for the web shell's big
+/// dialog: the dialog supplies the bounds, the title and the close button, and
+/// the decorative hero panel is dropped because it is pure waste in a modal.
+/// [guard] lets the dialog's close button reuse this form's discard
+/// confirmation.
+class SuggestionForm extends StatefulWidget {
+  final String username;
+  final bool embedded;
+  final FormDialogGuard? guard;
+  const SuggestionForm({
+    super.key,
+    required this.username,
+    this.embedded = false,
+    this.guard,
+  });
+
+  @override
+  State<SuggestionForm> createState() => _SuggestionScreenState();
+}
+
+class _SuggestionScreenState extends State<SuggestionForm>
     with TickerProviderStateMixin {
   late final AnimationController _entryCtrl;
 
@@ -255,6 +285,9 @@ class _SuggestionScreenState extends State<SuggestionScreen>
   @override
   void initState() {
     super.initState();
+    // Let the shell's dialog reuse this form's discard confirmation when it is
+    // closed from the outside. Passed DOWN via widget.guard, never looked up.
+    widget.guard?.confirmDiscard = _showDiscardConfirmation;
     _entryCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
@@ -473,6 +506,24 @@ class _SuggestionScreenState extends State<SuggestionScreen>
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+
+    // Inside the shell's dialog the dialog owns the header, the close button and
+    // the bounds; the form just scrolls in it. The decorative hero panel is
+    // dropped — it is pure waste in a modal. The discard guard moves to the
+    // dialog's close path via [widget.guard].
+    if (widget.embedded) {
+      return GestureDetector(
+        onTap: () => FocusScope.of(context).unfocus(),
+        behavior: HitTestBehavior.translucent,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 620),
+            child: _formScroll(width),
+          ),
+        ),
+      );
+    }
+
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
@@ -503,37 +554,42 @@ class _SuggestionScreenState extends State<SuggestionScreen>
               child: Column(
                 children: [
                   _buildHeader(width),
-                  Expanded(
-                    child: SingleChildScrollView(
-                      physics: const BouncingScrollPhysics(),
-                      keyboardDismissBehavior:
-                          ScrollViewKeyboardDismissBehavior.onDrag,
-                      padding: EdgeInsets.only(bottom: width * 0.06),
-                      child: Column(
-                        children: [
-                          SizedBox(height: width * 0.04),
-                          _animated(0, _buildCategorySection(width)),
-                          SizedBox(height: width * 0.04),
-                          _animated(1, _buildLocationSection(width)),
-                          SizedBox(height: width * 0.04),
-                          _animated(2, _buildDetailsSection(width)),
-                          SizedBox(height: width * 0.04),
-                          _animated(3, _buildAttachSection(width)),
-                          SizedBox(height: width * 0.04),
-                          _animated(4, _buildAnonymousSection(width)),
-                          SizedBox(height: width * 0.035),
-                          _animated(5, _buildDisclaimer(width)),
-                          SizedBox(height: width * 0.045),
-                          _animated(5, _buildSubmitButton(width)),
-                        ],
-                      ),
-                    ),
-                  ),
+                  Expanded(child: _formScroll(width)),
+
                 ],
               ),
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// The form itself — every section, scrolling, with no page chrome around it.
+  /// Extracted so the shell can host it in a dialog while the standalone screen
+  /// keeps rendering it under its own header.
+  Widget _formScroll(double width) {
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      padding: EdgeInsets.only(bottom: width * 0.06),
+      child: Column(
+        children: [
+          SizedBox(height: width * 0.04),
+          _animated(0, _buildCategorySection(width)),
+          SizedBox(height: width * 0.04),
+          _animated(1, _buildLocationSection(width)),
+          SizedBox(height: width * 0.04),
+          _animated(2, _buildDetailsSection(width)),
+          SizedBox(height: width * 0.04),
+          _animated(3, _buildAttachSection(width)),
+          SizedBox(height: width * 0.04),
+          _animated(4, _buildAnonymousSection(width)),
+          SizedBox(height: width * 0.035),
+          _animated(5, _buildDisclaimer(width)),
+          SizedBox(height: width * 0.045),
+          _animated(5, _buildSubmitButton(width)),
+        ],
       ),
     );
   }

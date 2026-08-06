@@ -10,8 +10,19 @@ import '../../../core/widgets/Home/home_enums.dart';
 import '../../../core/widgets/Home/nav/home_top_nav.dart';
 import '../../../core/widgets/Home/nav/nav_band.dart';
 import '../../../core/widgets/Home/sections/Web/home_quick_actions_section_web.dart';
-import '../../../core/widgets/app_snackbar.dart';
+import '../../../core/services/citizen_logout.dart';
+import '../Quick-action/Chat-with-Agent/chat_agent_screen.dart';
+import '../Quick-action/Events/events_screen.dart';
+import '../Quick-action/Feedback/feedback_screen.dart';
+import '../Quick-action/Report/report_issue_screen.dart';
+import '../Quick-action/Suggestion/suggestion_screen.dart';
 import '../screen/notification_popup.dart';
+import '../settings/about/about_govpulse_screen.dart';
+import '../settings/change-password/change_password_send_screen.dart';
+import '../settings/contact-support/contact_support_screen.dart';
+import '../settings/edit_profile_screen.dart';
+import '../settings/my-submission/my_submissions_screen.dart';
+import 'citizen_shell_dialogs.dart';
 import 'citizen_shell_router.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -109,17 +120,109 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
     if (mounted) setState(() {});
   }
 
-  void _handleQuickAction(String key) => context.push(shellActionPath(key));
+  // ── Everything opens as a dialog ──────────────────────────────────────────
+  //
+  // Nothing below pushes a full-screen route. The shell — feed, both rails, the
+  // top nav — stays mounted underneath, so closing returns you exactly where you
+  // were with no reload and no history entry for what is really a panel.
+
+  String get _username =>
+      ref.read(userProfileProvider).valueOrNull?.username ?? '';
+
+  bool get _isVerified =>
+      ref.read(userProfileProvider).valueOrNull?.isVerified ?? false;
+
+  /// The three long quick-action forms, as BIG modals over the feed.
+  ///
+  /// Each hosts the same `XxxForm` the standalone screen hosts, with
+  /// `embedded: true` so the page chrome and the decorative hero panel are left
+  /// out and the form scrolls inside the dialog. A [FormDialogGuard] carries the
+  /// form's own discard confirmation to the dialog's close button.
+  Future<void> _handleQuickAction(String key) async {
+    final username = _username;
+    final (String title, IconData icon) = switch (key) {
+      'report' => ('Report an Issue', Icons.report_gmailerrorred_rounded),
+      'suggestion' => ('Share a Suggestion', Icons.lightbulb_outline_rounded),
+      'feedback' => ('Send Feedback', Icons.rate_review_outlined),
+      'chat' => ('Chat with an Agent', Icons.support_agent_rounded),
+      'events' => ('Events', Icons.event_rounded),
+      _ => ('', Icons.help_outline_rounded),
+    };
+    if (title.isEmpty) return;
+
+    // Chat and Events are browsing surfaces, not forms — they keep their own
+    // screens, hosted in the same big modal without the form guard.
+    if (key == 'chat' || key == 'events') {
+      await showCitizenFormDialog<void>(
+        context: context,
+        title: title,
+        icon: icon,
+        builder: (_, _) => key == 'chat'
+            ? ChatAgentScreen(username: username)
+            : EventsScreen(username: username, isVerified: _isVerified),
+      );
+      return;
+    }
+
+    final guard = FormDialogGuard();
+    await showCitizenFormDialog<void>(
+      context: context,
+      title: title,
+      icon: icon,
+      guard: guard,
+      builder: (_, _) => switch (key) {
+        'report' => ReportIssueForm(
+          username: username,
+          embedded: true,
+          guard: guard,
+        ),
+        'suggestion' => SuggestionForm(
+          username: username,
+          embedded: true,
+          guard: guard,
+        ),
+        _ => FeedbackForm(username: username, embedded: true, guard: guard),
+      },
+    );
+  }
 
   // ── Left rail ─────────────────────────────────────────────────────────────
 
-  static const List<(IconData, String)> _settingsStub = [
-    (Icons.person_outline_rounded, 'Edit Profile'),
-    (Icons.lock_outline_rounded, 'Change Password'),
-    (Icons.folder_open_rounded, 'My Submissions'),
-    (Icons.support_agent_rounded, 'Contact Support'),
-    (Icons.info_outline_rounded, 'About GovPulse'),
+  /// Rail items, each opening the existing screen in a standard-size dialog.
+  /// The hosted screen keeps its own header and its back button pops the
+  /// dialog, so none of those screens needed changing.
+  List<(IconData, String, Widget Function())> get _railItems => [
+    (
+      Icons.person_outline_rounded,
+      'Edit Profile',
+      () => EditProfileScreen(username: _username),
+    ),
+    (
+      Icons.lock_outline_rounded,
+      'Change Password',
+      () => ChangePasswordSendScreen(
+        email: ref.read(userProfileProvider).valueOrNull?.email ?? '',
+      ),
+    ),
+    (
+      Icons.folder_open_rounded,
+      'My Submissions',
+      () => MySubmissionsScreen(username: _username),
+    ),
+    (
+      Icons.support_agent_rounded,
+      'Contact Support',
+      () => ContactSupportScreen(username: _username),
+    ),
+    (
+      Icons.info_outline_rounded,
+      'About GovPulse',
+      () => const AboutGovPulseScreen(),
+    ),
   ];
+
+  Future<void> _openRailItem(Widget Function() build) =>
+      showCitizenPanelDialog<void>(context: context, child: build());
 
   Widget _leftRail({required bool labelled, required UserProfile? profile}) {
     return SizedBox(
@@ -149,8 +252,8 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
               ),
             // Stubs. Phase 3 opens each as a showAppDialog; for now they surface
             // the Settings pane so the rail is real rather than dead.
-            for (final (icon, label) in _settingsStub)
-              _railRow(icon, label, labelled),
+            for (final (icon, label, build) in _railItems)
+              _railRow(icon, label, labelled, () => _openRailItem(build)),
           ],
         ),
       ),
@@ -240,10 +343,15 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
     );
   }
 
-  Widget _railRow(IconData icon, String label, bool labelled) {
+  Widget _railRow(
+    IconData icon,
+    String label,
+    bool labelled,
+    VoidCallback onTap,
+  ) {
     final row = InkWell(
       borderRadius: BorderRadius.circular(CitizenUi.controlRadius),
-      onTap: () => _selectIndex(CitizenTab.settings.index),
+      onTap: onTap,
       child: Padding(
         padding: EdgeInsets.symmetric(
           horizontal: labelled ? 10 : 0,
@@ -322,11 +430,8 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
               onTap: _selectIndex,
               notificationCount: NotificationService.count,
               onNotificationTap: () => _showNotifications(width),
-              onLogoutTap: () => showAppSnackBar(
-                context,
-                'Logout is disabled in the shell preview.',
-                type: AppSnackType.info,
-              ),
+              // The shared flow, same as Settings and the nav chrome use.
+              onLogoutTap: () => performCitizenLogout(context, ref),
               compact: width < 1050,
               username: profile?.username ?? '',
               fullName: profile?.fullName,

@@ -4,16 +4,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_snackbar.dart';
-import '../../../core/widgets/logout_confirm_dialog.dart';
 import '../../../core/widgets/loading/loading_overlay.dart';
 import '../../../core/widgets/modal/verification_required_dialog.dart';
 import '../../../core/widgets/Home/nav/responsive_nav_scaffold.dart';
-import '../../../core/services/chat_service.dart';
-import '../../../core/widgets/Home/Chat-bubbles/home_chat_bubble.dart';
+import '../../../core/services/citizen_logout.dart';
 import '../../../core/providers/user_profile_provider.dart';
 import '../../../core/widgets/Home/home_enums.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import '../../../core/services/push_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../Resets/set_password_screen.dart';
 import '../../../core/widgets/app_dialog.dart';
@@ -35,7 +32,7 @@ class SettingScreen extends ConsumerWidget {
       fullName: profile?.fullName,
       facePhotoUrl: profile?.facePhotoUrl,
       verifStatus: profile?.verifStatus,
-      onLogout: (ctx) async => SettingsBody.logoutOf(ctx),
+      onLogout: (ctx) => performCitizenLogout(ctx, ref),
       body: const SafeArea(child: SettingsBody()),
     );
   }
@@ -47,15 +44,6 @@ class SettingScreen extends ConsumerWidget {
 /// Takes no `username`: identity comes from [userProfileProvider].
 class SettingsBody extends ConsumerStatefulWidget {
   const SettingsBody({super.key});
-
-  /// Runs the logout flow of the [SettingsBody] mounted under [context].
-  ///
-  /// [ResponsiveNavScaffold] takes an `onLogout` callback, but the flow itself
-  /// (confirm dialog, push unregister, sign-out, cleanup) lives in the body's
-  /// State. This lets the screen hand the scaffold a callback that reaches it.
-  static void logoutOf(BuildContext context) {
-    context.findAncestorStateOfType<_SettingScreenState>()?._confirmLogout();
-  }
 
   @override
   ConsumerState<SettingsBody> createState() => _SettingScreenState();
@@ -229,36 +217,10 @@ class _SettingScreenState extends ConsumerState<SettingsBody>
   }
 
   // ── Logout flow ───────────────────────────────────────────────────────────
-  Future<void> _confirmLogout() async {
-    final shouldLogout = await showLogoutConfirmDialog(context);
-
-    if (shouldLogout != true || !mounted) return;
-
-    showAppDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const LogoutLoadingOverlay(),
-    );
-
-    try {
-      await PushService.I.unregister();
-      await Supabase.instance.client.auth.signOut();
-
-      // ── Wipe local chat cache + hide floating bubble ──────────────────────
-      await ChatService.onUserSignedOut();
-      HomeChatBubble.hideGlobal();
-
-      if (!mounted) return;
-
-      Navigator.pop(context);
-      Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
-      ref.invalidate(userProfileProvider);
-    } catch (e) {
-      if (!mounted) return;
-      Navigator.pop(context);
-      showAppSnackBar(context, 'Logout failed: $e', type: AppSnackType.error);
-    }
-  }
+  /// Delegates to the shared citizen logout flow. It used to live here, which
+  /// is why the nav chrome had to reach back down the element tree to start
+  /// it; now both callers just call the function.
+  Future<void> _confirmLogout() => performCitizenLogout(context, ref);
 
   // ── Delete account ────────────────────────────────────────────────────────
   Future<void> _confirmDeleteAccount() async {

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../shell/citizen_shell_dialogs.dart' show FormDialogGuard;
 import '../../../../core/widgets/responsive_page.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/modal/media_picker_sheet.dart';
@@ -215,15 +216,44 @@ class _VideoPreviewDialogState extends State<_VideoPreviewDialog> {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-class ReportIssueScreen extends StatefulWidget {
+/// Standalone Report an Issue page — the full-screen route the mobile app and the
+/// live web route open. Chrome only; the form itself is [ReportIssueForm].
+class ReportIssueScreen extends StatelessWidget {
   final String username;
   const ReportIssueScreen({super.key, required this.username});
 
   @override
-  State<ReportIssueScreen> createState() => _ReportIssueScreenState();
+  Widget build(BuildContext context) =>
+      ReportIssueForm(username: username);
 }
 
-class _ReportIssueScreenState extends State<ReportIssueScreen>
+/// The Report an Issue form.
+///
+/// `embedded: false` (the default) renders the whole page — PopScope discard
+/// guard, Scaffold, the ResponsivePageBody hero panel and the in-page header —
+/// exactly as before, which is what mobile and the live route still get.
+///
+/// `embedded: true` renders ONLY the scrolling form, for the web shell's big
+/// dialog: the dialog supplies the bounds, the title and the close button, and
+/// the decorative hero panel is dropped because it is pure waste in a modal.
+/// [guard] lets the dialog's close button reuse this form's discard
+/// confirmation.
+class ReportIssueForm extends StatefulWidget {
+  final String username;
+  final bool embedded;
+  final FormDialogGuard? guard;
+  const ReportIssueForm({
+    super.key,
+    required this.username,
+    this.embedded = false,
+    this.guard,
+  });
+
+  @override
+  State<ReportIssueForm> createState() => _ReportIssueScreenState();
+}
+
+class _ReportIssueScreenState extends State<ReportIssueForm>
     with TickerProviderStateMixin {
   late final AnimationController _entryCtrl;
 
@@ -328,6 +358,9 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
   @override
   void initState() {
     super.initState();
+    // Let the shell's dialog reuse this form's discard confirmation when it is
+    // closed from the outside. Passed DOWN via widget.guard, never looked up.
+    widget.guard?.confirmDiscard = _showDiscardConfirmation;
     _entryCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
@@ -670,6 +703,24 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+
+    // Inside the shell's dialog there is no page to own: the dialog supplies the
+    // header, the close button and the bounds, and the form just scrolls in it.
+    // The discard confirmation moves to the dialog's close path (see
+    // [confirmDiscard]) so an accidental dismissal still asks first.
+    if (widget.embedded) {
+      return GestureDetector(
+        onTap: () => FocusScope.of(context).unfocus(),
+        behavior: HitTestBehavior.translucent,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 620),
+            child: _formScroll(width),
+          ),
+        ),
+      );
+    }
+
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
@@ -700,37 +751,43 @@ class _ReportIssueScreenState extends State<ReportIssueScreen>
               child: Column(
                 children: [
                   _buildHeader(width),
-                  Expanded(
-                    child: SingleChildScrollView(
-                      physics: const BouncingScrollPhysics(),
-                      keyboardDismissBehavior:
-                          ScrollViewKeyboardDismissBehavior.onDrag,
-                      padding: EdgeInsets.only(bottom: width * 0.06),
-                      child: Column(
-                        children: [
-                          SizedBox(height: width * 0.04),
-                          _animated(0, _buildCategorySection(width)),
-                          SizedBox(height: width * 0.04),
-                          _animated(1, _buildLocationSection(width)),
-                          SizedBox(height: width * 0.04),
-                          _animated(2, _buildRemarksSection(width)),
-                          SizedBox(height: width * 0.04),
-                          _animated(3, _buildAttachSection(width)),
-                          SizedBox(height: width * 0.04),
-                          _animated(4, _buildAnonymousSection(width)),
-                          SizedBox(height: width * 0.035),
-                          _animated(5, _buildDisclaimer(width)),
-                          SizedBox(height: width * 0.045),
-                          _animated(5, _buildSubmitButton(width)),
-                        ],
-                      ),
-                    ),
-                  ),
+                  Expanded(child: _formScroll(width)),
                 ],
               ),
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// The form itself — every section, scrolling, with no page chrome around it.
+  ///
+  /// Extracted so the shell can host it inside a dialog while the standalone
+  /// screen keeps rendering it under its own header. This is the same
+  /// Screen/Body idea as the tabs, applied to a form.
+  Widget _formScroll(double width) {
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      padding: EdgeInsets.only(bottom: width * 0.06),
+      child: Column(
+        children: [
+          SizedBox(height: width * 0.04),
+          _animated(0, _buildCategorySection(width)),
+          SizedBox(height: width * 0.04),
+          _animated(1, _buildLocationSection(width)),
+          SizedBox(height: width * 0.04),
+          _animated(2, _buildRemarksSection(width)),
+          SizedBox(height: width * 0.04),
+          _animated(3, _buildAttachSection(width)),
+          SizedBox(height: width * 0.04),
+          _animated(4, _buildAnonymousSection(width)),
+          SizedBox(height: width * 0.035),
+          _animated(5, _buildDisclaimer(width)),
+          SizedBox(height: width * 0.045),
+          _animated(5, _buildSubmitButton(width)),
+        ],
       ),
     );
   }

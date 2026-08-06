@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import '../../shell/citizen_shell_dialogs.dart' show FormDialogGuard;
 import '../../../../core/widgets/responsive_page.dart';
 import '../../../../core/widgets/modal/media_picker_sheet.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -12,15 +13,44 @@ import '../../../../core/services/gps_stamp_service.dart';
 import '../../../../core/widgets/reveal_loading.dart';
 import '../../../../core/widgets/app_dialog.dart';
 
-class FeedbackScreen extends StatefulWidget {
+/// Standalone Send Feedback page — the full-screen route the mobile app and the
+/// live web route open. Chrome only; the form itself is [FeedbackForm].
+class FeedbackScreen extends StatelessWidget {
   final String username;
   const FeedbackScreen({super.key, required this.username});
 
   @override
-  State<FeedbackScreen> createState() => _FeedbackScreenState();
+  Widget build(BuildContext context) =>
+      FeedbackForm(username: username);
 }
 
-class _FeedbackScreenState extends State<FeedbackScreen>
+/// The Send Feedback form.
+///
+/// `embedded: false` (the default) renders the whole page — PopScope discard
+/// guard, Scaffold, the ResponsivePageBody hero panel and the in-page header —
+/// exactly as before, which is what mobile and the live route still get.
+///
+/// `embedded: true` renders ONLY the scrolling form, for the web shell's big
+/// dialog: the dialog supplies the bounds, the title and the close button, and
+/// the decorative hero panel is dropped because it is pure waste in a modal.
+/// [guard] lets the dialog's close button reuse this form's discard
+/// confirmation.
+class FeedbackForm extends StatefulWidget {
+  final String username;
+  final bool embedded;
+  final FormDialogGuard? guard;
+  const FeedbackForm({
+    super.key,
+    required this.username,
+    this.embedded = false,
+    this.guard,
+  });
+
+  @override
+  State<FeedbackForm> createState() => _FeedbackScreenState();
+}
+
+class _FeedbackScreenState extends State<FeedbackForm>
     with SingleTickerProviderStateMixin {
   // ── Shared palette (mirrors SuggestionScreen exactly) ────────────────────────
   static const _kGrayText = Color(0xFF374151);
@@ -170,6 +200,9 @@ class _FeedbackScreenState extends State<FeedbackScreen>
   @override
   void initState() {
     super.initState();
+    // Let the shell's dialog reuse this form's discard confirmation when it is
+    // closed from the outside. Passed DOWN via widget.guard, never looked up.
+    widget.guard?.confirmDiscard = _showDiscardConfirmation;
     _entryCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
@@ -981,6 +1014,24 @@ class _FeedbackScreenState extends State<FeedbackScreen>
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
 
+    // Inside the shell's dialog the dialog owns the header, the close button and
+    // the bounds; the form just scrolls in it. The decorative hero panel is
+    // dropped — it is pure waste in a modal. The discard guard moves to the
+    // dialog's close path via [widget.guard].
+    if (widget.embedded) {
+      return GestureDetector(
+        onTap: () => FocusScope.of(context).unfocus(),
+        behavior: HitTestBehavior.translucent,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 620),
+            child: _formScroll(width),
+          ),
+        ),
+      );
+    }
+
+
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
@@ -1010,43 +1061,48 @@ class _FeedbackScreenState extends State<FeedbackScreen>
               child: Column(
                 children: [
                   _buildHeader(width),
-                  Expanded(
-                    child: SingleChildScrollView(
-                      physics: const BouncingScrollPhysics(),
-                      keyboardDismissBehavior:
-                          ScrollViewKeyboardDismissBehavior.onDrag,
-                      padding: EdgeInsets.only(bottom: width * 0.06),
-                      child: Column(
-                        children: [
-                          SizedBox(height: width * 0.04),
-                          _animated(0, _buildOfficeSection(width)),
-                          SizedBox(height: width * 0.04),
-                          _animated(1, _buildServiceSection(width)),
-                          SizedBox(height: width * 0.04),
-                          _animated(2, _buildStarSection(width)),
-                          SizedBox(height: width * 0.04),
-                          _animated(3, _buildAspectSection(width)),
-                          SizedBox(height: width * 0.04),
-                          _animated(4, _buildCommentSection(width)),
-                          SizedBox(height: width * 0.04),
-                          _animated(5, _buildDateSection(width)),
-                          SizedBox(height: width * 0.04),
-                          _animated(6, _buildPhotoSection(width)),
-                          SizedBox(height: width * 0.04),
-                          _animated(7, _buildAnonymousSection(width)),
-                          SizedBox(height: width * 0.035),
-                          _animated(7, _buildDisclaimer(width)),
-                          SizedBox(height: width * 0.045),
-                          _animated(8, _buildSubmitButton(width)),
-                        ],
-                      ),
-                    ),
-                  ),
+                  Expanded(child: _formScroll(width)),
+
                 ],
               ),
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// The form itself — every section, scrolling, with no page chrome around it.
+  /// Extracted so the shell can host it in a dialog while the standalone screen
+  /// keeps rendering it under its own header.
+  Widget _formScroll(double width) {
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      padding: EdgeInsets.only(bottom: width * 0.06),
+      child: Column(
+        children: [
+          SizedBox(height: width * 0.04),
+          _animated(0, _buildOfficeSection(width)),
+          SizedBox(height: width * 0.04),
+          _animated(1, _buildServiceSection(width)),
+          SizedBox(height: width * 0.04),
+          _animated(2, _buildStarSection(width)),
+          SizedBox(height: width * 0.04),
+          _animated(3, _buildAspectSection(width)),
+          SizedBox(height: width * 0.04),
+          _animated(4, _buildCommentSection(width)),
+          SizedBox(height: width * 0.04),
+          _animated(5, _buildDateSection(width)),
+          SizedBox(height: width * 0.04),
+          _animated(6, _buildPhotoSection(width)),
+          SizedBox(height: width * 0.04),
+          _animated(7, _buildAnonymousSection(width)),
+          SizedBox(height: width * 0.035),
+          _animated(7, _buildDisclaimer(width)),
+          SizedBox(height: width * 0.045),
+          _animated(8, _buildSubmitButton(width)),
+        ],
       ),
     );
   }

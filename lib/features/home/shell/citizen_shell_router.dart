@@ -4,11 +4,6 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/providers/user_profile_provider.dart';
 import '../../../core/theme/citizen_ui.dart';
-import '../Quick-action/Chat-with-Agent/chat_agent_screen.dart';
-import '../Quick-action/Events/events_screen.dart';
-import '../Quick-action/Feedback/feedback_screen.dart';
-import '../Quick-action/Report/report_issue_screen.dart';
-import '../Quick-action/Suggestion/suggestion_screen.dart';
 import '../emergency/emergency_screen.dart';
 import '../my_report/my_reports_screen.dart';
 import '../my_report/report_detail_screen.dart';
@@ -90,9 +85,6 @@ bool isShellPreviewLaunch(String? route) {
 /// than inside a column, so they are pushed onto the root navigator.
 final GlobalKey<NavigatorState> _rootNavigatorKey = GlobalKey<NavigatorState>();
 
-/// Path of a quick-action screen, e.g. `/shell-preview/action/report`.
-String shellActionPath(String key) => '$kShellPreviewPrefix/action/$key';
-
 /// Detail route for one report, pushed inside the My Reports branch so it
 /// stacks over that pane and leaves the other tabs untouched. The item rides in
 /// `extra` — the same in-memory hand-off the legacy '/report_detail' route uses.
@@ -119,7 +111,8 @@ Widget _bodyFor(BuildContext context, CitizenTab tab) {
   switch (tab) {
     case CitizenTab.home:
       return HomeBody(
-        onOpenNewsfeed: () => CitizenShell.goToTab(context, CitizenTab.newsfeed),
+        onOpenNewsfeed: () =>
+            CitizenShell.goToTab(context, CitizenTab.newsfeed),
       );
     case CitizenTab.myReports:
       return MyReportsBody(
@@ -135,26 +128,6 @@ Widget _bodyFor(BuildContext context, CitizenTab tab) {
   }
 }
 
-/// A quick-action screen, still full-screen over the shell.
-Widget _actionFor(String key) {
-  return _WithIdentity((username, isVerified) {
-    switch (key) {
-      case 'report':
-        return ReportIssueScreen(username: username);
-      case 'suggestion':
-        return SuggestionScreen(username: username);
-      case 'feedback':
-        return FeedbackScreen(username: username);
-      case 'chat':
-        return ChatAgentScreen(username: username);
-      case 'events':
-        return EventsScreen(username: username, isVerified: isVerified);
-      default:
-        return const SizedBox.shrink();
-    }
-  });
-}
-
 final GoRouter citizenShellRouter = GoRouter(
   navigatorKey: _rootNavigatorKey,
   initialLocation: CitizenTab.home.path,
@@ -165,12 +138,10 @@ final GoRouter citizenShellRouter = GoRouter(
       redirect: (_, _) => CitizenTab.home.path,
     ),
 
-    // Quick actions: over the shell, not inside a column.
-    GoRoute(
-      path: '$kShellPreviewPrefix/action/:key',
-      parentNavigatorKey: _rootNavigatorKey,
-      builder: (context, state) => _actionFor(state.pathParameters['key']!),
-    ),
+    // NOTE: there is deliberately no full-screen route for the quick actions.
+    // Inside the shell they open as big dialogs over the still-mounted feed
+    // (see citizen_shell_dialogs.dart), which is the whole point — a route
+    // would unmount the feed and add a history entry for what is really a panel.
 
     StatefulShellRoute.indexedStack(
       builder: (context, state, navigationShell) =>
