@@ -4,15 +4,18 @@ import 'package:go_router/go_router.dart';
 
 // Diagnostic for the cold-load (F5) path on a detail URL.
 //
-// Mirrors the SHAPE of citizen_shell_router's route tree — a redirect route, a
+// Mirrors the SHAPE of citizen_shell_router's route tree — a '/' route, a
 // StatefulShellRoute.indexedStack, absolute branch paths, and a relative detail
 // child — with trivial builders, so this isolates "does the route tree resolve a
 // deep link into the shell" from anything Supabase or Riverpod does at runtime.
 //
 // If this passes, the structure is fine and a blank cold load is a runtime
 // failure inside the real builders. If it fails, the structure is the bug.
-
-const prefix = '/shell-preview';
+//
+// The shell lives at the citizen entry point now, so tabs are bare paths:
+// '/home', '/my-reports', …. '/' is no longer a redirect route — where it goes
+// depends on auth, which the router's top-level redirect decides — so here it
+// just builds the startup placeholder the real tree builds.
 
 final _tabs = ['home', 'my-reports', 'emergency', 'settings'];
 
@@ -20,7 +23,13 @@ GoRouter _buildRouter(String initialLocation, List<String> log) {
   return GoRouter(
     initialLocation: initialLocation,
     routes: <RouteBase>[
-      GoRoute(path: prefix, redirect: (_, _) => '$prefix/home'),
+      GoRoute(
+        path: '/',
+        builder: (_, _) {
+          log.add('starting');
+          return const Text('STARTING');
+        },
+      ),
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) {
           log.add('shell');
@@ -34,7 +43,7 @@ GoRouter _buildRouter(String initialLocation, List<String> log) {
             StatefulShellBranch(
               routes: <RouteBase>[
                 GoRoute(
-                  path: '$prefix/$tab',
+                  path: '/$tab',
                   builder: (_, _) {
                     log.add('branch:$tab');
                     return Text('BRANCH-$tab');
@@ -63,7 +72,7 @@ void main() {
   testWidgets('cold load on a branch ROOT builds the shell', (tester) async {
     final log = <String>[];
     await tester.pumpWidget(
-      MaterialApp.router(routerConfig: _buildRouter('$prefix/my-reports', log)),
+      MaterialApp.router(routerConfig: _buildRouter('/my-reports', log)),
     );
     await tester.pumpAndSettle();
 
@@ -79,7 +88,7 @@ void main() {
 
       await tester.pumpWidget(
         MaterialApp.router(
-          routerConfig: _buildRouter('$prefix/my-reports/detail/$id', log),
+          routerConfig: _buildRouter('/my-reports/detail/$id', log),
         ),
       );
       await tester.pumpAndSettle();
@@ -96,14 +105,31 @@ void main() {
     },
   );
 
-  testWidgets('bare prefix redirects into the shell', (tester) async {
+  testWidgets('bare / builds the startup placeholder, not the shell', (
+    tester,
+  ) async {
     final log = <String>[];
     await tester.pumpWidget(
-      MaterialApp.router(routerConfig: _buildRouter(prefix, log)),
+      MaterialApp.router(routerConfig: _buildRouter('/', log)),
+    );
+    await tester.pumpAndSettle();
+
+    // '/' is a holding view, not a destination: the real router's top-level
+    // redirect sends it to /home or /login once auth is known. Mounting the
+    // shell here would defeat the guard.
+    expect(find.text('STARTING'), findsOneWidget);
+    expect(find.text('SHELL-CHROME'), findsNothing);
+    expect(log, contains('starting'));
+  });
+
+  testWidgets('a tab path resolves to its own branch', (tester) async {
+    final log = <String>[];
+    await tester.pumpWidget(
+      MaterialApp.router(routerConfig: _buildRouter('/emergency', log)),
     );
     await tester.pumpAndSettle();
 
     expect(find.text('SHELL-CHROME'), findsOneWidget);
-    expect(find.text('BRANCH-home'), findsOneWidget);
+    expect(find.text('BRANCH-emergency'), findsOneWidget);
   });
 }

@@ -1,5 +1,10 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../features/home/screen/home_screen.dart';
+import '../../features/home/shell/citizen_shell_router.dart';
+import '../network/network_wrapper.dart';
 import 'app_router.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -96,15 +101,60 @@ Future<T?> pushReplacementLegacy<T extends Object?, TO extends Object?>(
   );
 }
 
+// ── Where the user goes ─────────────────────────────────────────────────────
+//
+// The two destinations that differ per platform now that go_router owns the web
+// URL. Both are centralised here so the split lives in ONE file rather than at
+// every sign-out and every post-login branch.
+//
+// The paths are deliberately the SAME strings the legacy table uses ('/login'),
+// so the two routers agree on what a destination is named even though they
+// reach it differently.
+
 /// Sends the user to the login screen and clears the whole stack behind them.
 ///
-/// Every sign-out and every "back to sign in" path funnels through here. It is
-/// centralised precisely because it is the one destination that must change
-/// when go_router takes over the web URL: this becomes `context.go('/login')`
-/// on web, and that will be a one-file edit rather than a fourteen-site sweep.
+/// On web this is a `go`, so the address bar becomes `/#/login` and the shell is
+/// torn down properly. On mobile it stays the legacy stack-clearing push.
 Future<void> goToLogin(BuildContext context) {
+  if (kIsWeb) {
+    context.go('/login');
+    return Future<void>.value();
+  }
   return Navigator.of(context).pushAndRemoveUntil<void>(
     _legacyRoute<void>('/login', null),
     (route) => false,
   );
+}
+
+/// Sends an authenticated citizen to their home surface.
+///
+/// On web that is the SHELL at `/home` — this is the call that makes the
+/// cutover real, because it is what every successful login funnels through.
+/// On mobile it is [HomePage], pushed exactly as before: [clearStack] picks
+/// between the `pushReplacement` the password login used and the
+/// `pushAndRemoveUntil` the Facebook and splash paths used.
+void goToCitizenHome(
+  BuildContext context, {
+  required String username,
+  bool clearStack = false,
+}) {
+  if (kIsWeb) {
+    // go() re-resolves the whole match list, so the shell replaces whatever
+    // auth screen was on screen and the URL follows. No stack to clear.
+    context.go(CitizenTab.home.path);
+    return;
+  }
+
+  final route = PageRouteBuilder<void>(
+    transitionDuration: Duration.zero,
+    reverseTransitionDuration: Duration.zero,
+    pageBuilder: (_, _, _) => NetworkWrapper(child: HomePage(username: username)),
+    transitionsBuilder: (_, _, _, child) => child,
+  );
+
+  if (clearStack) {
+    Navigator.of(context).pushAndRemoveUntil<void>(route, (route) => false);
+  } else {
+    Navigator.of(context).pushReplacement<void, void>(route);
+  }
 }

@@ -1,11 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/network/network_wrapper.dart';
 import '../../../core/providers/user_profile_provider.dart';
+import '../../../core/router/app_router.dart'
+    show buildLoginScreen, buildSignupScreen, kScanRoutePrefix;
+import '../../../core/services/auth_ready.dart';
 import '../../../core/services/events_service.dart';
 import '../../../core/theme/citizen_ui.dart';
 import '../../../core/widgets/resolve_by_id.dart';
+import '../../guest/screen/guest.dart';
+import '../../scan/scan_page.dart';
 import '../Quick-action/Events/event_detail_screen.dart';
 import '../Quick-action/Events/events_screen.dart' show EventItem;
 import '../emergency/emergency_screen.dart';
@@ -16,42 +23,43 @@ import '../settings/settings_screen.dart';
 import 'citizen_shell.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
-//  Routing for the citizen web shell PREVIEW.
+//  THE citizen web router.
 //
-//  Still a scratch mount: nothing live points here, the shell is only built
-//  when the browser is loaded directly at /shell-preview, and every real route
-//  still goes through the Navigator 1.0 table in core/router/app_router.dart.
+//  On web this is the only router: main.dart builds [GovPulseWebApp] and
+//  go_router owns the address bar outright. The Navigator 1.0 table in
+//  core/router/app_router.dart is still very much alive, but on web it is now
+//  reached imperatively through the legacy_nav shim rather than by name, so
+//  exactly one router writes history entries.
 //
-//  ── Why a whole separate MaterialApp ───────────────────────────────────────
-//  Two routers cannot both own the browser URL. The live app is a MaterialApp
-//  with `routes` + `onGenerateRoute`, and on web Navigator 1.0 already reports
-//  its route names to the address bar. Nesting a go_router Router inside it
-//  would leave both writing history entries and fighting over the location. So
-//  main.dart inspects the launch URL once and builds EITHER the live app OR
-//  this one — the same trick already used for the /scan/<token> deep link,
-//  which still bypasses the shell entirely.
+//  Mobile is untouched: it still builds the legacy `MaterialApp` with `routes`
+//  + `onGenerateRoute`, and never builds anything in this file.
 //
-//  ── Why the tabs are namespaced under /shell-preview ───────────────────────
-//  Selecting a tab rewrites the address bar. With bare paths, reloading on
-//  /newsfeed would hand main.dart a route it does not recognise as the preview
-//  and silently drop the user into the live app. The live table also already
-//  owns /newsfeed, /settings and /emergency. Phase 3 drops the prefix.
+//  ── What has a URL, and what deliberately does not ─────────────────────────
+//  A route earns a path here when the URL is worth something — when it should
+//  survive a reload or be pasteable. That is: the four shell tabs, report and
+//  event detail (id-addressable, see [shellReportDetailPath]), the auth screens,
+//  and the public /scan/<token> endorsement page.
+//
+//  Everything else stays off go_router on purpose:
+//    • Quick actions and the settings rail open as DIALOGS over a still-mounted
+//      feed (citizen_shell_dialogs.dart). A route would unmount the feed and add
+//      a history entry for what is really a panel.
+//    • The verification wizard passes Uint8List ID images between its six steps,
+//      and change-password carries access/refresh tokens. Neither belongs in an
+//      address bar. They stay on the legacy table, pushed via pushLegacy.
 //
 //  ── StatefulShellRoute.indexedStack ────────────────────────────────────────
-//  Replaces the plain ShellRoute the first preview used. That version had to
-//  build its own IndexedStack over all five panes, which meant every pane
-//  mounted on first paint: five fetches, two realtime channels and Emergency's
-//  animation controllers all running for tabs nobody had opened.
-//
-//  StatefulShellRoute builds each branch LAZILY on first visit and keeps it
-//  alive afterwards, which is the persistence the shell wants without the eager
-//  cost. It also gives each branch its own Navigator, so a detail route pushed
-//  from a pane stacks INSIDE that pane and the other tabs keep their state —
-//  and it removes the hand-rolled per-pane Navigator the preview needed before.
+//  Branches are built LAZILY on first visit and kept alive after, so a tab keeps
+//  its scroll offset and loaded data while tabs nobody opened never run their
+//  fetches. Each branch owns a Navigator, so a detail route pushed from a pane
+//  stacks INSIDE that pane and the other tabs keep their state.
 // ════════════════════════════════════════════════════════════════════════════
 
-/// URL prefix every preview route lives under.
-const String kShellPreviewPrefix = '/shell-preview';
+/// Auth screens. Same strings the legacy table uses, so both routers agree on
+/// what a destination is called even though they reach it differently.
+const String _kLoginPath = '/login';
+const String _kSignupPath = '/signup';
+const String _kGuestPath = '/guest';
 
 /// The shell's top-level destinations, in nav order. The index into
 /// [CitizenTab.values] IS the branch index, so order is load-bearing.
@@ -76,20 +84,8 @@ enum CitizenTab {
   final IconData icon;
   const CitizenTab(this.segment, this.label, this.icon);
 
-  /// Full location for this tab, e.g. `/shell-preview/my-reports`.
-  String get path => '$kShellPreviewPrefix/$segment';
-}
-
-/// True when the app was launched at a preview URL and should build
-/// [CitizenShellPreviewApp] instead of the live MaterialApp.
-///
-/// Strict about the boundary — exact match, or followed by `/` or `?` — so a
-/// real route that merely starts with the same letters is never swallowed.
-bool isShellPreviewLaunch(String? route) {
-  if (route == null) return false;
-  return route == kShellPreviewPrefix ||
-      route.startsWith('$kShellPreviewPrefix/') ||
-      route.startsWith('$kShellPreviewPrefix?');
+  /// Full location for this tab, e.g. `/my-reports`.
+  String get path => '/$segment';
 }
 
 /// Quick actions and other full-bleed flows open over the WHOLE shell rather
@@ -182,9 +178,50 @@ Widget _bodyFor(BuildContext context, CitizenTab tab) {
   }
 }
 
-final GoRouter citizenShellRouter = GoRouter(
+// ── Auth guard ──────────────────────────────────────────────────────────────
+//
+// Synchronous by necessity — go_router's redirect cannot await. The cold-load
+// race that [awaitAuthReady] exists to absorb is handled by treating "no session
+// yet" as UNKNOWN rather than as signed-out; see [AuthRestoration].
+String? _authRedirect(BuildContext context, GoRouterState state) {
+  final loc = state.matchedLocation;
+
+  // The printed-QR endorsement page is public in BOTH directions: an agency
+  // officer scanning it has no session and must not be sent to login, and a
+  // signed-in citizen opening it must not be swept into the shell.
+  if (loc.startsWith(kScanRoutePrefix)) return null;
+
+  final signedIn = Supabase.instance.client.auth.currentSession != null;
+
+  if (signedIn) {
+    // Neither the root nor the login screen is a destination for someone who is
+    // already in. /signup and /guest are deliberately left alone: an anonymous
+    // guest IS signed in (Firebase anonymous auth) and is still mid-flow there.
+    if (loc == '/' || loc == _kLoginPath) return CitizenTab.home.path;
+    return null;
+  }
+
+  // No session — but that is not the same as signed OUT until restoration has
+  // settled. On a cold load (F5 straight onto a detail URL) the restored
+  // session lands a few hundred ms after the first frame, and bouncing now
+  // would throw a logged-in user off their own URL and lose it. Hold the
+  // requested location; refreshListenable re-runs this the moment we know.
+  if (!AuthRestoration.instance.settled) return null;
+
+  if (loc == _kLoginPath || loc == _kSignupPath || loc == _kGuestPath) {
+    return null;
+  }
+  return _kLoginPath;
+}
+
+final GoRouter citizenRouter = GoRouter(
   navigatorKey: _rootNavigatorKey,
-  initialLocation: CitizenTab.home.path,
+  // '/' is not a destination; _authRedirect resolves it once auth is known.
+  initialLocation: '/',
+  // Re-runs _authRedirect when session restoration settles and on every
+  // sign-in / sign-out, so the guard is never deciding on stale information.
+  refreshListenable: AuthRestoration.instance,
+  redirect: _authRedirect,
   // A routing failure must never be a blank page. Without this, an unmatched
   // location or a builder that throws leaves nothing on screen — and on a cold
   // load that is indistinguishable from the app being broken. This puts a
@@ -194,10 +231,37 @@ final GoRouter citizenShellRouter = GoRouter(
     error: state.error?.toString(),
   ),
   routes: <RouteBase>[
-    // Bare /shell-preview is not a destination — send it to the first tab.
+    // '/' still needs something to build: until restoration settles the guard
+    // deliberately returns null, and a location with no route is an error page.
+    GoRoute(path: '/', builder: (_, _) => const _StartingUp()),
+
+    // ── Auth ────────────────────────────────────────────────────────────────
+    // The screens themselves come from app_router.dart, so there is ONE
+    // definition of what login and signup do. NetworkWrapper matches what the
+    // legacy _instantInFadeOut helper wraps them in.
     GoRoute(
-      path: kShellPreviewPrefix,
-      redirect: (_, _) => CitizenTab.home.path,
+      path: _kLoginPath,
+      builder: (_, _) => NetworkWrapper(child: Builder(builder: buildLoginScreen)),
+    ),
+    GoRoute(
+      path: _kSignupPath,
+      builder: (_, _) =>
+          NetworkWrapper(child: Builder(builder: buildSignupScreen)),
+    ),
+    GoRoute(
+      path: _kGuestPath,
+      builder: (_, _) => const NetworkWrapper(child: GuestScreen()),
+    ),
+
+    // ── Public endorsement scan ─────────────────────────────────────────────
+    // A real route now, not a launch-URL special case, so /#/scan/<token>
+    // survives a reload and can be pasted to a colleague.
+    //
+    // No NetworkWrapper, matching the legacy route: that wrapper is built for
+    // signed-in users, and this page has no session and covers offline itself.
+    GoRoute(
+      path: '$kScanRoutePrefix:token',
+      builder: (_, state) => ScanPage(token: state.pathParameters['token']!),
     ),
 
     // NOTE: there is deliberately no full-screen route for the quick actions.
@@ -356,18 +420,51 @@ class _ShellRouteError extends StatelessWidget {
   }
 }
 
-/// The preview's app root. Built by main.dart only for a preview launch URL.
-class CitizenShellPreviewApp extends StatelessWidget {
-  const CitizenShellPreviewApp({super.key});
+/// Shown at '/' for the moment between first paint and knowing whether there is
+/// a session. Deliberately quiet — it is on screen for a few hundred
+/// milliseconds on a warm load, and never at all once the guard resolves.
+class _StartingUp extends StatelessWidget {
+  const _StartingUp();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      backgroundColor: Colors.white,
+      body: Center(
+        child: SizedBox(
+          width: 34,
+          height: 34,
+          child: CircularProgressIndicator(
+            strokeWidth: 2.6,
+            valueColor: AlwaysStoppedAnimation(Color(0xFF00448F)),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The citizen web app root. Built by main.dart for every web launch.
+///
+/// Theme matches the legacy `MaterialApp` exactly — white scaffold, white app
+/// colour — so the auth screens, which were written against that background,
+/// look identical to how they do on the old router. The shell does not inherit
+/// it: [CitizenShell] sets `CitizenUi.pageBg` on its own Scaffold.
+///
+/// No global chat-bubble overlay, unlike the legacy app's `builder`. That bubble
+/// is only ever raised by HomePage (`HomeChatBubble.showGlobal()`), which is
+/// mobile-only now; the shell has its own docked chat window instead.
+class GovPulseWebApp extends StatelessWidget {
+  const GovPulseWebApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
       debugShowCheckedModeBanner: false,
-      title: 'GovPulse — citizen shell preview',
+      title: 'GovPulse',
       color: Colors.white,
-      theme: ThemeData(scaffoldBackgroundColor: CitizenUi.pageBg),
-      routerConfig: citizenShellRouter,
+      theme: ThemeData(scaffoldBackgroundColor: Colors.white),
+      routerConfig: citizenRouter,
     );
   }
 }

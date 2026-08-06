@@ -8,8 +8,8 @@ import '../../core/services/connectivity_service.dart';
 import '../../core/network/network_wrapper.dart';
 import '../../core/network/no_internet_screen.dart';
 import '../../core/router/app_router.dart';
+import '../../core/router/legacy_nav.dart';
 import '../../core/providers/community_posts_provider.dart';
-import '../home/screen/home_screen.dart';
 import '../admin/screens/admin_dashboard_screen.dart';
 import '../staff/screens/staff_console_screen.dart';
 import '../auth/facebook_username_screen.dart';
@@ -185,14 +185,10 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
                     if (!mounted) return;
                     CommunityPostsProvider.instance
                         .resetForAuthenticatedUser();
-                    Navigator.of(context).pushAndRemoveUntil(
-                      PageRouteBuilder(
-                        transitionDuration: Duration.zero,
-                        reverseTransitionDuration: Duration.zero,
-                        pageBuilder: (_, _, _) =>
-                            NetworkWrapper(child: HomePage(username: picked)),
-                      ),
-                      (route) => false,
+                    goToCitizenHome(
+                      context,
+                      username: picked,
+                      clearStack: true,
                     );
                   },
                   onCancel: () async {
@@ -214,17 +210,23 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
         CommunityPostsProvider.instance.resetForAuthenticatedUser();
 
         // role_id == 1 → admin dashboard; 2 → staff console; else → Home.
-        final Widget destination = roleId == 1
-            ? const NetworkWrapper(child: AdminDashboardScreen())
-            : roleId == 2
-                ? const NetworkWrapper(child: StaffConsoleScreen())
-                : NetworkWrapper(child: HomePage(username: username));
+        //
+        // Citizens go through goToCitizenHome so the destination is right on
+        // both platforms: the go_router shell on web, HomePage on mobile. The
+        // two consoles keep their imperative push, which works under either
+        // Navigator and is outside this cutover.
+        if (roleId != 1 && roleId != 2) {
+          goToCitizenHome(context, username: username);
+          return;
+        }
 
         Navigator.of(context).pushReplacement(
           PageRouteBuilder(
             transitionDuration: Duration.zero,
             reverseTransitionDuration: Duration.zero,
-            pageBuilder: (_, _, _) => destination,
+            pageBuilder: (_, _, _) => roleId == 1
+                ? const NetworkWrapper(child: AdminDashboardScreen())
+                : const NetworkWrapper(child: StaffConsoleScreen()),
           ),
         );
         return;

@@ -26,10 +26,10 @@ import 'citizen_shell_dialogs.dart';
 import 'citizen_shell_router.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
-//  CitizenShell — the persistent 3-column citizen web shell. PREVIEW BUILD.
+//  CitizenShell — the persistent 3-column citizen web shell.
 //
-//  Reachable only at /shell-preview. No live route points here, and the mobile
-//  app never builds it.
+//  This is what citizens land on after signing in on web. The mobile app never
+//  builds it — it keeps HomePage and the Navigator 1.0 table.
 //
 //  ── Layout ────────────────────────────────────────────────────────────────
 //  A full-width top nav, and beneath it three columns:

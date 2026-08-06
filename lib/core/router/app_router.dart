@@ -17,7 +17,6 @@ import '../../features/guest/screen/guest.dart';
 import '../../features/Resets/reset_password_email_screen.dart';
 import '../../features/verification/screens/reset_password_email_verify_screen.dart';
 import '../../features/verification/screens/email_verification_success.dart';
-import '../../features/home/screen/home_screen.dart';
 import '../../features/home/newsfeed/news_feed_screen.dart';
 import '../../features/home/settings/settings_screen.dart';
 import '../../features/home/settings/edit_profile_screen.dart';
@@ -144,6 +143,118 @@ String? scanTokenFrom(String? name) {
   return clean.isEmpty ? null : clean;
 }
 
+// ─── Auth screen builders ─────────────────────────────────────────────────────
+//
+// Extracted from the switch below so go_router can mount the SAME screens with
+// the SAME callbacks. There is exactly one definition of what /login and
+// /signup do — the two routers differ only in how they wrap it, and the one
+// genuinely per-platform bit (where an authenticated citizen lands) is handled
+// inside [goToCitizenHome]: the shell on web, HomePage on mobile.
+//
+// Admin and staff keep their imperative pushes. Those work unchanged under
+// either Navigator, and neither console is part of this cutover.
+
+Widget buildLoginScreen(BuildContext ctx) => LoginScreen(
+  onLoginClick: (username, password) async {
+    final result = await AuthService.login(username, password);
+    // Rebind chat storage to THIS user before Home mounts.
+    final uid = Supabase.instance.client.auth.currentUser?.id;
+    if (uid != null) {
+      await ChatService.onUserAuthenticated(uid);
+    }
+    if (!ctx.mounted) return;
+    CommunityPostsProvider.instance.resetForAuthenticatedUser();
+    ProviderScope.containerOf(ctx).invalidate(userProfileProvider);
+
+    // Role-based routing
+    // 1 = admin  → admin dashboard (web & mobile)
+    // 2 = staff  → staff console (helpdesk: chat, reports, endorsements)
+    // 3 = citizen, null = unverified → home
+    if (result.roleId == 1) {
+      Navigator.pushReplacement(
+        ctx,
+        PageRouteBuilder(
+          transitionDuration: Duration.zero,
+          reverseTransitionDuration: Duration.zero,
+          pageBuilder: (_, _, _) =>
+              const NetworkWrapper(child: AdminDashboardScreen()),
+          transitionsBuilder: (_, _, _, child) => child,
+        ),
+      );
+    } else if (result.roleId == 2) {
+      Navigator.pushReplacement(
+        ctx,
+        PageRouteBuilder(
+          transitionDuration: Duration.zero,
+          reverseTransitionDuration: Duration.zero,
+          pageBuilder: (_, _, _) =>
+              const NetworkWrapper(child: StaffConsoleScreen()),
+          transitionsBuilder: (_, _, _, child) => child,
+        ),
+      );
+    } else {
+      goToCitizenHome(ctx, username: result.username);
+    }
+  },
+  onSignUpClick: () => pushLegacy(ctx, '/signup'),
+  onGuestClick: () async {
+    await FirebaseAuth.instance.signInAnonymously();
+    if (!ctx.mounted) return;
+    pushLegacy(ctx, '/guest');
+  },
+  onFacebookClick: () async {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null || !ctx.mounted) return;
+    final row = await Supabase.instance.client
+        .from('profiles')
+        .select('username')
+        .eq('id', user.id)
+        .maybeSingle();
+    final username = (row?['username'] as String?) ?? '';
+    if (!ctx.mounted) return;
+    CommunityPostsProvider.instance.resetForAuthenticatedUser();
+    ProviderScope.containerOf(ctx).invalidate(userProfileProvider);
+    goToCitizenHome(ctx, username: username, clearStack: true);
+    // Root-overlay toast — survives the jump into Home.
+    showAppSnackBar(
+      ctx,
+      'Signed in with Facebook. Welcome back!',
+      type: AppSnackType.success,
+    );
+  },
+);
+
+Widget buildSignupScreen(BuildContext ctx) => SignupScreen(
+  onSignUpClick: (_, _, _) {},
+  onLoginClick: () => pushLegacy(ctx, '/login'),
+  onGuestClick: () async {
+    await FirebaseAuth.instance.signInAnonymously();
+    if (!ctx.mounted) return;
+    pushLegacy(ctx, '/guest');
+  },
+  onFacebookClick: () async {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null || !ctx.mounted) return;
+    // Get username from profiles table (just set by picker screen)
+    final row = await Supabase.instance.client
+        .from('profiles')
+        .select('username')
+        .eq('id', user.id)
+        .maybeSingle();
+    final username = (row?['username'] as String?) ?? '';
+    if (!ctx.mounted) return;
+    CommunityPostsProvider.instance.resetForAuthenticatedUser();
+    ProviderScope.containerOf(ctx).invalidate(userProfileProvider);
+    goToCitizenHome(ctx, username: username, clearStack: true);
+    // Root-overlay toast — survives the jump into Home.
+    showAppSnackBar(
+      ctx,
+      'Welcome to GovPulse! Your account is ready.',
+      type: AppSnackType.success,
+    );
+  },
+);
+
 Route<dynamic>? onGenerateRoute(RouteSettings settings) {
   // ── Public endorsement scan page ───────────────────────────────────────────
   // Matched by PREFIX, before anything else, because the token is part of the
@@ -200,141 +311,10 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
     //  - Reverse (back navigation) fades the whole screen out over 220ms.
 
     case '/login':
-      return _instantInFadeOut(
-        Builder(
-          builder: (ctx) => LoginScreen(
-            onLoginClick: (username, password) async {
-              final result = await AuthService.login(username, password);
-              // Rebind chat storage to THIS user before Home mounts.
-              final uid = Supabase.instance.client.auth.currentUser?.id;
-              if (uid != null) {
-                await ChatService.onUserAuthenticated(uid);
-              }
-              if (!ctx.mounted) return;
-              CommunityPostsProvider.instance.resetForAuthenticatedUser();
-              ProviderScope.containerOf(ctx).invalidate(userProfileProvider);
-
-              // Role-based routing
-              // 1 = admin  → admin dashboard (web & mobile)
-              // 2 = staff  → staff console (helpdesk: chat, reports, endorsements)
-              // 3 = citizen, null = unverified → home
-              if (result.roleId == 1) {
-                Navigator.pushReplacement(
-                  ctx,
-                  PageRouteBuilder(
-                    transitionDuration: Duration.zero,
-                    reverseTransitionDuration: Duration.zero,
-                    pageBuilder: (_, _, _) =>
-                        const NetworkWrapper(child: AdminDashboardScreen()),
-                    transitionsBuilder: (_, _, _, child) => child,
-                  ),
-                );
-              } else if (result.roleId == 2) {
-                Navigator.pushReplacement(
-                  ctx,
-                  PageRouteBuilder(
-                    transitionDuration: Duration.zero,
-                    reverseTransitionDuration: Duration.zero,
-                    pageBuilder: (_, _, _) =>
-                        const NetworkWrapper(child: StaffConsoleScreen()),
-                    transitionsBuilder: (_, _, _, child) => child,
-                  ),
-                );
-              } else {
-                Navigator.pushReplacement(
-                  ctx,
-                  PageRouteBuilder(
-                    transitionDuration: Duration.zero,
-                    reverseTransitionDuration: Duration.zero,
-                    pageBuilder: (_, _, _) => NetworkWrapper(
-                      child: HomePage(username: result.username),
-                    ),
-                    transitionsBuilder: (_, _, _, child) => child,
-                  ),
-                );
-              }
-            },
-            onSignUpClick: () => pushLegacy(ctx, '/signup'),
-            onGuestClick: () async {
-              await FirebaseAuth.instance.signInAnonymously();
-              if (!ctx.mounted) return;
-              pushLegacy(ctx, '/guest');
-            },
-            onFacebookClick: () async {
-              final user = Supabase.instance.client.auth.currentUser;
-              if (user == null || !ctx.mounted) return;
-              final row = await Supabase.instance.client
-                  .from('profiles')
-                  .select('username')
-                  .eq('id', user.id)
-                  .maybeSingle();
-              final username = (row?['username'] as String?) ?? '';
-              if (!ctx.mounted) return;
-              CommunityPostsProvider.instance.resetForAuthenticatedUser();
-              ProviderScope.containerOf(ctx).invalidate(userProfileProvider);
-              Navigator.of(ctx).pushAndRemoveUntil(
-                PageRouteBuilder(
-                  transitionDuration: Duration.zero,
-                  reverseTransitionDuration: Duration.zero,
-                  pageBuilder: (_, _, _) =>
-                      NetworkWrapper(child: HomePage(username: username)),
-                ),
-                (route) => false,
-              );
-              // Root-overlay toast — survives the jump into Home.
-              showAppSnackBar(
-                ctx,
-                'Signed in with Facebook. Welcome back!',
-                type: AppSnackType.success,
-              );
-            },
-          ),
-        ),
-      );
+      return _instantInFadeOut(Builder(builder: buildLoginScreen));
 
     case '/signup':
-      return _instantInFadeOut(
-        Builder(
-          builder: (ctx) => SignupScreen(
-            onSignUpClick: (_, _, _) {},
-            onLoginClick: () => pushLegacy(ctx, '/login'),
-            onGuestClick: () async {
-              await FirebaseAuth.instance.signInAnonymously();
-              if (!ctx.mounted) return;
-              pushLegacy(ctx, '/guest');
-            },
-            onFacebookClick: () async {
-              final user = Supabase.instance.client.auth.currentUser;
-              if (user == null || !ctx.mounted) return;
-              // Get username from profiles table (just set by picker screen)
-              final row = await Supabase.instance.client
-                  .from('profiles')
-                  .select('username')
-                  .eq('id', user.id)
-                  .maybeSingle();
-              final username = (row?['username'] as String?) ?? '';
-              if (!ctx.mounted) return;
-              CommunityPostsProvider.instance.resetForAuthenticatedUser();
-              ProviderScope.containerOf(ctx).invalidate(userProfileProvider);
-              Navigator.of(ctx).pushAndRemoveUntil(
-                PageRouteBuilder(
-                  transitionDuration: Duration.zero,
-                  reverseTransitionDuration: Duration.zero,
-                  pageBuilder: (_, _, _) =>
-                      NetworkWrapper(child: HomePage(username: username)),
-                ),
-                (route) => false,
-              );
-              // Root-overlay toast — survives the jump into Home.
-              showAppSnackBar(
-                ctx,
-                'Welcome to GovPulse! Your account is ready.',
-                type: AppSnackType.success,
-              );
-            },
-          ),
-        ),
-      );
+      return _instantInFadeOut(Builder(builder: buildSignupScreen));
 
     case '/guest':
       return _instantInFadeOut(const GuestScreen());

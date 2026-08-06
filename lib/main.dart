@@ -15,8 +15,8 @@ import 'core/services/push_service.dart';
 import 'firebase_options.dart';
 import 'core/router/app_router.dart';
 import 'features/onboarding/splash_screen.dart';
-import 'features/home/shell/citizen_shell_router.dart'
-    show CitizenShellPreviewApp, isShellPreviewLaunch;
+import 'features/home/shell/citizen_shell_router.dart' show GovPulseWebApp;
+import 'core/services/auth_ready.dart' show AuthRestoration;
 import 'features/scan/scan_page.dart';
 import 'core/widgets/Home/Chat-bubbles/home_chat_bubble.dart';
 import 'core/services/chat_service.dart';
@@ -83,6 +83,11 @@ void main() async {
 
   await Hive.initFlutter();
 
+  // Start watching for a restored session before the first frame, so the web
+  // router's auth guard has something to wait on rather than reading a
+  // half-restored auth state and bouncing a signed-in user to /login.
+  AuthRestoration.instance.begin();
+
   // Start the app NOW — splash renders immediately, before any network work.
   runApp(const ProviderScope(child: GovPulseApp()));
 
@@ -132,6 +137,22 @@ class GovPulseApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // ── Web: go_router owns everything ───────────────────────────────────────
+    // One router, one owner of the address bar. The citizen shell is the real
+    // destination now, the auth screens and /scan/<token> are real routes, and
+    // the legacy table below is reached only imperatively through the
+    // legacy_nav shim — so nothing else writes browser history.
+    //
+    // The splash is deliberately skipped on web: a 3.4s animation before every
+    // F5 works directly against the reload-proof URLs this cutover exists to
+    // deliver. Mobile keeps it, unchanged, below.
+    //
+    // The old /scan/ launch-URL branch is gone from this side too — the scan
+    // page is a GoRoute now, so it survives a reload instead of only working on
+    // a cold start.
+    if (kIsWeb) return const GovPulseWebApp();
+
+    // ── Mobile: the legacy Navigator 1.0 app, untouched ──────────────────────
     // ── Public scan deep link ────────────────────────────────────────────────
     // An agency officer's phone opens /#/scan/<token> straight from a printed
     // QR code. That has to bypass the whole startup flow, and specifically it
@@ -147,23 +168,6 @@ class GovPulseApp extends StatelessWidget {
     // flow, the newsfeed, and every normal launch still start at the splash
     // exactly as before.
     final scanToken = scanTokenFrom(_launchRoute);
-
-    // ── Citizen web shell preview (scratch) ──────────────────────────────────
-    // Loading the app at /shell-preview builds the go_router-driven shell
-    // instead of the app below, so the two can be compared side by side in two
-    // browser tabs. Nothing in the live app links here — it is reachable only by
-    // typing the URL — and no real route was moved onto go_router.
-    //
-    // It has to be a separate MaterialApp rather than a route inside this one:
-    // Navigator 1.0 already reports its route names to the browser URL on web,
-    // so a nested go_router would leave two routers writing history entries and
-    // fighting over the location. Selecting either at launch keeps exactly one
-    // router owning the URL.
-    //
-    // Checked AFTER the scan token so the printed-QR deep link always wins.
-    if (scanToken == null && isShellPreviewLaunch(_launchRoute)) {
-      return const CitizenShellPreviewApp();
-    }
 
     return MaterialApp(
       navigatorKey: navigatorKey,
