@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../../../core/services/auth_ready.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  One report, as a row in My Reports.
@@ -111,6 +114,33 @@ class ReportItem {
           ? null
           : (m['rejection_note'] as String?)?.trim(),
     );
+  }
+
+  /// Load one report by its id.
+  ///
+  /// This is what makes a report detail URL survive a hard refresh: navigating
+  /// in-session hands the object straight over, but on reload there is only an
+  /// id in the address bar and the object has to be rebuilt from the database.
+  ///
+  /// Deliberately the SAME select and the same [fromMap] the list uses, so a
+  /// report opened from a URL and a report opened from the list are byte-for-byte
+  /// the same object — a second mapping path is how the two quietly diverge.
+  ///
+  /// Returns null when the id does not exist or RLS hides it (someone else's
+  /// report, a deleted one, a mistyped URL). Throws only on a genuine
+  /// network/database failure, so callers can tell "not found" from "offline".
+  static Future<ReportItem?> fetchById(String id) async {
+    // On a cold load this can run before the persisted session is restored, and
+    // an unauthenticated query is hidden by RLS — which would look like a
+    // missing report rather than a race. Costs nothing once signed in.
+    await awaitAuthReady();
+    final row = await Supabase.instance.client
+        .from('reports')
+        .select('*, report_media(id)')
+        .eq('id', id)
+        .maybeSingle();
+    if (row == null) return null;
+    return ReportItem.fromMap(row);
   }
 
   static String _categoryLabel(String key, String? other) {

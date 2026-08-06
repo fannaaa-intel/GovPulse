@@ -87,10 +87,20 @@ class EventsScreen extends StatefulWidget {
   final String username;
   final bool isVerified;
 
+  /// Open one event. Null — the mobile app and the live web route — keeps the
+  /// legacy '/event_detail' push with the object in `arguments`.
+  ///
+  /// The shell passes a callback instead, so the event opens at an
+  /// id-addressable URL that survives a reload. Same shape as
+  /// `MyReportsBody.onOpenReport`, and for the same reason: it keeps this screen
+  /// from having to know which router it is running under.
+  final void Function(EventItem event)? onOpenEvent;
+
   const EventsScreen({
     super.key,
     required this.username,
     this.isVerified = false,
+    this.onOpenEvent,
   });
 
   @override
@@ -99,6 +109,22 @@ class EventsScreen extends StatefulWidget {
 
 class _EventsScreenState extends State<EventsScreen>
     with TickerProviderStateMixin {
+  /// Opens [event]. Delegates to the host when one supplied a callback (the web
+  /// shell, which routes to an id-addressable URL); otherwise keeps the legacy
+  /// in-memory push that mobile and the live route rely on.
+  void _openEvent(EventItem event) {
+    final open = widget.onOpenEvent;
+    if (open != null) {
+      open(event);
+      return;
+    }
+    Navigator.pushNamed(
+      context,
+      '/event_detail',
+      arguments: {'event': event, 'username': widget.username},
+    );
+  }
+
   // ── State ──────────────────────────────────────────────────────────────────
   List<EventItem> _events = [];
   bool _isLoading = true;
@@ -883,14 +909,7 @@ class _EventsScreenState extends State<EventsScreen>
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
-                          onPressed: () => Navigator.pushNamed(
-                            context,
-                            '/event_detail',
-                            arguments: {
-                              'event': event,
-                              'username': widget.username,
-                            },
-                          ),
+                          onPressed: () => _openEvent(event),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.green,
                             elevation: 0,
@@ -1070,14 +1089,7 @@ class _EventsScreenState extends State<EventsScreen>
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed: () => Navigator.pushNamed(
-                        context,
-                        '/event_detail',
-                        arguments: {
-                          'event': event,
-                          'username': widget.username,
-                        },
-                      ),
+                      onPressed: () => _openEvent(event),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primaryBlue,
                         elevation: 0,

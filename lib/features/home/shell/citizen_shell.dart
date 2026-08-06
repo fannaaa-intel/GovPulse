@@ -168,8 +168,21 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
         context: context,
         title: title,
         icon: icon,
-        builder: (_, _) =>
-            EventsScreen(username: username, isVerified: _isVerified),
+        builder: (dialogContext, close) => EventsScreen(
+          username: username,
+          isVerified: _isVerified,
+          // Close the browsing modal, then open the event at its own
+          // id-addressable URL so the detail is reload-proof and shareable
+          // rather than trapped inside a dialog.
+          //
+          // go(), not push() — see the note on onOpenReport: a push leaves the
+          // reported location on the branch root, so the address bar would keep
+          // saying /home while an event was open and F5 would have no id.
+          onOpenEvent: (event) {
+            close();
+            context.go(shellEventDetailPath(event.id), extra: event);
+          },
+        ),
       );
       return;
     }

@@ -3,7 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/providers/user_profile_provider.dart';
+import '../../../core/services/events_service.dart';
 import '../../../core/theme/citizen_ui.dart';
+import '../../../core/widgets/resolve_by_id.dart';
+import '../Quick-action/Events/event_detail_screen.dart';
+import '../Quick-action/Events/events_screen.dart' show EventItem;
 import '../emergency/emergency_screen.dart';
 import '../my_report/my_reports_screen.dart';
 import '../my_report/report_detail_screen.dart';
@@ -93,10 +97,40 @@ bool isShellPreviewLaunch(String? route) {
 final GlobalKey<NavigatorState> _rootNavigatorKey = GlobalKey<NavigatorState>();
 
 /// Detail route for one report, pushed inside the My Reports branch so it
-/// stacks over that pane and leaves the other tabs untouched. The item rides in
-/// `extra` — the same in-memory hand-off the legacy '/report_detail' route uses.
-/// Making it id-addressable needs a fetch-by-id path and is Phase 3 work.
-String get shellReportDetailPath => '${CitizenTab.myReports.path}/detail';
+/// stacks over that pane and leaves the other tabs untouched.
+///
+/// ID-ADDRESSABLE: the report id is in the PATH, so this URL survives a hard
+/// refresh and can be pasted to someone else. The [ReportItem] still rides in
+/// `extra` when we already have it — that keeps in-session navigation instant
+/// with no fetch and no loading flash — but it is an optimisation, never a
+/// requirement. On a cold load `extra` is null and the report is fetched by id.
+String shellReportDetailPath(String reportId) =>
+    '${CitizenTab.myReports.path}/detail/$reportId';
+
+/// Detail route for one event, same contract as [shellReportDetailPath].
+///
+/// Lives under the Home branch rather than getting a tab of its own: Events is a
+/// quick action, so the branch it stacks on is simply wherever the shell's
+/// primary column is.
+String shellEventDetailPath(String eventId) =>
+    '${CitizenTab.home.path}/event/$eventId';
+
+/// `state.extra`, but only when it really is a [T].
+///
+/// NEVER cast `extra` directly. On a browser reload go_router restores its
+/// navigation state from `window.history.state`, and whatever comes back is not
+/// the object we put in — the model is not serialisable, so at best it is null
+/// and at worst it is a decoded Map. `state.extra as ReportItem?` throws a
+/// TypeError on the second case, and a TypeError thrown inside a route builder
+/// takes out the whole router subtree: a blank page with no shell chrome, which
+/// is precisely the cold-load symptom.
+///
+/// A type test degrades to "no fast path, fetch by id" instead, which is the
+/// behaviour a cold load wants anyway.
+T? _extraAs<T>(GoRouterState state) {
+  final extra = state.extra;
+  return extra is T ? extra : null;
+}
 
 /// Reads identity from [userProfileProvider] for route builders whose screens
 /// still take `username`. The Bodies no longer need this; the quick-action and
@@ -124,8 +158,22 @@ Widget _bodyFor(BuildContext context, CitizenTab tab) {
       return const NewsFeedBody(embedded: true);
     case CitizenTab.myReports:
       return MyReportsBody(
-        onOpenReport: (report) =>
-            context.push(shellReportDetailPath, extra: report),
+        // Both are passed: the id makes the URL real and reload-proof, the
+        // object makes this navigation instant. Only the id is load-bearing.
+        //
+        // go(), NOT push(). An imperative push stacks the detail on the branch
+        // navigator but leaves the reported location on the branch ROOT, so the
+        // address bar still said /my-reports while a report was open — which is
+        // exactly how an id-addressable route ends up with no id to reload from.
+        // go() re-resolves the whole match list, so the location becomes the
+        // detail path and the browser URL follows. Because the detail route is a
+        // direct child of the branch route, the resulting stack is still
+        // [list, detail] — Back returns to the list with its scroll intact,
+        // same as push gave us.
+        onOpenReport: (report) => context.go(
+          shellReportDetailPath(report.fullId),
+          extra: report,
+        ),
       );
     case CitizenTab.emergency:
       return const EmergencyBody();
@@ -137,6 +185,14 @@ Widget _bodyFor(BuildContext context, CitizenTab tab) {
 final GoRouter citizenShellRouter = GoRouter(
   navigatorKey: _rootNavigatorKey,
   initialLocation: CitizenTab.home.path,
+  // A routing failure must never be a blank page. Without this, an unmatched
+  // location or a builder that throws leaves nothing on screen — and on a cold
+  // load that is indistinguishable from the app being broken. This puts a
+  // readable message and a way back on screen instead.
+  errorBuilder: (context, state) => _ShellRouteError(
+    location: state.uri.toString(),
+    error: state.error?.toString(),
+  ),
   routes: <RouteBase>[
     // Bare /shell-preview is not a destination — send it to the first tab.
     GoRoute(
@@ -162,15 +218,63 @@ final GoRouter citizenShellRouter = GoRouter(
                   // Report detail lives INSIDE the My Reports branch, so it
                   // stacks over that pane and Back returns to the list with its
                   // scroll position intact.
+                  //
+                  // The id is in the path and `extra` is optional, so pasting or
+                  // reloading /my-reports/detail/<id> reconstructs the report
+                  // instead of bouncing to the splash the way the legacy
+                  // '/report_detail' route has to.
                   if (tab == CitizenTab.myReports)
                     GoRoute(
-                      path: 'detail',
-                      builder: (context, state) => _WithIdentity(
-                        (username, _) => ReportDetailScreen(
-                          report: state.extra as ReportItem,
-                          username: username,
-                        ),
-                      ),
+                      path: 'detail/:reportId',
+                      builder: (context, state) {
+                        final id = state.pathParameters['reportId']!;
+                        return _WithIdentity(
+                          (username, _) => ResolveById<ReportItem>(
+                            initial: _extraAs<ReportItem>(state),
+                            fetch: () => ReportItem.fetchById(id),
+                            loadingLabel: 'Loading report…',
+                            notFoundTitle: 'Report not found',
+                            notFoundMessage:
+                                'This report may have been removed, or the '
+                                'link may be incorrect.',
+                            builder: (_, report) => ReportDetailScreen(
+                              report: report,
+                              username: username,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+
+                  // Event detail, same contract. Events is a quick action, so it
+                  // stacks on the primary (Home) branch.
+                  if (tab == CitizenTab.home)
+                    GoRoute(
+                      path: 'event/:eventId',
+                      builder: (context, state) {
+                        final id = state.pathParameters['eventId']!;
+                        return _WithIdentity(
+                          (username, _) => ResolveById<EventItem>(
+                            initial: _extraAs<EventItem>(state),
+                            fetch: () async {
+                              final model = await EventsService.instance
+                                  .fetchEventById(id);
+                              return model == null
+                                  ? null
+                                  : EventItem.fromModel(model);
+                            },
+                            loadingLabel: 'Loading event…',
+                            notFoundTitle: 'Event not found',
+                            notFoundMessage:
+                                'This event may have ended or been removed, or '
+                                'the link may be incorrect.',
+                            builder: (_, event) => EventDetailScreen(
+                              event: event,
+                              username: username,
+                            ),
+                          ),
+                        );
+                      },
                     ),
                 ],
               ),
@@ -180,6 +284,77 @@ final GoRouter citizenShellRouter = GoRouter(
     ),
   ],
 );
+
+/// Shown instead of a blank page when a location cannot be resolved.
+class _ShellRouteError extends StatelessWidget {
+  final String location;
+  final String? error;
+  const _ShellRouteError({required this.location, this.error});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: CitizenUi.pageBg,
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 460),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.link_off_rounded,
+                  size: 44,
+                  color: CitizenUi.accent,
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  "This page couldn't be opened",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    color: CitizenUi.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SelectableText(
+                  location,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    color: CitizenUi.textMuted,
+                  ),
+                ),
+                if (error != null) ...[
+                  const SizedBox(height: 10),
+                  SelectableText(
+                    error!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      color: CitizenUi.textFaint,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 20),
+                FilledButton.icon(
+                  onPressed: () => context.go(CitizenTab.home.path),
+                  icon: const Icon(Icons.home_rounded, size: 18),
+                  label: const Text('Back to Home'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: CitizenUi.accent,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 /// The preview's app root. Built by main.dart only for a preview launch URL.
 class CitizenShellPreviewApp extends StatelessWidget {

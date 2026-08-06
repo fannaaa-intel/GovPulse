@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../utils/search_filter.dart';
+import 'auth_ready.dart';
 
 // ─── Model ────────────────────────────────────────────────────────────────────
 
@@ -121,6 +122,29 @@ class EventsService {
 
     final response = await query.order('event_date', ascending: true);
     return (response as List).map((e) => EventModel.fromJson(e)).toList();
+  }
+
+  /// Load one event by its id.
+  ///
+  /// The counterpart to [ReportItem.fetchById]: an event detail URL carries only
+  /// an id, so on a hard refresh the event has to be rebuilt from the database
+  /// rather than handed over in memory. Reuses [EventModel.fromJson] so a URL
+  /// -opened event and a list-opened event are the same object.
+  ///
+  /// Returns null when the id does not exist or RLS hides it (an unapproved or
+  /// deleted event, a mistyped URL). Throws only on a real network/database
+  /// failure, so callers can distinguish "not found" from "offline".
+  Future<EventModel?> fetchEventById(String id) async {
+    // Same cold-load race as ReportItem.fetchById: a query issued before the
+    // session is restored is filtered by RLS and looks like "no such event".
+    await awaitAuthReady();
+    final row = await _client
+        .from('events')
+        .select()
+        .eq('id', id)
+        .maybeSingle();
+    if (row == null) return null;
+    return EventModel.fromJson(row);
   }
 
   /// Admin: fetch all pending events awaiting review.
