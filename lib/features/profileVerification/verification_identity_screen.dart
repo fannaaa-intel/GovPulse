@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../../core/router/legacy_nav.dart';
 import '../../core/theme/app_colors.dart';
 
 class VerificationIdentityScreen extends StatefulWidget {
@@ -281,7 +282,7 @@ class _VerificationIdentityScreenState extends State<VerificationIdentityScreen>
         setState(() => _confirmPressed = false);
 
         // ── Forward every field to the face scan screen ───────────────
-        Navigator.pushNamed(
+        pushLegacy(
           context,
           '/verification_face_scan',
           arguments: {

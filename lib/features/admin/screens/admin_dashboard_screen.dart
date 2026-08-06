@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/providers/user_profile_provider.dart';
+import '../../../core/router/legacy_nav.dart';
 import '../../../core/services/chat_service.dart';
 import '../../../core/services/push_service.dart';
 import '../../../core/widgets/Home/Chat-bubbles/home_chat_bubble.dart';
@@ -314,7 +315,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
 
       if (!mounted) return;
       Navigator.pop(context); // dismiss loading spinner
-      Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+      goToLogin(context);
       ref.invalidate(userProfileProvider);
     } catch (e) {
       if (!mounted) return;

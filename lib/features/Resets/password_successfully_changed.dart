@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../../core/router/legacy_nav.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/web/web.dart';
 import '../../core/widgets/mobile_form_shell.dart';
@@ -127,9 +128,7 @@ class _PasswordChangeSuccessState extends State<PasswordChangeSuccess>
                             borderRadius: BorderRadius.circular(16),
                           ),
                         ),
-                        onPressed: () => Navigator.of(
-                          context,
-                        ).pushNamedAndRemoveUntil('/login', (route) => false),
+                        onPressed: () => goToLogin(context),
                         child: const Text(
                           "Continue",
                           style: TextStyle(
@@ -211,9 +210,7 @@ class _PasswordChangeSuccessState extends State<PasswordChangeSuccess>
           // ── CTA — blue-fill, deepen-on-hover (WebPrimaryButton) ───────────
           WebPrimaryButton(
             label: "Continue to sign in",
-            onPressed: () => Navigator.of(
-              context,
-            ).pushNamedAndRemoveUntil('/login', (route) => false),
+            onPressed: () => goToLogin(context),
           ),
         ],
       ),

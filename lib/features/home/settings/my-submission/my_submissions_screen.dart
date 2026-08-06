@@ -6,6 +6,7 @@ import 'package:video_player/video_player.dart';
 import '../../../../core/widgets/responsive_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/router/legacy_nav.dart';
 import '../../../../core/widgets/deeplink_highlight.dart';
 import '../../../../core/widgets/loading/loading_overlay.dart';
 import '../../my_report/my_reports_screen.dart' show ReportItem;
@@ -1347,7 +1348,7 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
     if (item == null) return;
     // Canonical /report_detail route: instant enter, fade-out exit, and the
     // detail's own slide-up body + shimmer skeleton — consistent app-wide.
-    Navigator.pushNamed(
+    pushLegacy(
       context,
       '/report_detail',
       arguments: {'report': item, 'username': widget.username},

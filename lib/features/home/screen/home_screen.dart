@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../../../features/home/screen/notification_popup.dart';
 import '../../../core/widgets/Home/Newsfeed/citizen_web_notification_panel.dart';
 import '../../../core/network/network_wrapper.dart';
+import '../../../core/router/legacy_nav.dart';
 import '../../../core/utils/overlay_exit.dart';
 import '../../../core/widgets/app_snackbar.dart';
 import '../../../core/widgets/modal/verification_required_dialog.dart';
@@ -231,7 +232,7 @@ class _HomePageState extends ConsumerState<HomePage>
       } catch (_) {}
     }
     if (!mounted) return;
-    Navigator.pushNamed(
+    pushLegacy(
       context,
       '/newsfeed',
       arguments: {
@@ -352,7 +353,7 @@ class _HomePageState extends ConsumerState<HomePage>
 
   void _goToVerification() {
     if (_verifStatus == VerifStatus.pending) return;
-    Navigator.pushNamed(context, '/verification', arguments: widget.username);
+    pushLegacy(context, '/verification', arguments: widget.username);
   }
 
   // ─── Quick-action dispatcher ─────────────────────────────────────────────
@@ -389,11 +390,11 @@ class _HomePageState extends ConsumerState<HomePage>
         );
         return;
       }
-      Navigator.pushNamed(context, '/my_reports', arguments: widget.username);
+      pushLegacy(context, '/my_reports', arguments: widget.username);
     } else if (index == 2) {
       _goToNewsFeed();
     } else if (index == 3) {
-      Navigator.pushNamed(
+      pushLegacy(
         context,
         '/emergency',
         arguments: {
@@ -402,7 +403,7 @@ class _HomePageState extends ConsumerState<HomePage>
         },
       );
     } else if (index == 4) {
-      Navigator.pushNamed(context, '/settings', arguments: widget.username);
+      pushLegacy(context, '/settings', arguments: widget.username);
     }
   }
 
@@ -463,7 +464,7 @@ class _HomePageState extends ConsumerState<HomePage>
       if (!mounted) return;
 
       Navigator.pop(context);
-      Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+      goToLogin(context);
     } catch (e) {
       if (!mounted) return;
       Navigator.pop(context);

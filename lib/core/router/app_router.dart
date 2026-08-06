@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/chat_service.dart';
 import '../network/network_wrapper.dart';
+import 'legacy_nav.dart';
 import '../widgets/app_snackbar.dart';
 import '../../features/onboarding/splash_screen.dart';
 import '../../features/onboarding/intro_screen.dart';
@@ -253,11 +254,11 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
                 );
               }
             },
-            onSignUpClick: () => Navigator.pushNamed(ctx, '/signup'),
+            onSignUpClick: () => pushLegacy(ctx, '/signup'),
             onGuestClick: () async {
               await FirebaseAuth.instance.signInAnonymously();
               if (!ctx.mounted) return;
-              Navigator.pushNamed(ctx, '/guest');
+              pushLegacy(ctx, '/guest');
             },
             onFacebookClick: () async {
               final user = Supabase.instance.client.auth.currentUser;
@@ -296,11 +297,11 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
         Builder(
           builder: (ctx) => SignupScreen(
             onSignUpClick: (_, _, _) {},
-            onLoginClick: () => Navigator.pushNamed(ctx, '/login'),
+            onLoginClick: () => pushLegacy(ctx, '/login'),
             onGuestClick: () async {
               await FirebaseAuth.instance.signInAnonymously();
               if (!ctx.mounted) return;
-              Navigator.pushNamed(ctx, '/guest');
+              pushLegacy(ctx, '/guest');
             },
             onFacebookClick: () async {
               final user = Supabase.instance.client.auth.currentUser;
@@ -366,7 +367,7 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
                   ),
                 );
               },
-              onLogin: () => Navigator.pushNamed(ctx, '/login'),
+              onLogin: () => pushLegacy(ctx, '/login'),
             ),
           ),
         ),
@@ -409,13 +410,13 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
               final prefs = await SharedPreferences.getInstance();
               await prefs.setBool('seenOnboarding', true);
               if (!ctx.mounted) return;
-              Navigator.pushReplacementNamed(ctx, '/login');
+              pushReplacementLegacy(ctx, '/login');
             },
             onSignUpClick: () async {
               final prefs = await SharedPreferences.getInstance();
               await prefs.setBool('seenOnboarding', true);
               if (!ctx.mounted) return;
-              Navigator.pushReplacementNamed(ctx, '/signup');
+              pushReplacementLegacy(ctx, '/signup');
             },
           ),
         ),

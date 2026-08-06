@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import '../../../core/router/legacy_nav.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/web/web.dart';
 import '../../../core/widgets/mobile_form_shell.dart';
@@ -67,7 +68,7 @@ class _EmailVerificationSuccessState extends State<EmailVerificationSuccess>
   }
 
   void _continue() {
-    Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+    goToLogin(context);
   }
 
   @override
@@ -208,9 +209,7 @@ class _EmailVerificationSuccessState extends State<EmailVerificationSuccess>
                             borderRadius: BorderRadius.circular(16),
                           ),
                         ),
-                        onPressed: () => Navigator.of(
-                          context,
-                        ).pushNamedAndRemoveUntil('/login', (route) => false),
+                        onPressed: () => goToLogin(context),
                         child: const Text(
                           "Continue",
                           style: TextStyle(

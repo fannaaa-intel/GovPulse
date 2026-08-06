@@ -8,6 +8,7 @@ import '../../../core/widgets/loading/loading_overlay.dart';
 import '../../../core/widgets/modal/verification_required_dialog.dart';
 import '../../../core/widgets/Home/nav/responsive_nav_scaffold.dart';
 import '../../../core/services/citizen_logout.dart';
+import '../../../core/router/legacy_nav.dart';
 import '../../../core/providers/user_profile_provider.dart';
 import '../../../core/widgets/Home/home_enums.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -885,7 +886,7 @@ class _SettingScreenState extends ConsumerState<SettingsBody>
 
             if (!approved || !mounted) return;
 
-            final refreshed = await Navigator.pushNamed(
+            final refreshed = await pushLegacy(
               context,
               '/edit_profile',
               arguments: _username,
@@ -904,7 +905,7 @@ class _SettingScreenState extends ConsumerState<SettingsBody>
             width: width,
             onTap: () {
               if (email == null) return;
-              Navigator.pushNamed(
+              pushLegacy(
                 context,
                 '/change_password',
                 arguments: email,
@@ -973,7 +974,7 @@ class _SettingScreenState extends ConsumerState<SettingsBody>
 
             if (!approved || !mounted) return;
 
-            Navigator.pushNamed(
+            pushLegacy(
               context,
               '/my_submissions',
               arguments: _username,
@@ -1024,7 +1025,7 @@ class _SettingScreenState extends ConsumerState<SettingsBody>
           subtitle: 'Get help from the Aparri LGU',
           width: width,
           showDivider: false,
-          onTap: () => Navigator.pushNamed(
+          onTap: () => pushLegacy(
             context,
             '/contact_support',
             arguments: _username,
@@ -1045,7 +1046,7 @@ class _SettingScreenState extends ConsumerState<SettingsBody>
           iconBgColor: AppColors.primaryBlue,
           title: 'Terms of Service',
           width: width,
-          onTap: () => Navigator.pushNamed(context, '/terms_of_service'),
+          onTap: () => pushLegacy(context, '/terms_of_service'),
         ),
         _buildTile(
           imagePath: 'assets/images/settings/privacy.webp',
@@ -1053,7 +1054,7 @@ class _SettingScreenState extends ConsumerState<SettingsBody>
           title: 'Privacy Policy',
           width: width,
           showDivider: false,
-          onTap: () => Navigator.pushNamed(context, '/privacy_policy'),
+          onTap: () => pushLegacy(context, '/privacy_policy'),
         ),
       ],
     );
@@ -1070,7 +1071,7 @@ class _SettingScreenState extends ConsumerState<SettingsBody>
           iconBgColor: AppColors.primaryBlue,
           title: 'About GovPulse',
           width: width,
-          onTap: () => Navigator.pushNamed(context, '/about'),
+          onTap: () => pushLegacy(context, '/about'),
         ),
         _buildTile(
           imagePath: 'assets/images/settings/location.webp',

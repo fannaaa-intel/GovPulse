@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/widgets/responsive_page.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/router/legacy_nav.dart';
 import '../../../../core/services/events_service.dart';
 import '../../../../core/widgets/event_status_pill.dart';
 import '../../../../core/widgets/loading/loading_overlay.dart';
@@ -118,7 +119,7 @@ class _EventsScreenState extends State<EventsScreen>
       open(event);
       return;
     }
-    Navigator.pushNamed(
+    pushLegacy(
       context,
       '/event_detail',
       arguments: {'event': event, 'username': widget.username},

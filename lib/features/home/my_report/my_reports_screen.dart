@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/app_colors.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../core/router/legacy_nav.dart';
 import '../../../core/widgets/Home/nav/responsive_nav_scaffold.dart';
 import '../../../../core/widgets/loading/loading_overlay.dart';
 import '../../../core/widgets/web/web_card_grid.dart';
@@ -898,7 +899,7 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
           open(report);
           return;
         }
-        Navigator.pushNamed(
+        pushLegacy(
           context,
           '/report_detail',
           arguments: {'report': report, 'username': _username},

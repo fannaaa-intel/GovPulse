@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../providers/user_profile_provider.dart';
+import '../router/legacy_nav.dart';
 import '../widgets/Home/Chat-bubbles/home_chat_bubble.dart';
 import '../widgets/app_dialog.dart';
 import '../widgets/app_snackbar.dart';
@@ -51,7 +52,7 @@ Future<bool> performCitizenLogout(
 
     if (!context.mounted) return true;
     Navigator.pop(context); // dismiss the spinner
-    Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+    goToLogin(context);
     ref.invalidate(userProfileProvider);
     return true;
   } catch (e) {

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../network/network_wrapper.dart';
+import '../../../router/legacy_nav.dart';
 import '../../modal/verification_required_dialog.dart';
 import '../../../../features/home/screen/home_screen.dart';
 
@@ -46,11 +47,11 @@ class AppBottomNav extends StatelessWidget {
           );
           return;
         }
-        Navigator.pushNamed(context, '/my_reports', arguments: username);
+        pushLegacy(context, '/my_reports', arguments: username);
         break;
 
       case 2:
-        Navigator.pushNamed(
+        pushLegacy(
           context,
           '/newsfeed',
           arguments: {
@@ -62,7 +63,7 @@ class AppBottomNav extends StatelessWidget {
         break;
 
       case 3:
-        Navigator.pushNamed(
+        pushLegacy(
           context,
           '/emergency',
           arguments: {'username': username, 'isVerified': isVerified},
@@ -70,7 +71,7 @@ class AppBottomNav extends StatelessWidget {
         break;
 
       case 4:
-        Navigator.pushNamed(context, '/settings', arguments: username);
+        pushLegacy(context, '/settings', arguments: username);
         break;
     }
   }

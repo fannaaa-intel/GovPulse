@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'package:image/image.dart' as img;
+import '../../core/router/legacy_nav.dart';
 import '../../core/services/id_verification_service.dart';
 
 class VerificationScanScreen extends StatefulWidget {
@@ -580,7 +581,7 @@ class _VerificationScanScreenState extends State<VerificationScanScreen>
       } else {
         backImage = fixed;
         if (!mounted) return;
-        Navigator.pushNamed(
+        pushLegacy(
           context,
           '/verification_review',
           arguments: {

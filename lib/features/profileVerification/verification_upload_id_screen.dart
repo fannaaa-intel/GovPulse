@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:dotted_border/dotted_border.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../../core/router/legacy_nav.dart';
 import '../../core/widgets/mobile_form_shell.dart';
 import '../../core/widgets/app_snackbar.dart';
 
@@ -188,7 +189,7 @@ class _VerificationUploadIdScreenState extends State<VerificationUploadIdScreen>
                                   if (!context.mounted) return;
 
                                   if (status.isGranted) {
-                                    Navigator.pushNamed(
+                                    pushLegacy(
                                       context,
                                       '/verification_scan',
                                       arguments: {

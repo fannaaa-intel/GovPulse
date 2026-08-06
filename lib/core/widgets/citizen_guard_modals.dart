@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../router/legacy_nav.dart';
 import '../services/citizen_guard.dart';
 import '../theme/app_colors.dart';
 import 'app_dialog.dart';
@@ -38,7 +39,7 @@ Future<void> _signOut(BuildContext context) async {
     await Supabase.instance.client.auth.signOut();
   } catch (_) {}
   if (context.mounted) {
-    Navigator.of(context).pushNamedAndRemoveUntil('/login', (r) => false);
+    goToLogin(context);
   }
 }
 

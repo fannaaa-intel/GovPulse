@@ -31,6 +31,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../network/network_wrapper.dart';
+import '../../../router/legacy_nav.dart';
 import '../../app_snackbar.dart';
 import '../../../providers/user_profile_provider.dart';
 import '../../../services/chat_service.dart';
@@ -133,10 +134,10 @@ class ResponsiveNavScaffold extends ConsumerWidget {
           );
           return;
         }
-        Navigator.pushNamed(context, '/my_reports', arguments: username);
+        pushLegacy(context, '/my_reports', arguments: username);
         break;
       case 2:
-        Navigator.pushNamed(
+        pushLegacy(
           context,
           '/newsfeed',
           arguments: {
@@ -147,7 +148,7 @@ class ResponsiveNavScaffold extends ConsumerWidget {
         );
         break;
       case 3:
-        Navigator.pushNamed(
+        pushLegacy(
           context,
           '/emergency',
           arguments: {
@@ -157,7 +158,7 @@ class ResponsiveNavScaffold extends ConsumerWidget {
         );
         break;
       case 4:
-        Navigator.pushNamed(context, '/settings', arguments: username);
+        pushLegacy(context, '/settings', arguments: username);
         break;
     }
   }
@@ -190,7 +191,7 @@ class ResponsiveNavScaffold extends ConsumerWidget {
               String? postId,
               bool openComments = false,
               bool highlight = false,
-            }) => Navigator.pushNamed(
+            }) => pushLegacy(
               context,
               '/newsfeed',
               arguments: {
@@ -233,7 +234,7 @@ class ResponsiveNavScaffold extends ConsumerWidget {
       HomeChatBubble.hideGlobal();
       if (!context.mounted) return;
       Navigator.pop(context); // close spinner
-      Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+      goToLogin(context);
     } catch (e) {
       if (!context.mounted) return;
       Navigator.pop(context);

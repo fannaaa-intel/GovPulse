@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
+import '../../../core/router/legacy_nav.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/web/web.dart';
 import '../../../core/widgets/mobile_form_shell.dart';
@@ -86,7 +87,7 @@ class _GuestScreenState extends State<GuestScreen>
           const SizedBox(height: 28),
           WebPrimaryButton(
             label: "Continue as Guest",
-            onPressed: () => Navigator.pushNamed(
+            onPressed: () => pushLegacy(
               context,
               '/newsfeed',
               arguments: const {'isGuest': true, 'isVerified': false},
@@ -203,7 +204,7 @@ class _GuestScreenState extends State<GuestScreen>
           ),
           elevation: WidgetStateProperty.all(0),
         ),
-        onPressed: () => Navigator.pushNamed(context, '/signup'),
+        onPressed: () => pushLegacy(context, '/signup'),
         child: const Text(
           "Create Account",
           style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14.5),
@@ -299,7 +300,7 @@ class _GuestScreenState extends State<GuestScreen>
                                 ),
                                 elevation: 0,
                               ),
-                              onPressed: () => Navigator.pushNamed(
+                              onPressed: () => pushLegacy(
                                 context,
                                 '/newsfeed',
                                 arguments: const {
@@ -330,8 +331,7 @@ class _GuestScreenState extends State<GuestScreen>
                                   borderRadius: BorderRadius.circular(16),
                                 ),
                               ),
-                              onPressed: () =>
-                                  Navigator.pushNamed(context, '/signup'),
+                              onPressed: () => pushLegacy(context, '/signup'),
                               child: const Text(
                                 "Create Account",
                                 style: TextStyle(

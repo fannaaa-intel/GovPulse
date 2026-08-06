@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../core/router/legacy_nav.dart';
 import '../../core/widgets/inputs/rounded_input_field.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/web/web.dart';
@@ -359,7 +360,7 @@ class _LoginScreenState extends State<LoginScreen>
           Align(
             alignment: Alignment.centerRight,
             child: GestureDetector(
-              onTap: () => Navigator.pushNamed(context, '/reset_password'),
+              onTap: () => pushLegacy(context, '/reset_password'),
               child: Text(
                 "Forgot password?",
                 style: TextStyle(
@@ -512,7 +513,7 @@ class _LoginScreenState extends State<LoginScreen>
           Align(
             alignment: Alignment.centerRight,
             child: GestureDetector(
-              onTap: () => Navigator.pushNamed(context, '/reset_password'),
+              onTap: () => pushLegacy(context, '/reset_password'),
               child: Text(
                 "Forgot Password?",
                 style: TextStyle(

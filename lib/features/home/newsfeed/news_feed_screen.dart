@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../screen/home_screen.dart';
+import '../../../core/router/legacy_nav.dart';
 import '../../../core/widgets/deeplink_highlight.dart';
 import '../../../core/widgets/modal/verification_required_dialog.dart';
 import '../../../core/providers/community_posts_provider.dart';
@@ -425,7 +426,7 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
                   ),
                   onPressed: () {
                     Navigator.pop(context);
-                    Navigator.pushNamed(context, '/signup');
+                    pushLegacy(context, '/signup');
                   },
                   child: const Text(
                     'Create Account',

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/router/legacy_nav.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/mobile_form_shell.dart';
 
@@ -306,7 +307,7 @@ class _VerificationScreenState extends State<VerificationScreen>
                   onTapUp: (_) => setState(() => _scale = 1.0),
                   onTapCancel: () => setState(() => _scale = 1.0),
                   onTap: () {
-                    Navigator.pushNamed(
+                    pushLegacy(
                       context,
                       '/verification_id_selection',
                       arguments: widget.username,

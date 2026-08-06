@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:math' as math;
+import '../../../core/router/legacy_nav.dart';
 import '../settings/my-submission/my_submissions_screen.dart'
     show MySubmissionsArgs, MySubmissionsScreen;
 import '../my_report/my_reports_screen.dart' show ReportItem;
@@ -467,7 +468,7 @@ void routeCitizenNotificationTap(
   switch (n.type) {
     case 'verification_reminder':
       if (isVerified || isPending) return; // nothing to do → stays on home
-      Navigator.pushNamed(context, '/verification', arguments: username);
+      pushLegacy(context, '/verification', arguments: username);
       break;
     case 'post_like':
     case 'post_comment':
@@ -491,7 +492,7 @@ void routeCitizenNotificationTap(
       // tab and highlight the item (when its id is known / column migrated).
       // Skip if that screen is already open so we don't stack a duplicate.
       if (MySubmissionsScreen.isOpen) return;
-      Navigator.pushNamed(
+      pushLegacy(
         context,
         '/my_submissions',
         arguments: MySubmissionsArgs(
@@ -503,7 +504,7 @@ void routeCitizenNotificationTap(
       break;
     case 'feedback_response':
       if (MySubmissionsScreen.isOpen) return;
-      Navigator.pushNamed(
+      pushLegacy(
         context,
         '/my_submissions',
         arguments: MySubmissionsArgs(
@@ -518,7 +519,7 @@ void routeCitizenNotificationTap(
       // one of many conversations — a citizen has exactly ONE LGU thread, held
       // by ChatService.I. So there's nothing to disambiguate and no id needed:
       // opening the chat screen IS landing on the message.
-      Navigator.pushNamed(context, '/chat', arguments: username);
+      pushLegacy(context, '/chat', arguments: username);
       break;
     case 'report_decision':
       // LGU changed a report's status → open that report's detail. Needs the
@@ -551,7 +552,7 @@ Future<void> _openReportFromNotification(
     final item = ReportItem.fromMap(row);
     // Use the canonical /report_detail route: instant enter, fade-out exit,
     // NetworkWrapper — matching how the report detail opens everywhere else.
-    Navigator.pushNamed(
+    pushLegacy(
       context,
       '/report_detail',
       arguments: {'report': item, 'username': username},

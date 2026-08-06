@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/router/legacy_nav.dart';
 import '../../core/widgets/mobile_form_shell.dart';
 
 class VerificationIdSelectionScreen extends StatefulWidget {
@@ -305,7 +306,7 @@ class _VerificationIdSelectionScreenState
                       child: ElevatedButton(
                         onPressed: isChecked
                             ? () {
-                                Navigator.pushNamed(
+                                pushLegacy(
                                   context,
                                   '/verification_photo_instruction',
                                   arguments: {

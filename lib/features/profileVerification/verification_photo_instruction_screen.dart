@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/router/legacy_nav.dart';
 import '../../core/widgets/mobile_form_shell.dart';
 
 class VerificationPhotoInstructionScreen extends StatefulWidget {
@@ -236,7 +237,7 @@ class _VerificationPhotoInstructionScreenState
                       width: double.infinity,
                       child: ElevatedButton(
                         onPressed: () {
-                          Navigator.pushNamed(
+                          pushLegacy(
                             context,
                             '/verification_upload_id',
                             arguments: {

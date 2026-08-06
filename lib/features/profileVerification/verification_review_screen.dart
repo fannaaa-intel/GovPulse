@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../../core/router/legacy_nav.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/constants/aparri_barangays.dart';
 
@@ -335,7 +336,7 @@ class _VerificationReviewScreenState extends State<VerificationReviewScreen> {
                         });
                       } else {
                         setState(() => _showErrors = false);
-                        Navigator.pushNamed(
+                        pushLegacy(
                           context,
                           '/verification_identity',
                           arguments: {

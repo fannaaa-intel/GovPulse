@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../../core/router/legacy_nav.dart';
 import '../../core/services/password_cooldown.dart';
 import '../../core/utils/password_validator.dart';
 import '../../core/theme/app_colors.dart';
@@ -612,9 +613,7 @@ class _ResetNewPasswordScreenState extends State<ResetNewPasswordScreen>
           WebOutlinedButton(
             icon: Icons.arrow_back_rounded,
             label: "Back to sign in",
-            onTap: () => Navigator.of(
-              context,
-            ).pushNamedAndRemoveUntil('/login', (route) => false),
+            onTap: () => goToLogin(context),
           ),
         ],
       ),

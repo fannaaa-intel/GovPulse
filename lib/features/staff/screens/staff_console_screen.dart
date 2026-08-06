@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/providers/user_profile_provider.dart';
+import '../../../core/router/legacy_nav.dart';
 import '../../../core/services/chat_service.dart';
 import '../../../core/services/push_service.dart';
 import '../../../core/widgets/Home/Chat-bubbles/home_chat_bubble.dart';
@@ -300,7 +301,7 @@ class _StaffConsoleScreenState extends ConsumerState<StaffConsoleScreen>
       HomeChatBubble.hideGlobal();
       if (!mounted) return;
       Navigator.pop(context); // dismiss spinner
-      Navigator.of(context).pushNamedAndRemoveUntil('/login', (r) => false);
+      goToLogin(context);
       ref.invalidate(userProfileProvider);
     } catch (e) {
       if (!mounted) return;

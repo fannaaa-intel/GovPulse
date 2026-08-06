@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../router/legacy_nav.dart';
 import '../../theme/app_colors.dart';
 
 Future<bool> showVerificationRequiredDialog(
@@ -141,7 +142,8 @@ Future<bool> showVerificationRequiredDialog(
                         final navigator = Navigator.of(ctx);
                         navigator.pop();
                         if (username != null) {
-                          navigator.pushNamed(
+                          pushLegacyOn(
+                            navigator,
                             '/verification',
                             arguments: username,
                           );

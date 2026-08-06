@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
+import '../../core/router/legacy_nav.dart';
 import '../../core/widgets/inputs/rounded_input_field.dart';
 import '../../core/utils/password_validator.dart';
 import '../../core/theme/app_colors.dart';
@@ -414,7 +415,7 @@ class _SignupScreenState extends State<SignupScreen>
             username: username,
             password: password,
             onVerifiedSuccess: () {
-              Navigator.pushReplacementNamed(
+              pushReplacementLegacy(
                 context,
                 '/email_verification_success',
                 arguments: email,
