@@ -80,7 +80,7 @@ Widget _catIconChip(IconData icon, Color color, double box) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Main Screen
 // ─────────────────────────────────────────────────────────────────────────────
-class EmergencyScreen extends StatefulWidget {
+class EmergencyScreen extends StatelessWidget {
   final String username;
   final bool isVerified;
 
@@ -91,10 +91,35 @@ class EmergencyScreen extends StatefulWidget {
   });
 
   @override
-  State<EmergencyScreen> createState() => _EmergencyScreenState();
+  Widget build(BuildContext context) {
+    final scaffold = ResponsiveNavScaffold(
+      showNav: username.isNotEmpty,
+      currentIndex: 3,
+      username: username,
+      isVerified: isVerified,
+      backgroundColor: _C.pageBg,
+      body: const SafeArea(child: EmergencyBody()),
+    );
+    // Guests (empty username) get no network gate — same rule as before.
+    if (username.isEmpty) return scaffold;
+    return NetworkWrapper(child: scaffold);
+  }
 }
 
-class _EmergencyScreenState extends State<EmergencyScreen>
+/// Emergency content, with no chrome of its own. Rendered inside
+/// [EmergencyScreen] on mobile and directly as a centre pane by the web shell.
+///
+/// Takes no identity at all: every hotline and category it renders is static,
+/// and the only things that ever read `username` / `isVerified` were the nav
+/// chrome and the network gate, both of which stayed with the screen.
+class EmergencyBody extends StatefulWidget {
+  const EmergencyBody({super.key});
+
+  @override
+  State<EmergencyBody> createState() => _EmergencyScreenState();
+}
+
+class _EmergencyScreenState extends State<EmergencyBody>
     with TickerProviderStateMixin {
   late final AnimationController _pulseCtrl;
   late final Animation<double> _pulseScale;
@@ -391,14 +416,7 @@ class _EmergencyScreenState extends State<EmergencyScreen>
     // narrow web keep the original 480px body, byte-for-byte unchanged.
     final bool wide = kIsWeb && rawWidth >= 900;
     final double w = wide ? 460.0 : rawWidth.clamp(0.0, 480.0);
-    final scaffold = ResponsiveNavScaffold(
-      showNav: widget.username.isNotEmpty,
-      currentIndex: 3,
-      username: widget.username,
-      isVerified: widget.isVerified,
-      backgroundColor: _C.pageBg,
-      body: SafeArea(
-        child: wide
+    return wide
             ? _buildEmergencyWebBody(w)
             : Center(
           child: ConstrainedBox(
@@ -432,12 +450,7 @@ class _EmergencyScreenState extends State<EmergencyScreen>
               ],
             ),
           ),
-        ),
-      ),
-    );
-
-    if (widget.username.isEmpty) return scaffold;
-    return NetworkWrapper(child: scaffold);
+        );
   }
 
   // ── WEB body: hero + services grid ─────────────────────────────────────────

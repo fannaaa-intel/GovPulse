@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/app_colors.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/widgets/Home/nav/responsive_nav_scaffold.dart';
 import '../../../../core/widgets/loading/loading_overlay.dart';
 import '../../../core/widgets/web/web_card_grid.dart';
+import '../../../core/providers/user_profile_provider.dart';
 import 'report_card.dart';
 
 // The report row, the ReportItem model and the type scale now live in
@@ -26,16 +28,52 @@ enum StatusFilter { all, pending, resolved, rejected }
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-class MyReportsScreen extends StatefulWidget {
+/// Standalone My Reports page — the route the mobile app and the live web
+/// routes open. Owns the nav chrome; the content is [MyReportsBody].
+class MyReportsScreen extends StatelessWidget {
   final String username;
   const MyReportsScreen({super.key, required this.username});
 
   @override
-  State<MyReportsScreen> createState() => _MyReportsScreenState();
+  Widget build(BuildContext context) {
+    return ResponsiveNavScaffold(
+      currentIndex: 1,
+      username: username,
+      isVerified: true,
+      backgroundColor: const Color(0xFFF3F4F6),
+      body: const SafeArea(child: MyReportsBody()),
+    );
+  }
 }
 
-class _MyReportsScreenState extends State<MyReportsScreen>
+/// My Reports content, with no chrome of its own — no Scaffold, no nav, no
+/// page background. Rendered inside [MyReportsScreen] on mobile and directly
+/// as a centre pane by the citizen web shell.
+///
+/// Takes no `username`: identity comes from [userProfileProvider], which is what
+/// lets the shell mount it without first resolving a name to hand down.
+class MyReportsBody extends ConsumerStatefulWidget {
+  /// Open one report. Null (the standalone screen, and the mobile app) falls
+  /// back to the legacy '/report_detail' push.
+  ///
+  /// The shell passes a callback instead so the detail lands on ITS branch
+  /// navigator — stacking over the My Reports pane rather than over the whole
+  /// shell, and leaving the other tabs untouched. Keeping it a callback is what
+  /// stops the body from having to know which router it is running under.
+  final void Function(ReportItem report)? onOpenReport;
+
+  const MyReportsBody({super.key, this.onOpenReport});
+
+  @override
+  ConsumerState<MyReportsBody> createState() => _MyReportsBodyState();
+}
+
+class _MyReportsBodyState extends ConsumerState<MyReportsBody>
     with TickerProviderStateMixin {
+  /// Account handle, from the shared profile. Used only to hand the report
+  /// detail route the name it still expects.
+  String get _username =>
+      ref.read(userProfileProvider).valueOrNull?.username ?? '';
   late final AnimationController _entryCtrl;
 
   ReportFilter _activeFilter = ReportFilter.all;
@@ -267,37 +305,29 @@ class _MyReportsScreenState extends State<MyReportsScreen>
     // to the original mobile body below, byte-for-byte unchanged.
     final bool wide = kIsWeb && width >= 900;
     final double w = wide ? 460.0 : width.clamp(0.0, 480.0);
-    return ResponsiveNavScaffold(
-      currentIndex: 1,
-      username: widget.username,
-      isVerified: true,
-      backgroundColor: const Color(0xFFF3F4F6),
-      body: SafeArea(
-        child: wide
-            ? LoadingOverlay.bodyOrSkeleton(
-                isLoading: _isLoading,
-                layout: SkeletonLayout.myReports,
-                child: _buildWebBody(w),
-              )
-            : Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 480),
-                  child: Column(
-                    children: [
-                      _buildTopBar(w),
-                      Expanded(
-                        child: LoadingOverlay.bodyOrSkeleton(
-                          isLoading: _isLoading,
-                          layout: SkeletonLayout.myReports,
-                          child: _buildBody(w),
-                        ),
-                      ),
-                    ],
+    return wide
+        ? LoadingOverlay.bodyOrSkeleton(
+            isLoading: _isLoading,
+            layout: SkeletonLayout.myReports,
+            child: _buildWebBody(w),
+          )
+        : Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: Column(
+                children: [
+                  _buildTopBar(w),
+                  Expanded(
+                    child: LoadingOverlay.bodyOrSkeleton(
+                      isLoading: _isLoading,
+                      layout: SkeletonLayout.myReports,
+                      child: _buildBody(w),
+                    ),
                   ),
-                ),
+                ],
               ),
-      ),
-    );
+            ),
+          );
   }
 
   // ── WEB body: header banner + KPI row + report card grid ───────────────────
@@ -863,10 +893,15 @@ class _MyReportsScreenState extends State<MyReportsScreen>
       ww: ww,
       report: report,
       onTap: () {
+        final open = widget.onOpenReport;
+        if (open != null) {
+          open(report);
+          return;
+        }
         Navigator.pushNamed(
           context,
           '/report_detail',
-          arguments: {'report': report, 'username': widget.username},
+          arguments: {'report': report, 'username': _username},
         );
       },
     );

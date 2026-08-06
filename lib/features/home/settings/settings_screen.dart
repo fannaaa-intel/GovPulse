@@ -18,15 +18,54 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../Resets/set_password_screen.dart';
 import '../../../core/widgets/app_dialog.dart';
 
-class SettingScreen extends ConsumerStatefulWidget {
+/// Standalone Settings page — the route the mobile app and the live web routes
+/// open. Owns the nav chrome; the content is [SettingsBody].
+class SettingScreen extends ConsumerWidget {
   final String username;
   const SettingScreen({super.key, required this.username});
+
   @override
-  ConsumerState<SettingScreen> createState() => _SettingScreenState();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final profile = ref.watch(userProfileProvider).valueOrNull;
+    return ResponsiveNavScaffold(
+      currentIndex: 4,
+      username: username,
+      isVerified: profile?.verifStatus == VerifStatus.verified,
+      backgroundColor: const Color(0xFFF3F4F6),
+      fullName: profile?.fullName,
+      facePhotoUrl: profile?.facePhotoUrl,
+      verifStatus: profile?.verifStatus,
+      onLogout: (ctx) async => SettingsBody.logoutOf(ctx),
+      body: const SafeArea(child: SettingsBody()),
+    );
+  }
 }
 
-class _SettingScreenState extends ConsumerState<SettingScreen>
+/// Settings content, with no chrome of its own. Rendered inside
+/// [SettingScreen] on mobile and directly as a centre pane by the web shell.
+///
+/// Takes no `username`: identity comes from [userProfileProvider].
+class SettingsBody extends ConsumerStatefulWidget {
+  const SettingsBody({super.key});
+
+  /// Runs the logout flow of the [SettingsBody] mounted under [context].
+  ///
+  /// [ResponsiveNavScaffold] takes an `onLogout` callback, but the flow itself
+  /// (confirm dialog, push unregister, sign-out, cleanup) lives in the body's
+  /// State. This lets the screen hand the scaffold a callback that reaches it.
+  static void logoutOf(BuildContext context) {
+    context.findAncestorStateOfType<_SettingScreenState>()?._confirmLogout();
+  }
+
+  @override
+  ConsumerState<SettingsBody> createState() => _SettingScreenState();
+}
+
+class _SettingScreenState extends ConsumerState<SettingsBody>
     with TickerProviderStateMixin {
+  /// Account handle, from the shared profile.
+  String get _username =>
+      ref.read(userProfileProvider).valueOrNull?.username ?? '';
   static const String _appVersion = '1.0.0';
 
   // ── Identity flag (reactive) ──────────────────────────────────────────────
@@ -293,17 +332,7 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
 
     final badge = _statusBadgeFor(verifStatus);
 
-    return ResponsiveNavScaffold(
-      currentIndex: 4,
-      username: widget.username,
-      isVerified: verifStatus == 'approved',
-      backgroundColor: const Color(0xFFF3F4F6),
-      fullName: fullName,
-      facePhotoUrl: facePhotoUrl,
-      verifStatus: profile?.verifStatus,
-      onLogout: (_) => _confirmLogout(),
-      body: SafeArea(
-        child: wide
+    return wide
             ? LoadingOverlay.bodyOrSkeleton(
                 isLoading: profileLoading,
                 layout: SkeletonLayout.settings,
@@ -382,9 +411,7 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
                     ],
                   ),
                 ),
-              ),
-      ),
-    );
+              );
   }
 
   // ── WEB body: profile banner + two-column sections ─────────────────────────
@@ -592,7 +619,7 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        fullName ?? widget.username,
+                        fullName ?? _username,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
@@ -889,7 +916,7 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
             final approved = await showVerificationRequiredDialog(
               context,
               isVerified: verifStatus == 'approved',
-              username: widget.username,
+              username: _username,
               message:
                   'Only verified citizens can edit their profile information. Please complete the identity verification process first.',
             );
@@ -899,7 +926,7 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
             final refreshed = await Navigator.pushNamed(
               context,
               '/edit_profile',
-              arguments: widget.username,
+              arguments: _username,
             );
             if (refreshed == true && mounted) {
               ref.read(userProfileProvider.notifier).refresh();
@@ -977,7 +1004,7 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
             final approved = await showVerificationRequiredDialog(
               context,
               isVerified: verifStatus == 'approved',
-              username: widget.username,
+              username: _username,
               message:
                   'Only verified citizens can view their submission history. Please complete the identity verification process first.',
             );
@@ -987,7 +1014,7 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
             Navigator.pushNamed(
               context,
               '/my_submissions',
-              arguments: widget.username,
+              arguments: _username,
             );
           },
         ),
@@ -1038,7 +1065,7 @@ class _SettingScreenState extends ConsumerState<SettingScreen>
           onTap: () => Navigator.pushNamed(
             context,
             '/contact_support',
-            arguments: widget.username,
+            arguments: _username,
           ),
         ),
       ],

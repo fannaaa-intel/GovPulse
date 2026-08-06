@@ -10,6 +10,14 @@ class UserProfile {
   final String? email;
   final String? barangay;
 
+  /// The account's `profiles.username`.
+  ///
+  /// Always fetched, for every verification status. [fullName] is the DISPLAY
+  /// name and is only a real name once verified — before that it happens to
+  /// hold the username, which is why the two used to be conflated. Screens that
+  /// need the account handle (they pass it around as `username`) need this one.
+  final String? username;
+
   const UserProfile({
     this.verifStatus = VerifStatus.none,
     this.fullName,
@@ -17,7 +25,18 @@ class UserProfile {
     this.facePhotoPath,
     this.email,
     this.barangay,
+    this.username,
   });
+
+  /// Display name, preferring the verified real name and falling back to the
+  /// account handle. What chrome should show next to the avatar.
+  String get displayName {
+    final n = fullName?.trim();
+    if (n != null && n.isNotEmpty) return n;
+    return username?.trim() ?? '';
+  }
+
+  bool get isVerified => verifStatus == VerifStatus.verified;
 }
 
 class UserProfileNotifier extends AsyncNotifier<UserProfile> {
@@ -55,6 +74,23 @@ class UserProfileNotifier extends AsyncNotifier<UserProfile> {
     String? photoUrl;
     String? barangay;
 
+    // The account handle, for EVERY status. This used to be read only on the
+    // unverified path (as a stand-in for a display name), which meant a verified
+    // citizen's profile carried no username at all and anything needing the
+    // handle had to run its own `profiles` query. Fetching it once here is what
+    // lets screens stop taking `username` as a constructor argument.
+    String? username;
+    try {
+      final res = await supabase
+          .from('profiles')
+          .select('username')
+          .eq('id', user.id)
+          .maybeSingle();
+      username = res?['username'] as String?;
+    } catch (_) {
+      // Non-fatal: the handle is a nicety, the rest of the profile still loads.
+    }
+
     if (status == 'approved') {
       final cd = await supabase
           .from('citizen_details')
@@ -80,14 +116,9 @@ class UserProfileNotifier extends AsyncNotifier<UserProfile> {
             .getPublicUrl(facePath);
       }
     } else {
-      try {
-        final res = await supabase
-            .from('profiles')
-            .select('username')
-            .eq('id', user.id)
-            .maybeSingle();
-        if (res != null) fullName = res['username'] as String?;
-      } catch (_) {}
+      // Unverified: there is no real name yet, so the handle doubles as the
+      // display name — unchanged behaviour, now reusing the fetch above.
+      fullName = username;
     }
 
     VerifStatus verifStatus = VerifStatus.none;
@@ -101,6 +132,7 @@ class UserProfileNotifier extends AsyncNotifier<UserProfile> {
       facePhotoPath: facePath,
       email: email,
       barangay: barangay,
+      username: username,
     );
   }
 

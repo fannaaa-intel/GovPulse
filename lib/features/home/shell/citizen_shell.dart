@@ -2,177 +2,97 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/providers/user_profile_provider.dart';
-import '../../../core/router/app_router.dart' as legacy_router;
 import '../../../core/theme/citizen_ui.dart';
+import '../../../core/widgets/Home/Newsfeed/citizen_web_notification_panel.dart';
 import '../../../core/widgets/Home/home_enums.dart';
 import '../../../core/widgets/Home/nav/home_top_nav.dart';
 import '../../../core/widgets/Home/nav/nav_band.dart';
-import '../../../core/widgets/Home/Newsfeed/citizen_web_notification_panel.dart';
 import '../../../core/widgets/Home/sections/Web/home_quick_actions_section_web.dart';
 import '../../../core/widgets/app_snackbar.dart';
-import '../emergency/emergency_screen.dart';
-import '../my_report/my_reports_screen.dart';
-import '../newsfeed/news_feed_screen.dart';
-import '../screen/home_screen.dart';
 import '../screen/notification_popup.dart';
-import '../settings/settings_screen.dart';
 import 'citizen_shell_router.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
-//  CitizenShell — the persistent 3-column web shell, PREVIEW BUILD.
+//  CitizenShell — the persistent 3-column citizen web shell. PREVIEW BUILD.
 //
-//  Reachable only at /shell-preview (see citizen_shell_router.dart). No live
-//  route points here, and the mobile app never builds it.
+//  Reachable only at /shell-preview. No live route points here, and the mobile
+//  app never builds it.
 //
-//  Structure is lifted from staff_console_screen.dart, which has been running
-//  this shape in production: one Scaffold, a selected-tab int, and the sections
-//  swapped underneath fixed chrome. The one deliberate divergence is the centre
-//  pane — staff rebuilds via a `_pageFor(key)` switch, this uses an IndexedStack
-//  so all five panes stay mounted and keep their scroll offset and loaded data
-//  across tab switches. That persistence is the entire point of the shell, and
-//  a switch cannot provide it.
+//  ── Layout ────────────────────────────────────────────────────────────────
+//  A full-width top nav, and beneath it three columns:
 //
-//  ── What is deliberately temporary here ────────────────────────────────────
-//  The centre hosts the CURRENT screens unchanged, each of which still brings
-//  its own Scaffold and its own nav chrome. That doubling is expected at this
-//  step: the goal is to prove the shell and the routing, not to redress the
-//  screens. Phase 2 splits each into a route-entry screen and a chromeless body,
-//  and the body is what the IndexedStack will hold.
+//    ┌──────────────────────── HomeTopNav ────────────────────────┐
+//    │  left rail   │        centre (branch)        │ right rail  │
+//    │  profile +   │   the only column that swaps  │   quick     │
+//    │  settings    │        on a tab change        │   actions   │
+//    └──────────────┴───────────────────────────────┴─────────────┘
 //
-//  Each pane also gets its own Navigator wired to the LEGACY route table. That
-//  is scaffolding, not architecture — without it, every in-pane tap (open a
-//  report, a settings sub-page, a quick action) throws, because the preview's
-//  go_router has no '/report_detail' or '/my_submissions'. With it, the preview
-//  is actually explorable side-by-side against the live app, and pushes stay
-//  inside the pane they came from, which is roughly where Phase 2 lands anyway.
+//  The Row is crossAxisAlignment.start, and each rail is a mainAxisSize.min
+//  Column, so the rails HUG THE TOP flush under the nav instead of centring
+//  themselves against a tall centre column. That is the Facebook arrangement and
+//  the thing that stops short rails from floating in the middle of the page.
+//
+//  ── Persistence ───────────────────────────────────────────────────────────
+//  The centre is [StatefulNavigationShell] — go_router's own IndexedStack over
+//  the branches. Branches are built lazily on first visit and kept alive after,
+//  so a tab keeps its scroll offset and loaded data, and tabs nobody opened
+//  never run their fetches. Each branch owns a Navigator, so a detail route
+//  pushed from a pane stacks inside that pane.
+//
+//  ── What Phase 2 removed ──────────────────────────────────────────────────
+//  The first preview hosted the whole Screens, so nav chrome, the beach hero and
+//  Quick Actions were all doubled, and it needed a hand-rolled Navigator per
+//  pane just so in-pane taps did not throw. Now the shell mounts chromeless
+//  Bodies and go_router owns the branch navigators, so both hacks are gone —
+//  along with the deep-link instrumentation strip, whose job (proving a target
+//  survives to the pane) is now done by real branch routes.
 // ════════════════════════════════════════════════════════════════════════════
 
 /// Left rail width when it shows labels.
-const double _kRailLabelledWidth = 264;
+const double _kRailLabelledWidth = 288;
 
 /// Left rail width when collapsed to icons.
 const double _kRailIconWidth = 76;
 
 /// Right quick-actions sidebar width.
-const double _kRightSidebarWidth = 320;
+const double _kRightSidebarWidth = 340;
 
 class CitizenShell extends ConsumerStatefulWidget {
-  /// Current location path, from the router. Drives the selected tab — the
-  /// shell never stores the index as its own source of truth, so the URL and
-  /// the visible pane cannot drift apart.
-  final String location;
+  /// go_router's branch container — both the selected index and the
+  /// lazily-built IndexedStack of panes.
+  final StatefulNavigationShell navigationShell;
 
-  /// Optional deep-link target for the pane being opened, from `?target=`.
-  final String? target;
+  const CitizenShell({super.key, required this.navigationShell});
 
-  const CitizenShell({super.key, required this.location, this.target});
+  /// Switch the shell under [context] to [tab]. Used by Bodies that need to
+  /// send the user to another destination (Home's "View all" → NewsFeed).
+  static void goToTab(BuildContext context, CitizenTab tab) {
+    StatefulNavigationShell.of(context).goBranch(tab.index);
+  }
 
   @override
   ConsumerState<CitizenShell> createState() => _CitizenShellState();
 }
 
 class _CitizenShellState extends ConsumerState<CitizenShell> {
-  /// Resolved once, then the panes are built. Null while loading: the hosted
-  /// screens take `username` as a constructor argument and each pane's Navigator
-  /// builds its root route exactly once, so constructing them before the name is
-  /// known would pin an empty username for the life of the shell.
-  String? _username;
-
-  /// One Navigator per pane — see the scaffolding note in the file header.
-  final List<GlobalKey<NavigatorState>> _paneKeys = [
-    for (final tab in CitizenTab.values)
-      GlobalKey<NavigatorState>(debugLabel: 'pane-${tab.segment}'),
-  ];
-
-  // ── Deep-link plumbing (mirrors staff_console_screen.dart) ─────────────────
-  /// Target awaiting the pane that owns it. One-shot.
-  String? _pendingHighlightId;
-
-  /// Bumped on every deep-link request. Panes must re-arm on a CHANGE to this
-  /// rather than on the target's value: tapping the same notification twice
-  /// produces an identical id, which reads as "nothing changed" and silently
-  /// drops the second tap. This is the bug the nonce exists to prevent, and it
-  /// is why [openTarget] bumps unconditionally instead of diffing the id.
-  int _deepLinkNonce = 0;
-
-  CitizenTab get _tab => tabForLocation(widget.location);
-  int get _index => _tab.index;
+  int get _index => widget.navigationShell.currentIndex;
 
   @override
   void initState() {
     super.initState();
-    _resolveUsername();
     NotificationService.load().then((_) {
       if (mounted) setState(() {});
     });
-    if (widget.target != null) _adoptTarget(widget.target!);
   }
 
-  @override
-  void didUpdateWidget(covariant CitizenShell old) {
-    super.didUpdateWidget(old);
-    // A target arriving on the URL (or changing) is a fresh deep link.
-    final t = widget.target;
-    if (t != null && (t != old.target || widget.location != old.location)) {
-      _adoptTarget(t);
-    }
-  }
-
-  Future<void> _resolveUsername() async {
-    final client = Supabase.instance.client;
-    final user = client.auth.currentUser;
-    String? name;
-    if (user != null) {
-      try {
-        final row = await client
-            .from('profiles')
-            .select('username')
-            .eq('id', user.id)
-            .maybeSingle();
-        name = row?['username'] as String?;
-      } catch (_) {
-        // Fall through to the profile provider's display name.
-      }
-    }
-    if (!mounted) return;
-    setState(() {
-      _username =
-          name ?? ref.read(userProfileProvider).valueOrNull?.fullName ?? '';
-    });
-  }
-
-  void _adoptTarget(String id) {
-    setState(() {
-      _pendingHighlightId = id;
-      _deepLinkNonce++;
-    });
-  }
-
-  /// Switch tabs, optionally carrying a deep-link target into the destination.
-  ///
-  /// The nonce bump is unconditional — see the field doc on [_deepLinkNonce].
-  void openTarget(CitizenTab tab, {String? highlightId}) {
-    if (highlightId != null) {
-      setState(() {
-        _pendingHighlightId = highlightId;
-        _deepLinkNonce++;
-      });
-      context.go('${tab.path}?target=$highlightId');
-      return;
-    }
-    context.go(tab.path);
-  }
-
+  /// Tapping the ALREADY-selected tab resets that branch to its root, which is
+  /// how a shell is expected to behave (it pops a detail back to the list).
+  /// Any other tab switches branch, keeping wherever that branch was left.
   void _selectIndex(int index) {
     if (index < 0 || index >= CitizenTab.values.length) return;
-    final tab = CitizenTab.values[index];
-    if (tab == _tab) return;
-    // context.go pushes a browser history entry, which is what makes Back walk
-    // between tabs instead of leaving the shell.
-    context.go(tab.path);
+    widget.navigationShell.goBranch(index, initialLocation: index == _index);
   }
 
   // ── Chrome callbacks ──────────────────────────────────────────────────────
@@ -184,151 +104,12 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
       onTap: (n) {
         NotificationService.markRead(n);
         Navigator.pop(context);
-        // Routing a notification into a pane lands in Phase 2, when panes take
-        // a highlightId. The mechanism it will use is already here: this is
-        // exactly the openTarget(...) call the real wiring makes.
       },
     );
     if (mounted) setState(() {});
   }
 
-  void _previewOnly(String what) {
-    showAppSnackBar(
-      context,
-      '$what is disabled in the shell preview.',
-      type: AppSnackType.info,
-    );
-  }
-
-  /// Quick actions push into the CURRENT pane's Navigator, using the legacy
-  /// route table. Phase 2 turns these into shell-owned dialogs.
-  void _handleQuickAction(String key, bool isVerified) {
-    final nav = _paneKeys[_index].currentState;
-    if (nav == null || _username == null) return;
-    switch (key) {
-      case 'report':
-        nav.pushNamed('/report', arguments: _username);
-      case 'suggestion':
-        nav.pushNamed('/suggestion', arguments: _username);
-      case 'feedback':
-        nav.pushNamed('/feedback', arguments: _username);
-      case 'chat':
-        nav.pushNamed('/chat', arguments: _username);
-      case 'events':
-        nav.pushNamed(
-          '/events',
-          arguments: {'username': _username, 'isVerified': isVerified},
-        );
-    }
-  }
-
-  // ── Panes ─────────────────────────────────────────────────────────────────
-
-  Widget _screenFor(
-    CitizenTab tab,
-    String username,
-    bool isVerified,
-    String? barangay,
-  ) {
-    switch (tab) {
-      case CitizenTab.home:
-        return HomePage(username: username);
-      case CitizenTab.myReports:
-        return MyReportsScreen(username: username);
-      case CitizenTab.newsfeed:
-        return NewsFeedScreen(
-          username: username,
-          isVerified: isVerified,
-          userBarangay: barangay,
-        );
-      case CitizenTab.emergency:
-        return EmergencyScreen(username: username, isVerified: isVerified);
-      case CitizenTab.settings:
-        return SettingScreen(username: username);
-    }
-  }
-
-  /// A pane: the hosted screen at the root of its own Navigator, with the
-  /// legacy router handling anything pushed on top of it. Scaffolding — see the
-  /// file header.
-  Widget _pane(
-    CitizenTab tab,
-    String username,
-    bool isVerified,
-    String? barangay,
-  ) {
-    return Navigator(
-      key: _paneKeys[tab.index],
-      onGenerateRoute: (settings) {
-        if (settings.name == Navigator.defaultRouteName) {
-          return PageRouteBuilder(
-            transitionDuration: Duration.zero,
-            reverseTransitionDuration: Duration.zero,
-            pageBuilder: (_, _, _) =>
-                _screenFor(tab, username, isVerified, barangay),
-          );
-        }
-        return legacy_router.onGenerateRoute(settings);
-      },
-    );
-  }
-
-  // ── Deep-link instrumentation (preview only) ──────────────────────────────
-  //
-  // The hosted screens are full screens with no highlight parameter, and each
-  // pane's Navigator builds its root exactly once, so a target cannot actually
-  // be DELIVERED into a pane yet — that lands in Phase 2 along with the body
-  // split. Until then this strip is where the target surfaces, which keeps the
-  // mechanism honest (it is observably working rather than dead state) and
-  // makes the nonce's purpose demonstrable: "Re-fire" repeats the SAME id and
-  // the counter still advances, which is precisely the second tap that would
-  // be dropped if panes diffed on the id alone.
-  Widget _deepLinkStrip() {
-    final id = _pendingHighlightId;
-    if (id == null) return const SizedBox.shrink();
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: const BoxDecoration(
-        color: CitizenUi.accentWash,
-        border: Border(bottom: BorderSide(color: CitizenUi.border)),
-      ),
-      child: Row(
-        children: [
-          const Icon(
-            Icons.my_location_rounded,
-            size: 16,
-            color: CitizenUi.accent,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              'Deep-link target "$id" pending for ${_tab.label} '
-              '· nonce $_deepLinkNonce · delivery lands in Phase 2',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w600,
-                color: CitizenUi.textSecondary,
-              ),
-            ),
-          ),
-          TextButton(
-            onPressed: () => openTarget(_tab, highlightId: id),
-            child: const Text('Re-fire'),
-          ),
-          TextButton(
-            onPressed: () {
-              setState(() => _pendingHighlightId = null);
-              context.go(_tab.path);
-            },
-            child: const Text('Clear'),
-          ),
-        ],
-      ),
-    );
-  }
+  void _handleQuickAction(String key) => context.push(shellActionPath(key));
 
   // ── Left rail ─────────────────────────────────────────────────────────────
 
@@ -340,36 +121,22 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
     (Icons.info_outline_rounded, 'About GovPulse'),
   ];
 
-  Widget _leftRail({
-    required bool labelled,
-    required String? fullName,
-    required String? facePhotoUrl,
-    required VerifStatus verif,
-  }) {
-    return Container(
+  Widget _leftRail({required bool labelled, required UserProfile? profile}) {
+    return SizedBox(
       width: labelled ? _kRailLabelledWidth : _kRailIconWidth,
-      decoration: const BoxDecoration(
-        color: CitizenUi.surface,
-        border: Border(right: BorderSide(color: CitizenUi.border)),
-      ),
-      child: SingleChildScrollView(
-        padding: EdgeInsets.symmetric(
-          horizontal: labelled ? 16 : 10,
-          vertical: 18,
-        ),
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(labelled ? 20 : 10, 20, 8, 20),
         child: Column(
+          // mainAxisSize.min + the Row's start alignment is what pins the rail
+          // to the top instead of letting it centre against the centre column.
+          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _profileCard(
-              labelled: labelled,
-              fullName: fullName,
-              facePhotoUrl: facePhotoUrl,
-              verif: verif,
-            ),
-            const SizedBox(height: 18),
-            if (labelled) ...[
-              Padding(
-                padding: const EdgeInsets.only(left: 4, bottom: 8),
+            _profileCard(labelled: labelled, profile: profile),
+            const SizedBox(height: 16),
+            if (labelled)
+              const Padding(
+                padding: EdgeInsets.only(left: 6, bottom: 6),
                 child: Text(
                   'ACCOUNT',
                   style: TextStyle(
@@ -380,10 +147,8 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
                   ),
                 ),
               ),
-            ],
-            // Stub rows. Phase 2 opens each of these as a showAppDialog instead
-            // of a route; for now they surface the Settings pane so the rail is
-            // real rather than dead.
+            // Stubs. Phase 3 opens each as a showAppDialog; for now they surface
+            // the Settings pane so the rail is real rather than dead.
             for (final (icon, label) in _settingsStub)
               _railRow(icon, label, labelled),
           ],
@@ -392,22 +157,18 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
     );
   }
 
-  Widget _profileCard({
-    required bool labelled,
-    required String? fullName,
-    required String? facePhotoUrl,
-    required VerifStatus verif,
-  }) {
+  Widget _profileCard({required bool labelled, required UserProfile? profile}) {
+    final photo = profile?.facePhotoUrl;
     final avatar = CircleAvatar(
-      radius: labelled ? 26 : 18,
+      radius: labelled ? 24 : 18,
       backgroundColor: CitizenUi.accentWash,
-      backgroundImage: (facePhotoUrl != null && facePhotoUrl.isNotEmpty)
-          ? CachedNetworkImageProvider(facePhotoUrl)
+      backgroundImage: (photo != null && photo.isNotEmpty)
+          ? CachedNetworkImageProvider(photo)
           : null,
-      child: (facePhotoUrl == null || facePhotoUrl.isEmpty)
+      child: (photo == null || photo.isEmpty)
           ? Icon(
               Icons.person_rounded,
-              size: labelled ? 28 : 20,
+              size: labelled ? 26 : 20,
               color: CitizenUi.accent,
             )
           : null,
@@ -415,6 +176,7 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
 
     if (!labelled) return Center(child: avatar);
 
+    final verif = profile?.verifStatus ?? VerifStatus.none;
     final (String statusLabel, Color statusColor) = switch (verif) {
       VerifStatus.verified => ('Verified', CitizenUi.success),
       VerifStatus.pending => ('Pending', CitizenUi.pending),
@@ -424,48 +186,54 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: CitizenUi.subtle,
+        color: CitizenUi.surface,
         borderRadius: BorderRadius.circular(CitizenUi.cardRadius),
         border: Border.all(color: CitizenUi.border),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
           avatar,
-          const SizedBox(height: 10),
-          Text(
-            (fullName?.trim().isNotEmpty ?? false)
-                ? fullName!.trim()
-                : (_username ?? ''),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
-              color: CitizenUi.textPrimary,
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  profile?.displayName ?? '',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w700,
+                    color: CitizenUi.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 7,
+                      height: 7,
+                      decoration: BoxDecoration(
+                        color: statusColor,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      statusLabel,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: statusColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
-          ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              Container(
-                width: 7,
-                height: 7,
-                decoration: BoxDecoration(
-                  color: statusColor,
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 6),
-              Text(
-                statusLabel,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: statusColor,
-                ),
-              ),
-            ],
           ),
         ],
       ),
@@ -473,16 +241,7 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
   }
 
   Widget _railRow(IconData icon, String label, bool labelled) {
-    final row = _railRowBody(icon, label, labelled);
-    // Only the icon-only rail needs a tooltip. Wrapping the labelled rows in a
-    // Tooltip with an empty message would add a hover target that shows nothing
-    // — and this app already carries a deliberate suppression for a framework
-    // Tooltip assertion (see main.dart), so gratuitous tooltips are not free.
-    return labelled ? row : Tooltip(message: label, child: row);
-  }
-
-  Widget _railRowBody(IconData icon, String label, bool labelled) {
-    return InkWell(
+    final row = InkWell(
       borderRadius: BorderRadius.circular(CitizenUi.controlRadius),
       onTap: () => _selectIndex(CitizenTab.settings.index),
       child: Padding(
@@ -515,21 +274,25 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
         ),
       ),
     );
+    // Only the icon-only rail needs a tooltip. An empty-message Tooltip is a
+    // hover target that shows nothing, and this app already carries a deliberate
+    // suppression for a framework Tooltip assertion (see main.dart).
+    return labelled ? row : Tooltip(message: label, child: row);
   }
 
   // ── Right sidebar ─────────────────────────────────────────────────────────
 
-  Widget _rightSidebar(bool isVerified) {
-    return Container(
+  Widget _rightSidebar() {
+    return SizedBox(
       width: _kRightSidebarWidth,
-      decoration: const BoxDecoration(
-        color: CitizenUi.surface,
-        border: Border(left: BorderSide(color: CitizenUi.border)),
-      ),
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: HomeQuickActionsSectionWeb(
-          onActionTap: (key) => _handleQuickAction(key, isVerified),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 20, 20, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            HomeQuickActionsSectionWeb(onActionTap: _handleQuickAction),
+          ],
         ),
       ),
     );
@@ -545,61 +308,53 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
 
     final profile = ref.watch(userProfileProvider).valueOrNull;
     final verif = profile?.verifStatus ?? VerifStatus.none;
-    final isVerified = verif == VerifStatus.verified;
-    final username = _username;
-
-    final Widget centre;
-    if (username == null) {
-      centre = const Center(child: CircularProgressIndicator());
-    } else {
-      centre = IndexedStack(
-        index: _index,
-        sizing: StackFit.expand,
-        children: [
-          for (final tab in CitizenTab.values)
-            _pane(tab, username, isVerified, profile?.barangay),
-        ],
-      );
-    }
-
-    final column = Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        HomeTopNav(
-          currentIndex: _index,
-          onTap: _selectIndex,
-          notificationCount: NotificationService.count,
-          onNotificationTap: () => _showNotifications(width),
-          onLogoutTap: () => _previewOnly('Logout'),
-          compact: width < 1050,
-          username: username ?? '',
-          fullName: profile?.fullName,
-          facePhotoUrl: profile?.facePhotoUrl,
-          verifStatus: switch (verif) {
-            VerifStatus.verified => 'approved',
-            VerifStatus.pending => 'pending',
-            VerifStatus.none => 'none',
-          },
-        ),
-        _deepLinkStrip(),
-        Expanded(child: centre),
-      ],
-    );
 
     return Scaffold(
       backgroundColor: CitizenUi.pageBg,
       body: SafeArea(
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (shellHasLeftRail(layout))
-              _leftRail(
-                labelled: layout != ShellLayout.railIcons,
-                fullName: profile?.fullName,
-                facePhotoUrl: profile?.facePhotoUrl,
-                verif: verif,
+            // One top nav, spanning ALL three columns — the rails sit flush
+            // beneath it rather than beside it.
+            HomeTopNav(
+              currentIndex: _index,
+              onTap: _selectIndex,
+              notificationCount: NotificationService.count,
+              onNotificationTap: () => _showNotifications(width),
+              onLogoutTap: () => showAppSnackBar(
+                context,
+                'Logout is disabled in the shell preview.',
+                type: AppSnackType.info,
               ),
-            Expanded(child: column),
-            if (shellHasRightSidebar(layout)) _rightSidebar(isVerified),
+              compact: width < 1050,
+              username: profile?.username ?? '',
+              fullName: profile?.fullName,
+              facePhotoUrl: profile?.facePhotoUrl,
+              verifStatus: switch (verif) {
+                VerifStatus.verified => 'approved',
+                VerifStatus.pending => 'pending',
+                VerifStatus.none => 'none',
+              },
+            ),
+            Expanded(
+              child: Row(
+                // Pins both rails to the top; only the centre column stretches.
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (shellHasLeftRail(layout))
+                    _leftRail(
+                      labelled: layout != ShellLayout.railIcons,
+                      profile: profile,
+                    ),
+                  // The centre must fill the height — it owns the scrolling.
+                  Expanded(
+                    child: SizedBox.expand(child: widget.navigationShell),
+                  ),
+                  if (shellHasRightSidebar(layout)) _rightSidebar(),
+                ],
+              ),
+            ),
           ],
         ),
       ),

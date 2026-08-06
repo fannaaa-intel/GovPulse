@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../screen/home_screen.dart';
 import '../../../core/widgets/deeplink_highlight.dart';
 import '../../../core/widgets/modal/verification_required_dialog.dart';
 import '../../../core/providers/community_posts_provider.dart';
+import '../../../core/providers/user_profile_provider.dart';
 import '../../../core/widgets/Home/Newsfeed/news_feed_helpers.dart';
 import '../../../core/widgets/Home/Newsfeed/comments_sheet.dart';
 import '../../../core/widgets/Home/Newsfeed/newsfeed_post_card.dart';
@@ -25,7 +27,7 @@ enum PostFilter {
   const PostFilter(this.label, this.duration);
 }
 
-class NewsFeedScreen extends StatefulWidget {
+class NewsFeedScreen extends StatelessWidget {
   final String username;
   final bool isVerified;
   final String? userBarangay;
@@ -58,14 +60,84 @@ class NewsFeedScreen extends StatefulWidget {
   });
 
   @override
-  State<NewsFeedScreen> createState() => _NewsFeedScreenState();
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        if (isGuest) {
+          Navigator.of(context).pop(); // go back to /guest
+        } else {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!context.mounted) return;
+            Navigator.pushAndRemoveUntil(
+              context,
+              PageRouteBuilder(
+                transitionDuration: Duration.zero,
+                reverseTransitionDuration: Duration.zero,
+                pageBuilder: (_, _, _) => HomePage(username: username),
+                transitionsBuilder: (_, _, _, child) => child,
+              ),
+              (route) => false,
+            );
+          });
+        }
+      },
+      child: ResponsiveNavScaffold(
+        showNav: !isGuest,
+        currentIndex: 2,
+        username: username,
+        isVerified: isVerified,
+        userBarangay: userBarangay,
+        backgroundColor: const Color(0xFFF3F4F6),
+        body: SafeArea(
+          child: NewsFeedBody(
+            isGuest: isGuest,
+            initialPostId: initialPostId,
+            initialOpenComments: initialOpenComments,
+            initialHighlightPost: initialHighlightPost,
+            initialCommentId: initialCommentId,
+          ),
+        ),
+      ),
+    );
+  }
 }
 
-class _NewsFeedScreenState extends State<NewsFeedScreen>
-    with TickerProviderStateMixin, DeepLinkHighlightMixin {
-  static const int _navIndex = 2;
+/// NewsFeed content, with no chrome of its own. Rendered inside
+/// [NewsFeedScreen] on mobile and directly as a centre pane by the web shell.
+///
+/// Takes no `username` / `isVerified` / `userBarangay`: all three come from
+/// [userProfileProvider], which is the same source the caller was reading them
+/// from before passing them down. [isGuest] stays a parameter because a guest
+/// has no profile to read.
+class NewsFeedBody extends ConsumerStatefulWidget {
+  final bool isGuest;
+  final String? initialPostId;
+  final bool initialOpenComments;
+  final bool initialHighlightPost;
+  final String? initialCommentId;
 
-  bool get _isVerified => widget.isVerified;
+  const NewsFeedBody({
+    super.key,
+    this.isGuest = false,
+    this.initialPostId,
+    this.initialOpenComments = false,
+    this.initialHighlightPost = false,
+    this.initialCommentId,
+  });
+
+  @override
+  ConsumerState<NewsFeedBody> createState() => _NewsFeedScreenState();
+}
+
+class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
+    with TickerProviderStateMixin, DeepLinkHighlightMixin {
+  UserProfile? get _profile => ref.read(userProfileProvider).valueOrNull;
+
+  String get _username => _profile?.username ?? '';
+  String? get _userBarangay => _profile?.barangay;
+  bool get _isVerified => _profile?.isVerified ?? false;
 
   final SupabaseClient _supabase = Supabase.instance.client;
   late final AnimationController _entryCtrl;
@@ -253,7 +325,7 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
     //   • user has NO barangay yet (e.g. signed up but not verified) →
     //     city-wide / LGU broadcasts only, never other barangays' posts
     if (!widget.isGuest) {
-      final ub = widget.userBarangay?.trim().toLowerCase() ?? '';
+      final ub = _userBarangay?.trim().toLowerCase() ?? '';
       posts = posts.where((p) {
         final pb = (p['barangay'] as String?)?.trim().toLowerCase() ?? '';
         if (pb.isEmpty) return true; // city-wide / LGU broadcast
@@ -293,19 +365,6 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
     );
   }
 
-  void _goToHome() {
-    if (!mounted) return;
-    Navigator.pushAndRemoveUntil(
-      context,
-      PageRouteBuilder(
-        transitionDuration: Duration.zero,
-        reverseTransitionDuration: Duration.zero,
-        pageBuilder: (_, _, _) => HomePage(username: widget.username),
-        transitionsBuilder: (_, _, _, child) => child,
-      ),
-      (route) => false,
-    );
-  }
 
   void _showGuestSignupNudge() {
     showModalBottomSheet(
@@ -381,7 +440,7 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
       showVerificationRequiredDialog(
         context,
         isVerified: _isVerified,
-        username: widget.username,
+        username: _username,
         message:
             'Only verified citizens can like. Please complete identity verification first.',
       );
@@ -457,7 +516,7 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
       showVerificationRequiredDialog(
         context,
         isVerified: _isVerified,
-        username: widget.username,
+        username: _username,
         message:
             'Only verified citizens can like posts. Please complete identity verification first.',
       );
@@ -636,7 +695,7 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
       showVerificationRequiredDialog(
         context,
         isVerified: _isVerified,
-        username: widget.username,
+        username: _username,
         message:
             'Only verified citizens can view and post comments. Please complete identity verification first.',
       );
@@ -663,28 +722,7 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
     final provider = CommunityPostsProvider.instance;
     final visiblePosts = _filteredPosts;
 
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, _) {
-        if (didPop) return;
-        if (!mounted) return;
-        if (widget.isGuest) {
-          Navigator.of(context).pop(); // go back to /guest
-        } else {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) _goToHome();
-          });
-        }
-      },
-      child: ResponsiveNavScaffold(
-        showNav: !widget.isGuest,
-        currentIndex: _navIndex,
-        username: widget.username,
-        isVerified: _isVerified,
-        userBarangay: widget.userBarangay,
-        backgroundColor: const Color(0xFFF3F4F6),
-        body: SafeArea(
-          child: wide
+    return wide
               ? LoadingOverlay.bodyOrSkeleton(
                   isLoading: !provider.initialLoadDone && provider.isLoading,
                   layout: SkeletonLayout.newsFeed,
@@ -744,10 +782,7 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
                       ],
                     ),
                   ),
-                ),
-        ),
-      ),
-    );
+                );
   }
 
   // ── WEB body: centered feed column + info rail ─────────────────────────────
@@ -825,8 +860,8 @@ class _NewsFeedScreenState extends State<NewsFeedScreen>
         _railCard(
           icon: Icons.place_rounded,
           color: const Color(0xFF059669),
-          title: (widget.userBarangay?.isNotEmpty ?? false)
-              ? widget.userBarangay!
+          title: (_userBarangay?.isNotEmpty ?? false)
+              ? _userBarangay!
               : 'Your Area',
           body:
               "You're seeing updates for your barangay along with city-wide "
