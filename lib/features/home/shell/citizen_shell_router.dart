@@ -8,7 +8,6 @@ import '../emergency/emergency_screen.dart';
 import '../my_report/my_reports_screen.dart';
 import '../my_report/report_detail_screen.dart';
 import '../newsfeed/news_feed_screen.dart';
-import '../screen/home_screen.dart';
 import '../settings/settings_screen.dart';
 import 'citizen_shell.dart';
 
@@ -50,13 +49,21 @@ import 'citizen_shell.dart';
 /// URL prefix every preview route lives under.
 const String kShellPreviewPrefix = '/shell-preview';
 
-/// The five top-level destinations, in nav order. The index into
-/// [CitizenTab.values] IS the branch index, so order is load-bearing and
-/// matches the 0–4 contract [HomeTopNav] and the legacy nav widgets use.
+/// The shell's top-level destinations, in nav order. The index into
+/// [CitizenTab.values] IS the branch index, so order is load-bearing.
+///
+/// NOTE this is a SHORTER list than the standalone pages use. Home and NewsFeed
+/// were two tabs showing two halves of the same thing — an empty "Latest
+/// Updates" panel and the real community feed — so the shell merged them: Home's
+/// centre column IS the feed now, and there is no separate NewsFeed tab. That
+/// also shifts Settings from index 4 to 3, which is why the shell passes
+/// [HomeTopNav.settingsIndex].
+///
+/// The standalone NewsFeed page still exists untouched for the mobile app and
+/// the live web route — only the shell merges the two.
 enum CitizenTab {
   home('home', 'Home', Icons.home_rounded),
   myReports('my-reports', 'My Reports', Icons.assignment_rounded),
-  newsfeed('newsfeed', 'NewsFeed', Icons.dynamic_feed_rounded),
   emergency('emergency', 'Emergency', Icons.emergency_rounded),
   settings('settings', 'Settings', Icons.settings_rounded);
 
@@ -65,7 +72,7 @@ enum CitizenTab {
   final IconData icon;
   const CitizenTab(this.segment, this.label, this.icon);
 
-  /// Full location for this tab, e.g. `/shell-preview/newsfeed`.
+  /// Full location for this tab, e.g. `/shell-preview/my-reports`.
   String get path => '$kShellPreviewPrefix/$segment';
 }
 
@@ -110,17 +117,16 @@ class _WithIdentity extends ConsumerWidget {
 Widget _bodyFor(BuildContext context, CitizenTab tab) {
   switch (tab) {
     case CitizenTab.home:
-      return HomeBody(
-        onOpenNewsfeed: () =>
-            CitizenShell.goToTab(context, CitizenTab.newsfeed),
-      );
+      // Home IS the community feed. NewsFeedBody already renders exactly that —
+      // the posts, the filter, and the loading/error/empty states — with no
+      // chrome of its own, so the merge is a matter of mounting it here rather
+      // than reimplementing a feed in a second place.
+      return const NewsFeedBody(embedded: true);
     case CitizenTab.myReports:
       return MyReportsBody(
         onOpenReport: (report) =>
             context.push(shellReportDetailPath, extra: report),
       );
-    case CitizenTab.newsfeed:
-      return const NewsFeedBody();
     case CitizenTab.emergency:
       return const EmergencyBody();
     case CitizenTab.settings:
@@ -142,7 +148,6 @@ final GoRouter citizenShellRouter = GoRouter(
     // Inside the shell they open as big dialogs over the still-mounted feed
     // (see citizen_shell_dialogs.dart), which is the whole point — a route
     // would unmount the feed and add a history entry for what is really a panel.
-
     StatefulShellRoute.indexedStack(
       builder: (context, state, navigationShell) =>
           CitizenShell(navigationShell: navigationShell),

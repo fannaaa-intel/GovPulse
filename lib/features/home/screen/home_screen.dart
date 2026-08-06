@@ -44,48 +44,6 @@ import '../../../core/widgets/citizen_guard_modals.dart';
 import '../../../core/providers/user_profile_provider.dart';
 import '../../../core/widgets/app_dialog.dart';
 
-// ════════════════════════════════════════════════════════════════════════════
-//  HomeBody — Home as the citizen shell's centre pane.
-//
-//  Unlike the other four Bodies, this is NOT the whole of [HomePage] with its
-//  chrome peeled off. Inside the shell most of what Home renders is either
-//  chrome that the shell already provides, or content that has moved to a
-//  different column:
-//
-//    • the beach-photo hero band  → chrome; the shell has a top nav
-//    • the profile strip          → moved to the shell's LEFT rail
-//    • Quick Actions              → moved to the shell's RIGHT sidebar
-//    • the stats bar + footer     → page furniture for a standalone page,
-//                                   noise inside a persistent shell
-//
-//  What is left, and what the centre column is actually for, is the community
-//  feed. Keeping any of the rest would reproduce the doubling this split exists
-//  to remove.
-//
-//  [HomePage] is therefore left completely untouched: it is still the standalone
-//  page the mobile app and the live web route render, hero and all. The two
-//  deliberately do not share a body.
-// ════════════════════════════════════════════════════════════════════════════
-class HomeBody extends ConsumerWidget {
-  /// Open the full NewsFeed — wired by the shell to a branch switch.
-  final VoidCallback onOpenNewsfeed;
-
-  const HomeBody({super.key, required this.onOpenNewsfeed});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final profile = ref.watch(userProfileProvider).valueOrNull;
-    return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(28, 24, 28, 40),
-      child: HomeCommunitySectionWeb(
-        onViewAll: onOpenNewsfeed,
-        barangay: profile?.barangay,
-      ),
-    );
-  }
-}
-
 class HomePage extends ConsumerStatefulWidget {
   final String username;
   const HomePage({super.key, required this.username});

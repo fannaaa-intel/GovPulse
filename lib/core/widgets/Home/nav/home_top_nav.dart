@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 
+/// One destination in the top nav: the label, and the index handed back to
+/// `onTap`. Public so a caller with a different set of destinations can supply
+/// its own — see [HomeTopNav.items].
+typedef HomeTopNavItem = ({String label, int index});
+
 class HomeTopNav extends StatefulWidget {
   final int currentIndex;
   final ValueChanged<int> onTap;
@@ -12,6 +17,19 @@ class HomeTopNav extends StatefulWidget {
   final String? fullName;
   final String? facePhotoUrl;
   final String verifStatus;
+
+  /// Destinations to show. Null keeps [defaultItems] — the four the standalone
+  /// pages have always shown — so the mobile app and the live web routes are
+  /// unaffected by callers that pass their own.
+  ///
+  /// The citizen web shell supplies a shorter set: it merged NewsFeed into Home,
+  /// so its nav is Home · My Reports · Emergency.
+  final List<HomeTopNavItem>? items;
+
+  /// Index reported when the user chip's "Settings" is chosen. Defaults to 4,
+  /// the position Settings occupies in the standalone 0–4 destination contract.
+  /// The shell overrides it because dropping NewsFeed shifts Settings down.
+  final int settingsIndex;
 
   const HomeTopNav({
     super.key,
@@ -25,13 +43,16 @@ class HomeTopNav extends StatefulWidget {
     this.username,
     this.fullName,
     this.facePhotoUrl,
+    this.items,
+    this.settingsIndex = 4,
   });
 
-  static const _items = <_NavItemData>[
-    _NavItemData('Home', 0),
-    _NavItemData('My Reports', 1),
-    _NavItemData('NewsFeed', 2),
-    _NavItemData('Emergency', 3),
+  /// The standalone destination set. Unchanged.
+  static const defaultItems = <HomeTopNavItem>[
+    (label: 'Home', index: 0),
+    (label: 'My Reports', index: 1),
+    (label: 'NewsFeed', index: 2),
+    (label: 'Emergency', index: 3),
   ];
 
   @override
@@ -80,7 +101,7 @@ class _HomeTopNavState extends State<HomeTopNav> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  for (final item in HomeTopNav._items)
+                  for (final item in (widget.items ?? HomeTopNav.defaultItems))
                     _NavLink(
                       label: item.label,
                       isActive: _isHighlighted(item.index),
@@ -111,7 +132,7 @@ class _HomeTopNavState extends State<HomeTopNav> {
                 fullName: widget.fullName,
                 facePhotoUrl: widget.facePhotoUrl,
                 verifStatus: widget.verifStatus,
-                onSettingsTap: () => widget.onTap(4),
+                onSettingsTap: () => widget.onTap(widget.settingsIndex),
                 onLogoutTap: widget.onLogoutTap,
                 onRegisterClose: _registerCloseUserChip,
               ),
@@ -121,12 +142,6 @@ class _HomeTopNavState extends State<HomeTopNav> {
       ),
     );
   }
-}
-
-class _NavItemData {
-  final String label;
-  final int index;
-  const _NavItemData(this.label, this.index);
 }
 
 // ── Brand logo ────────────────────────────────────────────────────────────────

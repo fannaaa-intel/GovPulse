@@ -112,6 +112,18 @@ class NewsFeedScreen extends StatelessWidget {
 /// from before passing them down. [isGuest] stays a parameter because a guest
 /// has no profile to read.
 class NewsFeedBody extends ConsumerStatefulWidget {
+  /// Rendered as the citizen shell's centre column rather than as a page.
+  ///
+  /// Two differences, both because the shell already provides what the
+  /// standalone page had to provide for itself:
+  ///   • the 300px info rail is dropped — the shell has two rails of its own,
+  ///     and at 932px the feed+rail pair simply does not fit the centre column;
+  ///   • the feed column flexes to the width it is given instead of being
+  ///     centred at a fixed 600px inside a 1080px page.
+  /// Everything else — the filter bar, the posts, the loading, error and empty
+  /// states — is identical.
+  final bool embedded;
+
   final bool isGuest;
   final String? initialPostId;
   final bool initialOpenComments;
@@ -120,6 +132,7 @@ class NewsFeedBody extends ConsumerStatefulWidget {
 
   const NewsFeedBody({
     super.key,
+    this.embedded = false,
     this.isGuest = false,
     this.initialPostId,
     this.initialOpenComments = false,
@@ -364,7 +377,6 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
       child: SlideTransition(position: slide, child: child),
     );
   }
-
 
   void _showGuestSignupNudge() {
     showModalBottomSheet(
@@ -717,72 +729,74 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
     // WEB / large screens: feed column + info rail that fills the width, instead
     // of a stranded 480px phone column. Phones & narrow web keep the original
     // body (design width capped at 480), byte-for-byte unchanged.
-    final bool wide = kIsWeb && rawWidth >= 900;
+    // Embedded, the shell hands this body a column narrower than the viewport,
+    // so the viewport-based `wide` test would be wrong in both directions. In
+    // the shell the web layout is always the right one.
+    final bool wide = widget.embedded || (kIsWeb && rawWidth >= 900);
     final double width = wide ? 480.0 : rawWidth.clamp(0.0, 480.0);
     final provider = CommunityPostsProvider.instance;
     final visiblePosts = _filteredPosts;
 
     return wide
-              ? LoadingOverlay.bodyOrSkeleton(
-                  isLoading: !provider.initialLoadDone && provider.isLoading,
-                  layout: SkeletonLayout.newsFeed,
-                  child: _buildNewsFeedWebBody(width, provider, visiblePosts),
-                )
-              : Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 480),
-                    child: Column(
-                      children: [
-                        _buildTopBar(width),
-                        Expanded(
-                          child: LoadingOverlay.bodyOrSkeleton(
-                            isLoading:
-                                !provider.initialLoadDone && provider.isLoading,
-                            layout: SkeletonLayout.newsFeed,
-                            child: provider.error != null
-                                ? _buildErrorState(width, provider)
-                                : visiblePosts.isEmpty
-                                ? _animated(1, _buildEmptyState(width))
-                                : RefreshIndicator(
-                                    onRefresh: () async {
-                                      await CommunityPostsProvider.instance
-                                          .refresh();
-                                      await _loadMyInteractions();
-                                    },
-                                    child: ListView.separated(
-                                      physics: const BouncingScrollPhysics(),
-                                      padding: EdgeInsets.fromLTRB(
-                                        width * 0.04,
-                                        width * 0.035,
-                                        width * 0.04,
-                                        width * 0.04,
+        ? LoadingOverlay.bodyOrSkeleton(
+            isLoading: !provider.initialLoadDone && provider.isLoading,
+            layout: SkeletonLayout.newsFeed,
+            child: _buildNewsFeedWebBody(width, provider, visiblePosts),
+          )
+        : Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: Column(
+                children: [
+                  _buildTopBar(width),
+                  Expanded(
+                    child: LoadingOverlay.bodyOrSkeleton(
+                      isLoading:
+                          !provider.initialLoadDone && provider.isLoading,
+                      layout: SkeletonLayout.newsFeed,
+                      child: provider.error != null
+                          ? _buildErrorState(width, provider)
+                          : visiblePosts.isEmpty
+                          ? _animated(1, _buildEmptyState(width))
+                          : RefreshIndicator(
+                              onRefresh: () async {
+                                await CommunityPostsProvider.instance.refresh();
+                                await _loadMyInteractions();
+                              },
+                              child: ListView.separated(
+                                physics: const BouncingScrollPhysics(),
+                                padding: EdgeInsets.fromLTRB(
+                                  width * 0.04,
+                                  width * 0.035,
+                                  width * 0.04,
+                                  width * 0.04,
+                                ),
+                                itemCount: visiblePosts.length,
+                                separatorBuilder: (_, _) =>
+                                    SizedBox(height: width * 0.035),
+                                itemBuilder: (_, i) {
+                                  final post = visiblePosts[i];
+                                  final pid = post['id'] as String;
+                                  return KeyedSubtree(
+                                    key: highlightKey(pid),
+                                    child: _animated(
+                                      i + 1,
+                                      _highlightWrap(
+                                        pid,
+                                        width,
+                                        _buildPostCard(width, post),
                                       ),
-                                      itemCount: visiblePosts.length,
-                                      separatorBuilder: (_, _) =>
-                                          SizedBox(height: width * 0.035),
-                                      itemBuilder: (_, i) {
-                                        final post = visiblePosts[i];
-                                        final pid = post['id'] as String;
-                                        return KeyedSubtree(
-                                          key: highlightKey(pid),
-                                          child: _animated(
-                                            i + 1,
-                                            _highlightWrap(
-                                              pid,
-                                              width,
-                                              _buildPostCard(width, post),
-                                            ),
-                                          ),
-                                        );
-                                      },
                                     ),
-                                  ),
-                          ),
-                        ),
-                      ],
+                                  );
+                                },
+                              ),
+                            ),
                     ),
                   ),
-                );
+                ],
+              ),
+            ),
+          );
   }
 
   // ── WEB body: centered feed column + info rail ─────────────────────────────
@@ -791,6 +805,48 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
     CommunityPostsProvider provider,
     List<Map<String, dynamic>> visiblePosts,
   ) {
+    final feed = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildTopBar(w),
+        const SizedBox(height: 20),
+        if (provider.error != null)
+          _buildErrorState(w, provider)
+        else if (visiblePosts.isEmpty)
+          _animated(1, _buildEmptyState(w))
+        else
+          for (int i = 0; i < visiblePosts.length; i++) ...[
+            KeyedSubtree(
+              key: highlightKey(visiblePosts[i]['id'] as String),
+              child: _animated(
+                i + 1,
+                _highlightWrap(
+                  visiblePosts[i]['id'] as String,
+                  w,
+                  _buildPostCard(w, visiblePosts[i]),
+                ),
+              ),
+            ),
+            if (i < visiblePosts.length - 1) const SizedBox(height: 16),
+          ],
+      ],
+    );
+
+    if (widget.embedded) {
+      // Centre column of the shell: the feed alone, flexing to the column and
+      // capped at a readable measure.
+      return SingleChildScrollView(
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 48),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 640),
+            child: feed,
+          ),
+        ),
+      );
+    }
+
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
       child: Center(
@@ -802,37 +858,7 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Feed column
-                SizedBox(
-                  width: 600,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _buildTopBar(w),
-                      const SizedBox(height: 20),
-                      if (provider.error != null)
-                        _buildErrorState(w, provider)
-                      else if (visiblePosts.isEmpty)
-                        _animated(1, _buildEmptyState(w))
-                      else
-                        for (int i = 0; i < visiblePosts.length; i++) ...[
-                          KeyedSubtree(
-                            key: highlightKey(visiblePosts[i]['id'] as String),
-                            child: _animated(
-                              i + 1,
-                              _highlightWrap(
-                                visiblePosts[i]['id'] as String,
-                                w,
-                                _buildPostCard(w, visiblePosts[i]),
-                              ),
-                            ),
-                          ),
-                          if (i < visiblePosts.length - 1)
-                            const SizedBox(height: 16),
-                        ],
-                    ],
-                  ),
-                ),
+                SizedBox(width: 600, child: feed),
                 const SizedBox(width: 32),
                 // Info rail
                 SizedBox(width: 300, child: _buildNewsFeedRail()),

@@ -428,6 +428,16 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
             HomeTopNav(
               currentIndex: _index,
               onTap: _selectIndex,
+              // Home · My Reports · Emergency. NewsFeed is gone: Home's centre
+              // is the feed now. Settings is reached from the user chip, so it
+              // is not a nav link — but its index moved to 3 when NewsFeed left,
+              // hence settingsIndex.
+              items: [
+                for (final tab in CitizenTab.values)
+                  if (tab != CitizenTab.settings)
+                    (label: tab.label, index: tab.index),
+              ],
+              settingsIndex: CitizenTab.settings.index,
               notificationCount: NotificationService.count,
               onNotificationTap: () => _showNotifications(width),
               // The shared flow, same as Settings and the nav chrome use.
@@ -453,8 +463,26 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
                       profile: profile,
                     ),
                   // The centre must fill the height — it owns the scrolling.
+                  //
+                  // The MediaQuery override reports the CENTRE COLUMN's size to
+                  // the panes rather than the viewport's. Bodies size themselves
+                  // off MediaQuery (`width * 0.0x`, and a >= 900 "wide" test),
+                  // so without this a pane in a ~650px column would lay itself
+                  // out for a 1280px page and overflow. Same trick
+                  // ResponsiveNavScaffold._constrained already uses to keep a
+                  // max-width body self-consistent.
                   Expanded(
-                    child: SizedBox.expand(child: widget.navigationShell),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) => MediaQuery(
+                        data: MediaQuery.of(context).copyWith(
+                          size: Size(
+                            constraints.maxWidth,
+                            constraints.maxHeight,
+                          ),
+                        ),
+                        child: SizedBox.expand(child: widget.navigationShell),
+                      ),
+                    ),
                   ),
                   if (shellHasRightSidebar(layout)) _rightSidebar(),
                 ],
