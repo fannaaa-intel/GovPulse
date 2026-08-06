@@ -11,7 +11,6 @@ import '../../../core/widgets/Home/nav/home_top_nav.dart';
 import '../../../core/widgets/Home/nav/nav_band.dart';
 import '../../../core/widgets/Home/sections/Web/home_quick_actions_section_web.dart';
 import '../../../core/services/citizen_logout.dart';
-import '../Quick-action/Chat-with-Agent/chat_agent_screen.dart';
 import '../Quick-action/Events/events_screen.dart';
 import '../Quick-action/Feedback/feedback_screen.dart';
 import '../Quick-action/Report/report_issue_screen.dart';
@@ -22,6 +21,7 @@ import '../settings/change-password/change_password_send_screen.dart';
 import '../settings/contact-support/contact_support_screen.dart';
 import '../settings/edit_profile_screen.dart';
 import '../settings/my-submission/my_submissions_screen.dart';
+import 'citizen_docked_chat.dart';
 import 'citizen_shell_dialogs.dart';
 import 'citizen_shell_router.dart';
 
@@ -90,6 +90,10 @@ class CitizenShell extends ConsumerStatefulWidget {
 class _CitizenShellState extends ConsumerState<CitizenShell> {
   int get _index => widget.navigationShell.currentIndex;
 
+  /// The docked chat window. Lives on the shell, not on a tab, so the
+  /// conversation stays open across tab switches — the point of a docked window.
+  DockedChatState _chat = DockedChatState.closed;
+
   @override
   void initState() {
     super.initState();
@@ -150,16 +154,22 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
     };
     if (title.isEmpty) return;
 
-    // Chat and Events are browsing surfaces, not forms — they keep their own
-    // screens, hosted in the same big modal without the form guard.
-    if (key == 'chat' || key == 'events') {
+    // Chat is NOT a modal here. It opens the docked window: bottom-right,
+    // no barrier, page stays live behind it. Re-triggering the action restores a
+    // minimised or closed window rather than stacking a second one.
+    if (key == 'chat') {
+      setState(() => _chat = DockedChatState.open);
+      return;
+    }
+
+    // Events is a browsing surface, not a form — same big modal, no form guard.
+    if (key == 'events') {
       await showCitizenFormDialog<void>(
         context: context,
         title: title,
         icon: icon,
-        builder: (_, _) => key == 'chat'
-            ? ChatAgentScreen(username: username)
-            : EventsScreen(username: username, isVerified: _isVerified),
+        builder: (_, _) =>
+            EventsScreen(username: username, isVerified: _isVerified),
       );
       return;
     }
@@ -419,77 +429,92 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
 
     return Scaffold(
       backgroundColor: CitizenUi.pageBg,
-      body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // One top nav, spanning ALL three columns — the rails sit flush
-            // beneath it rather than beside it.
-            HomeTopNav(
-              currentIndex: _index,
-              onTap: _selectIndex,
-              // Home · My Reports · Emergency. NewsFeed is gone: Home's centre
-              // is the feed now. Settings is reached from the user chip, so it
-              // is not a nav link — but its index moved to 3 when NewsFeed left,
-              // hence settingsIndex.
-              items: [
-                for (final tab in CitizenTab.values)
-                  if (tab != CitizenTab.settings)
-                    (label: tab.label, index: tab.index),
-              ],
-              settingsIndex: CitizenTab.settings.index,
-              notificationCount: NotificationService.count,
-              onNotificationTap: () => _showNotifications(width),
-              // The shared flow, same as Settings and the nav chrome use.
-              onLogoutTap: () => performCitizenLogout(context, ref),
-              compact: width < 1050,
-              username: profile?.username ?? '',
-              fullName: profile?.fullName,
-              facePhotoUrl: profile?.facePhotoUrl,
-              verifStatus: switch (verif) {
-                VerifStatus.verified => 'approved',
-                VerifStatus.pending => 'pending',
-                VerifStatus.none => 'none',
-              },
-            ),
-            Expanded(
-              child: Row(
-                // Pins both rails to the top; only the centre column stretches.
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (shellHasLeftRail(layout))
-                    _leftRail(
-                      labelled: layout != ShellLayout.railIcons,
-                      profile: profile,
-                    ),
-                  // The centre must fill the height — it owns the scrolling.
-                  //
-                  // The MediaQuery override reports the CENTRE COLUMN's size to
-                  // the panes rather than the viewport's. Bodies size themselves
-                  // off MediaQuery (`width * 0.0x`, and a >= 900 "wide" test),
-                  // so without this a pane in a ~650px column would lay itself
-                  // out for a 1280px page and overflow. Same trick
-                  // ResponsiveNavScaffold._constrained already uses to keep a
-                  // max-width body self-consistent.
-                  Expanded(
-                    child: LayoutBuilder(
-                      builder: (context, constraints) => MediaQuery(
-                        data: MediaQuery.of(context).copyWith(
-                          size: Size(
-                            constraints.maxWidth,
-                            constraints.maxHeight,
+      // The docked chat floats over the columns in a Stack rather than in a
+      // route or a dialog. No barrier is inserted, so everything behind it stays
+      // scrollable and clickable while it is open.
+      body: Stack(
+        children: [
+          SafeArea(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // One top nav, spanning ALL three columns — the rails sit flush
+                // beneath it rather than beside it.
+                HomeTopNav(
+                  currentIndex: _index,
+                  onTap: _selectIndex,
+                  // Home · My Reports · Emergency. NewsFeed is gone: Home's centre
+                  // is the feed now. Settings is reached from the user chip, so it
+                  // is not a nav link — but its index moved to 3 when NewsFeed left,
+                  // hence settingsIndex.
+                  items: [
+                    for (final tab in CitizenTab.values)
+                      if (tab != CitizenTab.settings)
+                        (label: tab.label, index: tab.index),
+                  ],
+                  settingsIndex: CitizenTab.settings.index,
+                  notificationCount: NotificationService.count,
+                  onNotificationTap: () => _showNotifications(width),
+                  // The shared flow, same as Settings and the nav chrome use.
+                  onLogoutTap: () => performCitizenLogout(context, ref),
+                  compact: width < 1050,
+                  username: profile?.username ?? '',
+                  fullName: profile?.fullName,
+                  facePhotoUrl: profile?.facePhotoUrl,
+                  verifStatus: switch (verif) {
+                    VerifStatus.verified => 'approved',
+                    VerifStatus.pending => 'pending',
+                    VerifStatus.none => 'none',
+                  },
+                ),
+                Expanded(
+                  child: Row(
+                    // Pins both rails to the top; only the centre column stretches.
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (shellHasLeftRail(layout))
+                        _leftRail(
+                          labelled: layout != ShellLayout.railIcons,
+                          profile: profile,
+                        ),
+                      // The centre must fill the height — it owns the scrolling.
+                      //
+                      // The MediaQuery override reports the CENTRE COLUMN's size to
+                      // the panes rather than the viewport's. Bodies size themselves
+                      // off MediaQuery (`width * 0.0x`, and a >= 900 "wide" test),
+                      // so without this a pane in a ~650px column would lay itself
+                      // out for a 1280px page and overflow. Same trick
+                      // ResponsiveNavScaffold._constrained already uses to keep a
+                      // max-width body self-consistent.
+                      Expanded(
+                        child: LayoutBuilder(
+                          builder: (context, constraints) => MediaQuery(
+                            data: MediaQuery.of(context).copyWith(
+                              size: Size(
+                                constraints.maxWidth,
+                                constraints.maxHeight,
+                              ),
+                            ),
+                            child: SizedBox.expand(
+                              child: widget.navigationShell,
+                            ),
                           ),
                         ),
-                        child: SizedBox.expand(child: widget.navigationShell),
                       ),
-                    ),
+                      if (shellHasRightSidebar(layout)) _rightSidebar(),
+                    ],
                   ),
-                  if (shellHasRightSidebar(layout)) _rightSidebar(),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+          CitizenDockedChat(
+            state: _chat,
+            onMinimise: () => setState(() => _chat = DockedChatState.minimised),
+            onRestore: () => setState(() => _chat = DockedChatState.open),
+            onClose: () => setState(() => _chat = DockedChatState.closed),
+          ),
+        ],
       ),
     );
   }

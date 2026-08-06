@@ -20,11 +20,26 @@ class HomeChatPanelCard extends StatefulWidget {
   final double panelW;
   final double panelH;
 
+  /// Extra controls pinned to the right of the header — minimise, close, and
+  /// anything else the host window needs.
+  ///
+  /// Empty by default, which is exactly what the draggable bubble wants: it owns
+  /// its own dismissal, so its header is title-only and unchanged. The shell's
+  /// docked window supplies its own controls here rather than drawing a second
+  /// header on top of this one.
+  final List<Widget> headerActions;
+
+  /// Corner radius of the card. The floating bubble is a free-floating rounded
+  /// card; a docked window wants square bottom corners where it meets the edge.
+  final BorderRadius borderRadius;
+
   const HomeChatPanelCard({
     super.key,
     required this.onAgentMessage,
     required this.panelW,
     required this.panelH,
+    this.headerActions = const [],
+    this.borderRadius = const BorderRadius.all(Radius.circular(20)),
   });
 
   @override
@@ -147,7 +162,7 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
         child: Container(
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: widget.borderRadius,
             border: Border.all(color: AppColors.stroke, width: 1),
             boxShadow: [
               BoxShadow(
@@ -158,7 +173,7 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
             ],
           ),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: widget.borderRadius,
             child: Column(
               children: [
                 _buildHeader(),
@@ -371,6 +386,7 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
               ],
             ),
           ),
+          ...widget.headerActions,
         ],
       ),
     );
