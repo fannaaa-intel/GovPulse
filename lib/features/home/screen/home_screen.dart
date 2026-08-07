@@ -70,7 +70,6 @@ class _HomePageState extends ConsumerState<HomePage>
   //   topNav (width >= 900)                → WEB body    + top nav
   static const double _kMobileContentMax = 480;
   static const double _kTwoColumnBreakpoint = 1100;
-  static const double _kNavCompactBelow = 1050;
   static const double _kDashboardMaxWidth = 1280;
   static const double _kSidePadDesktop = 32;
   static const double _kSidePadNarrowWeb = 20;
@@ -732,7 +731,6 @@ class _HomePageState extends ConsumerState<HomePage>
                 notificationCount: NotificationService.count,
                 onNotificationTap: () => _showNotificationsDialog(width),
                 onLogoutTap: _handleLogout,
-                compact: width < _kNavCompactBelow,
                 username: widget.username,
                 fullName: fullName,
                 facePhotoUrl: facePhotoUrl,

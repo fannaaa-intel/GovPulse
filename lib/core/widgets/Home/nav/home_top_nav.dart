@@ -12,7 +12,6 @@ class HomeTopNav extends StatefulWidget {
   final VoidCallback onNotificationTap;
   final VoidCallback onLogoutTap;
   final int notificationCount;
-  final bool compact;
   final String? username;
   final String? fullName;
   final String? facePhotoUrl;
@@ -54,7 +53,6 @@ class HomeTopNav extends StatefulWidget {
     required this.onLogoutTap,
     required this.notificationCount,
     required this.verifStatus,
-    this.compact = false,
     this.username,
     this.fullName,
     this.facePhotoUrl,

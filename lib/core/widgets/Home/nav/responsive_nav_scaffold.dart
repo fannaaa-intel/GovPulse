@@ -446,7 +446,6 @@ class ResponsiveNavScaffold extends ConsumerWidget {
                 onNotificationTap: () =>
                     _showNotifications(context, width, effVerif),
                 onLogoutTap: () => _handleLogout(context),
-                compact: width < 1050,
                 username: username,
                 fullName: effFullName,
                 facePhotoUrl: effFacePhotoUrl,
