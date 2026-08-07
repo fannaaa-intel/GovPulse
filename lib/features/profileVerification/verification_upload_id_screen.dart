@@ -1,9 +1,14 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:dotted_border/dotted_border.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../../core/router/legacy_nav.dart';
+import '../../core/theme/app_colors.dart';
 import '../../core/widgets/mobile_form_shell.dart';
 import '../../core/widgets/app_snackbar.dart';
+import '../../core/widgets/modal/verification_required_dialog.dart'
+    show showSuccessDialog;
 
 const Map<String, Map<String, String>> idImages = {
   "PhilSys ID": {
@@ -91,6 +96,72 @@ class _VerificationUploadIdScreenState extends State<VerificationUploadIdScreen>
   void dispose() {
     _entryCtrl.dispose();
     super.dispose();
+  }
+
+  /// WEB capture path — file picker instead of the camera.
+  ///
+  /// There is no camera step on web to send the user to. `/verification_scan`
+  /// drives the `camera` package's live preview and runs ML Kit OCR
+  /// (IdVerificationService), and neither has a web implementation — ML Kit
+  /// pulls in `dart:io` and `path_provider` on top of being mobile-only. So on
+  /// web the user picks the two ID images from disk and goes straight to the
+  /// review step.
+  ///
+  /// The arguments handed to `/verification_review` are the SAME shape the scan
+  /// screen produces — front and back as [Uint8List] plus an `extractedData`
+  /// map — so every later step of the wizard is untouched.
+  ///
+  /// The one unavoidable difference: `extractedData` is EMPTY, because OCR
+  /// cannot run here. That is already a supported state — the review screen
+  /// reads `widget.extractedData ?? {}` and simply leaves the fields blank for
+  /// the user to type, which is also what happens on mobile whenever a scan
+  /// reads nothing confidently.
+  Future<void> _pickIdImagesForWeb() async {
+    final picker = ImagePicker();
+
+    try {
+      final front = await picker.pickImage(source: ImageSource.gallery);
+      if (front == null) return;
+      final frontBytes = await front.readAsBytes();
+      if (!mounted) return;
+
+      // The OS file dialog cannot say which side it wants, so the prompt has to
+      // come from us — otherwise the second picker opens with no explanation.
+      await showSuccessDialog(
+        context,
+        title: 'Front received',
+        message:
+            'Now choose a photo of the BACK of your ${widget.selectedId}.',
+        buttonLabel: 'Choose back',
+        iconData: Icons.badge_outlined,
+        iconColor: AppColors.primaryBlue,
+      );
+      if (!mounted) return;
+
+      final back = await picker.pickImage(source: ImageSource.gallery);
+      if (back == null) return;
+      final backBytes = await back.readAsBytes();
+      if (!mounted) return;
+
+      pushLegacy(
+        context,
+        '/verification_review',
+        arguments: {
+          'username': widget.username,
+          'selectedId': widget.selectedId,
+          'frontImage': frontBytes,
+          'backImage': backBytes,
+          'extractedData': const <String, String>{},
+        },
+      );
+    } catch (e) {
+      if (!mounted) return;
+      showAppSnackBar(
+        context,
+        "Couldn't read that image. Please try another file.",
+        type: AppSnackType.error,
+      );
+    }
   }
 
   @override
@@ -184,6 +255,14 @@ class _VerificationUploadIdScreenState extends State<VerificationUploadIdScreen>
                               flex: 3,
                               child: GestureDetector(
                                 onTap: () async {
+                                  // WEB: no camera-scan screen exists, so pick
+                                  // the ID images from disk instead. Everything
+                                  // below is the unchanged mobile path.
+                                  if (kIsWeb) {
+                                    await _pickIdImagesForWeb();
+                                    return;
+                                  }
+
                                   final status = await Permission.camera
                                       .request();
                                   if (!context.mounted) return;

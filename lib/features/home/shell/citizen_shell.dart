@@ -10,7 +10,10 @@ import '../../../core/widgets/Home/home_enums.dart';
 import '../../../core/widgets/Home/nav/home_top_nav.dart';
 import '../../../core/widgets/Home/nav/nav_band.dart';
 import '../../../core/widgets/Home/sections/Web/home_quick_actions_section_web.dart';
+import '../../../core/router/legacy_nav.dart';
 import '../../../core/services/citizen_logout.dart';
+import '../../../core/widgets/app_snackbar.dart';
+import '../../../core/widgets/modal/verification_required_dialog.dart';
 import '../Quick-action/Events/events_screen.dart';
 import '../Quick-action/Feedback/feedback_screen.dart';
 import '../Quick-action/Report/report_issue_screen.dart';
@@ -107,8 +110,24 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
   /// Tapping the ALREADY-selected tab resets that branch to its root, which is
   /// how a shell is expected to behave (it pops a detail back to the list).
   /// Any other tab switches branch, keeping wherever that branch was left.
-  void _selectIndex(int index) {
+  ///
+  /// My Reports is gated, matching the mobile nav. The check runs BEFORE
+  /// `goBranch`, and a refusal simply returns — so the branch never switches.
+  /// Nothing goes half-selected as a result: [HomeTopNav] derives its highlight
+  /// from `currentIndex`, which is `navigationShell.currentIndex`, and that is
+  /// unchanged when `goBranch` is not called. Home and Emergency are not gated.
+  Future<void> _selectIndex(int index) async {
     if (index < 0 || index >= CitizenTab.values.length) return;
+
+    if (CitizenTab.values[index] == CitizenTab.myReports) {
+      if (!await _requireVerified(
+        'Only verified citizens can access My Reports.',
+      )) {
+        return;
+      }
+      if (!mounted) return;
+    }
+
     widget.navigationShell.goBranch(index, initialLocation: index == _index);
   }
 
@@ -138,6 +157,82 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
   bool get _isVerified =>
       ref.read(userProfileProvider).valueOrNull?.isVerified ?? false;
 
+  // ── Verification gate ─────────────────────────────────────────────────────
+  //
+  // The shell reimplemented the citizen chrome — quick actions, the left rail,
+  // the top nav — and in doing so left every gated entry point ungated, so an
+  // unverified citizen on web had no way to be prompted to verify at all. This
+  // is the single place that gap is closed, mirroring what the mobile Home
+  // screen and nav already do at each of their entry points.
+  //
+  // The feed's own Like / Comment gates are NOT routed through here: they live
+  // in NewsFeedBody, are shared with mobile, and already work.
+
+  /// Told to the user when they act before [userProfileProvider] has landed.
+  /// Shared by the gate and by the rail's Verify affordance so the
+  /// loading-window answer is written once.
+  void _notifyProfileStillLoading() {
+    showAppSnackBar(
+      context,
+      'Still loading your profile — please try that again in a moment.',
+      type: AppSnackType.info,
+    );
+  }
+
+  /// Opens the verification wizard DIRECTLY, without a gate modal in front.
+  ///
+  /// Until this existed the wizard was reachable only by tripping a gate, so a
+  /// citizen who simply wanted to verify had nowhere to click. Same launch path
+  /// as the gate modal's Verify button and as mobile's "Verify Now" button:
+  /// the legacy `/verification` route with the account handle.
+  void _startVerification() {
+    final profile = ref.read(userProfileProvider).valueOrNull;
+
+    // Defensive: the affordance is not rendered until the profile loads, so
+    // this should be unreachable — but it must never launch the wizard with the
+    // '' that the loading window would produce.
+    if (profile == null) {
+      _notifyProfileStillLoading();
+      return;
+    }
+
+    // Mirrors mobile's _goToVerification: a pending submission must not re-enter
+    // the wizard, since the submit step rejects a second pending row outright.
+    if (profile.verifStatus != VerifStatus.none) return;
+
+    pushLegacy(context, '/verification', arguments: profile.username ?? '');
+  }
+
+  /// True when [message]'s action may proceed. False means it was refused and
+  /// the caller must return without doing anything — the dialog (or toast) has
+  /// already been shown.
+  Future<bool> _requireVerified(String message) async {
+    final profile = ref.read(userProfileProvider).valueOrNull;
+
+    // Profile not resolved yet. On a cold load the shell paints before the
+    // provider lands, and in that window `_isVerified` reads false and
+    // `_username` reads '' — so gating on them here would pop the dialog and
+    // then hand the wizard an EMPTY username. A tap that lands early is not a
+    // refusal, it is just early, so say so and let them tap again.
+    if (profile == null) {
+      _notifyProfileStillLoading();
+      return false;
+    }
+
+    if (profile.isVerified) return true;
+
+    await showVerificationRequiredDialog(
+      context,
+      // Status is already known here, so the dialog must not re-query for it.
+      isVerified: false,
+      // Non-null by construction: the profile has loaded, so the wizard is
+      // never opened with the '' that the loading window would have produced.
+      username: profile.username ?? '',
+      message: message,
+    );
+    return false;
+  }
+
   /// The three long quick-action forms, as BIG modals over the feed.
   ///
   /// Each hosts the same `XxxForm` the standalone screen hosts, with
@@ -145,7 +240,6 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
   /// out and the form scrolls inside the dialog. A [FormDialogGuard] carries the
   /// form's own discard confirmation to the dialog's close button.
   Future<void> _handleQuickAction(String key) async {
-    final username = _username;
     final (String title, IconData icon) = switch (key) {
       'report' => ('Report an Issue', Icons.report_gmailerrorred_rounded),
       'suggestion' => ('Share a Suggestion', Icons.lightbulb_outline_rounded),
@@ -155,6 +249,36 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
       _ => ('', Icons.help_outline_rounded),
     };
     if (title.isEmpty) return;
+
+    // Gated BEFORE anything opens, so an unverified citizen never gets a form
+    // they cannot submit or a docked chat they cannot use. Wording matches the
+    // mobile Home screen's tiles one for one.
+    //
+    // Events is the one that diverges: mobile does not gate browsing events.
+    // Gating it here is a deliberate product call, not an oversight.
+    final gateMessage = switch (key) {
+      'report' =>
+        'Only verified Aparri citizens can submit a report. '
+            'Please complete your identity verification first.',
+      'suggestion' =>
+        'Only verified Aparri citizens can submit a suggestion. '
+            'Please complete your identity verification first.',
+      'feedback' =>
+        'Only verified Aparri citizens can submit feedback. '
+            'Please complete your identity verification first.',
+      'chat' =>
+        'Only verified Aparri citizens can chat with an agent. '
+            'Please complete your identity verification first.',
+      _ =>
+        'Only verified Aparri citizens can browse community events. '
+            'Please complete your identity verification first.',
+    };
+    if (!await _requireVerified(gateMessage)) return;
+    if (!mounted) return;
+
+    // Read AFTER the gate: it only passes once the profile has loaded, so this
+    // can never be the '' of the loading window.
+    final username = _username;
 
     // Chat is NOT a modal here. It opens the docked window: bottom-right,
     // no barrier, page stays live behind it. Re-triggering the action restores a
@@ -216,38 +340,65 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
   /// Rail items, each opening the existing screen in a standard-size dialog.
   /// The hosted screen keeps its own header and its back button pops the
   /// dialog, so none of those screens needed changing.
-  List<(IconData, String, Widget Function())> get _railItems => [
+  /// `verifyMessage` non-null means the item is behind the verification gate.
+  /// Only Edit Profile and My Submissions are — matching the mobile Settings
+  /// page, which gates exactly those two and leaves Change Password, Contact
+  /// Support and About open to everyone. Support in particular must stay
+  /// reachable: an unverified citizen having trouble verifying needs it most.
+  List<({IconData icon, String label, String? verifyMessage, Widget Function() build})>
+  get _railItems => [
     (
-      Icons.person_outline_rounded,
-      'Edit Profile',
-      () => EditProfileScreen(username: _username),
+      icon: Icons.person_outline_rounded,
+      label: 'Edit Profile',
+      verifyMessage:
+          'Only verified citizens can edit their profile information. '
+          'Please complete the identity verification process first.',
+      build: () => EditProfileScreen(username: _username),
     ),
     (
-      Icons.lock_outline_rounded,
-      'Change Password',
-      () => ChangePasswordSendScreen(
+      icon: Icons.lock_outline_rounded,
+      label: 'Change Password',
+      verifyMessage: null,
+      build: () => ChangePasswordSendScreen(
         email: ref.read(userProfileProvider).valueOrNull?.email ?? '',
       ),
     ),
     (
-      Icons.folder_open_rounded,
-      'My Submissions',
-      () => MySubmissionsScreen(username: _username),
+      icon: Icons.folder_open_rounded,
+      label: 'My Submissions',
+      verifyMessage:
+          'Only verified citizens can view their submission history. '
+          'Please complete the identity verification process first.',
+      build: () => MySubmissionsScreen(username: _username),
     ),
     (
-      Icons.support_agent_rounded,
-      'Contact Support',
-      () => ContactSupportScreen(username: _username),
+      icon: Icons.support_agent_rounded,
+      label: 'Contact Support',
+      verifyMessage: null,
+      build: () => ContactSupportScreen(username: _username),
     ),
     (
-      Icons.info_outline_rounded,
-      'About GovPulse',
-      () => const AboutGovPulseScreen(),
+      icon: Icons.info_outline_rounded,
+      label: 'About GovPulse',
+      verifyMessage: null,
+      build: () => const AboutGovPulseScreen(),
     ),
   ];
 
-  Future<void> _openRailItem(Widget Function() build) =>
-      showCitizenPanelDialog<void>(context: context, child: build());
+  Future<void> _openRailItem(
+    ({
+      IconData icon,
+      String label,
+      String? verifyMessage,
+      Widget Function() build,
+    })
+    item,
+  ) async {
+    final gate = item.verifyMessage;
+    if (gate != null && !await _requireVerified(gate)) return;
+    if (!mounted) return;
+    await showCitizenPanelDialog<void>(context: context, child: item.build());
+  }
 
   Widget _leftRail({required bool labelled, required UserProfile? profile}) {
     return SizedBox(
@@ -277,8 +428,13 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
               ),
             // Each opens its existing screen in a standard-size dialog over the
             // still-mounted shell — see [_openRailItem].
-            for (final (icon, label, build) in _railItems)
-              _railRow(icon, label, labelled, () => _openRailItem(build)),
+            for (final item in _railItems)
+              _railRow(
+                item.icon,
+                item.label,
+                labelled,
+                () => _openRailItem(item),
+              ),
           ],
         ),
       ),
@@ -338,32 +494,86 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
                   ),
                 ),
                 const SizedBox(height: 3),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 7,
-                      height: 7,
-                      decoration: BoxDecoration(
-                        color: statusColor,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      statusLabel,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: statusColor,
-                      ),
-                    ),
-                  ],
+                _statusPill(
+                  label: statusLabel,
+                  color: statusColor,
+                  // Only an account we KNOW is unverified gets the affordance.
+                  // `verif` falls back to none while the profile is still
+                  // loading, so without the null test the rail would flash
+                  // "Verify now" at a verified citizen on every cold load —
+                  // the same trap mobile's profile card guards with
+                  // `!profileLoading`.
+                  canVerify: profile != null && verif == VerifStatus.none,
                 ),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// The account card's status line.
+  ///
+  /// Verified and Pending render EXACTLY as before — dot plus label, inert.
+  /// Only a known-unverified account gets the extra "Verify now" affordance and
+  /// becomes tappable, which is the shell's one direct route into the wizard.
+  /// Pending is deliberately not actionable, matching mobile, where the Verify
+  /// button is present but disabled while a submission is under review.
+  Widget _statusPill({
+    required String label,
+    required Color color,
+    required bool canVerify,
+  }) {
+    final row = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 7,
+          height: 7,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: color,
+          ),
+        ),
+        if (canVerify) ...[
+          const SizedBox(width: 7),
+          const Text(
+            '·',
+            style: TextStyle(fontSize: 12, color: CitizenUi.textFaint),
+          ),
+          const SizedBox(width: 7),
+          const Text(
+            'Verify now',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: CitizenUi.accent,
+            ),
+          ),
+          const Icon(
+            Icons.chevron_right_rounded,
+            size: 15,
+            color: CitizenUi.accent,
+          ),
+        ],
+      ],
+    );
+
+    if (!canVerify) return row;
+
+    return InkWell(
+      onTap: _startVerification,
+      borderRadius: BorderRadius.circular(CitizenUi.controlRadius),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: row,
       ),
     );
   }

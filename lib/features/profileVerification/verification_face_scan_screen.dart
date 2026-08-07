@@ -2,9 +2,11 @@ import 'dart:async';
 import 'dart:io';
 import '../../core/network/network_wrapper.dart';
 import 'package:camera/camera.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/theme/app_colors.dart';
 import '../home/screen/home_screen.dart';
@@ -81,7 +83,12 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
   String? _uploadError;
 
   // ── Face detection ────────────────────────────────────────────────────────
-  final FaceDetector _faceDetector = FaceDetector(
+  // `late` so the detector is built on FIRST USE rather than when the State is
+  // created. On web nothing ever touches it — there is no detection loop — so
+  // ML Kit, which has no web implementation, is never instantiated. On mobile
+  // the first access is inside _captureAndDetect, before any detection runs,
+  // with exactly the options below.
+  late final FaceDetector _faceDetector = FaceDetector(
     options: FaceDetectorOptions(
       performanceMode: FaceDetectorMode.fast,
       enableContours: false,
@@ -111,7 +118,45 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     _initAnimations();
-    _initCamera();
+    // WEB: no camera scan exists. `camera` and ML Kit face detection have no
+    // web implementation, so no CameraController is ever constructed here —
+    // the user picks a selfie file instead (see [_pickSelfieForWeb]) and the
+    // state sits at waitingForFace until they do.
+    if (kIsWeb) {
+      _scanState = _ScanState.waitingForFace;
+    } else {
+      _initCamera();
+    }
+  }
+
+  /// WEB selfie path — file picker instead of the live face scan.
+  ///
+  /// Produces exactly what the mobile capture produces: [_capturedImageBytes]
+  /// as a [Uint8List], and `_scanState = done`. Everything after this point —
+  /// the oval preview, the Go to Home button, and [_submitAndGoHome]'s upload
+  /// and insert — is the shared path and is untouched.
+  ///
+  /// There is deliberately NO automated face check here: ML Kit cannot run on
+  /// web. The selfie is attached for human review by an admin instead, which is
+  /// the same queue every submission already goes through.
+  Future<void> _pickSelfieForWeb() async {
+    try {
+      final shot = await ImagePicker().pickImage(source: ImageSource.gallery);
+      if (shot == null) return;
+      final bytes = await shot.readAsBytes();
+      if (!mounted) return;
+      setState(() {
+        _capturedImageBytes = bytes;
+        _uploadError = null;
+        _scanState = _ScanState.done;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(
+        () => _uploadError =
+            "Couldn't read that image. Please choose another file.",
+      );
+    }
   }
 
   void _initAnimations() {
@@ -237,6 +282,18 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
   }
 
   Future<void> _retry() async {
+    // WEB: "Retry" means pick a different selfie — there is no detection loop
+    // to restart and no timers or progress controller in play.
+    if (kIsWeb) {
+      setState(() {
+        _capturedImageBytes = null;
+        _uploadError = null;
+        _scanState = _ScanState.waitingForFace;
+      });
+      await _pickSelfieForWeb();
+      return;
+    }
+
     _holdTimer?.cancel();
     _detectionTimer?.cancel();
     _progressController.reset();
@@ -438,7 +495,9 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
     _holdTimer?.cancel();
     _detectionTimer?.cancel();
     _warmupTimer?.cancel();
-    _faceDetector.close();
+    // Guarded so web never touches the lazy `late` field — reading it just to
+    // close it would construct the ML Kit detector that web must never build.
+    if (!kIsWeb) _faceDetector.close();
     _cameraController?.dispose();
     SystemChrome.setEnabledSystemUIMode(
       SystemUiMode.manual,
@@ -464,6 +523,10 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
   }
 
   String get _statusText {
+    // Web never scans, so the camera-oriented wording would be nonsense there.
+    if (kIsWeb) {
+      return _scanState == _ScanState.done ? "Selfie Added" : "Add a Selfie";
+    }
     switch (_scanState) {
       case _ScanState.initializing:
         return "Starting Camera...";
@@ -518,7 +581,10 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
           Container(color: Colors.white),
 
           // ── Camera preview / frozen still ─────────────────────────────
-          if (_cameraReady && _cameraController != null)
+          // On web there is no camera, so the oval shows the picked selfie once
+          // there is one — CameraPreview is never reachable.
+          if ((_cameraReady && _cameraController != null) ||
+              (kIsWeb && _capturedImageBytes != null))
             Center(
               child: SizedBox(
                 width: ovalW,
@@ -528,17 +594,27 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
                   child:
                       (_capturedImageBytes != null &&
                           _scanState == _ScanState.done)
-                      ? Transform(
-                          alignment: Alignment.center,
-                          transform: Matrix4.identity()
-                            ..scaleByDouble(-1.0, 1.0, 1.0, 1.0),
-                          child: Image.memory(
-                            _capturedImageBytes!,
-                            fit: BoxFit.cover,
-                            width: ovalW,
-                            height: ovalH,
-                          ),
-                        )
+                      ? (kIsWeb
+                            // No mirroring on web. The flip below un-mirrors a
+                            // front-camera selfie; a picked file is not
+                            // mirrored, so flipping it would be wrong.
+                            ? Image.memory(
+                                _capturedImageBytes!,
+                                fit: BoxFit.cover,
+                                width: ovalW,
+                                height: ovalH,
+                              )
+                            : Transform(
+                                alignment: Alignment.center,
+                                transform: Matrix4.identity()
+                                  ..scaleByDouble(-1.0, 1.0, 1.0, 1.0),
+                                child: Image.memory(
+                                  _capturedImageBytes!,
+                                  fit: BoxFit.cover,
+                                  width: ovalW,
+                                  height: ovalH,
+                                ),
+                              ))
                       : CameraPreview(_cameraController!),
                 ),
               ),
@@ -704,36 +780,82 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
     );
   }
 
-  Widget _buildScanningFooter() => Column(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      AnimatedSwitcher(
-        duration: const Duration(milliseconds: 300),
-        child: Text(
-          _instructionText,
-          key: ValueKey(_scanState),
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontSize: 13,
-            color: AppColors.hint,
-            height: 1.5,
+  Widget _buildScanningFooter() {
+    // WEB: nothing is scanning, so there are no dots to animate — the footer is
+    // the call to action that opens the file picker.
+    if (kIsWeb) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            "Upload a clear photo of your face.\n"
+            "Our team will check it against your ID.",
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 13,
+              color: AppColors.hint,
+              height: 1.5,
+            ),
+          ),
+          if (_uploadError != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              _uploadError!,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 11,
+                color: AppColors.red,
+                height: 1.4,
+              ),
+            ),
+          ],
+          const SizedBox(height: 24),
+          _AnimatedButton(
+            label: "Choose a selfie",
+            color: AppColors.primaryBlue,
+            onPressed: _pickSelfieForWeb,
+          ),
+        ],
+      );
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 300),
+          child: Text(
+            _instructionText,
+            key: ValueKey(_scanState),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 13,
+              color: AppColors.hint,
+              height: 1.5,
+            ),
           ),
         ),
-      ),
-      const SizedBox(height: 20),
-      if (_scanState != _ScanState.initializing &&
-          _scanState != _ScanState.warming)
-        _ScanningDots(color: _ovalColor),
-    ],
-  );
+        const SizedBox(height: 20),
+        if (_scanState != _ScanState.initializing &&
+            _scanState != _ScanState.warming)
+          _ScanningDots(color: _ovalColor),
+      ],
+    );
+  }
 
   Widget _buildResultButtons() => Column(
     mainAxisSize: MainAxisSize.min,
     children: [
-      const Text(
-        "Your face has been scanned successfully.",
+      Text(
+        kIsWeb
+            ? "Selfie added. Our team will check it against your ID."
+            : "Your face has been scanned successfully.",
         textAlign: TextAlign.center,
-        style: TextStyle(fontSize: 13, color: AppColors.hint, height: 1.5),
+        style: const TextStyle(
+          fontSize: 13,
+          color: AppColors.hint,
+          height: 1.5,
+        ),
       ),
 
       // ── Error message ─────────────────────────────────────────────────
