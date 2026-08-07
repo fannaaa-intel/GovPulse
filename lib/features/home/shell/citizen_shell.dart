@@ -69,11 +69,39 @@ import 'citizen_shell_router.dart';
 /// Left rail width when it shows labels.
 const double _kRailLabelledWidth = 288;
 
-/// Left rail width when collapsed to icons.
-const double _kRailIconWidth = 76;
+// There is deliberately no icon-only rail width any more. The 900–1024 band
+// used to collapse the rail to icons, but with NAVIGATE, ACCOUNT and QUICK
+// ACTIONS all living there that became ~11 unlabelled icons in three unlabelled
+// clusters, and hover tooltips did not rescue it. That band now gets the drawer
+// instead — see [_isDrawerMode].
 
 /// Right quick-actions sidebar width.
 const double _kRightSidebarWidth = 340;
+
+/// Below this the top nav's user chip collapses to its avatar.
+///
+/// Local to the shell rather than in nav_band.dart: that file is imported by
+/// responsive_nav_scaffold and home_screen, so a constant there would put a
+/// diff in the mobile app for a web-only concern.
+const double _kAvatarOnlyChipBelow = 600;
+
+/// Quick actions, as rail rows. Same keys [_handleQuickAction] switches on, so
+/// tapping one here is identical to tapping its card in the right sidebar.
+const List<({String key, IconData icon, String label})> _kQuickActions = [
+  (
+    key: 'report',
+    icon: Icons.report_gmailerrorred_rounded,
+    label: 'Report an Issue',
+  ),
+  (
+    key: 'suggestion',
+    icon: Icons.lightbulb_outline_rounded,
+    label: 'Share a Suggestion',
+  ),
+  (key: 'feedback', icon: Icons.rate_review_outlined, label: 'Send Feedback'),
+  (key: 'chat', icon: Icons.support_agent_rounded, label: 'Chat with an Agent'),
+  (key: 'events', icon: Icons.event_rounded, label: 'View Events'),
+];
 
 class CitizenShell extends ConsumerStatefulWidget {
   /// go_router's branch container — both the selected index and the
@@ -94,6 +122,23 @@ class CitizenShell extends ConsumerStatefulWidget {
 
 class _CitizenShellState extends ConsumerState<CitizenShell> {
   int get _index => widget.navigationShell.currentIndex;
+
+  /// Needed because the hamburger is built in the SAME build() that returns the
+  /// Scaffold, so `Scaffold.of(context)` there would look above it and fail.
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  /// Runs [action], closing the drawer first when the tap came from inside it.
+  ///
+  /// Every rail control does the same thing in the drawer as it does inline —
+  /// same handler, same gate, same dialog — and the only difference is that the
+  /// drawer has to get out of the way first, or the panel it opens would be
+  /// stacked over a still-open drawer.
+  VoidCallback _fromDrawer(VoidCallback action, {required bool inDrawer}) {
+    return () {
+      if (inDrawer) _scaffoldKey.currentState?.closeDrawer();
+      action();
+    };
+  }
 
   /// The docked chat window. Lives on the shell, not on a tab, so the
   /// conversation stays open across tab switches — the point of a docked window.
@@ -400,65 +445,131 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
     await showCitizenPanelDialog<void>(context: context, child: item.build());
   }
 
-  Widget _leftRail({required bool labelled, required UserProfile? profile}) {
+  /// Section heading in the rail ("ACCOUNT", "NAVIGATE", "QUICK ACTIONS").
+  Widget _railHeading(String text) => Padding(
+    padding: const EdgeInsets.only(left: 6, bottom: 6),
+    child: Text(
+      text,
+      style: const TextStyle(
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+        letterSpacing: .8,
+        color: CitizenUi.textFaint,
+      ),
+    ),
+  );
+
+  /// The rail's contents, inline in the columns or inside the drawer.
+  ///
+  /// Always labelled. The icon-only variant is gone: it only ever applied to
+  /// the 900–1024 band, and once the rail carried three sections that band was
+  /// showing ~11 bare icons in three unlabelled clusters. Below 1024 the drawer
+  /// takes over instead, and the drawer is always labelled.
+  ///
+  /// [inDrawer] changes one thing: every tap closes the drawer first.
+  ///
+  /// [showNav] appends the NAVIGATE section — the tab destinations. It is set
+  /// exactly when the top nav is NOT showing its centred links, so the two are
+  /// complements and the destinations are always reachable from exactly one
+  /// place. It routes through [_selectIndex], the same handler the top nav
+  /// uses, so the My Reports verification gate applies identically.
+  ///
+  /// [showQuickActions] appends the QUICK ACTIONS section — set whenever the
+  /// right sidebar is not there to hold them.
+  Widget _leftRail({
+    required UserProfile? profile,
+    required bool showNav,
+    required bool showQuickActions,
+    bool inDrawer = false,
+  }) {
     return SizedBox(
-      width: labelled ? _kRailLabelledWidth : _kRailIconWidth,
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(labelled ? 20 : 10, 20, 8, 20),
-        child: Column(
-          // mainAxisSize.min + the Row's start alignment is what pins the rail
-          // to the top instead of letting it centre against the centre column.
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _profileCard(labelled: labelled, profile: profile),
-            const SizedBox(height: 16),
-            if (labelled)
-              const Padding(
-                padding: EdgeInsets.only(left: 6, bottom: 6),
-                child: Text(
-                  'ACCOUNT',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: .8,
-                    color: CitizenUi.textFaint,
+      width: _kRailLabelledWidth,
+      // Scrolls because the rail carries up to three sections — ~760px of
+      // content, which overflows any window shorter than ~820, and a 1366x768
+      // laptop leaves about 708. Under the Row's loose vertical constraints a
+      // SingleChildScrollView shrink-wraps to its content and only scrolls once
+      // it would exceed the height, so the rail still hugs the top exactly as
+      // before on a tall window.
+      //
+      // This is also why [_shellDrawer] does NOT add a scroll view of its own:
+      // nesting two in the same axis would hand this one an unbounded height.
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 8, 20),
+          child: Column(
+            // mainAxisSize.min is what pins the rail to the top rather than
+            // letting it centre against the centre column.
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _profileCard(profile: profile, inDrawer: inDrawer),
+              const SizedBox(height: 16),
+              if (showNav) ...[
+                _railHeading('NAVIGATE'),
+                // Mirrors the top nav's destinations exactly. Settings is left
+                // out for the same reason it is not a top-nav link: the user
+                // chip owns it, and the chip is visible at every width.
+                for (final tab in CitizenTab.values)
+                  if (tab != CitizenTab.settings)
+                    _railRow(
+                      tab.icon,
+                      tab.label,
+                      _fromDrawer(
+                        () => _selectIndex(tab.index),
+                        inDrawer: inDrawer,
+                      ),
+                      selected: tab.index == _index,
+                    ),
+                const SizedBox(height: 14),
+              ],
+              _railHeading('ACCOUNT'),
+              // Each opens its existing screen in a standard-size dialog over
+              // the still-mounted shell — see [_openRailItem].
+              for (final item in _railItems)
+                _railRow(
+                  item.icon,
+                  item.label,
+                  _fromDrawer(
+                    () => _openRailItem(item),
+                    inDrawer: inDrawer,
                   ),
                 ),
-              ),
-            // Each opens its existing screen in a standard-size dialog over the
-            // still-mounted shell — see [_openRailItem].
-            for (final item in _railItems)
-              _railRow(
-                item.icon,
-                item.label,
-                labelled,
-                () => _openRailItem(item),
-              ),
-          ],
+              // Quick actions have no home once the right sidebar is dropped,
+              // so the rail takes them. Routed through [_handleQuickAction] —
+              // the SAME handler the sidebar's cards call — so the verification
+              // gate fires, the forms open as dialogs and chat docks.
+              if (showQuickActions) ...[
+                const SizedBox(height: 14),
+                _railHeading('QUICK ACTIONS'),
+                for (final qa in _kQuickActions)
+                  _railRow(
+                    qa.icon,
+                    qa.label,
+                    _fromDrawer(
+                      () => _handleQuickAction(qa.key),
+                      inDrawer: inDrawer,
+                    ),
+                  ),
+              ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _profileCard({required bool labelled, required UserProfile? profile}) {
+  Widget _profileCard({required UserProfile? profile, bool inDrawer = false}) {
     final photo = profile?.facePhotoUrl;
     final avatar = CircleAvatar(
-      radius: labelled ? 24 : 18,
+      radius: 24,
       backgroundColor: CitizenUi.accentWash,
       backgroundImage: (photo != null && photo.isNotEmpty)
           ? CachedNetworkImageProvider(photo)
           : null,
       child: (photo == null || photo.isEmpty)
-          ? Icon(
-              Icons.person_rounded,
-              size: labelled ? 26 : 20,
-              color: CitizenUi.accent,
-            )
+          ? const Icon(Icons.person_rounded, size: 26, color: CitizenUi.accent)
           : null,
     );
-
-    if (!labelled) return Center(child: avatar);
 
     final verif = profile?.verifStatus ?? VerifStatus.none;
     final (String statusLabel, Color statusColor) = switch (verif) {
@@ -504,6 +615,7 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
                   // the same trap mobile's profile card guards with
                   // `!profileLoading`.
                   canVerify: profile != null && verif == VerifStatus.none,
+                  onTap: _fromDrawer(_startVerification, inDrawer: inDrawer),
                 ),
               ],
             ),
@@ -524,6 +636,7 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
     required String label,
     required Color color,
     required bool canVerify,
+    required VoidCallback onTap,
   }) {
     final row = Row(
       mainAxisSize: MainAxisSize.min,
@@ -569,7 +682,7 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
     if (!canVerify) return row;
 
     return InkWell(
-      onTap: _startVerification,
+      onTap: onTap,
       borderRadius: BorderRadius.circular(CitizenUi.controlRadius),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 2),
@@ -578,49 +691,128 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
     );
   }
 
+  /// [selected] is only ever set by the drawer's NAVIGATE rows, so it marks the
+  /// branch you are currently on. The account rows never pass it — they open
+  /// dialogs, and a dialog is not a destination you can be "on".
   Widget _railRow(
     IconData icon,
     String label,
-    bool labelled,
-    VoidCallback onTap,
-  ) {
-    final row = InkWell(
+    VoidCallback onTap, {
+    bool selected = false,
+  }) {
+    return InkWell(
       borderRadius: BorderRadius.circular(CitizenUi.controlRadius),
       onTap: onTap,
-      child: Padding(
-        padding: EdgeInsets.symmetric(
-          horizontal: labelled ? 10 : 0,
-          vertical: 11,
-        ),
+      child: Container(
+        decoration: selected
+            ? BoxDecoration(
+                color: CitizenUi.accentWash,
+                borderRadius: BorderRadius.circular(CitizenUi.controlRadius),
+              )
+            : null,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
         child: Row(
-          mainAxisAlignment: labelled
-              ? MainAxisAlignment.start
-              : MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 19, color: CitizenUi.textMuted),
-            if (labelled) ...[
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w600,
-                    color: CitizenUi.textSecondary,
-                  ),
+            Icon(
+              icon,
+              size: 19,
+              color: selected ? CitizenUi.accent : CitizenUi.textMuted,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                  color: selected
+                      ? CitizenUi.accent
+                      : CitizenUi.textSecondary,
                 ),
               ),
-            ],
+            ),
           ],
         ),
       ),
     );
-    // Only the icon-only rail needs a tooltip. An empty-message Tooltip is a
-    // hover target that shows nothing, and this app already carries a deliberate
-    // suppression for a framework Tooltip assertion (see main.dart).
-    return labelled ? row : Tooltip(message: label, child: row);
+    // No Tooltip wrapper any more: it existed only to name the icons in the
+    // icon-only rail, and every row carries its own label now.
+  }
+
+  // ── Drawer (<1024) ────────────────────────────────────────────────────────
+  //
+  // Below kShellRailLabelsMin the inline rail is gone, and before this existed
+  // nothing replaced it — Edit Profile, Change Password, My Submissions,
+  // Contact Support, About and the "Verify now" pill were all simply
+  // unreachable on a narrow browser. This is that rail, in a drawer.
+  //
+  // It hosts the SHELL's rail, not HomeNavDrawer: that widget belongs to the
+  // legacy nav contract and routes with pushLegacy('/my_reports') and friends,
+  // which is the wrong destination model for the shell (and its file is shared
+  // with the mobile app). Reusing [_leftRail] means the gates, the verification
+  // entry point and every rail dialog keep working with no second copy.
+
+  Widget _shellDrawer(UserProfile? profile) {
+    return Drawer(
+      width: _kRailLabelledWidth,
+      backgroundColor: CitizenUi.pageBg,
+      child: SafeArea(
+        // No scroll view here — [_leftRail] owns its own, and nesting two in
+        // the same axis would give the inner one an unbounded height.
+        child: SizedBox.expand(
+          child: _leftRail(
+            profile: profile,
+            inDrawer: true,
+            // The drawer only exists below 1024 — below the line where the top
+            // nav can fit its links, and below the line where the right sidebar
+            // survives — so it always carries both sections.
+            showNav: true,
+            showQuickActions: true,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The hamburger, drawn as a seamless extension of [HomeTopNav]'s bar.
+  ///
+  /// It has to sit BESIDE the nav rather than inside it: HomeTopNav is shared
+  /// with responsive_nav_scaffold and home_screen, so adding a menu slot to it
+  /// would put a diff in the mobile app for a web-only affordance. Matching its
+  /// height, fill, border and shadow makes the two read as one bar.
+  Widget _hamburger() {
+    return Container(
+      height: 60,
+      padding: const EdgeInsets.only(left: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: const Border(
+          bottom: BorderSide(color: Color(0xFFE5E7EB), width: 1),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      // Tight tap target rather than IconButton's default 48px box: every
+      // pixel here comes straight off the nav's remaining width, and the nav is
+      // already the tightest thing on screen in this band.
+      child: Center(
+        child: IconButton(
+          icon: const Icon(Icons.menu_rounded, color: CitizenUi.textSecondary),
+          iconSize: 22,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+          tooltip: 'Menu',
+          onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+        ),
+      ),
+    );
   }
 
   // ── Right sidebar ─────────────────────────────────────────────────────────
@@ -652,8 +844,41 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
     final profile = ref.watch(userProfileProvider).valueOrNull;
     final verif = profile?.verifStatus ?? VerifStatus.none;
 
+    // ── Three bands, not four ────────────────────────────────────────────────
+    //
+    //   >= 1280  three columns: rail + centre + right sidebar
+    //   1024..   rail + centre; quick actions move into the rail
+    //   < 1024   hamburger + drawer; centre full width
+    //
+    // ShellLayout.railIcons is folded into the drawer case rather than rendered.
+    // It described a 900–1024 rail collapsed to icons, and once that rail
+    // carried NAVIGATE, ACCOUNT and QUICK ACTIONS it was ~11 bare icons in three
+    // unlabelled clusters. The enum value still exists because nav_band.dart is
+    // shared with the mobile app and is not ours to edit; nothing renders it.
+    final isDrawerMode =
+        layout == ShellLayout.drawer || layout == ShellLayout.railIcons;
+
+    // Equivalently `width >= kShellRailLabelsMin`, but expressed against the
+    // same flag the rest of the layout uses so the two can never disagree.
+    //
+    // The links need ~920px on their own — MEASURED, not estimated: brand +
+    // links + bell + chip overflow at exactly 900 and are clean from 920, and
+    // with the hamburger added they do not fit until 960. An earlier 600px
+    // cutoff was simply too low, which is what left 607px striped.
+    //
+    // Nothing becomes unreachable when they go: the rail (inline or in the
+    // drawer) carries a NAVIGATE section whenever this is false.
+    //
+    // An empty `items` list is all it takes — HomeTopNav renders its centred Row
+    // with no children — so this stays a caller-side change.
+    final showNavLinks = !isDrawerMode;
+
     return Scaffold(
+      key: _scaffoldKey,
       backgroundColor: CitizenUi.pageBg,
+      // Only in drawer mode: at >= 1024 the rail is inline, so a drawer would be
+      // a second copy of it reachable by an edge swipe.
+      drawer: isDrawerMode ? _shellDrawer(profile) : null,
       // The docked chat floats over the columns in a Stack rather than in a
       // route or a dialog. No barrier is inserted, so everything behind it stays
       // scrollable and clickable while it is open.
@@ -664,43 +889,73 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 // One top nav, spanning ALL three columns — the rails sit flush
-                // beneath it rather than beside it.
-                HomeTopNav(
-                  currentIndex: _index,
-                  onTap: _selectIndex,
-                  // Home · My Reports · Emergency. NewsFeed is gone: Home's centre
-                  // is the feed now. Settings is reached from the user chip, so it
-                  // is not a nav link — but its index moved to 3 when NewsFeed left,
-                  // hence settingsIndex.
-                  items: [
-                    for (final tab in CitizenTab.values)
-                      if (tab != CitizenTab.settings)
-                        (label: tab.label, index: tab.index),
+                // beneath it rather than beside it. In drawer mode the
+                // hamburger is prepended as a seamless extension of the bar.
+                Row(
+                  children: [
+                    if (isDrawerMode) _hamburger(),
+                    Expanded(
+                      child: HomeTopNav(
+                        currentIndex: _index,
+                        onTap: _selectIndex,
+                        // Home · My Reports · Emergency. NewsFeed is gone: Home's centre
+                        // is the feed now. Settings is reached from the user chip, so it
+                        // is not a nav link — but its index moved to 3 when NewsFeed left,
+                        // hence settingsIndex.
+                        items: [
+                          if (showNavLinks)
+                            for (final tab in CitizenTab.values)
+                              if (tab != CitizenTab.settings)
+                                (label: tab.label, index: tab.index),
+                        ],
+                        settingsIndex: CitizenTab.settings.index,
+                        notificationCount: NotificationService.count,
+                        onNotificationTap: () => _showNotifications(width),
+                        // The shared flow, same as Settings and the nav chrome use.
+                        onLogoutTap: () => performCitizenLogout(context, ref),
+                        compact: width < 1050,
+                        // Below ~600 the brand + bell + named chip cannot fit
+                        // alongside the hamburger, and the chip's name is the
+                        // only part that is redundant — the dropdown still
+                        // shows it in full. Opt-in, so no other caller of this
+                        // shared widget is affected.
+                        avatarOnlyChip: width < _kAvatarOnlyChipBelow,
+                        username: profile?.username ?? '',
+                        fullName: profile?.fullName,
+                        facePhotoUrl: profile?.facePhotoUrl,
+                        verifStatus: switch (verif) {
+                          VerifStatus.verified => 'approved',
+                          VerifStatus.pending => 'pending',
+                          VerifStatus.none => 'none',
+                        },
+                      ),
+                    ),
                   ],
-                  settingsIndex: CitizenTab.settings.index,
-                  notificationCount: NotificationService.count,
-                  onNotificationTap: () => _showNotifications(width),
-                  // The shared flow, same as Settings and the nav chrome use.
-                  onLogoutTap: () => performCitizenLogout(context, ref),
-                  compact: width < 1050,
-                  username: profile?.username ?? '',
-                  fullName: profile?.fullName,
-                  facePhotoUrl: profile?.facePhotoUrl,
-                  verifStatus: switch (verif) {
-                    VerifStatus.verified => 'approved',
-                    VerifStatus.pending => 'pending',
-                    VerifStatus.none => 'none',
-                  },
                 ),
                 Expanded(
                   child: Row(
                     // Pins both rails to the top; only the centre column stretches.
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (shellHasLeftRail(layout))
+                      // Inline only above the drawer line. Not
+                      // shellHasLeftRail(layout), which still counts railIcons
+                      // as a rail — that band is the drawer's now.
+                      if (!isDrawerMode)
                         _leftRail(
-                          labelled: layout != ShellLayout.railIcons,
                           profile: profile,
+                          // The inline rail only exists at >= 1024, where the
+                          // top nav is showing the destinations itself, so it
+                          // never duplicates them. Always false in practice;
+                          // kept as the explicit complement of the nav.
+                          showNav: !showNavLinks,
+                          // The rail takes the quick actions whenever the right
+                          // sidebar is not there to hold them. Without this they
+                          // were reachable only at >= 1280 (sidebar) and in the
+                          // drawer, and vanished in between.
+                          //
+                          // At >= 1280 this is false, so they live in the
+                          // sidebar and are NOT duplicated here.
+                          showQuickActions: !shellHasRightSidebar(layout),
                         ),
                       // The centre must fill the height — it owns the scrolling.
                       //

@@ -31,6 +31,21 @@ class HomeTopNav extends StatefulWidget {
   /// The shell overrides it because dropping NewsFeed shifts Settings down.
   final int settingsIndex;
 
+  /// Collapses the user chip to its avatar — no name, no chevron, tighter
+  /// padding. The chip's DROPDOWN still shows the full name; only the closed
+  /// button shrinks.
+  ///
+  /// Opt-in and defaults to false, which is the layout every existing caller
+  /// gets. That matters: this widget is not web-only. `resolveNavBand` returns
+  /// `topNav` for any device at least 900 wide whose shortest side is at least
+  /// 600, so the MOBILE app builds this on tablets — an iPad in landscape
+  /// (1024x768) lands here. Neither mobile call site passes this flag, so their
+  /// rendering is byte-identical to before.
+  ///
+  /// Only the citizen web shell sets it, below ~600px, where brand + bell +
+  /// named chip cannot fit alongside its hamburger.
+  final bool avatarOnlyChip;
+
   const HomeTopNav({
     super.key,
     required this.currentIndex,
@@ -45,6 +60,7 @@ class HomeTopNav extends StatefulWidget {
     this.facePhotoUrl,
     this.items,
     this.settingsIndex = 4,
+    this.avatarOnlyChip = false,
   });
 
   /// The standalone destination set. Unchanged.
@@ -135,6 +151,7 @@ class _HomeTopNavState extends State<HomeTopNav> {
                 onSettingsTap: () => widget.onTap(widget.settingsIndex),
                 onLogoutTap: widget.onLogoutTap,
                 onRegisterClose: _registerCloseUserChip,
+                avatarOnly: widget.avatarOnlyChip,
               ),
             ],
           ),
@@ -347,6 +364,10 @@ class _UserChip extends StatefulWidget {
   final VoidCallback onLogoutTap;
   final void Function(VoidCallback closeCallback) onRegisterClose;
 
+  /// Render the closed button as just the avatar. The dropdown is unaffected —
+  /// it still shows the full name. See [HomeTopNav.avatarOnlyChip].
+  final bool avatarOnly;
+
   const _UserChip({
     this.username,
     this.fullName,
@@ -355,6 +376,7 @@ class _UserChip extends StatefulWidget {
     required this.onSettingsTap,
     required this.onLogoutTap,
     required this.onRegisterClose,
+    this.avatarOnly = false,
   });
 
   @override
@@ -596,7 +618,9 @@ class _UserChipState extends State<_UserChip>
         child: GestureDetector(
           onTap: _onTap,
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            padding: widget.avatarOnly
+                ? const EdgeInsets.all(4)
+                : const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
               color: _isOpen
                   ? const Color(0xFFEFF6FF)
@@ -627,6 +651,7 @@ class _UserChipState extends State<_UserChip>
                         : _defaultAvatar(),
                   ),
                 ),
+                if (!widget.avatarOnly) ...[
                 const SizedBox(width: 8),
                 Text(
                   displayName,
@@ -647,6 +672,7 @@ class _UserChipState extends State<_UserChip>
                     color: Color(0xFF6B7280),
                   ),
                 ),
+                ],
               ],
             ),
           ),
