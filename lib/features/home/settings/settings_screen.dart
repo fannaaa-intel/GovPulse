@@ -44,7 +44,17 @@ class SettingScreen extends ConsumerWidget {
 ///
 /// Takes no `username`: identity comes from [userProfileProvider].
 class SettingsBody extends ConsumerStatefulWidget {
-  const SettingsBody({super.key});
+  /// True when this is the web shell's Settings pane, whose persistent left
+  /// rail ALREADY offers Edit Profile, Change Password, My Submissions,
+  /// Contact Support and Log Out. Showing them here too gives the same action
+  /// two entry points a few hundred pixels apart, so the embedded pane drops
+  /// them and keeps only what the rail does not cover.
+  ///
+  /// Defaults to false, which is the mobile page: it has no rail, so it must
+  /// keep every one of those entries. [SettingScreen] never passes this.
+  final bool embedded;
+
+  const SettingsBody({super.key, this.embedded = false});
 
   @override
   ConsumerState<SettingsBody> createState() => _SettingScreenState();
@@ -61,6 +71,19 @@ class _SettingScreenState extends ConsumerState<SettingsBody>
   bool _hasPasswordLogin = false;
   bool _isFacebookUser = false;
   bool _isFacebookOnly = false;
+
+  /// "Set Password" — offered to a Facebook user who has no email/password
+  /// login yet. The shell's rail does NOT carry this (its Change Password entry
+  /// assumes a password already exists), so it is the one ACCOUNT tile that
+  /// survives in the embedded pane.
+  bool get _showSetPasswordTile => _isFacebookUser && !_hasPasswordLogin;
+
+  /// Whether the ACCOUNT card is worth drawing at all.
+  ///
+  /// Off the shell it always is. Embedded, every tile in it except Set Password
+  /// duplicates the rail — so for the common account the card would be an empty
+  /// box under an orphaned header, and it is dropped entirely instead.
+  bool get _showAccountSection => !widget.embedded || _showSetPasswordTile;
 
   // ── Push-notification preference ──────────────────────────────────────────
   bool _pushEnabled = true;
@@ -343,26 +366,32 @@ class _SettingScreenState extends ConsumerState<SettingsBody>
                                   ),
                                 ),
                                 SizedBox(height: width * 0.04),
-                                _animated(
-                                  2,
-                                  _buildAccountSection(
-                                    width,
-                                    verifStatus,
-                                    email,
-                                    profileLoading,
+                                if (_showAccountSection) ...[
+                                  _animated(
+                                    2,
+                                    _buildAccountSection(
+                                      width,
+                                      verifStatus,
+                                      email,
+                                      profileLoading,
+                                    ),
                                   ),
-                                ),
-                                SizedBox(height: width * 0.04),
+                                  SizedBox(height: width * 0.04),
+                                ],
                                 _animated(3, _buildPreferencesSection(width)),
                                 SizedBox(height: width * 0.04),
-                                _animated(4, _buildSupportSection(width)),
-                                SizedBox(height: width * 0.04),
+                                if (!widget.embedded) ...[
+                                  _animated(4, _buildSupportSection(width)),
+                                  SizedBox(height: width * 0.04),
+                                ],
                                 _animated(5, _buildLegalSection(width)),
                                 SizedBox(height: width * 0.04),
                                 _animated(6, _buildAboutSection(width)),
                                 SizedBox(height: width * 0.05),
-                                _animated(7, _buildLogoutButton(width)),
-                                SizedBox(height: width * 0.025),
+                                if (!widget.embedded) ...[
+                                  _animated(7, _buildLogoutButton(width)),
+                                  SizedBox(height: width * 0.025),
+                                ],
                                 _animated(7, _buildDeleteAccountButton(width)),
                                 SizedBox(height: width * 0.04),
                                 _animated(8, _buildFooter(width)),
@@ -421,19 +450,30 @@ class _SettingScreenState extends ConsumerState<SettingsBody>
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            _animated(
-                              2,
-                              _buildAccountSection(
-                                width,
-                                verifStatus,
-                                email,
-                                profileLoading,
+                            if (_showAccountSection) ...[
+                              _animated(
+                                2,
+                                _buildAccountSection(
+                                  width,
+                                  verifStatus,
+                                  email,
+                                  profileLoading,
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 20),
+                              const SizedBox(height: 20),
+                            ],
                             _animated(3, _buildPreferencesSection(width)),
-                            const SizedBox(height: 20),
-                            _animated(4, _buildSupportSection(width)),
+                            if (!widget.embedded) ...[
+                              const SizedBox(height: 20),
+                              _animated(4, _buildSupportSection(width)),
+                            ],
+                            // Embedded, ACCOUNT and SUPPORT are gone from this
+                            // column, so Legal moves across to keep the two
+                            // columns from going lopsided.
+                            if (widget.embedded) ...[
+                              const SizedBox(height: 20),
+                              _animated(4, _buildLegalSection(width)),
+                            ],
                           ],
                         ),
                       ),
@@ -442,8 +482,10 @@ class _SettingScreenState extends ConsumerState<SettingsBody>
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            _animated(5, _buildLegalSection(width)),
-                            const SizedBox(height: 20),
+                            if (!widget.embedded) ...[
+                              _animated(5, _buildLegalSection(width)),
+                              const SizedBox(height: 20),
+                            ],
                             _animated(6, _buildAboutSection(width)),
                           ],
                         ),
@@ -457,8 +499,10 @@ class _SettingScreenState extends ConsumerState<SettingsBody>
                     constraints: const BoxConstraints(maxWidth: 460),
                     child: Column(
                       children: [
-                        _animated(6, _buildLogoutButton(width)),
-                        SizedBox(height: width * 0.025),
+                        if (!widget.embedded) ...[
+                          _animated(6, _buildLogoutButton(width)),
+                          SizedBox(height: width * 0.025),
+                        ],
                         _animated(7, _buildDeleteAccountButton(width)),
                         SizedBox(height: width * 0.04),
                         _animated(8, _buildFooter(width)),
@@ -867,37 +911,41 @@ class _SettingScreenState extends ConsumerState<SettingsBody>
       title: 'ACCOUNT',
       width: width,
       children: [
-        _buildTile(
-          imagePath: 'assets/images/settings/user.webp',
-          iconBgColor: AppColors.primaryBlue,
-          title: 'Edit Profile',
-          subtitle: 'Update your personal information',
-          width: width,
-          onTap: () async {
-            if (profileLoading) return;
+        // Edit Profile / Change Password / My Submissions are rail items in the
+        // shell, so the embedded pane shows none of them — only Set Password,
+        // which the rail has no equivalent for, survives below.
+        if (!widget.embedded)
+          _buildTile(
+            imagePath: 'assets/images/settings/user.webp',
+            iconBgColor: AppColors.primaryBlue,
+            title: 'Edit Profile',
+            subtitle: 'Update your personal information',
+            width: width,
+            onTap: () async {
+              if (profileLoading) return;
 
-            final approved = await showVerificationRequiredDialog(
-              context,
-              isVerified: verifStatus == 'approved',
-              username: _username,
-              message:
-                  'Only verified citizens can edit their profile information. Please complete the identity verification process first.',
-            );
+              final approved = await showVerificationRequiredDialog(
+                context,
+                isVerified: verifStatus == 'approved',
+                username: _username,
+                message:
+                    'Only verified citizens can edit their profile information. Please complete the identity verification process first.',
+              );
 
-            if (!approved || !mounted) return;
+              if (!approved || !mounted) return;
 
-            final refreshed = await pushLegacy(
-              context,
-              '/edit_profile',
-              arguments: _username,
-            );
-            if (refreshed == true && mounted) {
-              ref.read(userProfileProvider.notifier).refresh();
-            }
-          },
-        ),
+              final refreshed = await pushLegacy(
+                context,
+                '/edit_profile',
+                arguments: _username,
+              );
+              if (refreshed == true && mounted) {
+                ref.read(userProfileProvider.notifier).refresh();
+              }
+            },
+          ),
 
-        if (!_isFacebookOnly)
+        if (!widget.embedded && !_isFacebookOnly)
           _buildTile(
             imagePath: 'assets/images/settings/password.webp',
             iconBgColor: AppColors.primaryBlue,
@@ -913,7 +961,7 @@ class _SettingScreenState extends ConsumerState<SettingsBody>
             },
           ),
 
-        if (_isFacebookUser && !_hasPasswordLogin)
+        if (_showSetPasswordTile)
           _buildTile(
             imagePath: 'assets/images/settings/password.webp',
             iconBgColor: const Color(0xFF1877F2),
@@ -922,6 +970,9 @@ class _SettingScreenState extends ConsumerState<SettingsBody>
                 ? 'Change your email login password'
                 : 'Add email & password as a backup login',
             width: width,
+            // Embedded it is the ONLY tile in the card, so it owns the bottom
+            // edge and must not draw a divider into empty space.
+            showDivider: !widget.embedded,
             onTap: () async {
               final result = await Navigator.push(
                 context,
@@ -954,33 +1005,34 @@ class _SettingScreenState extends ConsumerState<SettingsBody>
             },
           ),
 
-        _buildTile(
-          imagePath: 'assets/images/settings/submission.webp',
-          iconBgColor: AppColors.primaryBlue,
-          title: 'My Submissions',
-          subtitle: 'View your verification & report history',
-          width: width,
-          showDivider: false,
-          onTap: () async {
-            if (profileLoading) return;
+        if (!widget.embedded)
+          _buildTile(
+            imagePath: 'assets/images/settings/submission.webp',
+            iconBgColor: AppColors.primaryBlue,
+            title: 'My Submissions',
+            subtitle: 'View your verification & report history',
+            width: width,
+            showDivider: false,
+            onTap: () async {
+              if (profileLoading) return;
 
-            final approved = await showVerificationRequiredDialog(
-              context,
-              isVerified: verifStatus == 'approved',
-              username: _username,
-              message:
-                  'Only verified citizens can view their submission history. Please complete the identity verification process first.',
-            );
+              final approved = await showVerificationRequiredDialog(
+                context,
+                isVerified: verifStatus == 'approved',
+                username: _username,
+                message:
+                    'Only verified citizens can view their submission history. Please complete the identity verification process first.',
+              );
 
-            if (!approved || !mounted) return;
+              if (!approved || !mounted) return;
 
-            pushLegacy(
-              context,
-              '/my_submissions',
-              arguments: _username,
-            );
-          },
-        ),
+              pushLegacy(
+                context,
+                '/my_submissions',
+                arguments: _username,
+              );
+            },
+          ),
       ],
     );
   }

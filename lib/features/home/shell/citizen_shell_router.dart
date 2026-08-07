@@ -174,7 +174,10 @@ Widget _bodyFor(BuildContext context, CitizenTab tab) {
     case CitizenTab.emergency:
       return const EmergencyBody();
     case CitizenTab.settings:
-      return const SettingsBody();
+      // embedded: the left rail already carries Edit Profile, Change Password,
+      // My Submissions, Contact Support and Log Out, so the pane drops its
+      // duplicates of them and shows only what the rail does not.
+      return const SettingsBody(embedded: true);
   }
 }
 
