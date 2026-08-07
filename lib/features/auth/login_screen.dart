@@ -765,11 +765,21 @@ class _LoginScreenState extends State<LoginScreen>
     try {
       await widget.onLoginClick(cleanUsername, cleanPassword);
     } catch (e) {
-      setState(() {
-        errorMessage = e.toString().replaceAll("Exception: ", "");
-      });
+      if (mounted) {
+        setState(() {
+          errorMessage = e.toString().replaceAll("Exception: ", "");
+        });
+      }
     } finally {
-      setState(() => isLoading = false);
+      // A SUCCESSFUL sign-in flips Supabase auth state, which the web router's
+      // guard reacts to by redirecting off /login — disposing this screen
+      // before the await above resolves here. So by the time this runs there
+      // may be no State left to set. Mobile never hits it: there is no guard
+      // there, and the screen stays mounted until it is pushed away.
+      //
+      // `if (mounted)` rather than `if (!mounted) return;` because a return
+      // inside a finally block swallows any in-flight exception.
+      if (mounted) setState(() => isLoading = false);
     }
   }
 }
