@@ -9,10 +9,18 @@ import '../theme/citizen_ui.dart';
 //  — `settings.arguments` on the legacy router, `extra` on go_router. That works
 //  perfectly right up until someone refreshes the page or pastes the link to a
 //  colleague, at which point the object is gone and the route has nothing to
-//  render. app_router.dart carries a guard (the `argRequiredRoutes` set) whose
-//  entire job is to bounce those routes to the splash screen rather than let
-//  them white-screen — which is a crash being converted into a redirect, not a
-//  URL that works.
+//  render. The old handling for that was a guard in app_router.dart (the
+//  `argRequiredRoutes` set) that bounced those routes to the splash screen
+//  rather than let them white-screen — a crash converted into a redirect, not
+//  a URL that works.
+//
+//  Report and event detail are OUT of that guard now. They are real
+//  id-addressable GoRoutes — `/my-reports/detail/:reportId` and
+//  `/home/event/:eventId` — and this widget is what makes that safe: the id in
+//  the path is enough to rebuild the subject, so a refresh reloads the page
+//  instead of being redirected away from it. The guard still exists for the
+//  routes that genuinely cannot carry their state in a URL (the verification
+//  wizard's ID images, the password-reset tokens).
 //
 //  [ResolveById] makes the object optional instead of required:
 //

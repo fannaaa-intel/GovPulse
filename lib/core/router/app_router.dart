@@ -280,16 +280,24 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
   }
 
   // ── Web refresh / deep-link safety ─────────────────────────────────────────
-  // These routes carry in-memory arguments (a report, an event, verification
-  // data, …) that are LOST when the browser is refreshed directly on that URL.
-  // Without this guard the `settings.arguments as Map<String, dynamic>` casts
-  // below throw a null TypeError and white-screen the app. When the arguments
-  // are missing we send the user to the splash screen (which re-routes them to
-  // Home / Login) instead of crashing. The mobile app never hits this — it
-  // always navigates with arguments in memory — so its behaviour is unchanged.
+  // These routes carry in-memory arguments (verification wizard data, password
+  // reset tokens) that are LOST when the browser is refreshed directly on that
+  // URL. Without this guard the `settings.arguments as Map<String, dynamic>`
+  // casts below throw a null TypeError and white-screen the app. When the
+  // arguments are missing we send the user to the splash screen (which
+  // re-routes them to Home / Login) instead of crashing. The mobile app never
+  // hits this — it always navigates with arguments in memory — so its
+  // behaviour is unchanged.
+  //
+  // /report_detail and /event_detail USED to be here. They are not any more:
+  // go_router owns the web URL now, so a route NAME can never be a launch
+  // location, and the shell's id-addressable /my-reports/detail/:id and
+  // /home/event/:id rebuild their subject from the id via ResolveById instead
+  // of needing a bounce. What remains is the set that genuinely cannot be made
+  // id-addressable — six wizard steps that pass Uint8List ID images between
+  // them, and a password reset that carries auth tokens — so for those a
+  // restart really is the only correct answer to a refresh.
   const argRequiredRoutes = <String>{
-    '/report_detail',
-    '/event_detail',
     '/verification_photo_instruction',
     '/verification_upload_id',
     '/verification_scan',

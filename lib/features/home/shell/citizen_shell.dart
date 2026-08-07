@@ -52,13 +52,15 @@ import 'citizen_shell_router.dart';
 //  never run their fetches. Each branch owns a Navigator, so a detail route
 //  pushed from a pane stacks inside that pane.
 //
-//  ── What Phase 2 removed ──────────────────────────────────────────────────
-//  The first preview hosted the whole Screens, so nav chrome, the beach hero and
-//  Quick Actions were all doubled, and it needed a hand-rolled Navigator per
-//  pane just so in-pane taps did not throw. Now the shell mounts chromeless
-//  Bodies and go_router owns the branch navigators, so both hacks are gone —
-//  along with the deep-link instrumentation strip, whose job (proving a target
-//  survives to the pane) is now done by real branch routes.
+//  ── Bodies, not Screens ───────────────────────────────────────────────────
+//  The shell mounts chromeless Bodies (NewsFeedBody, MyReportsBody, …), never
+//  the standalone Screens. Hosting whole Screens would double the nav chrome,
+//  the hero and Quick Actions, and would need a hand-rolled Navigator per pane
+//  just so in-pane taps did not throw. go_router owns the branch navigators
+//  instead, so neither hack is needed.
+//
+//  Settings is the one Body that knows it is in here: it takes `embedded: true`
+//  so it can drop the account actions the left rail already provides.
 // ════════════════════════════════════════════════════════════════════════════
 
 /// Left rail width when it shows labels.
@@ -273,8 +275,8 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
                   ),
                 ),
               ),
-            // Stubs. Phase 3 opens each as a showAppDialog; for now they surface
-            // the Settings pane so the rail is real rather than dead.
+            // Each opens its existing screen in a standard-size dialog over the
+            // still-mounted shell — see [_openRailItem].
             for (final (icon, label, build) in _railItems)
               _railRow(icon, label, labelled, () => _openRailItem(build)),
           ],

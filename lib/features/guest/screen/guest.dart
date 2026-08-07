@@ -6,6 +6,30 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/web/web.dart';
 import '../../../core/widgets/mobile_form_shell.dart';
 
+// ════════════════════════════════════════════════════════════════════════════
+//  KNOWN STATE — guests did NOT move onto the shell in the go_router cutover.
+//
+//  This works today. It is documented rather than fixed because whether guests
+//  should get the shell at all is a product decision, not a routing one.
+//
+//  What actually happens when "Continue as Guest" is tapped on web:
+//
+//    • It calls pushLegacy('/newsfeed'), so the STANDALONE NewsFeedScreen is
+//      pushed imperatively onto go_router's Navigator. It renders and behaves
+//      correctly — but the address bar keeps saying /#/guest, so a guest has no
+//      URL to reload onto and F5 drops them back to the guest landing page.
+//      Signed-in citizens get the shell's feed at /#/home instead.
+//
+//    • A guest is authenticated with FIREBASE anonymous auth, not Supabase, so
+//      `Supabase.instance.client.auth.currentSession` stays NULL for them. The
+//      shell's auth guard would therefore read a guest as signed-out. Nothing
+//      breaks right now only because /guest is a public route and the push
+//      above does not change the location, so the guard never re-evaluates.
+//
+//  Both points have to be answered together before guests can graduate to the
+//  shell: the guard needs a notion of "guest" that is not a Supabase session.
+// ════════════════════════════════════════════════════════════════════════════
+
 class GuestScreen extends StatefulWidget {
   const GuestScreen({super.key});
 
@@ -87,6 +111,8 @@ class _GuestScreenState extends State<GuestScreen>
           const SizedBox(height: 28),
           WebPrimaryButton(
             label: "Continue as Guest",
+            // Legacy NewsFeed, not the shell, and no URL of its own — see the
+            // KNOWN STATE note at the top of this file.
             onPressed: () => pushLegacy(
               context,
               '/newsfeed',
@@ -300,6 +326,9 @@ class _GuestScreenState extends State<GuestScreen>
                                 ),
                                 elevation: 0,
                               ),
+                              // Legacy NewsFeed, not the shell, and no URL of
+                              // its own — see the KNOWN STATE note at the top
+                              // of this file.
                               onPressed: () => pushLegacy(
                                 context,
                                 '/newsfeed',
