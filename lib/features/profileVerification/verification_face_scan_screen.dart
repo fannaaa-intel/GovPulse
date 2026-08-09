@@ -570,8 +570,36 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
     );
 
     final size = MediaQuery.of(context).size;
-    final ovalW = size.width * 0.62;
-    final ovalH = ovalW * 1.36;
+
+    // The oval is sized off viewport WIDTH, which is right on a phone (narrow
+    // and tall) but wrong on web: at 1440 wide the height works out to ~1214px
+    // and runs off a ~700px viewport. It never striped — the Stack clips — it
+    // just rendered broken, with the status text and footer overlapping it.
+    //
+    // On web, clamp the HEIGHT against the viewport and back-compute the width
+    // so the 1.36 aspect ratio is preserved. The clamp only engages when the
+    // width-derived height would not fit, so a narrow browser window still
+    // gets the original width-based sizing.
+    final double ovalW;
+    final double ovalH;
+    if (kIsWeb) {
+      const aspect = 1.36;
+      // Leaves room for the status text (top: height * 0.12) above and the
+      // footer (bottom: height * 0.06 plus its content) below, including the
+      // +32 the progress ring adds around the oval.
+      final maxOvalH = size.height * 0.46;
+      final widthBasedH = size.width * 0.62 * aspect;
+      if (widthBasedH > maxOvalH) {
+        ovalH = maxOvalH;
+        ovalW = maxOvalH / aspect;
+      } else {
+        ovalW = size.width * 0.62;
+        ovalH = widthBasedH;
+      }
+    } else {
+      ovalW = size.width * 0.62;
+      ovalH = ovalW * 1.36;
+    }
 
     return Scaffold(
       backgroundColor: Colors.white,

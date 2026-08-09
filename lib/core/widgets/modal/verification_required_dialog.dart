@@ -1,9 +1,16 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../router/legacy_nav.dart';
 import '../../theme/app_colors.dart';
+
+/// Width at which these dialogs stop scaling with the viewport.
+///
+/// The same 440 [showVerificationRequiredDialog] has always capped at; named
+/// here so [showSuccessDialog] provably uses the identical number.
+const double _kMaxDialogWidth = 440.0;
 
 Future<bool> showVerificationRequiredDialog(
   BuildContext context, {
@@ -196,7 +203,17 @@ Future<void> showSuccessDialog(
   Color? iconColor,
   Color? iconBgColor,
 }) async {
-  final width = MediaQuery.of(context).size.width;
+  final mqWidth = MediaQuery.of(context).size.width;
+
+  // Every dimension below is a multiple of `width` — icon, gaps, font sizes,
+  // button padding. That is fine on a phone, where the viewport is narrow and
+  // tall, but on web the dialog scales with viewport WIDTH while remaining
+  // bounded by viewport HEIGHT, so a wide browser overflows (and gets worse the
+  // wider it goes). Cap the scale factor on web exactly as the sibling
+  // showVerificationRequiredDialog already does.
+  //
+  // Native keeps the raw viewport width, so phone rendering is untouched.
+  final width = kIsWeb ? math.min(mqWidth, _kMaxDialogWidth) : mqWidth;
 
   await showGeneralDialog(
     context: context,
@@ -222,116 +239,135 @@ Future<void> showSuccessDialog(
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(width * 0.06),
       ),
-      child: Padding(
-        padding: EdgeInsets.all(width * 0.06),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // ── Icon with optional tinted circle background ──────────────
-            () {
-              final size = width * 0.22;
-              final bg =
-                  iconBgColor ??
-                  (iconColor != null
-                      ? iconColor.withValues(alpha: 0.12)
-                      : const Color(0xFFE7F0FF));
+      // maxWidth is infinity on native, which enforces to the parent's own
+      // constraints unchanged — so this box is a no-op off the web.
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: kIsWeb ? _kMaxDialogWidth : double.infinity,
+        ),
+        // Belt-and-braces against the stripe: if the message ever wraps to a
+        // third line on a short viewport, this scrolls instead of overflowing.
+        // Content that already fits is laid out at exactly its own height, so
+        // nothing moves in the common case.
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: EdgeInsets.all(width * 0.06),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // ── Icon with optional tinted circle background ──────────────
+                () {
+                  final size = width * 0.22;
+                  final bg =
+                      iconBgColor ??
+                      (iconColor != null
+                          ? iconColor.withValues(alpha: 0.12)
+                          : const Color(0xFFE7F0FF));
 
-              // ── Flutter IconData (no asset needed) ───────────────────
-              if (iconData != null) {
-                return Container(
-                  width: size,
-                  height: size,
-                  decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
-                  child: Center(
-                    child: Icon(
-                      iconData,
-                      size: size * 0.55,
-                      color: iconColor ?? AppColors.primaryBlue,
+                  // ── Flutter IconData (no asset needed) ───────────────────
+                  if (iconData != null) {
+                    return Container(
+                      width: size,
+                      height: size,
+                      decoration: BoxDecoration(
+                        color: bg,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Center(
+                        child: Icon(
+                          iconData,
+                          size: size * 0.55,
+                          color: iconColor ?? AppColors.primaryBlue,
+                        ),
+                      ),
+                    );
+                  }
+
+                  if (iconColor != null) {
+                    return Container(
+                      width: size,
+                      height: size,
+                      decoration: BoxDecoration(
+                        color: bg,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Center(
+                        child: Image.asset(
+                          iconAsset,
+                          width: size * 0.55,
+                          height: size * 0.55,
+                          fit: BoxFit.contain,
+                          color: iconColor,
+                          colorBlendMode: BlendMode.srcIn,
+                          errorBuilder: (_, _, _) => Icon(
+                            Icons.check_circle_outline_rounded,
+                            size: size * 0.55,
+                            color: iconColor,
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+                  // No color — render as-is (for full-color PNGs like verified.webp)
+                  return SizedBox(
+                    width: size,
+                    height: size,
+                    child: Center(
+                      child: Image.asset(
+                        iconAsset,
+                        width: size * 0.82,
+                        height: size * 0.82,
+                        fit: BoxFit.contain,
+                      ),
                     ),
+                  );
+                }(),
+                SizedBox(height: width * 0.045),
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: width * 0.052,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF1F2937),
                   ),
-                );
-              }
-
-              if (iconColor != null) {
-                return Container(
-                  width: size,
-                  height: size,
-                  decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
-                  child: Center(
-                    child: Image.asset(
-                      iconAsset,
-                      width: size * 0.55,
-                      height: size * 0.55,
-                      fit: BoxFit.contain,
-                      color: iconColor,
-                      colorBlendMode: BlendMode.srcIn,
-                      errorBuilder: (_, _, _) => Icon(
-                        Icons.check_circle_outline_rounded,
-                        size: size * 0.55,
-                        color: iconColor,
+                ),
+                SizedBox(height: width * 0.022),
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: width * 0.034,
+                    color: AppColors.hint,
+                    height: 1.55,
+                  ),
+                ),
+                SizedBox(height: width * 0.055),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primaryBlue,
+                      elevation: 0,
+                      padding: EdgeInsets.symmetric(vertical: width * 0.042),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(width * 0.03),
+                      ),
+                    ),
+                    child: Text(
+                      buttonLabel,
+                      style: TextStyle(
+                        fontSize: width * 0.04,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
                       ),
                     ),
                   ),
-                );
-              }
-              // No color — render as-is (for full-color PNGs like verified.webp)
-              return SizedBox(
-                width: size,
-                height: size,
-                child: Center(
-                  child: Image.asset(
-                    iconAsset,
-                    width: size * 0.82,
-                    height: size * 0.82,
-                    fit: BoxFit.contain,
-                  ),
                 ),
-              );
-            }(),
-            SizedBox(height: width * 0.045),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: width * 0.052,
-                fontWeight: FontWeight.w700,
-                color: const Color(0xFF1F2937),
-              ),
+              ],
             ),
-            SizedBox(height: width * 0.022),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: width * 0.034,
-                color: AppColors.hint,
-                height: 1.55,
-              ),
-            ),
-            SizedBox(height: width * 0.055),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () => Navigator.pop(ctx),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primaryBlue,
-                  elevation: 0,
-                  padding: EdgeInsets.symmetric(vertical: width * 0.042),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(width * 0.03),
-                  ),
-                ),
-                child: Text(
-                  buttonLabel,
-                  style: TextStyle(
-                    fontSize: width * 0.04,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     ),
