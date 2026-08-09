@@ -33,6 +33,17 @@ class HomeChatPanelCard extends StatefulWidget {
   /// card; a docked window wants square bottom corners where it meets the edge.
   final BorderRadius borderRadius;
 
+  /// Widest a single message bubble may get, for BOTH sides of the thread.
+  ///
+  /// 240 is what every caller rendered before this was a parameter, so leaving
+  /// it alone is byte-identical: the mobile bubble and the wide docked window
+  /// both pass nothing and keep it.
+  ///
+  /// The citizen shell's full-screen sheet is the one caller that raises it.
+  /// Below 600 that sheet spans the whole viewport, and a 240 bubble in a
+  /// ~600-wide column reads as a thin ribbon down one side rather than a chat.
+  final double bubbleMaxWidth;
+
   const HomeChatPanelCard({
     super.key,
     required this.onAgentMessage,
@@ -40,6 +51,7 @@ class HomeChatPanelCard extends StatefulWidget {
     required this.panelH,
     this.headerActions = const [],
     this.borderRadius = const BorderRadius.all(Radius.circular(20)),
+    this.bubbleMaxWidth = 240,
   });
 
   @override
@@ -443,7 +455,7 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
                     horizontal: 13,
                     vertical: 9,
                   ),
-                  constraints: const BoxConstraints(maxWidth: 240),
+                  constraints: BoxConstraints(maxWidth: widget.bubbleMaxWidth),
                   decoration: BoxDecoration(
                     color: isUser ? AppColors.primaryBlue : AppColors.inputBg,
                     borderRadius: BorderRadius.only(

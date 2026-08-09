@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../../core/services/chat_service.dart';
@@ -57,6 +59,21 @@ const double _kDockInset = 20;
 /// already where this shell declares a viewport too narrow for normal chrome
 /// (it is the same line the user chip collapses to avatar-only at).
 const double _kFullScreenBelow = kNavPhoneShortestSide;
+
+/// Horizontal space a message bubble can never occupy, subtracted before the
+/// fraction below is applied: the message list's own padding (14 each side)
+/// plus the avatar and its gap (28 + 7) on whichever side the bubble sits.
+const double _kBubbleChrome = 63;
+
+/// Share of the REMAINING width a bubble may take in the full-screen sheet.
+/// A normal chat proportion; 240 is kept as a floor so this can only ever
+/// widen a bubble, never narrow one.
+const double _kSheetBubbleFraction = 0.70;
+
+/// The card's own default, repeated here as the floor. Kept in sync by the
+/// floor's purpose rather than by import: the point is that the sheet never
+/// renders a bubble narrower than every other caller already gets.
+const double _kBubbleFloor = 240;
 
 /// Open / minimised / closed, owned by the shell so the window survives tab
 /// switches and the "Chat with Agent" action can restore it.
@@ -158,6 +175,14 @@ class _CitizenDockedChatState extends State<CitizenDockedChat> {
           // Square: the card meets every viewport edge, so rounded corners
           // would leave the page showing through in four notches.
           borderRadius: BorderRadius.zero,
+          // The card's 240 default is right for a 360-wide docked window and
+          // too narrow once the sheet spans the viewport. Widen it in
+          // proportion to the space actually available to a bubble, floored at
+          // 240 so the narrow end of the band is untouched.
+          bubbleMaxWidth: math.max(
+            _kBubbleFloor,
+            (w - _kBubbleChrome) * _kSheetBubbleFraction,
+          ),
           onAgentMessage: _onAgentMessage,
           headerActions: [
             _headerButton(
