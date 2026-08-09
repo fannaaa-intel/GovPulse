@@ -4,6 +4,8 @@ import '../../../core/services/chat_service.dart';
 import '../../../core/theme/citizen_ui.dart';
 import '../../../core/widgets/Home/Chat-bubbles/chat_bubbles_widget.dart';
 import '../../../core/widgets/Home/Chat-bubbles/chat_panel_card.dart';
+import '../../../core/widgets/Home/nav/nav_band.dart'
+    show kNavPhoneShortestSide;
 
 // ════════════════════════════════════════════════════════════════════════════
 //  Docked chat window for the citizen web shell — Messenger-style.
@@ -40,13 +42,21 @@ import '../../../core/widgets/Home/Chat-bubbles/chat_panel_card.dart';
 //  is untouched and still serves the mobile app and the live web route.
 // ════════════════════════════════════════════════════════════════════════════
 
-/// Window size. Roughly Messenger's: wide enough for a readable thread, short
-/// enough to leave the feed visible behind it.
+/// Window size for the DOCKED (wide) band. Roughly Messenger's: wide enough for
+/// a readable thread, short enough to leave the feed visible behind it.
 const double _kChatWidth = 360;
 const double _kChatHeight = 520;
 
 /// Distance from the viewport's bottom-right corner.
 const double _kDockInset = 20;
+
+/// Below this the docked card stops making sense and the window goes
+/// full-screen instead. See [_CitizenDockedChatState.build].
+///
+/// Reuses [kNavPhoneShortestSide] rather than inventing a number: 600 is
+/// already where this shell declares a viewport too narrow for normal chrome
+/// (it is the same line the user chip collapses to avatar-only at).
+const double _kFullScreenBelow = kNavPhoneShortestSide;
 
 /// Open / minimised / closed, owned by the shell so the window survives tab
 /// switches and the "Chat with Agent" action can restore it.
@@ -99,6 +109,22 @@ class _CitizenDockedChatState extends State<CitizenDockedChat> {
 
     final minimised = widget.state == DockedChatState.minimised;
 
+    // ── Narrow: full-screen sheet ──────────────────────────────────────────
+    //
+    // A 360-wide card docked 20px off the corner is a floating window when
+    // there is a page to float over, and nothing but a cramped obstruction when
+    // there is not. At 435 it covered 83% of the viewport while still drawing
+    // itself as a corner card; below ~380 it simply clipped against the Stack
+    // edge. Narrow gets the sheet idiom instead: edge to edge, square corners,
+    // no dock inset.
+    //
+    // Only the EXPANDED window changes. The minimised pill is 280 at most and
+    // still reads correctly parked in the corner, so it keeps the docked
+    // treatment in both bands.
+    if (!minimised && MediaQuery.of(context).size.width < _kFullScreenBelow) {
+      return Positioned.fill(child: _fullScreenSheet(context));
+    }
+
     return Positioned(
       right: _kDockInset,
       bottom: _kDockInset,
@@ -106,6 +132,47 @@ class _CitizenDockedChatState extends State<CitizenDockedChat> {
       // rails, the top nav — keeps receiving pointer events, which is what makes
       // this non-blocking where the modal was not.
       child: minimised ? _minimisedPill() : _window(),
+    );
+  }
+
+  /// The narrow-band window: fills the viewport rather than floating in it.
+  ///
+  /// Size comes from MediaQuery and is reduced by the safe-area padding and the
+  /// keyboard inset, so it can never exceed the viewport — which is what fixes
+  /// both the below-380 horizontal clip and the latent short-window vertical
+  /// clip the fixed 520 height carried. The shell's Stack does not wrap this
+  /// child in a SafeArea (only its first child), so the SafeArea is applied
+  /// here.
+  Widget _fullScreenSheet(BuildContext context) {
+    final mq = MediaQuery.of(context);
+    final pad = mq.padding;
+    final w = mq.size.width - pad.left - pad.right;
+    final h = mq.size.height - pad.top - pad.bottom - mq.viewInsets.bottom;
+
+    return Material(
+      color: Colors.transparent,
+      child: SafeArea(
+        child: HomeChatPanelCard(
+          panelW: w,
+          panelH: h,
+          // Square: the card meets every viewport edge, so rounded corners
+          // would leave the page showing through in four notches.
+          borderRadius: BorderRadius.zero,
+          onAgentMessage: _onAgentMessage,
+          headerActions: [
+            _headerButton(
+              icon: Icons.remove_rounded,
+              tooltip: 'Minimise',
+              onTap: widget.onMinimise,
+            ),
+            _headerButton(
+              icon: Icons.close_rounded,
+              tooltip: 'Close chat',
+              onTap: widget.onClose,
+            ),
+          ],
+        ),
+      ),
     );
   }
 
