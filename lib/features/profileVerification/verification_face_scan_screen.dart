@@ -12,6 +12,19 @@ import '../../core/theme/app_colors.dart';
 import '../home/screen/home_screen.dart';
 import '../home/screen/notification_popup.dart';
 
+/// Width at which this screen's action buttons stop stretching on web.
+///
+/// [_AnimatedButton] and [_OutlineButton] are `width: double.infinity` inside a
+/// `Positioned(left: 24, right: 24)`, which pins both edges — so on a desktop
+/// browser they span the whole viewport. Both of those are shared with the
+/// mobile camera flow, so the cap is applied at the CALL SITES instead.
+///
+/// 480 is not invented: it is `MobileFormShell`'s default and the content cap
+/// four of the other wizard screens already render through. It is a local const
+/// only because that 480 is a widget-parameter default rather than an
+/// exported constant.
+const double _kFaceButtonMaxWidth = 480;
+
 class VerificationFaceScanScreen extends StatefulWidget {
   final String username;
   final String selectedId;
@@ -819,11 +832,7 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
             "Upload a clear photo of your face.\n"
             "Our team will check it against your ID.",
             textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 13,
-              color: AppColors.hint,
-              height: 1.5,
-            ),
+            style: TextStyle(fontSize: 13, color: AppColors.hint, height: 1.5),
           ),
           if (_uploadError != null) ...[
             const SizedBox(height: 8),
@@ -838,10 +847,16 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
             ),
           ],
           const SizedBox(height: 24),
-          _AnimatedButton(
-            label: "Choose a selfie",
-            color: AppColors.primaryBlue,
-            onPressed: _pickSelfieForWeb,
+          // No kIsWeb guard: this whole branch only ever runs on web, so the
+          // cap cannot reach the mobile footer (which renders scanning dots).
+          // The Column centres by default, so this needs no Center wrapper.
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: _kFaceButtonMaxWidth),
+            child: _AnimatedButton(
+              label: "Choose a selfie",
+              color: AppColors.primaryBlue,
+              onPressed: _pickSelfieForWeb,
+            ),
           ),
         ],
       );
@@ -911,16 +926,32 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
       const SizedBox(height: 24),
 
       // ── Go to Home → triggers upload then navigate ────────────────────
-      _AnimatedButton(
-        label: "Go to Home",
-        color: AppColors.green,
-        onPressed: _isUploading ? () {} : _submitAndGoHome,
+      //
+      // Unlike the scanning footer above, this method is SHARED — its only
+      // other kIsWeb use is a caption ternary — so both buttons render on
+      // mobile too. maxWidth is infinity off the web, which enforces to the
+      // parent's own constraints unchanged, leaving the mobile layout
+      // byte-identical.
+      ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: kIsWeb ? _kFaceButtonMaxWidth : double.infinity,
+        ),
+        child: _AnimatedButton(
+          label: "Go to Home",
+          color: AppColors.green,
+          onPressed: _isUploading ? () {} : _submitAndGoHome,
+        ),
       ),
       const SizedBox(height: 12),
-      _OutlineButton(
-        label: "Retry",
-        color: AppColors.primaryBlue,
-        onPressed: _isUploading ? () {} : _retry,
+      ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: kIsWeb ? _kFaceButtonMaxWidth : double.infinity,
+        ),
+        child: _OutlineButton(
+          label: "Retry",
+          color: AppColors.primaryBlue,
+          onPressed: _isUploading ? () {} : _retry,
+        ),
       ),
     ],
   );
