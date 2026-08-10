@@ -61,6 +61,13 @@ const String _kLoginPath = '/login';
 const String _kSignupPath = '/signup';
 const String _kGuestPath = '/guest';
 
+/// The GUEST feed. Deliberately not a shell destination: a guest gets the bare,
+/// self-chroming [NewsFeedScreen], never the citizen shell.
+///
+/// A citizen's feed is the shell's Home pane, so the two never share a URL —
+/// see the redirect in [_authRedirect].
+const String _kNewsFeedPath = '/newsfeed';
+
 /// The shell's top-level destinations, in nav order. The index into
 /// [CitizenTab.values] IS the branch index, so order is load-bearing.
 ///
@@ -201,6 +208,12 @@ String? _authRedirect(BuildContext context, GoRouterState state) {
     // already in. /signup and /guest are deliberately left alone: an anonymous
     // guest IS signed in (Firebase anonymous auth) and is still mid-flow there.
     if (loc == '/' || loc == _kLoginPath) return CitizenTab.home.path;
+    // A citizen's feed is the shell's Home pane, so the bare guest feed is not
+    // a place they can be. Without this the catch-all below would let a citizen
+    // who typed or was linked /#/newsfeed onto it, and mounting it flips
+    // CommunityPostsProvider into guest mode — anonymised authors and a cleared
+    // post list — for the rest of the session.
+    if (loc == _kNewsFeedPath) return CitizenTab.home.path;
     return null;
   }
 
@@ -265,6 +278,25 @@ final GoRouter citizenRouter = GoRouter(
     GoRoute(
       path: '$kScanRoutePrefix:token',
       builder: (_, state) => ScanPage(token: state.pathParameters['token']!),
+    ),
+
+    // ── Guest feed ──────────────────────────────────────────────────────────
+    // A PEER of /guest, deliberately outside the StatefulShellRoute: guests get
+    // the bare feed, never the shell. [NewsFeedScreen] chromes itself — its
+    // `showNav: !isGuest` drops the nav entirely — so there is nothing for a
+    // shell branch to add here except chrome a guest must not see.
+    //
+    // [isGuest] is a constant, not an auth-derived value: this route IS the
+    // guest surface. A citizen's feed is the same content mounted as the
+    // shell's Home pane (NewsFeedBody), and _authRedirect sends any signed-in
+    // citizen who lands here back to it.
+    //
+    // Nothing navigates here yet — guest.dart still reaches the feed with an
+    // imperative push — so for now this is only reachable by typing the URL.
+    GoRoute(
+      path: _kNewsFeedPath,
+      builder: (_, _) =>
+          const NetworkWrapper(child: NewsFeedScreen(isGuest: true)),
     ),
 
     // NOTE: there is deliberately no full-screen route for the quick actions.
