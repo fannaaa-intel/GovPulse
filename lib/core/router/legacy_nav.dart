@@ -115,6 +115,7 @@ Future<T?> pushReplacementLegacy<T extends Object?, TO extends Object?>(
 const String _kLoginPath = '/login';
 const String _kSignupPath = '/signup';
 const String _kGuestPath = '/guest';
+const String _kNewsFeedPath = '/newsfeed';
 
 /// Sends the user to the login screen.
 ///
@@ -166,6 +167,46 @@ Future<void> goToGuest(BuildContext context) {
     return Future<void>.value();
   }
   return pushLegacy<void>(context, _kGuestPath);
+}
+
+/// Sends a guest from the landing screen into the community feed.
+///
+/// On web this is the payoff of the whole guest flow: `/#/newsfeed` is a real
+/// route, so a guest can reload onto the feed or share the link instead of
+/// sitting on a screen pushed over `/#/guest` with no address of its own. The
+/// route bakes in `isGuest: true`, and the auth guard permits it for guests —
+/// which is why no arguments travel with the web branch.
+///
+/// On mobile there is no such route: the feed is still the standalone
+/// [NewsFeedScreen] resolved through the legacy table, and it needs the
+/// arguments to know it is in guest mode. Unchanged from before.
+Future<void> goToGuestFeed(BuildContext context) {
+  if (kIsWeb) {
+    context.go(_kNewsFeedPath);
+    return Future<void>.value();
+  }
+  return pushLegacy<void>(
+    context,
+    _kNewsFeedPath,
+    arguments: const {'isGuest': true, 'isVerified': false},
+  );
+}
+
+/// Backs a guest out of the feed, to the guest landing screen.
+///
+/// The two platforms genuinely differ here, which is why this is a navigation
+/// on web and a pop on mobile rather than one call with a guard inside it:
+///
+///   • web — the feed is its own top-level route, so there is nothing beneath
+///     it to pop. Back has to be an actual navigation to /guest.
+///   • mobile — the feed is pushed on top of the guest screen, so popping is
+///     both correct and the only thing that preserves the screen underneath.
+void leaveGuestFeed(BuildContext context) {
+  if (kIsWeb) {
+    context.go(_kGuestPath);
+    return;
+  }
+  Navigator.of(context).pop();
 }
 
 /// Sends an authenticated citizen to their home surface.

@@ -10,27 +10,31 @@ import '../../../core/widgets/web/web.dart';
 import '../../../core/widgets/mobile_form_shell.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
-//  KNOWN STATE — guests did NOT move onto the shell in the go_router cutover.
+//  Guests get the bare feed, NOT the citizen shell. That is a product decision,
+//  not an accident of routing: a guest browses, and the shell is built around
+//  things a guest cannot do.
 //
-//  This works today. It is documented rather than fixed because whether guests
-//  should get the shell at all is a product decision, not a routing one.
+//  On web the whole flow is declarative and reload-proof:
 //
-//  What actually happens when "Continue as Guest" is tapped on web:
-//
-//    • It calls pushLegacy('/newsfeed'), so the STANDALONE NewsFeedScreen is
-//      pushed imperatively onto go_router's Navigator. It renders and behaves
-//      correctly — but the address bar keeps saying /#/guest, so a guest has no
-//      URL to reload onto and F5 drops them back to the guest landing page.
-//      Signed-in citizens get the shell's feed at /#/home instead.
+//    • "Continue as Guest" goes to `/#/newsfeed` — a real top-level route, a
+//      peer of /guest and outside the StatefulShellRoute, building the
+//      self-chroming NewsFeedScreen with isGuest baked in. A guest can reload
+//      onto it or share the link. Signed-in citizens get the same content as
+//      the shell's Home pane instead, and the guard sweeps them off /newsfeed
+//      so it never renders at two URLs with two sets of chrome.
 //
 //    • A guest is authenticated with FIREBASE anonymous auth, not Supabase, so
-//      `Supabase.instance.client.auth.currentSession` stays NULL for them. The
-//      shell's auth guard would therefore read a guest as signed-out. Nothing
-//      breaks right now only because /guest is a public route and the push
-//      above does not change the location, so the guard never re-evaluates.
+//      `Supabase…currentSession` stays NULL for them. The guard therefore
+//      classifies three states rather than two — citizen / guest / signed out —
+//      and permits guests on /guest and /newsfeed. See _authRedirect in
+//      citizen_shell_router.dart. Every entry into guest mode mints the
+//      anonymous user first (see [ensureGuestAnonSession] below), so the guard
+//      always has something to recognise.
 //
-//  Both points have to be answered together before guests can graduate to the
-//  shell: the guard needs a notion of "guest" that is not a Supabase session.
+//  MOBILE is unchanged throughout: it keeps the Navigator 1.0 table, reaches
+//  this screen through onGenerateRoute, and pushes the feed imperatively with
+//  isGuest passed as a route argument. Every web/mobile split lives in
+//  legacy_nav.dart, never inline here.
 // ════════════════════════════════════════════════════════════════════════════
 
 class GuestScreen extends StatefulWidget {
@@ -123,13 +127,7 @@ class _GuestScreenState extends State<GuestScreen>
           const SizedBox(height: 28),
           WebPrimaryButton(
             label: "Continue as Guest",
-            // Legacy NewsFeed, not the shell, and no URL of its own — see the
-            // KNOWN STATE note at the top of this file.
-            onPressed: () => pushLegacy(
-              context,
-              '/newsfeed',
-              arguments: const {'isGuest': true, 'isVerified': false},
-            ),
+            onPressed: () => goToGuestFeed(context),
           ),
           const SizedBox(height: 12),
           _webCreateAccountButton(context),
@@ -338,17 +336,7 @@ class _GuestScreenState extends State<GuestScreen>
                                 ),
                                 elevation: 0,
                               ),
-                              // Legacy NewsFeed, not the shell, and no URL of
-                              // its own — see the KNOWN STATE note at the top
-                              // of this file.
-                              onPressed: () => pushLegacy(
-                                context,
-                                '/newsfeed',
-                                arguments: const {
-                                  'isGuest': true,
-                                  'isVerified': false,
-                                },
-                              ),
+                              onPressed: () => goToGuestFeed(context),
                               child: const Text(
                                 "Continue as Guest",
                                 style: TextStyle(

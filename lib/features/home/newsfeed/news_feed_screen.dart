@@ -67,7 +67,9 @@ class NewsFeedScreen extends StatelessWidget {
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
         if (isGuest) {
-          Navigator.of(context).pop(); // go back to /guest
+          // Web navigates, mobile pops — the feed is a top-level route on one
+          // and a pushed screen on the other. See [leaveGuestFeed].
+          leaveGuestFeed(context);
         } else {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!context.mounted) return;
@@ -425,8 +427,12 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
                     elevation: 0,
                   ),
                   onPressed: () {
+                    // The pop stays FIRST and stays unguarded: it closes this
+                    // nudge sheet, and it must happen before the navigation on
+                    // both platforms. `context` is the State's, not the sheet
+                    // builder's, so it is still valid afterwards.
                     Navigator.pop(context);
-                    pushLegacy(context, '/signup');
+                    goToSignup(context);
                   },
                   child: const Text(
                     'Create Account',
