@@ -242,7 +242,7 @@ class _GuestScreenState extends State<GuestScreen>
           ),
           elevation: WidgetStateProperty.all(0),
         ),
-        onPressed: () => pushLegacy(context, '/signup'),
+        onPressed: () => goToSignup(context),
         child: const Text(
           "Create Account",
           style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14.5),
@@ -372,7 +372,7 @@ class _GuestScreenState extends State<GuestScreen>
                                   borderRadius: BorderRadius.circular(16),
                                 ),
                               ),
-                              onPressed: () => pushLegacy(context, '/signup'),
+                              onPressed: () => goToSignup(context),
                               child: const Text(
                                 "Create Account",
                                 style: TextStyle(

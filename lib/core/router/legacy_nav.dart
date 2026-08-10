@@ -109,21 +109,63 @@ Future<T?> pushReplacementLegacy<T extends Object?, TO extends Object?>(
 //
 // The paths are deliberately the SAME strings the legacy table uses ('/login'),
 // so the two routers agree on what a destination is named even though they
-// reach it differently.
+// reach it differently. citizen_shell_router.dart declares its own copies —
+// they are private there, and a shared constants file for three strings would
+// be more indirection than it buys.
+const String _kLoginPath = '/login';
+const String _kSignupPath = '/signup';
+const String _kGuestPath = '/guest';
 
-/// Sends the user to the login screen and clears the whole stack behind them.
+/// Sends the user to the login screen.
 ///
 /// On web this is a `go`, so the address bar becomes `/#/login` and the shell is
-/// torn down properly. On mobile it stays the legacy stack-clearing push.
-Future<void> goToLogin(BuildContext context) {
+/// torn down properly. `go` re-resolves the whole match list either way, so
+/// [clearStack] is a MOBILE-only distinction.
+///
+/// [clearStack] defaults to true — the sign-out contract every existing caller
+/// relies on. Sign-up passes false: moving between the two auth screens is
+/// ordinary navigation and must stay the plain push it has always been, or
+/// backing out of login would no longer return to sign-up on a phone.
+Future<void> goToLogin(BuildContext context, {bool clearStack = true}) {
   if (kIsWeb) {
-    context.go('/login');
+    context.go(_kLoginPath);
     return Future<void>.value();
   }
+  if (!clearStack) return pushLegacy<void>(context, _kLoginPath);
   return Navigator.of(context).pushAndRemoveUntil<void>(
-    _legacyRoute<void>('/login', null),
+    _legacyRoute<void>(_kLoginPath, null),
     (route) => false,
   );
+}
+
+/// Sends the user to the sign-up screen.
+///
+/// Web gets a real `/#/signup` URL; mobile keeps the imperative push it has
+/// always had. Same split as [goToLogin], same reason.
+Future<void> goToSignup(BuildContext context) {
+  if (kIsWeb) {
+    context.go(_kSignupPath);
+    return Future<void>.value();
+  }
+  return pushLegacy<void>(context, _kSignupPath);
+}
+
+/// Sends a visitor who chose "Continue as Guest" to the guest landing screen.
+///
+/// On web this is a `go`, so `/#/guest` is a real URL a guest can reload onto
+/// instead of being dropped back to login. The auth guard already treats
+/// `/guest` as public, so this passes without a redirect even though a guest
+/// holds no Supabase session.
+///
+/// On mobile it stays the imperative push: the auth screens are shared by BOTH
+/// routers, and under the legacy `MaterialApp` there is no GoRouter above them
+/// for `context.go` to resolve against.
+Future<void> goToGuest(BuildContext context) {
+  if (kIsWeb) {
+    context.go(_kGuestPath);
+    return Future<void>.value();
+  }
+  return pushLegacy<void>(context, _kGuestPath);
 }
 
 /// Sends an authenticated citizen to their home surface.

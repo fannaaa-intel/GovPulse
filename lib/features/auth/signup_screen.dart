@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+// Only reached under kIsWeb (see _goToGuest); the import itself is inert off
+// web, and go_router is already a dependency of the mobile build.
+import 'package:go_router/go_router.dart';
 
 import '../../core/router/legacy_nav.dart';
 import '../../core/widgets/inputs/rounded_input_field.dart';
@@ -249,6 +252,15 @@ class _SignupScreenState extends State<SignupScreen>
   // ── Navigation helpers ────────────────────────────────────────────────────
 
   void _goToGuest() {
+    // Guarded INLINE rather than routed through legacy_nav's goToGuest, and
+    // deliberately so: that helper's mobile branch is pushLegacy('/guest'),
+    // which resolves to _instantInFadeOut — adding a NetworkWrapper and a
+    // 220ms reverse fade this push has never had. Sharing the helper would be
+    // a mobile behaviour change, so mobile keeps the exact route below.
+    if (kIsWeb) {
+      context.go('/guest');
+      return;
+    }
     Navigator.push(
       context,
       PageRouteBuilder(

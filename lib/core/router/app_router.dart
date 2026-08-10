@@ -196,11 +196,11 @@ Widget buildLoginScreen(BuildContext ctx) => LoginScreen(
       goToCitizenHome(ctx, username: result.username);
     }
   },
-  onSignUpClick: () => pushLegacy(ctx, '/signup'),
+  onSignUpClick: () => goToSignup(ctx),
   onGuestClick: () async {
     await FirebaseAuth.instance.signInAnonymously();
     if (!ctx.mounted) return;
-    pushLegacy(ctx, '/guest');
+    goToGuest(ctx);
   },
   onFacebookClick: () async {
     final user = Supabase.instance.client.auth.currentUser;
@@ -226,11 +226,16 @@ Widget buildLoginScreen(BuildContext ctx) => LoginScreen(
 
 Widget buildSignupScreen(BuildContext ctx) => SignupScreen(
   onSignUpClick: (_, _, _) {},
-  onLoginClick: () => pushLegacy(ctx, '/login'),
+  // clearStack: false — moving between the two auth screens is ordinary
+  // navigation, not a sign-out. On mobile this stays the plain push it was.
+  onLoginClick: () => goToLogin(ctx, clearStack: false),
+  // DEAD as wired today: signup_screen.dart never reads `onGuestClick`, it
+  // calls its own _goToGuest(). Converted anyway so the two guest callbacks
+  // cannot drift — if this one is ever wired up it will already be correct.
   onGuestClick: () async {
     await FirebaseAuth.instance.signInAnonymously();
     if (!ctx.mounted) return;
-    pushLegacy(ctx, '/guest');
+    goToGuest(ctx);
   },
   onFacebookClick: () async {
     final user = Supabase.instance.client.auth.currentUser;
