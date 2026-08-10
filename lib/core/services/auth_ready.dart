@@ -118,10 +118,46 @@ class AuthRestoration extends ChangeNotifier {
     //
     // A session that is already restored settles instantly and waits for
     // nothing, which is the reload-onto-a-deep-link case that matters most.
-    awaitAuthReady(timeout: const Duration(seconds: 1)).then((_) {
+    awaitAuthReady(timeout: const Duration(seconds: 1)).then((_) async {
+      if (_settled) return;
+
+      // This floor polls SUPABASE only, and a guest has no Supabase session to
+      // wait for — so for them the second above always expires in full and this
+      // used to settle with Firebase still unreported. The guard would then read
+      // a mid-restore guest as signed out and bounce them off the very URL the
+      // guest flow exists to make reloadable.
+      //
+      // Off web [_firebaseKnown] is a compile-time true, so this returns on its
+      // first check and mobile settles at exactly the 1s mark it always has.
+      await _awaitFirebaseKnown(timeout: const Duration(seconds: 2));
+
+      // The event paths may have settled us while we waited.
       if (_settled) return;
       _settled = true;
       notifyListeners();
     });
+  }
+
+  /// Waits for Firebase's first auth event, or [timeout] — whichever first.
+  ///
+  /// Bounded because the alternative is a visitor stuck on the startup spinner
+  /// forever if Firebase never initialises. In the normal case this costs
+  /// nothing: Firebase reports within tens of milliseconds, emitting `null` for
+  /// a visitor with no user just as readily as a user for one who has, so the
+  /// timeout is reached only when Firebase is genuinely dead.
+  ///
+  /// 2s on top of the 1s floor puts the pathological worst case at 3s, matching
+  /// [awaitAuthReady]'s own default budget for a wait that must not hang.
+  ///
+  /// Polls rather than listening, mirroring [awaitAuthReady] a few lines up: one
+  /// bounded-wait idiom in this file is easier to reason about than two, and the
+  /// 50ms granularity is irrelevant against a 1s floor.
+  Future<void> _awaitFirebaseKnown({required Duration timeout}) async {
+    if (_firebaseKnown) return;
+
+    final deadline = DateTime.now().add(timeout);
+    while (!_firebaseKnown && DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
   }
 }
