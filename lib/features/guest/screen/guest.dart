@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
 import '../../../core/router/legacy_nav.dart';
+import '../../../core/services/guest_session.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/web/web.dart';
 import '../../../core/widgets/mobile_form_shell.dart';
@@ -50,6 +53,15 @@ class _GuestScreenState extends State<GuestScreen>
   @override
   void initState() {
     super.initState();
+
+    // Every route into guest mode mounts this screen — the login and sign-up
+    // buttons and the /guest GoRoute alike — so minting here covers all of
+    // them, including a pasted or reloaded /#/guest that no button ever ran.
+    //
+    // Web-only and no-ops off web; see [ensureGuestAnonSession]. Not awaited:
+    // the entrance animation below must start on this frame regardless, and a
+    // slow or failed mint must never hold up the page.
+    unawaited(ensureGuestAnonSession());
 
     // Content entrance: 500 ms slide-up + fade
     _entranceController = AnimationController(
