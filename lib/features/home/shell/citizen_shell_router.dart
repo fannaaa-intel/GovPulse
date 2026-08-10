@@ -576,8 +576,67 @@ class GovPulseWebApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'GovPulse',
       color: Colors.white,
-      theme: ThemeData(scaffoldBackgroundColor: Colors.white),
+      theme: ThemeData(
+        scaffoldBackgroundColor: Colors.white,
+        // Every platform key maps to the same builder. This ThemeData is only
+        // ever built by GovPulseWebApp, so "every platform" only ever means the
+        // browser — but Flutter web reports the HOST OS as its TargetPlatform,
+        // so a single entry would leave Chrome-on-Windows on one builder and
+        // Chrome-on-macOS on another.
+        pageTransitionsTheme: PageTransitionsTheme(
+          builders: <TargetPlatform, PageTransitionsBuilder>{
+            for (final platform in TargetPlatform.values)
+              platform: const _WebFadePageTransitionsBuilder(),
+          },
+        ),
+      ),
       routerConfig: citizenRouter,
     );
+  }
+}
+
+/// Cross-fades the INCOMING page in over the outgoing one, and leaves the
+/// outgoing one alone.
+///
+/// ── Why not the platform default ───────────────────────────────────────────
+/// Flutter web reports the host OS as its [TargetPlatform], so Chrome on
+/// Windows was getting [ZoomPageTransitionsBuilder]. That builder animates both
+/// halves — `_ZoomExitTransition` fades the OUTGOING page out while
+/// `_ZoomEnterTransition` fades the incoming one in — so for a few frames both
+/// are partly transparent and the white canvas shows through between them. On
+/// screens whose left half is an opaque hero panel that is a very visible flash,
+/// and it is why the panel flashed while the card (which has its own floored
+/// entrance fade) did not.
+///
+/// [secondaryAnimation] is therefore deliberately unused: not animating the
+/// outgoing page is the entire point. It stays fully opaque underneath until
+/// the incoming page has faded in over it, so there is never a frame showing
+/// neither.
+///
+/// ── Why not FadeUpwards ────────────────────────────────────────────────────
+/// [FadeUpwardsPageTransitionsBuilder] has the property we want — it discards
+/// `secondaryAnimation` too — but it also slides the incoming page up from 25%
+/// of the screen height. Every screen here already runs its own slide-up
+/// entrance, and app_router's `_slideUp` notes the same trade: keep the route
+/// level instant so the screen's own controller does the real motion and there
+/// is no double-slide. A plain fade keeps that contract.
+///
+/// ── Layering ───────────────────────────────────────────────────────────────
+/// Independent of the floored entrance fades in the auth screens and the feed.
+/// This one covers the OUTGOING screen's teardown; those cover the INCOMING
+/// content's first frame. Their opacities multiply, which is fine — neither
+/// starts at zero any more.
+class _WebFadePageTransitionsBuilder extends PageTransitionsBuilder {
+  const _WebFadePageTransitionsBuilder();
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    return FadeTransition(opacity: animation, child: child);
   }
 }
