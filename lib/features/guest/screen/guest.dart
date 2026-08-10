@@ -49,6 +49,10 @@ class _GuestScreenState extends State<GuestScreen>
   // ── Entrance + background animations ─────────────────────────────────────
   // The screen itself pops in instantly (caller uses zero-duration PageRouteBuilder).
   // The content slides up and fades in on its own timeline.
+  /// Opacity the entrance fade starts from ON WEB, so the first painted frame
+  /// already shows content. Mobile still fades from zero.
+  static const double _kWebFadeFloor = 0.35;
+
   late final AnimationController _entranceController;
   late final Animation<double> _fadeAnim;
   late final Animation<Offset> _slideAnim;
@@ -72,10 +76,27 @@ class _GuestScreenState extends State<GuestScreen>
       vsync: this,
       duration: const Duration(milliseconds: 500),
     );
-    _fadeAnim = CurvedAnimation(
-      parent: _entranceController,
-      curve: Curves.easeOut,
-    );
+    // On web `go()` tears the outgoing screen down, so a fade starting at 0
+    // leaves an empty scaffold for the 80ms before the entrance begins — the
+    // white flash. Flooring the fade means the first painted frame already
+    // shows content, and it still animates up to full, so this reads as an
+    // entrance rather than a flat pop-in.
+    //
+    // Mobile is untouched: pushLegacy swaps in an opaque route instantly, so
+    // nothing is ever visibly blank there, and this stays a fade from zero.
+    // The 80ms delay below is deliberately left alone — it guards against a
+    // first-frame stutter, which is a separate concern from the blank gap.
+    _fadeAnim = kIsWeb
+        ? Tween<double>(begin: _kWebFadeFloor, end: 1.0).animate(
+            CurvedAnimation(
+              parent: _entranceController,
+              curve: Curves.easeOut,
+            ),
+          )
+        : CurvedAnimation(
+            parent: _entranceController,
+            curve: Curves.easeOut,
+          );
     _slideAnim = Tween<Offset>(begin: const Offset(0, 0.06), end: Offset.zero)
         .animate(
           CurvedAnimation(
