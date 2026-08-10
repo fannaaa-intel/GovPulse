@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -56,7 +57,23 @@ class AuthRestoration extends ChangeNotifier {
 
   /// True once we know whether there is a session — either because one was
   /// restored, or because [awaitAuthReady] timed out waiting for one.
+  ///
+  /// On WEB "we know" means both auth systems have reported: a guest is a
+  /// Firebase anonymous user with no Supabase session, so settling on Supabase
+  /// alone would let the guard classify a guest mid-restore as signed out and
+  /// bounce them off their own URL. On MOBILE there is no Firebase input and
+  /// this means exactly what it always has — Supabase, or the timeout.
   bool get settled => _settled;
+
+  /// Whether Supabase's restoration has reported in.
+  bool _supabaseKnown = false;
+
+  /// Whether Firebase's restoration has reported in.
+  ///
+  /// Starts true off web. [kIsWeb] is a `const bool`, so on mobile this folds
+  /// to `true` at compile time and never gates [_settled] — which is what keeps
+  /// mobile's settle timing identical to before this input existed.
+  bool _firebaseKnown = !kIsWeb;
 
   bool _started = false;
 
@@ -69,9 +86,29 @@ class AuthRestoration extends ChangeNotifier {
     Supabase.instance.client.auth.onAuthStateChange.listen((_) {
       // A sign-in or sign-out is itself proof that auth state is known, and
       // both change where the user belongs — so settle and re-run the guard.
-      _settled = true;
+      //
+      // notifyListeners() fires on EVERY event, not just the first: that is
+      // what re-runs the guard on sign-out, so it must not be short-circuited
+      // once settled. Only the settle condition is gated.
+      _supabaseKnown = true;
+      if (_firebaseKnown) _settled = true;
       notifyListeners();
     });
+
+    // Web only, and the whole block is compiled out elsewhere because [kIsWeb]
+    // is a const. Guests authenticate with Firebase anonymous auth and never
+    // get a Supabase session, so without this the guard has no signal at all
+    // when someone becomes — or stops being — a guest.
+    //
+    // Deliberately not on mobile: nothing there reads [settled], and the rule
+    // is that a shared file may not register work on the Navigator 1.0 path.
+    if (kIsWeb) {
+      FirebaseAuth.instance.authStateChanges().listen((_) {
+        _firebaseKnown = true;
+        if (_supabaseKnown) _settled = true;
+        notifyListeners();
+      });
+    }
 
     // A SHORTER wait than the data-fetch default on purpose. This one is paid
     // by a signed-out visitor as time on the startup spinner before /login
