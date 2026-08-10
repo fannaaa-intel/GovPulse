@@ -66,7 +66,7 @@ import 'citizen_shell_router.dart';
 //  so it can drop the account actions the left rail already provides.
 // ════════════════════════════════════════════════════════════════════════════
 
-/// Left rail width when it shows labels.
+/// Left rail width, in logical pixels, when it shows labels.
 const double _kRailLabelledWidth = 288;
 
 // There is deliberately no icon-only rail width any more. The 900–1024 band
