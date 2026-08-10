@@ -156,6 +156,11 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
   bool get _isVerified => _profile?.isVerified ?? false;
 
   final SupabaseClient _supabase = Supabase.instance.client;
+  /// Opacity the staggered entrance starts from ON WEB, so the first painted
+  /// frame already shows content. Mobile still fades from zero. Matches the
+  /// floor the auth screens use — same problem, same value.
+  static const double _kWebFadeFloor = 0.35;
+
   late final AnimationController _entryCtrl;
 
   PostFilter _currentFilter = PostFilter.latest;
@@ -362,12 +367,21 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
   Widget _animated(int i, Widget child) {
     final start = (i * 0.12).clamp(0.0, 1.0);
     final end = (start + 0.50).clamp(0.0, 1.0);
-    final fade = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _entryCtrl,
-        curve: Interval(start, end, curve: Curves.easeOut),
-      ),
-    );
+    // Floored on web for the same reason the auth screens are: `go()` tears the
+    // outgoing screen down, so a fade starting at 0 leaves an empty scaffold for
+    // the 80ms before the entrance begins. Mobile reaches this feed by an
+    // imperative push that swaps in an opaque route instantly, so nothing is
+    // ever visibly blank there and it keeps fading from zero.
+    //
+    // The Interval stagger is untouched — items still arrive in sequence, they
+    // just start faintly visible instead of invisible.
+    final fade = Tween<double>(begin: kIsWeb ? _kWebFadeFloor : 0.0, end: 1.0)
+        .animate(
+          CurvedAnimation(
+            parent: _entryCtrl,
+            curve: Interval(start, end, curve: Curves.easeOut),
+          ),
+        );
     final slide =
         Tween<Offset>(begin: const Offset(0.0, 0.30), end: Offset.zero).animate(
           CurvedAnimation(
@@ -1000,7 +1014,11 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
             GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: () {
-                if (mounted) Navigator.of(context).pop();
+                // Leaving the feed, not dismissing anything — so it needs the
+                // same web/mobile split as the PopScope above. On web the feed
+                // is a top-level route with nothing beneath it, and popping
+                // throws "popped the last page off the stack".
+                if (mounted) leaveGuestFeed(context);
               },
               child: Padding(
                 padding: EdgeInsets.only(bottom: width * 0.02),
