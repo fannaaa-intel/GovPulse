@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -193,37 +194,114 @@ Widget _bodyFor(BuildContext context, CitizenTab tab) {
 // Synchronous by necessity — go_router's redirect cannot await. The cold-load
 // race that [awaitAuthReady] exists to absorb is handled by treating "no session
 // yet" as UNKNOWN rather than as signed-out; see [AuthRestoration].
+//
+// ── Three states, not two ──────────────────────────────────────────────────
+// A GUEST is not a Supabase session. They hold a Firebase ANONYMOUS user and no
+// Supabase session at all, which is indistinguishable from signed-out unless
+// both systems are consulted. Collapsing that into a boolean is what made the
+// old guard unable to route guests: it could only say "in" or "out", and a
+// guest is neither.
 String? _authRedirect(BuildContext context, GoRouterState state) {
   final loc = state.matchedLocation;
 
-  // The printed-QR endorsement page is public in BOTH directions: an agency
-  // officer scanning it has no session and must not be sent to login, and a
-  // signed-in citizen opening it must not be swept into the shell.
+  // The printed-QR endorsement page is public in ALL directions: an agency
+  // officer scanning it has no session and must not be sent to login, and
+  // neither a citizen nor a guest opening it should be swept anywhere else.
   if (loc.startsWith(kScanRoutePrefix)) return null;
 
-  final signedIn = Supabase.instance.client.auth.currentSession != null;
-
-  if (signedIn) {
-    // Neither the root nor the login screen is a destination for someone who is
-    // already in. /signup and /guest are deliberately left alone: an anonymous
-    // guest IS signed in (Firebase anonymous auth) and is still mid-flow there.
-    if (loc == '/' || loc == _kLoginPath) return CitizenTab.home.path;
-    // A citizen's feed is the shell's Home pane, so the bare guest feed is not
-    // a place they can be. Without this the catch-all below would let a citizen
-    // who typed or was linked /#/newsfeed onto it, and mounting it flips
-    // CommunityPostsProvider into guest mode — anonymised authors and a cleared
-    // post list — for the rest of the session.
-    if (loc == _kNewsFeedPath) return CitizenTab.home.path;
-    return null;
+  // Citizen is tested FIRST, and deliberately ahead of the settled hold below.
+  //
+  // A present Supabase session is positive evidence: it can only mean citizen,
+  // so there is nothing to wait for, and the reload-onto-a-deep-link fast path
+  // [AuthRestoration] is built around stays instant. ABSENCE is the ambiguous
+  // case — guest or signed out — so the hold sits between the two rather than
+  // above both.
+  //
+  // Testing citizen first is also what makes citizen WIN: someone who signed up
+  // while still holding a stale anonymous user is a citizen, not a guest.
+  if (Supabase.instance.client.auth.currentSession != null) {
+    return _citizenRedirect(loc);
   }
 
-  // No session — but that is not the same as signed OUT until restoration has
-  // settled. On a cold load (F5 straight onto a detail URL) the restored
-  // session lands a few hundred ms after the first frame, and bouncing now
-  // would throw a logged-in user off their own URL and lose it. Hold the
-  // requested location; refreshListenable re-runs this the moment we know.
+  // No Supabase session — but that is not the same as signed OUT until
+  // restoration has settled, and on web `settled` waits for FIREBASE too.
+  //
+  // Both halves matter. Bouncing a citizen mid-restore would throw them off
+  // their own URL; classifying a guest before Firebase has reported would read
+  // them as a stranger and bounce them off the guest feed — the exact URL the
+  // guest flow exists to make reloadable. Hold the requested location;
+  // refreshListenable re-runs this the moment we know.
   if (!AuthRestoration.instance.settled) return null;
 
+  final firebaseUser = FirebaseAuth.instance.currentUser;
+  // `isAnonymous`, not merely non-null: a REAL Firebase user with no Supabase
+  // session is some other flow mid-flight, not a guest.
+  final isGuest = firebaseUser != null && firebaseUser.isAnonymous;
+
+  return isGuest ? _guestRedirect(loc) : _signedOutRedirect(loc);
+}
+
+/// Where a signed-in citizen belongs.
+String? _citizenRedirect(String loc) {
+  // None of these is a destination for someone already signed in:
+  //
+  //   /          the router's placeholder, never a real location
+  //   /login     nothing left to do there
+  //   /signup    likewise
+  //   /guest     a citizen has no use for the guest landing page, and letting
+  //              them mount it would mint a junk anonymous Firebase user —
+  //              GuestScreen does that on init
+  //   /newsfeed  the GUEST feed. A citizen's feed is the shell's Home pane;
+  //              mounting the guest one flips CommunityPostsProvider into guest
+  //              mode — anonymised authors, cleared posts — for the rest of the
+  //              session
+  //
+  // This replaces a note claiming /signup and /guest were "deliberately left
+  // alone" because "an anonymous guest IS signed in". That was never true — a
+  // guest holds no Supabase session and so never reached this branch at all —
+  // and now that guests are classified in their own right it is misleading.
+  if (loc == '/' ||
+      loc == _kLoginPath ||
+      loc == _kSignupPath ||
+      loc == _kGuestPath ||
+      loc == _kNewsFeedPath) {
+    return CitizenTab.home.path;
+  }
+  return null;
+}
+
+/// Where a guest belongs: the two guest surfaces, plus the way out to an account.
+///
+/// An ALLOWLIST rather than a list of exclusions, so the shell is closed by
+/// default. /home, /my-reports, /emergency, /settings and every nested route
+/// beneath them fall through without being enumerated — which also means a new
+/// shell route cannot quietly become guest-reachable later.
+String? _guestRedirect(String loc) {
+  // The router's placeholder is not a location, and a guest already holds an
+  // anonymous session — letting this fall through to /login would eject them
+  // from guest mode for no reason. Mirrors the citizen '/' → /home sweep.
+  if (loc == '/') return _kGuestPath;
+
+  // /newsfeed is the permission this whole three-state split exists for: it is
+  // what lets a guest hold a real, reloadable URL for the feed instead of a
+  // screen pushed over /#/guest with no address of its own.
+  if (loc == _kGuestPath ||
+      loc == _kNewsFeedPath ||
+      loc == _kLoginPath ||
+      loc == _kSignupPath) {
+    return null;
+  }
+  return _kLoginPath;
+}
+
+/// Where a visitor with no identity at all belongs.
+///
+/// Unchanged from the two-state guard, deliberately.
+String? _signedOutRedirect(String loc) {
+  // /newsfeed is absent on purpose. The bare feed is for visitors who CHOSE to
+  // browse as a guest — a pasted link does not make that choice for them, and
+  // auto-minting an anonymous user to honour it would create accounts nobody
+  // asked for. They get /login, and the guest button is one tap away.
   if (loc == _kLoginPath || loc == _kSignupPath || loc == _kGuestPath) {
     return null;
   }
