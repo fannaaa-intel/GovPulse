@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../screen/home_screen.dart';
 import '../../../core/router/legacy_nav.dart';
+// CitizenTab.home.path — the shell's Home location, for the web arm of the
+// non-guest back handler. Already in this file's transitive graph via
+// legacy_nav, so the direct import adds no weight and no new cycle.
+import '../shell/citizen_shell_router.dart' show CitizenTab;
 import '../../../core/widgets/deeplink_highlight.dart';
 import '../../../core/widgets/modal/verification_required_dialog.dart';
 import '../../../core/providers/community_posts_provider.dart';
@@ -73,6 +78,27 @@ class NewsFeedScreen extends StatelessWidget {
         } else {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!context.mounted) return;
+            // On web this lands on the SHELL's Home pane, declaratively.
+            //
+            // This branch is reachable on web, which is not obvious: the
+            // /newsfeed GoRoute hardcodes isGuest: true and the shell's Home
+            // pane mounts NewsFeedBody, so neither produces a non-guest
+            // NewsFeedScreen. The legacy /newsfeed route does, and it is
+            // reached from the HomePage nav — which a web citizen can land on
+            // by completing the verification wizard, whose final step pushes
+            // HomePage with no kIsWeb guard (see the success dialog in
+            // verification_face_scan_screen.dart). That upstream push is the
+            // root cause and is deliberately NOT fixed here; it is its own
+            // ticket, and its mobile route differs from this one.
+            //
+            // Pushing HomePage here would be wrong on web regardless of how we
+            // arrived: it is a pageless push over go_router's stack, so the
+            // address bar would stop describing the screen, and HomePage is
+            // the legacy MOBILE surface — the web equivalent is the shell.
+            if (kIsWeb) {
+              context.go(CitizenTab.home.path);
+              return;
+            }
             Navigator.pushAndRemoveUntil(
               context,
               PageRouteBuilder(
