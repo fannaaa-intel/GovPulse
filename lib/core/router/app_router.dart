@@ -2,6 +2,10 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:firebase_auth/firebase_auth.dart';
+// context.go for the admin/staff console routes. Web-only in effect — every
+// use sits inside an if (kIsWeb), and on mobile this file runs under the legacy
+// MaterialApp where there is no GoRouter to resolve against.
+import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/chat_service.dart';
@@ -146,8 +150,12 @@ String? scanTokenFrom(String? name) {
 // genuinely per-platform bit (where an authenticated citizen lands) is handled
 // inside [goToCitizenHome]: the shell on web, HomePage on mobile.
 //
-// Admin and staff keep their imperative pushes. Those work unchanged under
-// either Navigator, and neither console is part of this cutover.
+// Admin and staff used to keep their imperative pushes, on the reasoning that
+// those "work unchanged under either Navigator". That was wrong on web: an
+// imperative push lands a pageless route over go_router's stack, and the auth
+// guard — which sees a session and concludes citizen — then redirects the whole
+// thing to /home. Both consoles therefore go through their own routes on web
+// now, and keep the push on mobile.
 
 Widget buildLoginScreen(BuildContext ctx) => LoginScreen(
   onLoginClick: (username, password) async {
@@ -166,6 +174,17 @@ Widget buildLoginScreen(BuildContext ctx) => LoginScreen(
     // 2 = staff  → staff console (helpdesk: chat, reports, endorsements)
     // 3 = citizen, null = unverified → home
     if (result.roleId == 1) {
+      // Web: a real route, so the console survives a reload and the guard has
+      // something to send an admin BACK to. Path literals rather than shared
+      // constants, matching how legacy_nav keeps its own copies of '/login' and
+      // friends — the route declarations live in citizen_shell_router.dart.
+      //
+      // Returning early rather than wrapping the push in an else: it leaves the
+      // mobile arm below untouched, indentation included.
+      if (kIsWeb) {
+        ctx.go('/admin');
+        return;
+      }
       Navigator.pushReplacement(
         ctx,
         PageRouteBuilder(
@@ -177,6 +196,10 @@ Widget buildLoginScreen(BuildContext ctx) => LoginScreen(
         ),
       );
     } else if (result.roleId == 2) {
+      if (kIsWeb) {
+        ctx.go('/staff');
+        return;
+      }
       Navigator.pushReplacement(
         ctx,
         PageRouteBuilder(
