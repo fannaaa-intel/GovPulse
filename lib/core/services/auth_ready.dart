@@ -75,6 +75,27 @@ class AuthRestoration extends ChangeNotifier {
   /// mobile's settle timing identical to before this input existed.
   bool _firebaseKnown = !kIsWeb;
 
+  /// The signed-in account's `user_roles.role_id` — 1 admin, 2 staff, null for
+  /// a citizen, an unverified account, or nobody.
+  int? _roleId;
+
+  /// Whether the role lookup has reported in.
+  ///
+  /// Starts true off web for the same reason — and by the same mechanism — as
+  /// [_firebaseKnown]: [kIsWeb] is a `const bool`, so on mobile this folds to
+  /// `true` at compile time. Mobile therefore never waits on a role and never
+  /// runs the fetch below. It has no need of either: mobile routes by role from
+  /// [AuthService.login]'s return value and from the splash's own lookup,
+  /// neither of which consults this class.
+  bool _roleKnown = !kIsWeb;
+
+  /// Only meaningful once [roleKnown]. Null means citizen.
+  int? get roleId => _roleId;
+
+  /// Whether [roleId] can be trusted yet. The web guard holds the requested
+  /// location until this is true rather than guessing a role.
+  bool get roleKnown => _roleKnown;
+
   bool _started = false;
 
   /// Starts the one-shot restoration watch and subscribes to auth changes.
@@ -93,6 +114,14 @@ class AuthRestoration extends ChangeNotifier {
       _supabaseKnown = true;
       if (_firebaseKnown) _settled = true;
       notifyListeners();
+
+      // Web only — folds out entirely on mobile, which never reads the role.
+      //
+      // This one listener covers BOTH triggers: a fresh sign-in, and a cold
+      // load, because Supabase emits a restoration event for a persisted
+      // session too. Signing out arrives here as well, which is what clears a
+      // stale role before the next account signs in.
+      if (kIsWeb) _refreshRole();
     });
 
     // Web only, and the whole block is compiled out elsewhere because [kIsWeb]
@@ -119,6 +148,18 @@ class AuthRestoration extends ChangeNotifier {
     // A session that is already restored settles instantly and waits for
     // nothing, which is the reload-onto-a-deep-link case that matters most.
     awaitAuthReady(timeout: const Duration(seconds: 1)).then((_) async {
+      // Belt and braces, web only. The listener above is the normal path to a
+      // role, but it depends on Supabase emitting an event for the restored
+      // session. If one never arrives while a session nonetheless exists, the
+      // guard would hold that user's location forever waiting on a lookup
+      // nothing had started. Conditioned on a session actually being present,
+      // so a signed-out visitor never fires a pointless query.
+      if (kIsWeb &&
+          !_roleKnown &&
+          Supabase.instance.client.auth.currentSession != null) {
+        _refreshRole();
+      }
+
       if (_settled) return;
 
       // This floor polls SUPABASE only, and a guest has no Supabase session to
@@ -136,6 +177,44 @@ class AuthRestoration extends ChangeNotifier {
       _settled = true;
       notifyListeners();
     });
+  }
+
+  /// Loads the signed-in account's role, or clears it when signed out.
+  ///
+  /// WEB ONLY: every call site sits inside an `if (kIsWeb)`, so this never runs
+  /// on mobile and mobile never issues the query.
+  ///
+  /// Signing out resolves immediately — there is nothing to look up, and the
+  /// answer is known the moment we see no user. That matters as much as the
+  /// sign-in case: without it a stale [roleId] would outlive its session and
+  /// the guard would route the next visitor by the last one's role.
+  ///
+  /// FAILS AS CITIZEN. A lookup that errors must not strand someone on the
+  /// startup spinner, and the citizen shell is the surface with the least
+  /// authority — so an error resolves to "citizen, known" rather than leaving
+  /// the guard holding. The consoles are one sign-in away from being reachable
+  /// again.
+  Future<void> _refreshRole() async {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) {
+      _roleId = null;
+      _roleKnown = true;
+      notifyListeners();
+      return;
+    }
+
+    try {
+      final row = await Supabase.instance.client
+          .from('user_roles')
+          .select('role_id')
+          .eq('user_id', user.id)
+          .maybeSingle();
+      _roleId = row?['role_id'] as int?;
+    } catch (_) {
+      _roleId = null;
+    }
+    _roleKnown = true;
+    notifyListeners();
   }
 
   /// Waits for Firebase's first auth event, or [timeout] — whichever first.

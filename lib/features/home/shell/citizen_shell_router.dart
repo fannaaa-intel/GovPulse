@@ -290,7 +290,26 @@ String? _authRedirect(BuildContext context, GoRouterState state) {
   // Testing citizen first is also what makes citizen WIN: someone who signed up
   // while still holding a stale anonymous user is a citizen, not a guest.
   if (Supabase.instance.client.auth.currentSession != null) {
-    return _citizenRedirect(loc);
+    // A session says WHO is here but not WHAT they are, and the three surfaces
+    // are mutually exclusive — so the role decides, and until the lookup lands
+    // we hold rather than guess. Guessing citizen would sweep an admin off
+    // their own console on every reload, which is the bug this whole sequence
+    // exists to fix.
+    //
+    // Holding is cheap for everyone whose location already matches their role:
+    // returning null means "use the requested location", so their page builds
+    // immediately and the re-run after the role arrives changes nothing. The
+    // cost falls only on a MISMATCH — a citizen who typed /admin — and that is
+    // what [_consoleOrHold] covers at the builder.
+    if (!AuthRestoration.instance.roleKnown) return null;
+    switch (AuthRestoration.instance.roleId) {
+      case 1:
+        return _adminRedirect(loc);
+      case 2:
+        return _staffRedirect(loc);
+      default:
+        return _citizenRedirect(loc);
+    }
   }
 
   // No Supabase session — but that is not the same as signed OUT until
@@ -309,6 +328,30 @@ String? _authRedirect(BuildContext context, GoRouterState state) {
   final isGuest = firebaseUser != null && firebaseUser.isAnonymous;
 
   return isGuest ? _guestRedirect(loc) : _signedOutRedirect(loc);
+}
+
+/// Where an admin belongs, and where a staff member belongs.
+///
+/// Both delegate to [_consoleRedirect] because the rule is the same for each:
+/// their own console, and nothing else in this router.
+String? _adminRedirect(String loc) => _consoleRedirect(loc, _kAdminPath);
+String? _staffRedirect(String loc) => _consoleRedirect(loc, _kStaffPath);
+
+/// An ALLOWLIST OF ONE, and deliberately so.
+///
+/// Every other location this router serves is either a citizen surface or the
+/// other role's console, and neither is a destination for a console user. So
+/// rather than enumerate what to sweep — which would silently let a NEW citizen
+/// route become admin-reachable the day someone adds one — this permits the
+/// console and its nested routes and sends everything else home. Same reasoning
+/// as [_guestRedirect]: closed by default.
+///
+/// The public scan page is not caught by this: [_authRedirect] returns for it
+/// before any role branch is reached, so an admin can still open a printed QR
+/// link like anyone else.
+String? _consoleRedirect(String loc, String consoleHome) {
+  if (loc == consoleHome || loc.startsWith('$consoleHome/')) return null;
+  return consoleHome;
 }
 
 /// Where a signed-in citizen belongs.
@@ -330,16 +373,16 @@ String? _citizenRedirect(String loc) {
   // alone" because "an anonymous guest IS signed in". That was never true — a
   // guest holds no Supabase session and so never reached this branch at all —
   // and now that guests are classified in their own right it is misleading.
-  // /admin and /staff are swept for now, and this is TEMPORARY. This function
-  // is reached by everyone holding a Supabase session, because the guard cannot
-  // yet tell an admin from a citizen — so without these two lines the consoles
-  // would render for any signed-in user who typed the URL. Their data is
+  // /admin and /staff are swept here permanently. This function is now reached
+  // only by an actual citizen — the guard branches on role first — so this is
+  // the rule that a citizen who types a console URL is sent home. Their data is
   // RLS-protected either way, but the chrome is not, and a citizen has no
   // business seeing an admin dashboard frame at all.
   //
-  // The commit that makes the guard role-aware replaces this: admins and staff
-  // get their own redirects and are sent TO these paths, while citizens keep
-  // being sent away from them.
+  // It is the builder, not this sweep, that covers the moment BEFORE the role
+  // is known — see [_consoleOrHold]. The two are complementary: this one turns
+  // a citizen away once we know they are one, that one declines to render
+  // while we still do not.
   if (loc == '/' ||
       loc == _kLoginPath ||
       loc == _kSignupPath ||
@@ -388,6 +431,35 @@ String? _signedOutRedirect(String loc) {
     return null;
   }
   return _kLoginPath;
+}
+
+/// A console route's screen, or the startup spinner while we do not yet know
+/// who is asking.
+///
+/// ── Why the builder needs this at all ──────────────────────────────────────
+/// The guard holds by returning null, and null means "use the requested
+/// location" — so during the hold the location STANDS and the route BUILDS.
+/// For a matching visitor that is exactly right: an admin reloading /admin
+/// gets their console immediately. For a MISMATCHED one it is not: a citizen
+/// who pasted /#/admin would render real admin chrome for the length of the
+/// restore, before the guard learned their role and swept them away.
+///
+/// So the console builders decline to render until the answer is in. This is
+/// the same thing '/' already does with [_StartingUp] during its own hold; the
+/// consoles simply had no equivalent.
+///
+/// ── It is never a citizen-facing state ─────────────────────────────────────
+/// Once the role IS known, go_router resolves redirects BEFORE building pages,
+/// so a citizen on /admin is sent to /home without this builder ever running.
+/// The spinner therefore only ever appears during genuine unknown, and for the
+/// visitor who actually belongs here it is replaced by their console rather
+/// than by a redirect.
+Widget _consoleOrHold(Widget console) {
+  final restoration = AuthRestoration.instance;
+  if (!restoration.settled || !restoration.roleKnown) {
+    return const _StartingUp();
+  }
+  return NetworkWrapper(child: console);
 }
 
 final GoRouter citizenRouter = GoRouter(
@@ -475,11 +547,11 @@ final GoRouter citizenRouter = GoRouter(
     // admin from a citizen.
     GoRoute(
       path: _kAdminPath,
-      builder: (_, _) => const NetworkWrapper(child: AdminDashboardScreen()),
+      builder: (_, _) => _consoleOrHold(const AdminDashboardScreen()),
     ),
     GoRoute(
       path: _kStaffPath,
-      builder: (_, _) => const NetworkWrapper(child: StaffConsoleScreen()),
+      builder: (_, _) => _consoleOrHold(const StaffConsoleScreen()),
     ),
 
     // NOTE: there is deliberately no full-screen route for the quick actions.
