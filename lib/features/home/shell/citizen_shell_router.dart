@@ -119,6 +119,43 @@ String shellReportDetailPath(String reportId) =>
 String shellEventDetailPath(String eventId) =>
     '${CitizenTab.home.path}/event/$eventId';
 
+// ── Feed deep link ──────────────────────────────────────────────────────────
+//
+// QUERY PARAMETERS, not a nested route, and the distinction is the point.
+// /my-reports/detail/:id and /home/event/:id are different SCREENS. A feed deep
+// link is the same Home pane in a different initial state — scrolled to a post,
+// maybe with its comment thread open — so it belongs in the query string, where
+// dropping it leaves a valid location rather than a different page.
+//
+// The payoff is bigger than the notification tap that motivated it:
+// /#/home?post=<id>&comments=1 survives a reload and can be pasted to someone
+// else, which makes a community post permalinkable for the first time.
+const String _kFeedPostParam = 'post';
+const String _kFeedCommentsParam = 'comments';
+const String _kFeedHighlightParam = 'highlight';
+
+/// Deep link to one post in the shell's feed.
+///
+/// [postRef] may be a POST id or a COMMENT id — the feed resolves which (see
+/// `_tryResolveCommentRef` in news_feed_screen.dart), so callers pass the single
+/// reference the notification carried and never have to know which they hold.
+///
+/// [openComments] opens that post's thread; [highlight] flashes the post. They
+/// are deliberately independent: a comment tap opens the thread (where the
+/// flash would be behind the sheet), a heart flashes the post instead.
+String shellFeedPostPath(
+  String postRef, {
+  bool openComments = false,
+  bool highlight = false,
+}) => Uri(
+  path: CitizenTab.home.path,
+  queryParameters: <String, String>{
+    _kFeedPostParam: postRef,
+    if (openComments) _kFeedCommentsParam: '1',
+    if (highlight) _kFeedHighlightParam: '1',
+  },
+).toString();
+
 /// `state.extra`, but only when it really is a [T].
 ///
 /// NEVER cast `extra` directly. On a browser reload go_router restores its
@@ -152,14 +189,30 @@ class _WithIdentity extends ConsumerWidget {
 
 /// Body for a tab. This is the whole point of the Phase 2 split: the shell
 /// mounts chromeless Bodies, not the standalone Screens.
-Widget _bodyFor(BuildContext context, CitizenTab tab) {
+Widget _bodyFor(BuildContext context, CitizenTab tab, GoRouterState state) {
   switch (tab) {
     case CitizenTab.home:
       // Home IS the community feed. NewsFeedBody already renders exactly that —
       // the posts, the filter, and the loading/error/empty states — with no
       // chrome of its own, so the merge is a matter of mounting it here rather
       // than reimplementing a feed in a second place.
-      return const NewsFeedBody(embedded: true);
+      //
+      // No longer const, so the deep link in the query string can reach it. That
+      // costs nothing: the Element and State are reused across rebuilds (same
+      // type, same position), so initState — and with it the one-shot
+      // setGuestMode — still runs exactly once. Only the widget instance is new,
+      // which is precisely what lets didUpdateWidget see a changed target.
+      final query = state.uri.queryParameters;
+      return NewsFeedBody(
+        embedded: true,
+        initialPostId: query[_kFeedPostParam],
+        initialOpenComments: query[_kFeedCommentsParam] == '1',
+        initialHighlightPost: query[_kFeedHighlightParam] == '1',
+        // Deliberately no initialCommentId. When the reference is a comment id
+        // the feed resolves it to (post, comment) itself and fills its own
+        // target — passing one here would mean the caller guessing which kind
+        // of id it holds.
+      );
     case CitizenTab.myReports:
       return MyReportsBody(
         // Both are passed: the id makes the URL real and reload-proof, the
@@ -390,7 +443,9 @@ final GoRouter citizenRouter = GoRouter(
             routes: <RouteBase>[
               GoRoute(
                 path: tab.path,
-                builder: (context, _) => _bodyFor(context, tab),
+                // `state` is no longer discarded: the Home branch reads its
+                // feed deep link from the query string. See [shellFeedPostPath].
+                builder: (context, state) => _bodyFor(context, tab, state),
                 routes: <RouteBase>[
                   // Report detail lives INSIDE the My Reports branch, so it
                   // stacks over that pane and Back returns to the list with its

@@ -228,6 +228,57 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
     }
   }
 
+  /// Picks up a deep link that arrives while the feed is ALREADY MOUNTED.
+  ///
+  /// ── Web-only, and inert on mobile even unguarded ───────────────────────────
+  /// On mobile the feed is pushed fresh for every deep link, so it gets a new
+  /// State and the `late` initialisers above do the whole job — this would
+  /// never fire. The kIsWeb guard makes that provable rather than argued, and
+  /// const-folds the body away off web.
+  ///
+  /// On web the feed is the shell's Home pane and stays mounted for the whole
+  /// session, so a second notification tap only changes this widget's
+  /// parameters. Without this, `_targetPostId` keeps its first value (a `late`
+  /// initialiser runs once) and `_handledInitialPost` is already true — so
+  /// tapping notification A then notification B silently did nothing for B.
+  ///
+  /// ── Why the equality check is load-bearing ─────────────────────────────────
+  /// A StatefulShellRoute branch remembers its location, so switching tabs and
+  /// coming back rebuilds this with the SAME query string. Re-running the
+  /// handler there would re-open a thread the user already closed. Only an
+  /// actual change of target resets anything.
+  @override
+  void didUpdateWidget(NewsFeedBody oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!kIsWeb) return;
+
+    final unchanged =
+        widget.initialPostId == oldWidget.initialPostId &&
+        widget.initialOpenComments == oldWidget.initialOpenComments &&
+        widget.initialHighlightPost == oldWidget.initialHighlightPost &&
+        widget.initialCommentId == oldWidget.initialCommentId;
+    if (unchanged) return;
+
+    // Re-arm every piece of one-shot state the first deep link consumed, so the
+    // new target is treated exactly like a fresh mount would treat it.
+    _targetPostId = widget.initialPostId;
+    _targetCommentId = widget.initialCommentId;
+    _handledInitialPost = false;
+    _triedCommentResolve = false;
+    // No highlight reset needed: flashHighlight has no per-id latch, and its
+    // hold timer already declines to clear an accent a later deep link took
+    // over (see the `_highlightId == id` guard in DeepLinkHighlightMixin).
+
+    if (_targetPostId == null) return;
+    // Deferred, not called inline: the handler flashes the highlight and can
+    // setState, and didUpdateWidget runs during the parent's build. Posting it
+    // matches how the handler already schedules its own scroll work.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _maybeHandleInitialPost();
+    });
+  }
+
   @override
   void initState() {
     super.initState();

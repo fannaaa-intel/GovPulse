@@ -259,6 +259,34 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
         _openSubmissionsFromNotification(initialTab: 2, highlightId: n.referenceId);
         break;
 
+      case 'post_like':
+      case 'post_comment':
+      case 'comment_reply':
+      case 'comment_like':
+        // `n.postId`, NOT `n.referenceId`. AppNotification.fromRow already ran
+        // _effectivePostId for social types, which reads whichever column the
+        // writing trigger used — the triggers this repo ships stamp
+        // reference_id, but some live ones stamp a post_id column instead, and
+        // reading only one of them is what made these taps land nowhere before.
+        // referenceId is the raw column and would miss half the writers.
+        final postRef = n.postId;
+        if (postRef == null || postRef.isEmpty) return;
+        // Same split as the legacy surfaces: anything about a comment opens the
+        // thread, a heart just jumps to the post and flashes it. The flash and
+        // the sheet are mutually exclusive — a ring behind an open sheet is
+        // only discovered after closing it.
+        final openComments = n.type != 'post_like';
+        // A URL, not shell state: this location is reload-proof and pasteable,
+        // and go() re-resolves the branch so this works from any tab.
+        context.go(
+          shellFeedPostPath(
+            postRef,
+            openComments: openComments,
+            highlight: !openComments,
+          ),
+        );
+        break;
+
       case 'chat':
         // A citizen has exactly one LGU thread, so there is nothing to
         // disambiguate and no id to carry — opening the window IS landing on
