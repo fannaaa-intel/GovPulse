@@ -12,8 +12,10 @@ import '../../../core/services/auth_ready.dart';
 import '../../../core/services/events_service.dart';
 import '../../../core/theme/citizen_ui.dart';
 import '../../../core/widgets/resolve_by_id.dart';
+import '../../admin/screens/admin_dashboard_screen.dart';
 import '../../guest/screen/guest.dart';
 import '../../scan/scan_page.dart';
+import '../../staff/screens/staff_console_screen.dart';
 import '../Quick-action/Events/event_detail_screen.dart';
 import '../Quick-action/Events/events_screen.dart' show EventItem;
 import '../emergency/emergency_screen.dart';
@@ -68,6 +70,21 @@ const String _kGuestPath = '/guest';
 /// A citizen's feed is the shell's Home pane, so the two never share a URL —
 /// see the redirect in [_authRedirect].
 const String _kNewsFeedPath = '/newsfeed';
+
+/// The two NON-citizen consoles.
+///
+/// Peers of the auth routes and deliberately outside the StatefulShellRoute:
+/// that shell is the citizen surface, and both consoles chrome themselves —
+/// each brings its own Scaffold, drawer and desktop/tablet breakpoints, so
+/// wrapping them in citizen chrome would be wrong twice over.
+///
+/// Nothing navigates here yet. The login branch still pushes both consoles
+/// imperatively, and the guard below still classifies every session as a
+/// citizen, so for now these are reachable only by typing the URL — and the
+/// sweep in [_citizenRedirect] turns even that away. Both of those become real
+/// in the commits that follow.
+const String _kAdminPath = '/admin';
+const String _kStaffPath = '/staff';
 
 /// The shell's top-level destinations, in nav order. The index into
 /// [CitizenTab.values] IS the branch index, so order is load-bearing.
@@ -313,11 +330,23 @@ String? _citizenRedirect(String loc) {
   // alone" because "an anonymous guest IS signed in". That was never true — a
   // guest holds no Supabase session and so never reached this branch at all —
   // and now that guests are classified in their own right it is misleading.
+  // /admin and /staff are swept for now, and this is TEMPORARY. This function
+  // is reached by everyone holding a Supabase session, because the guard cannot
+  // yet tell an admin from a citizen — so without these two lines the consoles
+  // would render for any signed-in user who typed the URL. Their data is
+  // RLS-protected either way, but the chrome is not, and a citizen has no
+  // business seeing an admin dashboard frame at all.
+  //
+  // The commit that makes the guard role-aware replaces this: admins and staff
+  // get their own redirects and are sent TO these paths, while citizens keep
+  // being sent away from them.
   if (loc == '/' ||
       loc == _kLoginPath ||
       loc == _kSignupPath ||
       loc == _kGuestPath ||
-      loc == _kNewsFeedPath) {
+      loc == _kNewsFeedPath ||
+      loc == _kAdminPath ||
+      loc == _kStaffPath) {
     return CitizenTab.home.path;
   }
   return null;
@@ -428,6 +457,29 @@ final GoRouter citizenRouter = GoRouter(
       path: _kNewsFeedPath,
       builder: (_, _) =>
           const NetworkWrapper(child: NewsFeedScreen(isGuest: true)),
+    ),
+
+    // ── Admin and staff consoles ────────────────────────────────────────────
+    // Mounted DIRECTLY, not inside the shell. Both are self-chroming — each
+    // builds its own Scaffold, its own drawer, and its own desktop/tablet
+    // breakpoints — so there is nothing for a shell branch to add here except
+    // citizen chrome that neither should ever show.
+    //
+    // Neither constructor takes arguments: both read identity from
+    // userProfileProvider themselves, which is why these are const and why the
+    // routes carry nothing. NetworkWrapper matches how the login branch pushes
+    // them today, so the surface is identical either way in.
+    //
+    // INERT in this commit. Nothing routes here yet, and [_citizenRedirect]
+    // sweeps anyone who types the URL, because the guard cannot yet tell an
+    // admin from a citizen.
+    GoRoute(
+      path: _kAdminPath,
+      builder: (_, _) => const NetworkWrapper(child: AdminDashboardScreen()),
+    ),
+    GoRoute(
+      path: _kStaffPath,
+      builder: (_, _) => const NetworkWrapper(child: StaffConsoleScreen()),
     ),
 
     // NOTE: there is deliberately no full-screen route for the quick actions.
