@@ -1,5 +1,8 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+// Backs the WEB-only role cache below. Every use is behind `kIsWeb`, so mobile
+// neither reads nor writes it and never pays for the plugin call.
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Waits until Supabase has finished restoring a persisted session, or until
@@ -88,6 +91,64 @@ class AuthRestoration extends ChangeNotifier {
   /// [AuthService.login]'s return value and from the splash's own lookup,
   /// neither of which consults this class.
   bool _roleKnown = !kIsWeb;
+
+  // ── Role cache ────────────────────────────────────────────────────────────
+  //
+  // WEB ONLY. A hint that lets the guard classify a returning visitor on its
+  // FIRST evaluation instead of holding their location while a query runs.
+  //
+  // The window this closes is real but narrow: between the session becoming
+  // known and the role landing, the guard holds — and holding means the
+  // requested location builds. An admin cold-loading a citizen URL therefore
+  // painted citizen chrome for the length of one query before being bounced.
+  //
+  // NEVER the source of truth. [_refreshRole] issues the real query on every
+  // invocation, cache hit included, and overwrites whatever this supplied. A
+  // role that changed between sessions is wrong for exactly as long as that
+  // query takes, then corrects itself. And it only ever decides CHROME: every
+  // console query is checked server-side against the user's actual user_roles
+  // row, so a stale 'admin' hint yields an empty admin frame, never admin data.
+  static const String _kRoleCacheUidKey = 'role_cache_uid';
+  static const String _kRoleCacheRoleKey = 'role_cache_role';
+
+  /// Sentinel for "this user has no role row" — a citizen. Stored explicitly so
+  /// citizens get the fast path too, rather than being indistinguishable from a
+  /// cache miss.
+  static const int _kRoleCacheCitizen = 0;
+
+  String? _cachedRoleUid;
+  int? _cachedRoleId;
+
+  /// Reads the cached role into memory. Call ONCE, before `runApp`, on web.
+  ///
+  /// Deliberately not keyed here: session restoration is asynchronous — the
+  /// premise this whole class exists for — so there is no user id to key on
+  /// yet. This loads the store; [_refreshRole] does the keyed lookup at the
+  /// moment the session, and with it the id, becomes known. That instant is the
+  /// start of the window being closed, so applying it there is what matters.
+  Future<void> primeRoleCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _cachedRoleUid = prefs.getString(_kRoleCacheUidKey);
+      final stored = prefs.getInt(_kRoleCacheRoleKey);
+      _cachedRoleId = stored == _kRoleCacheCitizen ? null : stored;
+    } catch (_) {
+      // A cache that cannot be read is simply a cache miss.
+      _cachedRoleUid = null;
+      _cachedRoleId = null;
+    }
+  }
+
+  Future<void> _writeRoleCache(String uid, int? role) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kRoleCacheUidKey, uid);
+      await prefs.setInt(_kRoleCacheRoleKey, role ?? _kRoleCacheCitizen);
+    } catch (_) {
+      // Best effort: failing to persist the hint costs a held frame next time,
+      // nothing more.
+    }
+  }
 
   /// Only meaningful once [roleKnown]. Null means citizen.
   int? get roleId => _roleId;
@@ -203,6 +264,21 @@ class AuthRestoration extends ChangeNotifier {
       return;
     }
 
+    // Synchronous fast path. An in-memory hit for THIS user classifies them
+    // now, so the guard's very next evaluation routes them correctly instead of
+    // holding their location while the query below runs — which is the whole
+    // point: holding is what let citizen chrome paint for an admin.
+    //
+    // Keyed on the id, so a previous account's role on a shared browser is
+    // never applied to a new one; a mismatch simply falls through to the hold.
+    // Guarded on !_roleKnown so a later refresh never regresses a known role
+    // back to a cached one.
+    if (!_roleKnown && _cachedRoleUid == user.id) {
+      _roleId = _cachedRoleId;
+      _roleKnown = true;
+      notifyListeners();
+    }
+
     try {
       final row = await Supabase.instance.client
           .from('user_roles')
@@ -214,6 +290,11 @@ class AuthRestoration extends ChangeNotifier {
       _roleId = null;
     }
     _roleKnown = true;
+
+    // Refresh the hint for next time. Fire-and-forget: nothing waits on it, and
+    // a failed write costs one held frame on the next cold load.
+    _writeRoleCache(user.id, _roleId);
+
     notifyListeners();
   }
 

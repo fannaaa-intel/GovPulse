@@ -83,6 +83,22 @@ void main() async {
 
   await Hive.initFlutter();
 
+  // Web only: pull the cached role into memory before the first frame, so the
+  // guard can classify a returning admin or staff member on its FIRST
+  // evaluation rather than holding their location — and painting citizen
+  // chrome — while a user_roles query runs.
+  //
+  // [kIsWeb] is a const, so this block and its await are compiled out on
+  // mobile: no SharedPreferences call, no added wait, and main()'s sequence is
+  // exactly what it has always been there. Mobile has no use for it either —
+  // it routes by role from AuthService.login and from the splash's own lookup.
+  //
+  // Before begin(), because begin() can resolve a role immediately on a warm
+  // session and the cache has to be in memory by then to be consulted.
+  if (kIsWeb) {
+    await AuthRestoration.instance.primeRoleCache();
+  }
+
   // Start watching for a restored session before the first frame, so the web
   // router's auth guard has something to wait on rather than reading a
   // half-restored auth state and bouncing a signed-in user to /login.
