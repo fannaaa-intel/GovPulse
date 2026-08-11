@@ -208,24 +208,19 @@ class _ResetPasswordEmailVerifyScreenState
 
       if (response.statusCode == 200 && data["success"] == true) {
         final session = data["session"];
+        // No platform split here, deliberately. This used to be a kIsWeb
+        // ternary whose two arms were the same route — same widget, same zero
+        // durations, differing only in the order the named arguments were
+        // written. It implied a difference that never existed.
         navigator.push(
-          kIsWeb
-              ? PageRouteBuilder(
-                  pageBuilder: (_, _, _) => ResetNewPasswordScreen(
-                    accessToken: session["access_token"],
-                    refreshToken: session["refresh_token"],
-                  ),
-                  transitionDuration: Duration.zero,
-                  reverseTransitionDuration: Duration.zero,
-                )
-              : PageRouteBuilder(
-                  transitionDuration: Duration.zero,
-                  reverseTransitionDuration: Duration.zero,
-                  pageBuilder: (_, _, _) => ResetNewPasswordScreen(
-                    accessToken: session["access_token"],
-                    refreshToken: session["refresh_token"],
-                  ),
-                ),
+          PageRouteBuilder(
+            transitionDuration: Duration.zero,
+            reverseTransitionDuration: Duration.zero,
+            pageBuilder: (_, _, _) => ResetNewPasswordScreen(
+              accessToken: session["access_token"],
+              refreshToken: session["refresh_token"],
+            ),
+          ),
         );
       } else {
         if (!mounted) return;

@@ -195,19 +195,17 @@ class _ResetNewPasswordScreenState extends State<ResetNewPasswordScreen>
         await PasswordCooldown.stamp(supabase, res.user!.id);
         if (!mounted) return;
 
+        // No platform split here, deliberately — see the matching note in
+        // reset_password_email_verify_screen.dart. The two arms of the kIsWeb
+        // ternary this replaces were the same route, written in a different
+        // argument order.
         Navigator.pushReplacement(
           context,
-          kIsWeb
-              ? PageRouteBuilder(
-                  pageBuilder: (_, _, _) => const PasswordChangeSuccess(),
-                  transitionDuration: Duration.zero,
-                  reverseTransitionDuration: Duration.zero,
-                )
-              : PageRouteBuilder(
-                  transitionDuration: Duration.zero,
-                  reverseTransitionDuration: Duration.zero,
-                  pageBuilder: (_, _, _) => const PasswordChangeSuccess(),
-                ),
+          PageRouteBuilder(
+            transitionDuration: Duration.zero,
+            reverseTransitionDuration: Duration.zero,
+            pageBuilder: (_, _, _) => const PasswordChangeSuccess(),
+          ),
         );
       } else {
         throw Exception("Failed to update password");
