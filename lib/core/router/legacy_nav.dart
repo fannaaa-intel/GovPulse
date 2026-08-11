@@ -117,6 +117,53 @@ const String _kSignupPath = '/signup';
 const String _kGuestPath = '/guest';
 const String _kNewsFeedPath = '/newsfeed';
 
+/// `context.go`, with any imperatively-pushed pageless routes cleared first.
+///
+/// ── WEB ONLY ───────────────────────────────────────────────────────────────
+/// Every call sits inside an `if (kIsWeb)` branch, and this must stay true.
+/// [GoRouter.of] throws when there is no GoRouter above the context, and on
+/// mobile there never is — the legacy `MaterialApp` owns those screens. That is
+/// not a new hazard introduced here: the plain `context.go` this replaces had
+/// exactly the same requirement, so the guard that already protects the branch
+/// is the same guard that protects this.
+///
+/// ── Why the pop ────────────────────────────────────────────────────────────
+/// Several flows are reached by imperative push and deliberately have no URL —
+/// the reset-password chain and the sign-up verification chain carry auth
+/// tokens and a plaintext password, which must not be addressable (see the
+/// route policy note in citizen_shell_router.dart). Those pushes are correct.
+/// What is not correct is firing `go()` while they are still on the stack: the
+/// new match list only replaces go_router's OWN pages, so the imperative routes
+/// stay mounted above the destination and the address bar stops describing what
+/// is on screen.
+///
+/// Popping them first makes the stack match the match list before it changes.
+///
+/// ── Why `settings is Page` ─────────────────────────────────────────────────
+/// That test is exactly what separates go_router's routes from imperative ones:
+/// go_router builds Page-based routes, while `pushLegacy` and `Navigator.push`
+/// build pageless ones. So this pops the pageless stack above the topmost
+/// go_router page and stops there — it never pops a route go_router believes it
+/// owns, which would be its own kind of desync.
+///
+/// It is a no-op in the common case: with nothing pushed, the top route's
+/// settings is already a Page and the predicate passes on the first test.
+void _goClearingPageless(BuildContext context, String location) {
+  // Both looked up BEFORE the pop. `popUntil` can tear down the very screen
+  // that called this — the password-changed and email-verified screens are
+  // themselves pageless — and a defunct context resolves neither lookup. This
+  // is the same hazard [pushLegacyOn] exists for, handled the same way.
+  final navigator = Navigator.of(context);
+  final router = GoRouter.of(context);
+
+  // Unconditional by design. `popUntil` pops via `Navigator.pop`, which does
+  // not consult `PopScope` — only `maybePop` and the system back gesture do —
+  // so a guarded screen in the chain cannot stall this into a loop.
+  navigator.popUntil((route) => route.settings is Page);
+
+  router.go(location);
+}
+
 /// Sends the user to the login screen.
 ///
 /// On web this is a `go`, so the address bar becomes `/#/login` and the shell is
@@ -129,7 +176,10 @@ const String _kNewsFeedPath = '/newsfeed';
 /// backing out of login would no longer return to sign-up on a phone.
 Future<void> goToLogin(BuildContext context, {bool clearStack = true}) {
   if (kIsWeb) {
-    context.go(_kLoginPath);
+    // Cleared, not plain `go`: this is the way OUT of the reset-password and
+    // sign-up verification chains, both of which are stacks of pageless routes.
+    // See [_goClearingPageless].
+    _goClearingPageless(context, _kLoginPath);
     return Future<void>.value();
   }
   if (!clearStack) return pushLegacy<void>(context, _kLoginPath);
@@ -223,8 +273,14 @@ void goToCitizenHome(
 }) {
   if (kIsWeb) {
     // go() re-resolves the whole match list, so the shell replaces whatever
-    // auth screen was on screen and the URL follows. No stack to clear.
-    context.go(CitizenTab.home.path);
+    // auth screen was on screen and the URL follows.
+    //
+    // There IS a stack to clear, though — the note that used to say otherwise
+    // was written before the Facebook path was traced. Both callers push
+    // FacebookUsernameScreen imperatively over /login or /signup and land here
+    // from its `onComplete`, so the picker is still mounted at this point.
+    // See [_goClearingPageless].
+    _goClearingPageless(context, CitizenTab.home.path);
     return;
   }
 

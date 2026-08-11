@@ -360,7 +360,11 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
                   ),
                 );
               },
-              onLogin: () => pushLegacy(ctx, '/login'),
+              // clearStack: false — mobile's branch is then pushLegacy(ctx,
+              // '/login'), character-for-character what this line used to be.
+              // Web gains the pageless-stack clear that /login now goes
+              // through; see [goToLogin].
+              onLogin: () => goToLogin(ctx, clearStack: false),
             ),
           ),
         ),
