@@ -90,6 +90,19 @@ class _SettingScreenState extends ConsumerState<SettingsBody>
   bool _pushBusy = false;
 
   // ── Entry animation controller ────────────────────────────────────────────
+  /// Opacity the staggered entrance starts from ON WEB, so the first painted
+  /// frame already shows content. Mobile still fades from zero. Same value the
+  /// auth screens and the feed use — same problem, same floor.
+  ///
+  /// This body is a shell BRANCH, which is why it needs one. Branches are built
+  /// lazily (StatefulShellBranch.preload is false by default) and the shell
+  /// swaps them with a plain IndexedStack — no page transition — so on the first
+  /// visit there is no outgoing page for the web cross-fade to hold underneath.
+  /// An entrance starting at zero therefore leaves the pane empty for the whole
+  /// 80ms delay below. Page-to-page navigation is already covered and needs no
+  /// floor; only the first build of a branch is exposed.
+  static const double _kWebFadeFloor = 0.35;
+
   late final AnimationController _entryCtrl;
 
   @override
@@ -188,7 +201,9 @@ class _SettingScreenState extends ConsumerState<SettingsBody>
     final start = (i * 0.08).clamp(0.0, 1.0);
     final end = (start + 0.50).clamp(0.0, 1.0);
 
-    final fade = Tween<double>(begin: 0.0, end: 1.0).animate(
+    // Floored on web only; mobile keeps its fade from zero.
+    final fade = Tween<double>(begin: kIsWeb ? _kWebFadeFloor : 0.0, end: 1.0)
+        .animate(
       CurvedAnimation(
         parent: _entryCtrl,
         curve: Interval(start, end, curve: Curves.easeOut),

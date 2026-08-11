@@ -129,6 +129,19 @@ class _EmergencyScreenState extends State<EmergencyBody>
   late final Animation<double> _breatheScale;
   late final Animation<double> _breatheGlow;
 
+  /// Opacity the staggered entrance starts from ON WEB, so the first painted
+  /// frame already shows content. Mobile still fades from zero. Same value the
+  /// auth screens and the feed use — same problem, same floor.
+  ///
+  /// This body is a shell BRANCH, which is why it needs one. Branches are built
+  /// lazily (StatefulShellBranch.preload is false by default) and the shell
+  /// swaps them with a plain IndexedStack — no page transition — so on the first
+  /// visit there is no outgoing page for the web cross-fade to hold underneath.
+  /// An entrance starting at zero therefore leaves the pane empty for the whole
+  /// 150ms delay below. Page-to-page navigation is already covered and needs no
+  /// floor; only the first build of a branch is exposed.
+  static const double _kWebFadeFloor = 0.35;
+
   late final AnimationController _entryCtrl;
 
   static const List<_Category> _categories = [
@@ -860,7 +873,12 @@ class _EmergencyScreenState extends State<EmergencyBody>
     // Uniform icon box size for all cards
     final double iconBoxSize = w * .14;
 
-    Animation<double> fade(int i) => Tween<double>(begin: 0, end: 1).animate(
+    // Floored on web only; mobile keeps its fade from zero. This is the
+    // ENTRANCE fade for the category grid — deliberately not the pulse, breathe
+    // or snap animations elsewhere in this file, which are ongoing effects on
+    // the SOS control rather than an entrance and must keep their real ranges.
+    Animation<double> fade(int i) =>
+        Tween<double>(begin: kIsWeb ? _kWebFadeFloor : 0, end: 1).animate(
       CurvedAnimation(
         parent: _entryCtrl,
         curve: Interval(
