@@ -183,11 +183,120 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
       context,
       width: width,
       onTap: (n) {
+        // Opening it IS reading it — retire it from the badge before routing,
+        // so the count drops on tap instead of waiting for a delete. Same
+        // ordering the two legacy surfaces use.
         NotificationService.markRead(n);
-        Navigator.pop(context);
+        Navigator.pop(context); // close the panel, then route the tap
+        _routeNotificationTap(n);
       },
     );
     if (mounted) setState(() {});
+  }
+
+  /// Routes a notification tap to a SHELL destination.
+  ///
+  /// ── Why not routeCitizenNotificationTap ────────────────────────────────────
+  /// That function is shared with the mobile surface, and five of its seven
+  /// branches reach their destination with `pushLegacy` — /my_submissions,
+  /// /chat, /report_detail. Calling it here would push full-screen legacy
+  /// routes over the shell: the wrong destination model (the same reason the
+  /// drawer below hosts _leftRail rather than HomeNavDrawer), and pageless
+  /// pushes over go_router's stack, which is the desync class the auth flows
+  /// were just cleaned of.
+  ///
+  /// So the shell owns its own switch. That duplicates the type vocabulary in
+  /// two places and the two can drift — a real cost, accepted deliberately:
+  /// the alternative is refactoring a function two mobile screens depend on,
+  /// which would turn a web-only change into a shared-file one. If a third
+  /// surface ever needs this, extract a pure type→intent function and let each
+  /// surface keep its own destinations.
+  ///
+  /// ── Coverage ───────────────────────────────────────────────────────────────
+  /// The five types with a destination the shell already has. The four social
+  /// types (post_like / post_comment / comment_reply / comment_like) fall
+  /// through to the default: the shell mounts `const NewsFeedBody(embedded:
+  /// true)` with no initialPostId, so there is no way to point the Home pane at
+  /// a post yet. They do nothing today and continue to do nothing — no
+  /// regression, and deep-linking into the shell feed is its own piece of work.
+  /// Everything else (verification_submitted, the verified notice, broadcasts,
+  /// staff messages, general) is informational on every surface.
+  void _routeNotificationTap(AppNotification n) {
+    switch (n.type) {
+      case 'report_decision':
+        // reference_id holds the report id — read straight through by
+        // AppNotification.fromRow. (_effectivePostId deliberately does NOT
+        // claim it: that helper is restricted to social types precisely so a
+        // report's reference_id is never mistaken for a post id.)
+        //
+        // Older rows predate the deep-link column and carry no id; they route
+        // nowhere, same as on mobile.
+        final reportId = n.referenceId;
+        if (reportId == null || reportId.isEmpty) return;
+        // No pre-fetch, unlike the legacy path's _openReportFromNotification:
+        // this route is id-addressable and ResolveById fetches by id when no
+        // `extra` rides along. That also makes the destination reload-proof
+        // and shareable, which the legacy /report_detail cannot be.
+        //
+        // go(), not push() — a push would leave the reported location on the
+        // branch root, so the address bar would keep saying /my-reports.
+        context.go(shellReportDetailPath(reportId));
+        break;
+
+      case 'verification_reminder':
+        // Reuses the shell's own entry point, which already carries both
+        // guards this needs: it no-ops when the profile has not loaded, and
+        // when verifStatus is anything but none — so a verified or
+        // already-pending citizen taps into nothing, matching mobile.
+        _startVerification();
+        break;
+
+      case 'suggestion_response':
+        _openSubmissionsFromNotification(initialTab: 1, highlightId: n.referenceId);
+        break;
+
+      case 'feedback_response':
+        _openSubmissionsFromNotification(initialTab: 2, highlightId: n.referenceId);
+        break;
+
+      case 'chat':
+        // A citizen has exactly one LGU thread, so there is nothing to
+        // disambiguate and no id to carry — opening the window IS landing on
+        // the message. Not routed through the quick action, which gates on
+        // verification: this notification is evidence the thread already
+        // exists, and refusing someone their own staff reply is the worse
+        // failure. The legacy path does not gate it either.
+        setState(() => _chat = DockedChatState.open);
+        break;
+
+      default:
+        break;
+    }
+  }
+
+  /// My Submissions, opened on the tab the notification refers to with its item
+  /// flashed. The screen already accepts both — the rail simply never passed
+  /// them, so the parameters existed with no caller.
+  ///
+  /// Ungated, unlike the rail's copy of this dialog. Receiving a response means
+  /// they submitted, which required verification at the time; and the screen
+  /// shows only their own RLS-scoped rows. This matches the legacy notification
+  /// path, which does not gate it either.
+  void _openSubmissionsFromNotification({
+    required int initialTab,
+    String? highlightId,
+  }) {
+    // Don't stack a second copy over one already open — same guard the legacy
+    // path uses.
+    if (MySubmissionsScreen.isOpen) return;
+    showCitizenPanelDialog<void>(
+      context: context,
+      child: MySubmissionsScreen(
+        username: _username,
+        initialTab: initialTab,
+        highlightId: highlightId,
+      ),
+    );
   }
 
   // ── Everything opens as a dialog ──────────────────────────────────────────
