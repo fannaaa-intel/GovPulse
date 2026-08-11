@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/services/chat_service.dart';
@@ -83,6 +84,32 @@ class _HomePageState extends ConsumerState<HomePage>
   @override
   void initState() {
     super.initState();
+
+    // ── Tripwire: HomePage is the MOBILE home surface ────────────────────────
+    //
+    // On web a citizen belongs in CitizenShell; goToCitizenHome enforces that
+    // split. Mounting HomePage on web reopens the whole legacy nav surface —
+    // ResponsiveNavScaffold and AppBottomNav contain no kIsWeb at all, so every
+    // destination they offer becomes a pageless push over go_router's stack.
+    //
+    // Those two files are deliberately NOT guarded. Today the surface is
+    // unreachable on web because nothing mounts HomePage there, and guards in
+    // two large mobile-critical shared files would be dead code. That is a
+    // reachability argument, though, not a structural one — so this assert is
+    // what keeps it honest: it turns a future regression into a loud dev
+    // failure instead of a silent desync. Debug-only; strips in release.
+    //
+    // In initState rather than the constructor on purpose: the constructor is
+    // const, and a const-evaluable assert there risks being rejected at
+    // COMPILE time on web rather than caught at runtime in debug.
+    assert(
+      !kIsWeb,
+      'HomePage is the mobile home surface; web citizens belong in '
+      'CitizenShell. Mounting it on web reopens the legacy nav surface '
+      '(ResponsiveNavScaffold / AppBottomNav), whose destinations are pageless '
+      'pushes that desync go_router. Route through goToCitizenHome instead.',
+    );
+
     _entryCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),

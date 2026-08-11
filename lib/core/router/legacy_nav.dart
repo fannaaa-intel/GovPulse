@@ -125,7 +125,12 @@ const String _kNewsFeedPath = '/newsfeed';
 /// mobile there never is — the legacy `MaterialApp` owns those screens. That is
 /// not a new hazard introduced here: the plain `context.go` this replaces had
 /// exactly the same requirement, so the guard that already protects the branch
-/// is the same guard that protects this.
+/// is the same guard that protects this. The `assert` below states that
+/// contract to anyone who reaches for this from a new call site.
+///
+/// PUBLIC because callers outside this file need it: the verification wizard's
+/// terminal step has to leave nine pageless routes behind, and its mobile route
+/// differs enough from [goToCitizenHome] that it cannot share that helper.
 ///
 /// ── Why the pop ────────────────────────────────────────────────────────────
 /// Several flows are reached by imperative push and deliberately have no URL —
@@ -148,11 +153,18 @@ const String _kNewsFeedPath = '/newsfeed';
 ///
 /// It is a no-op in the common case: with nothing pushed, the top route's
 /// settings is already a Page and the predicate passes on the first test.
-void _goClearingPageless(BuildContext context, String location) {
+void goClearingPageless(BuildContext context, String location) {
+  assert(
+    kIsWeb,
+    'goClearingPageless is web-only: it resolves a GoRouter, and on mobile the '
+    'legacy MaterialApp owns these screens so there is none. Call it inside an '
+    'if (kIsWeb) branch.',
+  );
+
   // Both looked up BEFORE the pop. `popUntil` can tear down the very screen
-  // that called this — the password-changed and email-verified screens are
-  // themselves pageless — and a defunct context resolves neither lookup. This
-  // is the same hazard [pushLegacyOn] exists for, handled the same way.
+  // that called this — the password-changed, email-verified and face-scan
+  // screens are all themselves pageless — and a defunct context resolves
+  // neither lookup. Same hazard [pushLegacyOn] exists for, handled the same way.
   final navigator = Navigator.of(context);
   final router = GoRouter.of(context);
 
@@ -178,8 +190,8 @@ Future<void> goToLogin(BuildContext context, {bool clearStack = true}) {
   if (kIsWeb) {
     // Cleared, not plain `go`: this is the way OUT of the reset-password and
     // sign-up verification chains, both of which are stacks of pageless routes.
-    // See [_goClearingPageless].
-    _goClearingPageless(context, _kLoginPath);
+    // See [goClearingPageless].
+    goClearingPageless(context, _kLoginPath);
     return Future<void>.value();
   }
   if (!clearStack) return pushLegacy<void>(context, _kLoginPath);
@@ -279,8 +291,8 @@ void goToCitizenHome(
     // was written before the Facebook path was traced. Both callers push
     // FacebookUsernameScreen imperatively over /login or /signup and land here
     // from its `onComplete`, so the picker is still mounted at this point.
-    // See [_goClearingPageless].
-    _goClearingPageless(context, CitizenTab.home.path);
+    // See [goClearingPageless].
+    goClearingPageless(context, CitizenTab.home.path);
     return;
   }
 

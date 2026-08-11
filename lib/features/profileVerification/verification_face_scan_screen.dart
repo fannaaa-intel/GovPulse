@@ -5,12 +5,18 @@ import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../core/providers/user_profile_provider.dart';
+import '../../core/router/legacy_nav.dart';
 import '../../core/theme/app_colors.dart';
 import '../home/screen/home_screen.dart';
 import '../home/screen/notification_popup.dart';
+// CitizenTab.home.path — the shell's Home location, for the web arm of the
+// success handler. Web-only in effect; the import itself is inert off web.
+import '../home/shell/citizen_shell_router.dart' show CitizenTab;
 
 /// Width at which this screen's action buttons stop stretching on web.
 ///
@@ -474,6 +480,36 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
       transitionDuration: const Duration(milliseconds: 350),
       pageBuilder: (_, _, _) => _SuccessDialog(
         onDone: () {
+          // ── Web: land on the SHELL, clearing the wizard first ─────────────
+          //
+          // The mobile arm below pushes HomePage with pushAndRemoveUntil and a
+          // `(route) => false` predicate. On web that empties the Navigator of
+          // go_router's OWN pages, leaving the match list describing pages that
+          // no longer exist — and it mounts HomePage, the legacy MOBILE
+          // surface, on a browser. This was the live defect.
+          //
+          // The clear is mandatory, not cosmetic. By this point the wizard has
+          // stacked nine pageless routes — eight pushLegacy steps plus this
+          // dialog — so a bare context.go would fire over all of them and
+          // desync exactly the way the reset-password chain used to. Popping to
+          // the topmost go_router page first makes the stack match the match
+          // list before it changes. goClearingPageless captures the navigator
+          // and router BEFORE popping, which matters here: this screen is one
+          // of the routes being popped.
+          //
+          // The wizard steps hold no browser history of their own (pageless
+          // routes get none), so Back after this lands on whatever shell
+          // location they left, never on a half-completed face scan.
+          if (kIsWeb) {
+            // The submission just moved them to `pending`, but nothing in this
+            // flow refreshes the profile — so the shell's rail would still read
+            // verifStatus.none and offer "Verify now" to someone who just
+            // verified, and its re-entry guard would not block a second run.
+            // Same idiom the auth flows use (see app_router.dart).
+            ProviderScope.containerOf(context).invalidate(userProfileProvider);
+            goClearingPageless(context, CitizenTab.home.path);
+            return;
+          }
           Navigator.of(context).pushAndRemoveUntil(
             PageRouteBuilder(
               transitionDuration: const Duration(milliseconds: 400),
