@@ -15,7 +15,6 @@ import '../services/auth_service.dart';
 import '../../features/auth/signup_screen.dart';
 import '../../features/guest/screen/guest.dart';
 import '../../features/Resets/reset_password_email_screen.dart';
-import '../../features/verification/screens/reset_password_email_verify_screen.dart';
 import '../../features/verification/screens/email_verification_success.dart';
 import '../../features/home/newsfeed/news_feed_screen.dart';
 import '../../features/home/settings/settings_screen.dart';
@@ -88,10 +87,6 @@ PageRouteBuilder _instant(Widget child) => PageRouteBuilder(
   pageBuilder: (_, _, _) => NetworkWrapper(child: child),
   transitionsBuilder: (_, _, _, child) => child,
 );
-
-// Web-only fade for inline Navigator.push calls (reset password sub-screens).
-// Returns a MaterialPageRoute on mobile so those flows are untouched.
-Route<dynamic> _webFadeRoute(Widget child) => _webFade(child);
 
 // ── Instant push, fade-out on back ────────────────────────────────────────
 // Used by reset-password method/email/phone sub-screens: entry is instant
@@ -336,7 +331,12 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
       final email = settings.arguments as String;
       return _instantInFadeOut(EmailVerificationSuccess(email: email));
 
-    // ── Reset password — sub-screens also use _webFadeRoute inline ───────────
+    // ── Reset password ───────────────────────────────────────────────────────
+    // Only the ENTRY screen is routed here. Its sub-screens — the OTP verify
+    // step and the new-password step — are pushed imperatively by the screens
+    // themselves, each building its own route inline. An earlier note here
+    // claimed they shared a `_webFadeRoute` helper from this file; they never
+    // did, and that helper is gone.
 
     case '/reset_password':
       return PageRouteBuilder(
@@ -347,19 +347,6 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
         pageBuilder: (_, _, _) => NetworkWrapper(
           child: Builder(
             builder: (ctx) => ResetPasswordEmailScreen(
-              onVerify: () {
-                Navigator.push(
-                  ctx,
-                  _webFadeRoute(
-                    ResetPasswordEmailVerifyScreen(
-                      email: '',
-                      onVerifiedSuccess: () {},
-                      onTermsClick: () {},
-                      onConditionsClick: () {},
-                    ),
-                  ),
-                );
-              },
               // clearStack: false — mobile's branch is then pushLegacy(ctx,
               // '/login'), character-for-character what this line used to be.
               // Web gains the pageless-stack clear that /login now goes

@@ -9,12 +9,10 @@ import '../../core/widgets/web/web.dart';
 import '../../core/widgets/mobile_form_shell.dart';
 
 class ResetPasswordEmailScreen extends StatefulWidget {
-  final VoidCallback onVerify;
   final VoidCallback onLogin;
 
   const ResetPasswordEmailScreen({
     super.key,
-    required this.onVerify,
     required this.onLogin,
   });
 
