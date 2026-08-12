@@ -64,12 +64,23 @@ Future<bool> performCitizenLogout(
     await PushService.I.unregister();
     await Supabase.instance.client.auth.signOut();
     signedOut = true;
-    await ChatService.onUserSignedOut();
+    // Everything past this point is CLEANUP. The user is already signed out; a
+    // chat cache that fails to clear is not a logout failure and must not divert
+    // into the catch below — which pops a route, and by now the guard's sign-out
+    // redirect has begun moving off this location.
+    try {
+      await ChatService.onUserSignedOut();
+    } catch (_) {}
     HomeChatBubble.hideGlobal();
 
     if (!context.mounted) return true;
-    Navigator.pop(context); // dismiss the spinner
+    // Flag set BEFORE the pop, not after. signOut() above already kicked the
+    // guard into redirecting off this route, and the awaits since then gave it
+    // time to start — so this pop can hit a locked navigator. If it throws,
+    // retrying it from the catch throws again. Marking it dismissed first makes
+    // the catch leave it alone.
     spinnerDismissed = true;
+    Navigator.pop(context); // dismiss the spinner
     goToLogin(context);
     return true;
   } catch (e) {

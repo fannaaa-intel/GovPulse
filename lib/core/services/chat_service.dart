@@ -36,9 +36,27 @@ class ChatService extends ChangeNotifier {
   /// Call on sign-out.
   static Future<void> onUserSignedOut() async {
     if (_currentUserId == null) return;
-    await I.clearOnLogout();
-    await clearAllFollowUpBoxes();
-    _currentUserId = null;
+    try {
+      // Each step guarded independently: a failure clearing the main chat must
+      // not skip the follow-up boxes, and neither must skip the id reset below.
+      // Both touch Hive/IndexedDB, and by the time this runs the Supabase
+      // session is already gone — so anything inside that still reaches the
+      // network fails by construction.
+      try {
+        await I.clearOnLogout();
+      } catch (_) {}
+      try {
+        await clearAllFollowUpBoxes();
+      } catch (_) {}
+    } finally {
+      // ALWAYS, whatever happened above. Leaving this set is worse than a
+      // half-cleared cache: [onUserAuthenticated] short-circuits on
+      // `_currentUserId == userId`, so the SAME user signing back in would
+      // never rebind their storage and would inherit the previous session's
+      // chat. The call sites wrap this too, but that is a safety net — it must
+      // not be what keeps the id from leaking.
+      _currentUserId = null;
+    }
   }
 
   static String _boxNameForReport(String reportRef) {
@@ -1451,7 +1469,20 @@ class ChatService extends ChangeNotifier {
     debugPrint('_resetAll: isGhost=$_isGhostTicket ticketId=$_lastTicketId');
     if (_isGhostTicket && _lastTicketId != null) {
       debugPrint('_resetAll: deleting ghost ticket $_lastTicketId');
-      await TicketRepository.I.deleteGhostTicketIfUnused(_lastTicketId!);
+      // Best effort, and it MUST NOT abort the reset below.
+      //
+      // On the sign-out path this is a Supabase write issued AFTER
+      // `auth.signOut()` has already run — the logout handlers sign out first,
+      // then tear the chat down — so with no JWT it fails against RLS by
+      // construction. Unguarded, that threw out of _resetAll and skipped every
+      // line of state clearing that follows, which is the likeliest origin of
+      // the sign-out teardown failure.
+      //
+      // The userRequested path benefits identically: a ghost ticket that will
+      // not delete is no reason to refuse to start a new conversation.
+      try {
+        await TicketRepository.I.deleteGhostTicketIfUnused(_lastTicketId!);
+      } catch (_) {}
     }
     _sessionId++;
     _cancelIdleTimer();
@@ -1484,9 +1515,15 @@ class ChatService extends ChangeNotifier {
     _followUpReportCategory = null;
     _followUpReportRef = null;
 
-    final b = await Hive.openBox(_activeBoxName);
-    await b.clear();
-    await b.flush();
+    // Guarded so the DISK clear failing cannot strand the IN-MEMORY reset. The
+    // two lines below are what actually make this instance forget the previous
+    // conversation; leaving them unrun because IndexedDB refused a box is the
+    // worst of both worlds — state kept, cache half-gone.
+    try {
+      final b = await Hive.openBox(_activeBoxName);
+      await b.clear();
+      await b.flush();
+    } catch (_) {}
     _activeBoxName = _baseBox;
 
     notifyListeners();
@@ -1788,14 +1825,22 @@ class ChatService extends ChangeNotifier {
       await followUp._resetAll(reason: _ResetReason.logout);
     } catch (_) {}
 
-    final idx = await Hive.openBox(_scoped(_followUpIndexBox));
-    final List names = (idx.get('names') as List?) ?? [];
-    for (final name in names) {
-      try {
-        await Hive.deleteBoxFromDisk(name.toString());
-      } catch (_) {}
-    }
-    await idx.clear();
+    // The index open and clear were the only unguarded Hive calls left in the
+    // sign-out path — the per-box delete below was already wrapped, which made
+    // it look as though the whole loop was covered. On web these are IndexedDB
+    // round-trips and can fail for reasons that have nothing to do with us (a
+    // blocked upgrade, a box still held open elsewhere), and a throw here used
+    // to propagate all the way out of onUserSignedOut.
+    try {
+      final idx = await Hive.openBox(_scoped(_followUpIndexBox));
+      final List names = (idx.get('names') as List?) ?? const [];
+      for (final name in names) {
+        try {
+          await Hive.deleteBoxFromDisk(name.toString());
+        } catch (_) {}
+      }
+      await idx.clear();
+    } catch (_) {}
   }
 
   String get _boxName => _activeBoxName;
