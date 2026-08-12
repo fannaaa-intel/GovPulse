@@ -27,6 +27,11 @@ String _untilLine(DateTime? expires) {
   return 'In effect until ${d.day} ${_months[d.month - 1]} ${d.year}.';
 }
 
+/// [_untilLine] for surfaces outside this file. The citizen shell's restricted-
+/// feed pane reuses it so the "in effect until…" sentence is worded identically
+/// whether the refusal arrives as a modal or as a full pane.
+String citizenGuardUntilLine(DateTime? expires) => _untilLine(expires);
+
 /// Gate a restricted feature. Returns true when allowed; when blocked it shows
 /// the "feature unavailable" modal and returns false. Call at feature entry
 /// points (report / feedback / suggest / news feed / AI chat).

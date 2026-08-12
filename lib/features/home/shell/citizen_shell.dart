@@ -568,6 +568,30 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
     if (!await _requireVerified(gateMessage)) return;
     if (!mounted) return;
 
+    // Restriction gate, AFTER the verification gate and before anything opens.
+    //
+    // Order matters and matches mobile: an unverified citizen is told to verify
+    // (the thing they can act on) rather than being told a feature they never
+    // had is restricted.
+    //
+    // Every quick action funnels through this one function, so unlike mobile —
+    // which repeats citizenGuardAllow at five separate call sites — this is the
+    // single place the check belongs. 'events' is absent by design: there is no
+    // restrictable feature key for browsing events, and citizenGuardAllow would
+    // wave through an unknown key anyway.
+    final restrictedFeature = switch (key) {
+      'report' => 'reports',
+      'suggestion' => 'suggestions',
+      'feedback' => 'feedback',
+      'chat' => 'ai_chat',
+      _ => null,
+    };
+    if (restrictedFeature != null &&
+        !citizenGuardAllow(context, restrictedFeature)) {
+      return;
+    }
+    if (!mounted) return;
+
     // Read AFTER the gate: it only passes once the profile has loaded, so this
     // can never be the '' of the loading window.
     final username = _username;
