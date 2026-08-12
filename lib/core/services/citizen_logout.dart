@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -46,7 +47,11 @@ Future<bool> performCitizenLogout(
   final confirmed = await ask;
   if (!confirmed || !context.mounted) return false;
 
-  showAppDialog(
+  // HELD, not popped blind. `signOut()` below drops the web auth guard onto its
+  // signed-out branch, and the page swap that follows removes this spinner along
+  // with the page it sits on — after which a `Navigator.pop` aimed at the
+  // spinner lands on /login instead. See [AppDialogHandle].
+  final spinner = showAppDialogWithHandle(
     context: context,
     barrierDismissible: false,
     builder: (_) => const LogoutLoadingOverlay(),
@@ -56,9 +61,6 @@ Future<bool> performCitizenLogout(
   // and invalidating then would let the rebuilds refetch against it and
   // repopulate everything we just cleared.
   var signedOut = false;
-  // The spinner is popped on exactly one path, and the catch must not pop a
-  // second, unintended route when the failure happened after the dismissal.
-  var spinnerDismissed = false;
 
   try {
     await PushService.I.unregister();
@@ -66,29 +68,41 @@ Future<bool> performCitizenLogout(
     signedOut = true;
     // Everything past this point is CLEANUP. The user is already signed out; a
     // chat cache that fails to clear is not a logout failure and must not divert
-    // into the catch below — which pops a route, and by now the guard's sign-out
-    // redirect has begun moving off this location.
+    // into the catch below, by now the guard's sign-out redirect has begun
+    // moving off this location.
     try {
       await ChatService.onUserSignedOut();
     } catch (_) {}
     HomeChatBubble.hideGlobal();
 
+    // Before the `context.mounted` gate, not after: the handle holds a route and
+    // a navigator rather than a context, so it works whether or not the caller
+    // survived — and a bail-out here used to strand the spinner on screen.
+    spinner.dismiss();
+
+    // ── WEB: the guard navigates, and nothing else may ─────────────────────
+    // Signing out drops [_authRedirect] onto its signed-out branch, and
+    // `_signedOutRedirect` returns /login from every citizen location — so the
+    // guard is already taking the user there. Issuing a second, imperative
+    // navigation on top of it is what produced the double-flash: the two land
+    // in an order that depends on how long `signOut()` took, so a warm second
+    // logout swapped them and the imperative one arrived after the page had
+    // already changed underneath it. Same reasoning, same shape, as the
+    // suspended-citizen sign-out in citizen_guard_modals.dart.
+    //
+    // The guard also subsumes what [goToLogin] was doing beyond navigating:
+    // pageless routes above the outgoing page are removed with it, so there is
+    // no stack left to clear by hand.
+    if (kIsWeb) return true;
+
+    // MOBILE is unchanged: no guard is watching, so this is the only thing that
+    // moves the user.
     if (!context.mounted) return true;
-    // Flag set BEFORE the pop, not after. signOut() above already kicked the
-    // guard into redirecting off this route, and the awaits since then gave it
-    // time to start — so this pop can hit a locked navigator. If it throws,
-    // retrying it from the catch throws again. Marking it dismissed first makes
-    // the catch leave it alone.
-    spinnerDismissed = true;
-    Navigator.pop(context); // dismiss the spinner
     goToLogin(context);
     return true;
   } catch (e) {
+    spinner.dismiss();
     if (!context.mounted) return false;
-    if (!spinnerDismissed) {
-      Navigator.pop(context);
-      spinnerDismissed = true;
-    }
     showAppSnackBar(context, 'Logout failed: $e', type: AppSnackType.error);
     return false;
   } finally {
@@ -96,10 +110,12 @@ Future<bool> performCitizenLogout(
     // bail-out, which used to skip it and leak the previous account's profile
     // (and with it the verification sub-state) into the next login.
     //
-    // In the `finally` rather than inline so it lands after BOTH navigator
-    // calls on the happy path: invalidating unmounts the route subtrees
+    // In the `finally` rather than inline so it lands after the dismissal and
+    // after mobile's [goToLogin]: invalidating unmounts the route subtrees
     // listening to those providers, and doing that mid-navigation trips the
-    // navigator's !_debugLocked re-entrancy assert.
+    // navigator's !_debugLocked re-entrancy assert. On web there is no longer a
+    // navigator call here at all — the guard's redirect runs on its own frame,
+    // and this runs between frames — so the two can no longer overlap.
     if (signedOut) await tearDownSession(container);
   }
 }

@@ -176,8 +176,38 @@ Future<T?> showAppDialog<T>({
   Offset? anchorPoint,
   TraversalEdgeBehavior? traversalEdgeBehavior,
 }) {
+  final (navigator, route) = _buildAppDialogRoute<T>(
+    context: context,
+    builder: builder,
+    barrierDismissible: barrierDismissible,
+    barrierColor: barrierColor,
+    barrierLabel: barrierLabel,
+    useSafeArea: useSafeArea,
+    useRootNavigator: useRootNavigator,
+    routeSettings: routeSettings,
+    anchorPoint: anchorPoint,
+    traversalEdgeBehavior: traversalEdgeBehavior,
+  );
+  return navigator.push<T>(route);
+}
+
+/// Builds the route both entry points push, so a dialog the code closes by hand
+/// is the same dialog in every other respect as one the user dismisses.
+(NavigatorState, AppDialogRoute<T>) _buildAppDialogRoute<T>({
+  required BuildContext context,
+  required WidgetBuilder builder,
+  required bool barrierDismissible,
+  required Color? barrierColor,
+  required String? barrierLabel,
+  required bool useSafeArea,
+  required bool useRootNavigator,
+  required RouteSettings? routeSettings,
+  required Offset? anchorPoint,
+  required TraversalEdgeBehavior? traversalEdgeBehavior,
+}) {
   final navigator = Navigator.of(context, rootNavigator: useRootNavigator);
-  return navigator.push<T>(
+  return (
+    navigator,
     AppDialogRoute<T>(
       context: context,
       builder: builder,
@@ -193,4 +223,86 @@ Future<T?> showAppDialog<T>({
       themes: InheritedTheme.capture(from: context, to: navigator.context),
     ),
   );
+}
+
+/// A pushed dialog, plus the only safe way to take it back down again.
+///
+/// ── Why `Navigator.pop(context)` is not that way ───────────────────────────
+/// `pop` removes whatever is on TOP of the nearest navigator — not the route
+/// the caller had in mind. That is harmless while the dialog is certainly the
+/// top route, and it is NOT certain on any path where auth state can change
+/// underneath an open dialog.
+///
+/// Every dialog is a PAGELESS route, and a pageless route is tied to the page
+/// below it: when the navigator's page list is updated, the pageless routes
+/// belonging to a page that is leaving are removed along with it (see the
+/// `Navigator.pages` contract). So the moment the web auth guard swaps /admin —
+/// or /staff, or the citizen shell — for /login, an open spinner is ALREADY
+/// gone, and the `pop` written to dismiss it lands on the /login page instead.
+/// go_router then drops that match from its list, which empties, and the user is
+/// left on a blank page in release and on go_router's "you have popped the last
+/// page off of the stack" assert in debug.
+///
+/// Holding the route makes the dismissal specific: it can only ever remove the
+/// dialog it opened, and it does nothing at all once that dialog is gone.
+class AppDialogHandle {
+  AppDialogHandle._(this._navigator, this._route);
+
+  final NavigatorState _navigator;
+  final Route<void> _route;
+
+  /// Whether this dialog is still on the navigator's stack.
+  bool get isShowing => _route.isActive;
+
+  /// Takes this dialog down if it is still up.
+  ///
+  /// Idempotent, and a no-op once the route is gone — whether it was dismissed
+  /// earlier or removed with the page beneath it. It touches no [BuildContext],
+  /// so it also works from a caller whose own widget has already unmounted,
+  /// which is the case a `!context.mounted` bail-out used to leave the spinner
+  /// stranded on screen.
+  void dismiss() {
+    if (!_route.isActive) return;
+    if (_route.isCurrent) {
+      // Provably ours, so keep the usual 220ms fade-out.
+      _navigator.pop();
+    } else {
+      // Something sits above us. Popping would take THAT down instead — the
+      // exact confusion this class exists to prevent — so remove by identity.
+      _navigator.removeRoute(_route);
+    }
+  }
+}
+
+/// [showAppDialog] for a dialog the CODE closes rather than the user: a loading
+/// overlay held up across an await, most of all.
+///
+/// Returns a handle instead of the dialog's result, because a dialog dismissed
+/// programmatically has none. See [AppDialogHandle] for why the handle matters.
+AppDialogHandle showAppDialogWithHandle({
+  required BuildContext context,
+  required WidgetBuilder builder,
+  bool barrierDismissible = true,
+  Color? barrierColor = Colors.black54,
+  String? barrierLabel,
+  bool useSafeArea = true,
+  bool useRootNavigator = true,
+  RouteSettings? routeSettings,
+  Offset? anchorPoint,
+  TraversalEdgeBehavior? traversalEdgeBehavior,
+}) {
+  final (navigator, route) = _buildAppDialogRoute<void>(
+    context: context,
+    builder: builder,
+    barrierDismissible: barrierDismissible,
+    barrierColor: barrierColor,
+    barrierLabel: barrierLabel,
+    useSafeArea: useSafeArea,
+    useRootNavigator: useRootNavigator,
+    routeSettings: routeSettings,
+    anchorPoint: anchorPoint,
+    traversalEdgeBehavior: traversalEdgeBehavior,
+  );
+  navigator.push<void>(route);
+  return AppDialogHandle._(navigator, route);
 }

@@ -1,4 +1,5 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -289,7 +290,11 @@ class _StaffConsoleScreenState extends ConsumerState<StaffConsoleScreen>
     );
     if (!ok || !mounted) return;
 
-    showAppDialog(
+    // HELD, not popped blind. `signOut()` below drops the web auth guard onto
+    // its signed-out branch, and the page swap that follows removes this spinner
+    // along with /staff — after which a `Navigator.pop` aimed at the spinner
+    // lands on /login instead. See [AppDialogHandle].
+    final spinner = showAppDialogWithHandle(
       context: context,
       barrierDismissible: false,
       builder: (_) => const LogoutLoadingOverlay(),
@@ -298,9 +303,6 @@ class _StaffConsoleScreenState extends ConsumerState<StaffConsoleScreen>
     // Gates the teardown: if signOut() itself failed the session is still live,
     // and invalidating then would let the rebuilds refetch against it.
     var signedOut = false;
-    // The catch must not pop a second, unintended route when the failure
-    // happened after the spinner was already dismissed.
-    var spinnerDismissed = false;
 
     try {
       // Go off duty so no chats route to a signed-out staff member.
@@ -320,27 +322,37 @@ class _StaffConsoleScreenState extends ConsumerState<StaffConsoleScreen>
         await ChatService.onUserSignedOut();
       } catch (_) {}
       HomeChatBubble.hideGlobal();
+
+      // Before the `mounted` gate, not after: the handle holds a route and a
+      // navigator rather than a context, so it works whether or not this State
+      // survived — and a bail-out here used to strand the spinner on screen.
+      spinner.dismiss();
+
+      // ── WEB: the guard navigates, and nothing else may ───────────────────
+      // Signing out drops [_authRedirect] onto its signed-out branch, and
+      // `_signedOutRedirect` returns /login from /staff — so the guard is
+      // already taking the user there. Issuing a second, imperative navigation
+      // on top of it is what produced the double-flash: the two land in an order
+      // that depends on how long `signOut()` took, so a warm second logout
+      // swapped them and the imperative one arrived after the page had already
+      // changed underneath it. Same reasoning, same shape, as the
+      // suspended-citizen sign-out in citizen_guard_modals.dart.
+      if (kIsWeb) return;
+
+      // MOBILE is unchanged: no guard is watching, so this is the only thing
+      // that moves the user.
       if (!mounted) return;
-      // Flag set BEFORE the pop, not after. signOut() above already kicked the
-      // guard into redirecting off this route, and the awaits since then gave it
-      // time to start — so this pop can hit a locked navigator. If it throws,
-      // retrying it from the catch throws again, and THAT second assert is the
-      // one that surfaces. Marking it dismissed first makes the catch leave it
-      // alone.
-      spinnerDismissed = true;
-      Navigator.pop(context); // dismiss spinner
       goToLogin(context);
     } catch (e) {
+      spinner.dismiss();
       if (!mounted) return;
-      if (!spinnerDismissed) {
-        Navigator.pop(context);
-        spinnerDismissed = true;
-      }
       showAppSnackBar(context, 'Logout failed: $e', type: AppSnackType.error);
     } finally {
       // ALWAYS, on every exit from the try — including the !mounted bail-out,
-      // which used to skip it. In the `finally` so it lands after BOTH
-      // navigator calls on the happy path. See [tearDownSession].
+      // which used to skip it. In the `finally` so it lands after the dismissal
+      // and after mobile's [goToLogin]. On web there is no navigator call here
+      // at all now, so the teardown can no longer overlap one. See
+      // [tearDownSession].
       if (signedOut) await tearDownSession(container);
     }
   }

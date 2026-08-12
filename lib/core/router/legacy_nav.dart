@@ -193,7 +193,28 @@ void goClearingPageless(BuildContext context, String location) {
   // "normally" is not a guarantee worth a stuck sign-out: scheduleFrame() makes
   // the frame unconditional, so the callback always fires and a logout always
   // lands on /login.
-  WidgetsBinding.instance.addPostFrameCallback((_) => router.go(location));
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    // ── Already there ────────────────────────────────────────────────────────
+    // The web auth guard navigates on its own whenever the session changes, so
+    // it can reach the destination before this callback runs. Going again from
+    // here re-resolves a match list that already describes where we are: the
+    // page keys are the route PATTERNS, so the pages themselves are reused and
+    // nothing visibly moves — but it still reports a fresh navigation to the
+    // engine and pushes a second browser history entry for one destination, so
+    // Back then has to be pressed twice to leave.
+    //
+    // The pop above has already done the part that is NOT redundant — clearing
+    // the pageless routes — and it ran unconditionally, so skipping the `go`
+    // cannot leave the stack half-cleared.
+    //
+    // Both call sites pass a bare path with no query string, so comparing
+    // against `matchedLocation` is exact. A caller that ever passes a query
+    // (a feed deep link, say) would compare unequal and simply go, which is the
+    // safe direction to be wrong in.
+    if (router.state.matchedLocation == location) return;
+
+    router.go(location);
+  });
   WidgetsBinding.instance.scheduleFrame();
 }
 

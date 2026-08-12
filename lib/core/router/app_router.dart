@@ -160,23 +160,47 @@ String? scanTokenFrom(String? name) {
 
 Widget buildLoginScreen(BuildContext ctx) => LoginScreen(
   onLoginClick: (username, password) async {
+    // Captured BEFORE the first await, while [ctx] is certainly mounted. The
+    // container belongs to the root scope and outlives this route, so the
+    // sign-in cleanse below runs even once /login is gone. Same contract, and
+    // the same `listen: false`, as the sign-OUT handlers use for
+    // [tearDownSession].
+    //
+    // ── Why the cleanse cannot depend on [ctx] ─────────────────────────────
+    // On web the auth guard navigates off /login by itself the moment
+    // `AuthRestoration._refreshRole` resolves, and it does not wait for this
+    // callback. When it wins that race the login route is already unmounted by
+    // the time we get here — so a `ctx.mounted` bail in front of the cleanse
+    // skipped it outright, and the console kept reading whatever the PREVIOUS
+    // sign-out left cached. Probes confirmed it: the teardown poisons the
+    // session providers on every logout, and whether the next login looked
+    // empty or populated was decided solely by whether this cleanse ran.
+    final container = ProviderScope.containerOf(ctx, listen: false);
+
     final result = await AuthService.login(username, password);
     // Rebind chat storage to THIS user before Home mounts.
     final uid = Supabase.instance.client.auth.currentUser?.id;
     if (uid != null) {
       await ChatService.onUserAuthenticated(uid);
     }
-    if (!ctx.mounted) return;
+
+    // No `ctx.mounted` gate in front of these two — that was the skip. Neither
+    // touches a BuildContext: the posts cache is a singleton, and the cleanse
+    // takes the container captured above.
     CommunityPostsProvider.instance.resetForAuthenticatedUser();
     // Web only; a no-op on mobile, and it subsumes the userProfileProvider
     // invalidation that used to stand alone here. Clears any provider state
     // cached during the PREVIOUS session's teardown — notably a
-    // staffIdentityProvider error captured while signing out, which every staff
-    // list provider awaits and which otherwise renders the console empty on the
-    // second login. See [resetSessionProvidersForLogin].
-    await resetSessionProvidersForLogin(ProviderScope.containerOf(ctx));
+    // staffIdentityProvider built while signing out, which resolves to an empty
+    // department that every staff list provider then awaits, and which
+    // otherwise renders the console empty on the next login.
+    // See [resetSessionProvidersForLogin].
+    await resetSessionProvidersForLogin(container);
+
+    // The gate stays HERE, where it belongs: everything past this point either
+    // navigates or touches [ctx], and none of it can run against a dead route.
     if (!ctx.mounted) return;
-    ProviderScope.containerOf(ctx).invalidate(userProfileProvider);
+    container.invalidate(userProfileProvider);
 
     // Role-based routing
     // 1 = admin  → admin dashboard (web & mobile)
