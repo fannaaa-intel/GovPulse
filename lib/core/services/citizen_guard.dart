@@ -1,7 +1,4 @@
 import 'package:flutter/foundation.dart';
-// Backs the WEB-only restriction-notice marker below. The mobile HomePage never
-// calls those helpers, so mobile never touches the plugin.
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -57,51 +54,6 @@ class CitizenStatus {
 class CitizenGuard {
   CitizenGuard._();
   static final CitizenGuard I = CitizenGuard._();
-
-  // ── Restriction-notice marker ─────────────────────────────────────────────
-  //
-  // WEB ONLY. Every method below is called from the citizen web shell and from
-  // the web-only sign-out teardown; the mobile HomePage does not reference them
-  // and its behaviour is unchanged.
-  //
-  // The notice is meant to fire once per distinct restriction per SESSION — on
-  // a live change, and once on first entry. An in-memory flag delivers that on
-  // mobile, where the process lives as long as the session does. On web it does
-  // not: a browser reload is the same session but a brand-new process, so an
-  // in-memory flag resets and the notice would re-fire on every refresh. This
-  // marker survives the reload; [clearRestrictionNotice] drops it at sign-out
-  // so the next session sees the notice once again.
-  static const String _kRestrictionSigKey = 'citizen_guard_restriction_sig';
-
-  /// Whether the notice for [signature] has already been shown this session.
-  static Future<bool> restrictionNoticeShown(String signature) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      return prefs.getString(_kRestrictionSigKey) == signature;
-    } catch (_) {
-      // Unreadable marker == not shown. Worst case the notice repeats, which is
-      // far better than silently swallowing it.
-      return false;
-    }
-  }
-
-  /// Records that the notice for [signature] has been shown.
-  static Future<void> markRestrictionNoticeShown(String signature) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_kRestrictionSigKey, signature);
-    } catch (_) {}
-  }
-
-  /// Drops the marker so the next session shows the notice again. Called from
-  /// the sign-out teardown, NOT from [stop] — stop also runs when the shell
-  /// merely unmounts, and clearing there would re-fire the notice on remount.
-  static Future<void> clearRestrictionNotice() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(_kRestrictionSigKey);
-    } catch (_) {}
-  }
 
   SupabaseClient get _sb => Supabase.instance.client;
   String? get _uid => _sb.auth.currentUser?.id;

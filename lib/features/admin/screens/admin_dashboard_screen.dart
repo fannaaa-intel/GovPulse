@@ -323,23 +323,12 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
       await PushService.I.unregister();
       await Supabase.instance.client.auth.signOut();
       signedOut = true;
-      // Everything past this point is CLEANUP. The user is already signed out;
-      // a chat cache that fails to clear is not a logout failure and must not
-      // divert into the catch below — which pops a route, and by now the guard's
-      // sign-out redirect has begun moving off /admin.
-      try {
-        await ChatService.onUserSignedOut();
-      } catch (_) {}
+      await ChatService.onUserSignedOut();
       HomeChatBubble.hideGlobal();
 
       if (!mounted) return;
-      // Flag set BEFORE the pop, not after. signOut() above already kicked the
-      // guard into redirecting off this route, and the awaits since then gave it
-      // time to start — so this pop can hit a locked navigator. If it throws,
-      // retrying it from the catch throws again. Marking it dismissed first
-      // makes the catch leave it alone.
-      spinnerDismissed = true;
       Navigator.pop(context); // dismiss loading spinner
+      spinnerDismissed = true;
       goToLogin(context);
     } catch (e) {
       if (!mounted) return;

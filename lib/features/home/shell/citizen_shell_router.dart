@@ -9,10 +9,8 @@ import '../../../core/providers/user_profile_provider.dart';
 import '../../../core/router/app_router.dart'
     show buildLoginScreen, buildSignupScreen, kScanRoutePrefix;
 import '../../../core/services/auth_ready.dart';
-import '../../../core/services/citizen_guard.dart';
 import '../../../core/services/events_service.dart';
 import '../../../core/theme/citizen_ui.dart';
-import '../../../core/widgets/citizen_guard_modals.dart';
 import '../../../core/widgets/resolve_by_id.dart';
 import '../../admin/screens/admin_dashboard_screen.dart';
 import '../../guest/screen/guest.dart';
@@ -153,10 +151,6 @@ const String _kFeedPostParam = 'post';
 const String _kFeedCommentsParam = 'comments';
 const String _kFeedHighlightParam = 'highlight';
 
-/// The restrictable feature key for the community feed, spelled as the admin
-/// toggles and the DB triggers spell it. See [_FeedOrRestricted].
-const String _kNewsFeedFeature = 'newsfeed';
-
 /// Deep link to one post in the shell's feed.
 ///
 /// [postRef] may be a POST id or a COMMENT id — the feed resolves which (see
@@ -226,17 +220,15 @@ Widget _bodyFor(BuildContext context, CitizenTab tab, GoRouterState state) {
       // setGuestMode — still runs exactly once. Only the widget instance is new,
       // which is precisely what lets didUpdateWidget see a changed target.
       final query = state.uri.queryParameters;
-      return _FeedOrRestricted(
-        child: NewsFeedBody(
-          embedded: true,
-          initialPostId: query[_kFeedPostParam],
-          initialOpenComments: query[_kFeedCommentsParam] == '1',
-          initialHighlightPost: query[_kFeedHighlightParam] == '1',
-          // Deliberately no initialCommentId. When the reference is a comment
-          // id the feed resolves it to (post, comment) itself and fills its own
-          // target — passing one here would mean the caller guessing which kind
-          // of id it holds.
-        ),
+      return NewsFeedBody(
+        embedded: true,
+        initialPostId: query[_kFeedPostParam],
+        initialOpenComments: query[_kFeedCommentsParam] == '1',
+        initialHighlightPost: query[_kFeedHighlightParam] == '1',
+        // Deliberately no initialCommentId. When the reference is a comment id
+        // the feed resolves it to (post, comment) itself and fills its own
+        // target — passing one here would mean the caller guessing which kind
+        // of id it holds.
       );
     case CitizenTab.myReports:
       return MyReportsBody(
@@ -648,111 +640,6 @@ final GoRouter citizenRouter = GoRouter(
     ),
   ],
 );
-
-/// The Home pane's feed, or the restriction notice in its place.
-///
-/// The one guard surface that could not be a modal. Every other restrictable
-/// feature is reached by tapping something, so `citizenGuardAllow` can refuse at
-/// the entry point — but on web the feed IS the Home tab and the landing
-/// surface, with nothing to gate. Mobile has it easier: its feed is a
-/// destination you navigate to, so home_screen.dart gates it like the rest.
-///
-/// So the refusal replaces the content instead of interrupting it. Deliberately
-/// not a route-out: a citizen restricted from the feed still has My Reports,
-/// Emergency and Settings, and ejecting them from the shell's landing tab would
-/// cut them off from all of it.
-///
-/// Wraps rather than living inside [NewsFeedBody] because that body is shared —
-/// the GUEST feed mounts it too, and a guest has no session and no restrictions
-/// to read.
-///
-/// Listens rather than reads, so a restriction lifted mid-session restores the
-/// feed without a reload.
-class _FeedOrRestricted extends StatelessWidget {
-  final Widget child;
-  const _FeedOrRestricted({required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<CitizenStatus>(
-      valueListenable: CitizenGuard.I.status,
-      builder: (context, status, _) {
-        final restriction = status.restriction;
-        if (restriction == null ||
-            !restriction.features.contains(_kNewsFeedFeature)) {
-          return child;
-        }
-        return _RestrictedFeedNotice(info: restriction);
-      },
-    );
-  }
-}
-
-/// The feed pane's restriction notice.
-///
-/// Copy is the modal's, line for line: same title, same three sentences in the
-/// same order, through the same [citizenFeatureLabel] and
-/// [citizenGuardUntilLine] helpers — so a citizen reads the same words whether
-/// the refusal arrives as a pop-up or as a pane.
-///
-/// The PALETTE is the shell's rather than the modal's, because this is a full
-/// pane inside the shell's chrome and has to sit with it: [CitizenUi.warn] in
-/// place of the modal's AppColors.orange. Voice is what carries across surfaces;
-/// colour belongs to the surface.
-class _RestrictedFeedNotice extends StatelessWidget {
-  final RestrictionInfo info;
-  const _RestrictedFeedNotice({required this.info});
-
-  @override
-  Widget build(BuildContext context) {
-    final reason = (info.reason ?? '').trim();
-    final lines = <String>[
-      'Your access to ${citizenFeatureLabel(_kNewsFeedFeature)} is currently '
-          'limited by an administrator.',
-      if (reason.isNotEmpty) 'Reason: $reason',
-      citizenGuardUntilLine(info.expiresAt),
-    ];
-
-    return Center(
-      // Scrollable because the centre column is short at the tablet breakpoint.
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 460),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.lock_rounded, size: 44, color: CitizenUi.warn),
-              const SizedBox(height: 16),
-              const Text(
-                'Feature unavailable',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w800,
-                  color: CitizenUi.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 10),
-              for (final line in lines) ...[
-                Text(
-                  line,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 13.5,
-                    height: 1.45,
-                    color: CitizenUi.textMuted,
-                  ),
-                ),
-                const SizedBox(height: 6),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 /// Shown instead of a blank page when a location cannot be resolved.
 class _ShellRouteError extends StatelessWidget {
