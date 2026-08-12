@@ -173,7 +173,28 @@ void goClearingPageless(BuildContext context, String location) {
   // so a guarded screen in the chain cannot stall this into a loop.
   navigator.popUntil((route) => route.settings is Page);
 
-  router.go(location);
+  // ── Why the `go` waits a frame ─────────────────────────────────────────────
+  // `popUntil` leaves the navigator mid-operation: its history flush has not
+  // settled, so `_debugLocked` is still set. Firing `go` in the same turn
+  // re-resolves the match list and deactivates this very Navigator, and at
+  // finalizeTree `NavigatorState.dispose` asserts `!_debugLocked` and throws —
+  // which aborts the frame, so the destination never paints and the user is
+  // left on a blank page.
+  //
+  // The pop and the re-resolve therefore have to be in different frames.
+  //
+  // ── Why this cannot strand the user ───────────────────────────────────────
+  // [router] was captured above, BEFORE the pop, so the callback holds no
+  // BuildContext and does not care whether the caller's widget survived — a
+  // defunct context cannot stop the navigation.
+  //
+  // The remaining risk is the callback never running because no frame is
+  // scheduled. `popUntil` dirties the tree and so normally schedules one, but
+  // "normally" is not a guarantee worth a stuck sign-out: scheduleFrame() makes
+  // the frame unconditional, so the callback always fires and a logout always
+  // lands on /login.
+  WidgetsBinding.instance.addPostFrameCallback((_) => router.go(location));
+  WidgetsBinding.instance.scheduleFrame();
 }
 
 /// Sends the user to the login screen.

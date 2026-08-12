@@ -1,3 +1,5 @@
+import 'dart:async' show scheduleMicrotask;
+
 import 'package:flutter/foundation.dart';
 // Backs the WEB-only restriction-notice marker below. The mobile HomePage never
 // calls those helpers, so mobile never touches the plugin.
@@ -158,11 +160,27 @@ class CitizenGuard {
   }
 
   /// Tear down on sign-out so a new session re-subscribes cleanly.
+  ///
+  /// The status reset is DEFERRED to a microtask, and that is load-bearing.
+  /// Every caller reaches this while a widget tree is coming down — the shell's
+  /// dispose (inside finalizeTree) and the sign-out teardown — and assigning
+  /// `status.value` notifies listeners SYNCHRONOUSLY. One of those listeners is
+  /// a ValueListenableBuilder inside the very subtree being torn down, so the
+  /// assignment asked a locked tree to rebuild.
+  ///
+  /// A microtask lands after the current frame, when rebuilding is legal again.
+  /// The unsubscribe stays synchronous: it touches no widgets, and dropping the
+  /// channel promptly is what stops a dead session's events arriving.
+  ///
+  /// Note this fires more often than it looks. [refresh] assigns a NON-const
+  /// CitizenStatus, so the notifier trips even when suspension and restriction
+  /// are both null — which is every staff member and every unrestricted
+  /// citizen, not just the rare enforced account.
   void stop() {
     _channel?.unsubscribe();
     _channel = null;
     _subUid = null;
-    status.value = const CitizenStatus();
+    scheduleMicrotask(() => status.value = const CitizenStatus());
   }
 
   /// Re-reads the active suspension + restriction and publishes them.

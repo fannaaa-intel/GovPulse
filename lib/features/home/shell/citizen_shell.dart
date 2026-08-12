@@ -252,13 +252,20 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
 
   @override
   void dispose() {
-    // Symmetric with [_startGuard]. stop() unsubscribes the realtime channel,
-    // clears _subUid and resets status to a blank CitizenStatus, so no guard
-    // state can survive into another session. The sign-out teardown stops it
-    // too; both are idempotent, and between them the shell unmounting and the
-    // session ending are each covered on their own.
+    // Listener only — deliberately NOT CitizenGuard.I.stop().
+    //
+    // stop() ends by assigning status.value, which notifies synchronously, and
+    // dispose() runs inside finalizeTree where the tree is locked. Removing the
+    // listener above covers _onGuardStatus but NOT _FeedOrRestricted's
+    // ValueListenableBuilder, which watches the same notifier from inside this
+    // shell's own subtree — so stopping here mutated shared state mid-teardown.
+    //
+    // The symmetry argument that put it here was wrong: a shell unmount is not
+    // a session end. Session end is tearDownSession's job, and it still calls
+    // stop(). Nothing leaks in the meantime — start() re-subscribes for a
+    // different uid, and the channel is dropped at sign-out. Mobile's HomePage
+    // has always done exactly this: remove the listener, leave stop() alone.
     CitizenGuard.I.status.removeListener(_onGuardStatus);
-    CitizenGuard.I.stop();
     super.dispose();
   }
 
