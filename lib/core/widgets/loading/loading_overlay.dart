@@ -862,43 +862,75 @@ class _WebFeedSkeleton extends StatelessWidget {
     ),
   );
 
+  /// Feed column width, and the info rail beside it, with the gutter between.
+  ///
+  /// Their sum is the width the two-column layout needs. [_skelBand] gives this
+  /// Row `min(viewport, 1080) - 48` of padding, so any viewport under about
+  /// 980px leaves the pair short — and because all three children used to be
+  /// fixed-width `SizedBox`es, the Row simply overflowed by the difference (51px
+  /// at 881px available) rather than adapting.
+  static const double _kFeedWidth = 600;
+  static const double _kGutter = 32;
+  static const double _kRailWidth = 300;
+  static const double _kPairWidth = _kFeedWidth + _kGutter + _kRailWidth;
+
   @override
   Widget build(BuildContext context) {
     return _skelBand(
-      Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          SizedBox(
-            width: 600,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _skelHeaderBar(),
-                const SizedBox(height: 20),
-                _postCard(),
-                const SizedBox(height: 16),
-                _postCard(),
-                const SizedBox(height: 16),
-                _postCard(),
+      LayoutBuilder(
+        builder: (context, constraints) {
+          // Drop the rail when the pair does not fit, exactly as the real feed
+          // does — news_feed_screen notes the same 932px threshold, and the
+          // embedded body drops its 300px rail there. A skeleton exists to
+          // predict the layout that replaces it, so it has to break at the same
+          // width; stretching the columns or scrolling sideways would both
+          // predict a layout the feed never actually shows.
+          final showRail = constraints.maxWidth >= _kPairWidth;
+
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Flexible + maxWidth rather than a fixed SizedBox: identical at
+              // any width that fits 600px, and below that the column shrinks
+              // instead of overflowing. That covers the narrow end, which a
+              // rail-only fix would still leave broken.
+              Flexible(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: _kFeedWidth),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _skelHeaderBar(),
+                      const SizedBox(height: 20),
+                      _postCard(),
+                      const SizedBox(height: 16),
+                      _postCard(),
+                      const SizedBox(height: 16),
+                      _postCard(),
+                    ],
+                  ),
+                ),
+              ),
+              if (showRail) ...[
+                const SizedBox(width: _kGutter),
+                SizedBox(
+                  width: _kRailWidth,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _railCard(),
+                      const SizedBox(height: 16),
+                      _railCard(),
+                      const SizedBox(height: 16),
+                      _railCard(),
+                    ],
+                  ),
+                ),
               ],
-            ),
-          ),
-          const SizedBox(width: 32),
-          SizedBox(
-            width: 300,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _railCard(),
-                const SizedBox(height: 16),
-                _railCard(),
-                const SizedBox(height: 16),
-                _railCard(),
-              ],
-            ),
-          ),
-        ],
+            ],
+          );
+        },
       ),
     );
   }
