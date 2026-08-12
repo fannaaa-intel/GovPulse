@@ -1049,7 +1049,7 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
                         notificationCount: NotificationService.count,
                         onNotificationTap: () => _showNotifications(width),
                         // The shared flow, same as Settings and the nav chrome use.
-                        onLogoutTap: () => performCitizenLogout(context, ref),
+                        onLogoutTap: () => performCitizenLogout(context),
                         // Below ~600 the brand + bell + named chip cannot fit
                         // alongside the hamburger, and the chip's name is the
                         // only part that is redundant — the dropdown still

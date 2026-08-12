@@ -33,7 +33,7 @@ class SettingScreen extends ConsumerWidget {
       fullName: profile?.fullName,
       facePhotoUrl: profile?.facePhotoUrl,
       verifStatus: profile?.verifStatus,
-      onLogout: (ctx) => performCitizenLogout(ctx, ref),
+      onLogout: (ctx) => performCitizenLogout(ctx),
       body: const SafeArea(child: SettingsBody()),
     );
   }
@@ -259,7 +259,7 @@ class _SettingScreenState extends ConsumerState<SettingsBody>
   /// Delegates to the shared citizen logout flow. It used to live here, which
   /// is why the nav chrome had to reach back down the element tree to start
   /// it; now both callers just call the function.
-  Future<void> _confirmLogout() => performCitizenLogout(context, ref);
+  Future<void> _confirmLogout() => performCitizenLogout(context);
 
   // ── Delete account ────────────────────────────────────────────────────────
   Future<void> _confirmDeleteAccount() async {

@@ -499,3 +499,32 @@ final staffCommunityProvider =
     AsyncNotifierProvider<StaffCommunityNotifier, List<StaffCommunityPost>>(
   StaffCommunityNotifier.new,
 );
+
+// ── Sign-out teardown ────────────────────────────────────────────────────────
+
+/// Every staff provider scoped to the signed-in account, for the sign-out
+/// teardown in `core/services/session_teardown.dart`.
+///
+/// Why this list has to exist: none of the providers above is `.autoDispose`,
+/// so each one's state lives for the lifetime of the root ProviderScope. On web
+/// that scope outlives sign-out, and a staff member's identity, department and
+/// cached lists were still in the container when the next account signed in.
+///
+/// KEEP IN SYNC with the declarations above — a provider missing here survives
+/// sign-out into the next account, which is precisely the bug this closes. It
+/// lives in this file, immediately after them, so that adding a sibling puts
+/// this list in view.
+///
+/// [staffRepoProvider] is absent on purpose: it wraps a stateless singleton and
+/// holds nothing to clear.
+final List<ProviderOrFamily> staffSessionProviders = <ProviderOrFamily>[
+  staffIdentityProvider,
+  staffDepartmentProvider,
+  staffConversationsProvider,
+  staffConversationsStaleProvider,
+  staffReportsProvider,
+  staffReportsStaleProvider,
+  staffEndorsementsProvider,
+  staffEndorsementsStaleProvider,
+  staffCommunityProvider,
+];

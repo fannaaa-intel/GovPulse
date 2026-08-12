@@ -65,6 +65,28 @@ class CommunityPostsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Unconditional reset for SIGN-OUT.
+  ///
+  /// [resetForAuthenticatedUser] deliberately early-returns when the cache is
+  /// already in authenticated mode and populated — correct for the guest→citizen
+  /// transition it was written for, and useless for a sign-out, where "already
+  /// in authenticated mode and populated" describes exactly the state that has
+  /// to be dropped. Calling it from the teardown would be a silent no-op on
+  /// every citizen→citizen sign-out.
+  ///
+  /// Called only from the web-only sign-out teardown in
+  /// `core/services/session_teardown.dart`; there is no mobile caller.
+  void resetForSignOut() {
+    _guestMode = false;
+    _fetched = false;
+    _initialLoadDone = false;
+    _posts = [];
+    _optimisticComments.clear();
+    _pendingEditIds.clear();
+    unsubscribeRealtime();
+    notifyListeners();
+  }
+
   RealtimeChannel? _realtimeChannel;
   final Map<String, List<Map<String, dynamic>>> _optimisticComments = {};
   final Set<String> _pendingEditIds = {};

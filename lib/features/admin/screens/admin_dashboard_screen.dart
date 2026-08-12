@@ -5,10 +5,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../../../core/providers/user_profile_provider.dart';
 import '../../../core/router/legacy_nav.dart';
 import '../../../core/services/chat_service.dart';
 import '../../../core/services/push_service.dart';
+import '../../../core/services/session_teardown.dart';
 import '../../../core/widgets/Home/Chat-bubbles/home_chat_bubble.dart';
 import '../../../core/widgets/logout_confirm_dialog.dart';
 import '../providers/admin_dashboard_provider.dart';
@@ -293,6 +293,11 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
 
   // ── Logout flow (mirrors Settings) ───────────────────────────────────────
   Future<void> _confirmLogout() async {
+    // Captured BEFORE the first await, while this widget is certainly mounted.
+    // The container belongs to the root scope and outlives this State, so the
+    // teardown in the `finally` below runs even when we bail on !mounted.
+    final container = ProviderScope.containerOf(context, listen: false);
+
     final shouldLogout = await showLogoutConfirmDialog(context);
     if (!shouldLogout || !mounted) return;
 
@@ -302,6 +307,13 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
       builder: (_) => const LogoutLoadingOverlay(),
     );
 
+    // Gates the teardown: if signOut() itself failed the session is still live,
+    // and invalidating then would let the rebuilds refetch against it.
+    var signedOut = false;
+    // The catch must not pop a second, unintended route when the failure
+    // happened after the spinner was already dismissed.
+    var spinnerDismissed = false;
+
     try {
       // Drop the realtime channel and zero the badge BEFORE signing out. The
       // count and the subscription live in a process-wide singleton, so without
@@ -310,17 +322,26 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
       AdminNotifCenter.I.stop();
       await PushService.I.unregister();
       await Supabase.instance.client.auth.signOut();
+      signedOut = true;
       await ChatService.onUserSignedOut();
       HomeChatBubble.hideGlobal();
 
       if (!mounted) return;
       Navigator.pop(context); // dismiss loading spinner
+      spinnerDismissed = true;
       goToLogin(context);
-      ref.invalidate(userProfileProvider);
     } catch (e) {
       if (!mounted) return;
-      Navigator.pop(context);
+      if (!spinnerDismissed) {
+        Navigator.pop(context);
+        spinnerDismissed = true;
+      }
       showAdminSnackBar(context, 'Logout failed: $e', type: AdminSnackType.error);
+    } finally {
+      // ALWAYS, on every exit from the try — including the !mounted bail-out,
+      // which used to skip it. In the `finally` so it lands after BOTH
+      // navigator calls on the happy path. See [tearDownSession].
+      if (signedOut) await tearDownSession(container);
     }
   }
 

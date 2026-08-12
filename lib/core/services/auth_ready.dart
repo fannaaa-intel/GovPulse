@@ -82,6 +82,18 @@ class AuthRestoration extends ChangeNotifier {
   /// a citizen, an unverified account, or nobody.
   int? _roleId;
 
+  /// The uid that [_roleId] describes, or null when signed out.
+  ///
+  /// WEB ONLY — written only inside the `kIsWeb` block in [begin].
+  ///
+  /// Exists to tell an ACCOUNT CHANGE apart from a token refresh. The listener
+  /// re-arms the role hold whenever this changes, and Supabase emits
+  /// `tokenRefreshed` on a live session roughly hourly — so re-arming on every
+  /// event instead would drop a console user onto the startup spinner for a
+  /// round-trip in the middle of their work. Only a change of identity can
+  /// invalidate a role.
+  String? _roleUid;
+
   /// Whether the role lookup has reported in.
   ///
   /// Starts true off web for the same reason — and by the same mechanism — as
@@ -150,6 +162,29 @@ class AuthRestoration extends ChangeNotifier {
     }
   }
 
+  /// Drops the persisted role hint, in memory and on disk.
+  ///
+  /// WEB ONLY by its single caller — the sign-out teardown in
+  /// `core/services/session_teardown.dart`, which returns before this on
+  /// mobile. Mobile never writes these keys either (every access in this class
+  /// is `kIsWeb`-guarded), so there is nothing there to remove.
+  ///
+  /// Called so a role never outlives the session that proved it. The cost is
+  /// one held frame on the next cold load after an explicit sign-out: the hint
+  /// is rewritten by the first [_refreshRole] once the next account signs in.
+  Future<void> clearRoleCache() async {
+    _cachedRoleUid = null;
+    _cachedRoleId = null;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_kRoleCacheUidKey);
+      await prefs.remove(_kRoleCacheRoleKey);
+    } catch (_) {
+      // A hint that cannot be removed is stale, not dangerous: it is uid-keyed,
+      // so it can only ever be applied to the account it was written for.
+    }
+  }
+
   /// Only meaningful once [roleKnown]. Null means citizen.
   int? get roleId => _roleId;
 
@@ -165,7 +200,7 @@ class AuthRestoration extends ChangeNotifier {
     if (_started) return;
     _started = true;
 
-    Supabase.instance.client.auth.onAuthStateChange.listen((_) {
+    Supabase.instance.client.auth.onAuthStateChange.listen((data) {
       // A sign-in or sign-out is itself proof that auth state is known, and
       // both change where the user belongs — so settle and re-run the guard.
       //
@@ -174,6 +209,29 @@ class AuthRestoration extends ChangeNotifier {
       // once settled. Only the settle condition is gated.
       _supabaseKnown = true;
       if (_firebaseKnown) _settled = true;
+
+      // Web only — folds out entirely on mobile, which never reads the role.
+      //
+      // RE-ARM THE ROLE HOLD BEFORE NOTIFYING, because notifyListeners() below
+      // re-runs the guard SYNCHRONOUSLY while [_refreshRole] is async and has
+      // not started. Without this the guard decides on the role left over from
+      // the previous state — and after a signed-out boot that leftover is
+      // (_roleKnown: true, _roleId: null), which the guard reads as a confident
+      // "citizen" and uses to route an admin to /home for one round-trip before
+      // correcting itself. The `!roleKnown` hold in _authRedirect was always
+      // meant to cover this window; it never engaged because _roleKnown is
+      // sticky-true once anything has resolved it.
+      //
+      // Gated on the uid rather than fired on every event: see [_roleUid].
+      if (kIsWeb) {
+        final uid = data.session?.user.id;
+        if (uid != _roleUid) {
+          _roleUid = uid;
+          _roleId = null;
+          _roleKnown = false;
+        }
+      }
+
       notifyListeners();
 
       // Web only — folds out entirely on mobile, which never reads the role.

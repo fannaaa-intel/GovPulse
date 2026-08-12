@@ -4,10 +4,10 @@ import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../../../core/providers/user_profile_provider.dart';
 import '../../../core/router/legacy_nav.dart';
 import '../../../core/services/chat_service.dart';
 import '../../../core/services/push_service.dart';
+import '../../../core/services/session_teardown.dart';
 import '../../../core/widgets/Home/Chat-bubbles/home_chat_bubble.dart';
 import '../../../core/widgets/app_snackbar.dart';
 import '../../../core/widgets/logout_confirm_dialog.dart';
@@ -277,6 +277,11 @@ class _StaffConsoleScreenState extends ConsumerState<StaffConsoleScreen>
   }
 
   Future<void> _confirmLogout() async {
+    // Captured BEFORE the first await, while this widget is certainly mounted.
+    // The container belongs to the root scope and outlives this State, so the
+    // teardown in the `finally` below runs even when we bail on !mounted.
+    final container = ProviderScope.containerOf(context, listen: false);
+
     final ok = await showLogoutConfirmDialog(
       context,
       message:
@@ -289,6 +294,14 @@ class _StaffConsoleScreenState extends ConsumerState<StaffConsoleScreen>
       barrierDismissible: false,
       builder: (_) => const LogoutLoadingOverlay(),
     );
+
+    // Gates the teardown: if signOut() itself failed the session is still live,
+    // and invalidating then would let the rebuilds refetch against it.
+    var signedOut = false;
+    // The catch must not pop a second, unintended route when the failure
+    // happened after the spinner was already dismissed.
+    var spinnerDismissed = false;
+
     try {
       // Go off duty so no chats route to a signed-out staff member.
       try {
@@ -297,16 +310,25 @@ class _StaffConsoleScreenState extends ConsumerState<StaffConsoleScreen>
       StaffNotifCenter.I.stop();
       await PushService.I.unregister();
       await Supabase.instance.client.auth.signOut();
+      signedOut = true;
       await ChatService.onUserSignedOut();
       HomeChatBubble.hideGlobal();
       if (!mounted) return;
       Navigator.pop(context); // dismiss spinner
+      spinnerDismissed = true;
       goToLogin(context);
-      ref.invalidate(userProfileProvider);
     } catch (e) {
       if (!mounted) return;
-      Navigator.pop(context);
+      if (!spinnerDismissed) {
+        Navigator.pop(context);
+        spinnerDismissed = true;
+      }
       showAppSnackBar(context, 'Logout failed: $e', type: AppSnackType.error);
+    } finally {
+      // ALWAYS, on every exit from the try — including the !mounted bail-out,
+      // which used to skip it. In the `finally` so it lands after BOTH
+      // navigator calls on the happy path. See [tearDownSession].
+      if (signedOut) await tearDownSession(container);
     }
   }
 
