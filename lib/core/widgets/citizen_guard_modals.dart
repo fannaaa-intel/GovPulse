@@ -1,8 +1,11 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../router/legacy_nav.dart';
 import '../services/citizen_guard.dart';
+import '../services/session_teardown.dart';
 import '../theme/app_colors.dart';
 import 'app_dialog.dart';
 
@@ -24,6 +27,11 @@ String _untilLine(DateTime? expires) {
   return 'In effect until ${d.day} ${_months[d.month - 1]} ${d.year}.';
 }
 
+/// [_untilLine] for surfaces outside this file. The citizen shell's restricted-
+/// feed pane reuses it so the "in effect until…" sentence is worded identically
+/// whether the refusal arrives as a modal or as a full pane.
+String citizenGuardUntilLine(DateTime? expires) => _untilLine(expires);
+
 /// Gate a restricted feature. Returns true when allowed; when blocked it shows
 /// the "feature unavailable" modal and returns false. Call at feature entry
 /// points (report / feedback / suggest / news feed / AI chat).
@@ -33,8 +41,39 @@ bool citizenGuardAllow(BuildContext context, String feature) {
   return false;
 }
 
+/// Signs a suspended citizen out from the blocking modal.
+///
+/// The caller pops the modal BEFORE calling this (see [showSuspendedModal]),
+/// which matters: at that point no auth change is in flight, so the navigator
+/// is free and the pop cannot land on a locked one.
+///
+/// ── The two platforms diverge after that, deliberately ─────────────────────
+/// WEB has an auth guard watching the session. Signing out drops
+/// [_authRedirect] onto its signed-out branch, and `_signedOutRedirect` returns
+/// /login from every shell location — so the guard navigates on its own. Issuing
+/// a second, imperative navigation here is exactly what raced the redirect in
+/// the logout handlers, so web does not issue one. It runs the shared teardown
+/// instead, which the ad-hoc sign-out here never did — without it a suspended
+/// citizen's providers and singletons would survive into the next session.
+///
+/// MOBILE is unchanged, character for character: no guard is watching, so
+/// [goToLogin] is the only thing that moves the user, and there is no teardown
+/// to run (it is web-only). Written as a separate branch rather than a shared
+/// tail so that path reads exactly as it did before.
 Future<void> _signOut(BuildContext context) async {
   CitizenGuard.I.stop();
+
+  if (kIsWeb) {
+    // Captured before the await, while the context is certainly mounted — the
+    // teardown has to outlive this widget. Same contract as the logout handlers.
+    final container = ProviderScope.containerOf(context, listen: false);
+    try {
+      await Supabase.instance.client.auth.signOut();
+    } catch (_) {}
+    await tearDownSession(container);
+    return;
+  }
+
   try {
     await Supabase.instance.client.auth.signOut();
   } catch (_) {}
