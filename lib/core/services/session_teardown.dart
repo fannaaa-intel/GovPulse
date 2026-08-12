@@ -115,6 +115,10 @@ Future<void> tearDownSession(ProviderContainer container) async {
   // mobile leak is real (CitizenGuard.start() runs from the mobile HomePage)
   // but is a separate, mobile-scoped change.
   CitizenGuard.I.stop();
+  // Separate from stop(): stop() also runs when the shell merely unmounts, and
+  // clearing the marker there would re-fire the restriction notice on remount.
+  // It belongs to the SESSION, so it is dropped only when the session ends.
+  await CitizenGuard.clearRestrictionNotice();
 
   // NOT resetForAuthenticatedUser(): that early-returns when the cache is
   // already authenticated and populated, which is every citizen sign-out.

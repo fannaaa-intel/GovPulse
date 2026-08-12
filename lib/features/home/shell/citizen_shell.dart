@@ -11,8 +11,11 @@ import '../../../core/widgets/Home/nav/home_top_nav.dart';
 import '../../../core/widgets/Home/nav/nav_band.dart';
 import '../../../core/widgets/Home/sections/Web/home_quick_actions_section_web.dart';
 import '../../../core/router/legacy_nav.dart';
+import '../../../core/services/auth_ready.dart';
+import '../../../core/services/citizen_guard.dart';
 import '../../../core/services/citizen_logout.dart';
 import '../../../core/widgets/app_snackbar.dart';
+import '../../../core/widgets/citizen_guard_modals.dart';
 import '../../../core/widgets/modal/verification_required_dialog.dart';
 import '../Quick-action/Events/events_screen.dart';
 import '../Quick-action/Feedback/feedback_screen.dart';
@@ -150,6 +153,113 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
     NotificationService.load().then((_) {
       if (mounted) setState(() {});
     });
+    _startGuard();
+  }
+
+  // ── Account enforcement ───────────────────────────────────────────────────
+  //
+  // The web twin of what the mobile HomePage does in its own initState:
+  // suspension → blocking modal + sign out, restriction → one notice. Until
+  // this existed the web shell started no guard at all, so a suspended or
+  // restricted citizen saw nothing here and their refusals arrived only as
+  // opaque RLS failures.
+  //
+  // NOT an enforcement boundary — a browser user can edit the URL or go back.
+  // RLS and the DB triggers are the boundary; this makes the refusal legible.
+
+  /// True while a guard modal is on screen, so a second status event during a
+  /// modal's lifetime cannot stack another one on top.
+  bool _guardModalOpen = false;
+
+  /// The restriction signature already announced in THIS process.
+  String? _shownRestrictionSig;
+
+  /// Starts the guard once a session actually exists.
+  ///
+  /// [CitizenGuard.start] reads `currentUser` and returns SILENTLY when there
+  /// is none, so calling it straight from initState would be a no-op on a cold
+  /// load — the shell mounts while Supabase is still restoring, and the guard
+  /// would simply never subscribe. Mobile never meets this because the splash
+  /// animation guarantees a session before HomePage builds; the web shell has
+  /// no such gap, which is exactly how this would have shipped silently broken.
+  ///
+  /// [awaitAuthReady] returns immediately when a session is already restored,
+  /// so in-session navigation pays nothing.
+  Future<void> _startGuard() async {
+    await awaitAuthReady();
+    if (!mounted) return;
+    await CitizenGuard.I.start();
+    if (!mounted) return;
+    CitizenGuard.I.status.addListener(_onGuardStatus);
+    // First evaluation: start() already refreshed, so a suspension that was in
+    // place BEFORE this mount is announced now rather than waiting for a change.
+    _onGuardStatus();
+  }
+
+  void _onGuardStatus() {
+    if (!mounted || _guardModalOpen) return;
+    final status = CitizenGuard.I.status.value;
+
+    // Suspension wins: it is blocking and ends in a sign-out, so there is no
+    // point announcing a restriction the user is about to lose access to.
+    final suspension = status.suspension;
+    if (suspension != null) {
+      _guardModalOpen = true;
+      showSuspendedModal(
+        context,
+        suspension,
+      ).whenComplete(() => _guardModalOpen = false);
+      return;
+    }
+
+    final restriction = status.restriction;
+    if (restriction != null) _maybeShowRestriction(restriction);
+  }
+
+  /// Shows the restriction notice once per distinct restriction per session —
+  /// on a live change, and once on first entry — but NOT on every reload.
+  ///
+  /// Two checks because they cover different lifetimes. [_shownRestrictionSig]
+  /// is this process and answers instantly, which keeps the common case off the
+  /// plugin channel. The persisted marker survives a browser refresh, which is
+  /// a new process on the SAME session and would otherwise re-fire the notice
+  /// on every F5.
+  Future<void> _maybeShowRestriction(RestrictionInfo restriction) async {
+    final signature = restriction.signature;
+    if (_shownRestrictionSig == signature) return;
+
+    if (await CitizenGuard.restrictionNoticeShown(signature)) {
+      // Already announced earlier in this session, in a previous process.
+      // Remember it here too so later events skip the async check entirely.
+      _shownRestrictionSig = signature;
+      return;
+    }
+
+    // Re-checked after the await: the shell may have gone, or a suspension may
+    // have opened its own modal while this was resolving.
+    if (!mounted || _guardModalOpen) return;
+
+    _shownRestrictionSig = signature;
+    await CitizenGuard.markRestrictionNoticeShown(signature);
+    if (!mounted) return;
+
+    _guardModalOpen = true;
+    showRestrictionNotice(
+      context,
+      restriction,
+    ).whenComplete(() => _guardModalOpen = false);
+  }
+
+  @override
+  void dispose() {
+    // Symmetric with [_startGuard]. stop() unsubscribes the realtime channel,
+    // clears _subUid and resets status to a blank CitizenStatus, so no guard
+    // state can survive into another session. The sign-out teardown stops it
+    // too; both are idempotent, and between them the shell unmounting and the
+    // session ending are each covered on their own.
+    CitizenGuard.I.status.removeListener(_onGuardStatus);
+    CitizenGuard.I.stop();
+    super.dispose();
   }
 
   /// Tapping the ALREADY-selected tab resets that branch to its root, which is
