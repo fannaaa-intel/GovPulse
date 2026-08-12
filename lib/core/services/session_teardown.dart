@@ -83,6 +83,39 @@ import 'citizen_guard.dart';
 /// `finally`. Teardown then runs on every sign-out path, mounted or not.
 ///
 /// Idempotent, and safe to call with no session.
+/// The sign-IN counterpart to [tearDownSession]. **Web only**, same gate and
+/// the same reason.
+///
+/// ── Why a teardown alone is not enough ─────────────────────────────────────
+/// [tearDownSession] invalidates the session-scoped providers at sign-out, and
+/// on web the console is usually still mounted at that moment — so they rebuild
+/// immediately, against a session that has just been destroyed. `fetchIdentity`
+/// fails, and because these providers are not `autoDispose` that FAILURE IS
+/// CACHED. Nothing invalidates them again afterwards, so the next login reads
+/// an errored root: `staffIdentityProvider` is in error, every list provider
+/// that awaits it fails with it, and the console renders zeros.
+///
+/// That is the second-cycle empty dashboard. Invalidating once more at sign-in
+/// closes it — the first read after login rebuilds against a live session.
+///
+/// Deliberately NOT solved by making the providers `autoDispose`: that would
+/// change when they dispose during ordinary console use (tab switches drop
+/// their listeners), turning a lifecycle fix into a refetch-behaviour change.
+///
+/// Idempotent, and safe to call for any role — a citizen signing in simply
+/// disposes staff/admin providers nobody is listening to.
+Future<void> resetSessionProvidersForLogin(ProviderContainer container) async {
+  if (!kIsWeb) return;
+
+  container.invalidate(userProfileProvider);
+  for (final provider in staffSessionProviders) {
+    container.invalidate(provider);
+  }
+  for (final provider in adminSessionProviders) {
+    container.invalidate(provider);
+  }
+}
+
 Future<void> tearDownSession(ProviderContainer container) async {
   // ── Both platforms ──────────────────────────────────────────────────────
   // ABOVE the web gate on purpose, for two independent reasons.

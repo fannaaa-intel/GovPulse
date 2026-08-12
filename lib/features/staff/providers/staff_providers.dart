@@ -80,6 +80,37 @@ final staffDepartmentProvider = Provider<String?>((ref) {
 mixin StaffIntervalPoll {
   Timer? _pollTimer;
 
+  /// True once this notifier has been disposed for the current build.
+  ///
+  /// THE INVARIANT: a notifier disposed during its own `build()` must not leave
+  /// a live timer behind.
+  ///
+  /// Each `build()` below suspends on `await ref.watch(...)` before arming its
+  /// timer. If the notifier is disposed during that suspension — which is
+  /// exactly what a sign-out teardown does — the build still resumes afterwards
+  /// and arms a `Timer.periodic`. Registering `ref.onDispose` at that point is
+  /// useless: disposal has already happened, so the hook never fires and the
+  /// timer is ORPHANED. It then keeps calling [poll] every 30s against a
+  /// disposed ref, reading and writing providers into a torn-down tree.
+  ///
+  /// Three per sign-out, accumulating across login/logout cycles.
+  bool _pollDisposed = false;
+
+  /// Registers disposal handling for this build. MUST be called synchronously
+  /// at the top of `build()`, before any `await` — the whole point is that the
+  /// hook exists before the window in which disposal can happen.
+  ///
+  /// Riverpod clears `onDispose` callbacks between builds, so re-registering on
+  /// every build is correct, and resetting the flag here is what makes a
+  /// rebuild (as opposed to a disposal) start clean.
+  void bindPollLifecycle(Ref ref) {
+    _pollDisposed = false;
+    ref.onDispose(() {
+      _pollDisposed = true;
+      pausePolling();
+    });
+  }
+
   Duration get pollInterval => const Duration(seconds: 30);
 
   /// One tick. Each notifier implements this and must raise its own stale flag
@@ -87,8 +118,20 @@ mixin StaffIntervalPoll {
   Future<void> poll();
 
   void startPolling() {
+    // The guard that closes the orphan window. A build that resumes after its
+    // own disposal must arm nothing — there is no longer an onDispose that
+    // could cancel it, and the notifier it would poll into is gone.
+    if (_pollDisposed) return;
     _pollTimer?.cancel();
-    _pollTimer = Timer.periodic(pollInterval, (_) => poll());
+    _pollTimer = Timer.periodic(pollInterval, (_) {
+      // Belt and braces: even a timer that somehow outlives its owner stops
+      // touching providers rather than mutating a torn-down tree.
+      if (_pollDisposed) {
+        pausePolling();
+        return;
+      }
+      poll();
+    });
   }
 
   /// Backgrounded: stop consuming mobile data. Safe to call repeatedly.
@@ -119,9 +162,13 @@ class StaffConversationsNotifier extends AsyncNotifier<List<StaffConversation>>
     // toggle, avatar change, a plain refetch). Rebuilding re-arms the interval
     // timer below from zero, so identity churn could otherwise starve the poll
     // indefinitely. See StaffIdentity's == for the diagnosis.
+    //
+    // Bound BEFORE the await — see [StaffIntervalPoll.bindPollLifecycle]. This
+    // is the line that makes disposal during the await safe.
+    bindPollLifecycle(ref);
     final dept =
         await ref.watch(staffIdentityProvider.selectAsync((i) => i.department));
-    _startPolling();
+    startPolling();
     return _repo.fetchConversations(dept);
   }
 
@@ -142,11 +189,11 @@ class StaffConversationsNotifier extends AsyncNotifier<List<StaffConversation>>
   /// redundancy trap, and whoever later deletes the "unused" one may delete the
   /// live one.
   ///
-  /// Timer mechanics live in [StaffIntervalPoll].
-  void _startPolling() {
-    startPolling();
-    ref.onDispose(pausePolling);
-  }
+  /// Timer mechanics — and the disposal contract — live in [StaffIntervalPoll].
+  /// This used to be a `_startPolling()` helper that armed the timer and THEN
+  /// registered `ref.onDispose(pausePolling)`; registering after the build's
+  /// await is what allowed the hook to be missed entirely. The registration now
+  /// happens up front via `bindPollLifecycle(ref)`.
 
   Future<void> refresh() async {
     final dept = ref.read(staffDepartmentProvider);
@@ -220,9 +267,12 @@ class StaffReportsNotifier extends AsyncNotifier<List<StaffReport>>
   Future<List<StaffReport>> build() async {
     // selectAsync — see StaffConversationsNotifier.build for why watching the
     // whole identity starves the timer.
+    //
+    // Bound BEFORE the await — see [StaffIntervalPoll.bindPollLifecycle].
+    bindPollLifecycle(ref);
     final dept =
         await ref.watch(staffIdentityProvider.selectAsync((i) => i.department));
-    _startPolling();
+    startPolling();
     return _repo.fetchDepartmentReports(dept);
   }
 
@@ -232,10 +282,9 @@ class StaffReportsNotifier extends AsyncNotifier<List<StaffReport>>
   /// longer have one on that table, so it would receive nothing. The table is
   /// deliberately still IN the publication (three citizen screens subscribe to
   /// their own reports), so this is a staff-side change only.
-  void _startPolling() {
-    startPolling();
-    ref.onDispose(pausePolling);
-  }
+  ///
+  /// Disposal is bound up front in `build()` — see
+  /// [StaffIntervalPoll.bindPollLifecycle].
 
   /// Unlike [silentRefresh], a FAILED poll is not swallowed: the last good list
   /// is kept so the screen does not blank, AND the stale flag is raised so the
@@ -313,13 +362,14 @@ class StaffEndorsementsNotifier extends AsyncNotifier<List<StaffReport>>
   Future<List<StaffReport>> build() async {
     // selectAsync — see StaffConversationsNotifier.build for why watching the
     // whole identity starves the timer.
+    // Bound BEFORE the await — see [StaffIntervalPoll.bindPollLifecycle].
+    bindPollLifecycle(ref);
     final dept =
         await ref.watch(staffIdentityProvider.selectAsync((i) => i.department));
     // Interval poll, replacing the postgres_changes subscription on `reports`
     // removed in migration 20260722000000 — staff no longer hold a SELECT
     // policy on that table, so realtime would deliver nothing to them.
     startPolling();
-    ref.onDispose(pausePolling);
     return _repo.fetchEndorsedReports(dept);
   }
 

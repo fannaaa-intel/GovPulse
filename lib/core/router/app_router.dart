@@ -16,6 +16,7 @@ import '../../features/onboarding/splash_screen.dart';
 import '../../features/onboarding/intro_screen.dart';
 import '../../features/auth/login_screen.dart';
 import '../services/auth_service.dart';
+import '../services/session_teardown.dart';
 import '../../features/auth/signup_screen.dart';
 import '../../features/guest/screen/guest.dart';
 import '../../features/Resets/reset_password_email_screen.dart';
@@ -167,6 +168,14 @@ Widget buildLoginScreen(BuildContext ctx) => LoginScreen(
     }
     if (!ctx.mounted) return;
     CommunityPostsProvider.instance.resetForAuthenticatedUser();
+    // Web only; a no-op on mobile, and it subsumes the userProfileProvider
+    // invalidation that used to stand alone here. Clears any provider state
+    // cached during the PREVIOUS session's teardown — notably a
+    // staffIdentityProvider error captured while signing out, which every staff
+    // list provider awaits and which otherwise renders the console empty on the
+    // second login. See [resetSessionProvidersForLogin].
+    await resetSessionProvidersForLogin(ProviderScope.containerOf(ctx));
+    if (!ctx.mounted) return;
     ProviderScope.containerOf(ctx).invalidate(userProfileProvider);
 
     // Role-based routing
