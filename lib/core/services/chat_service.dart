@@ -122,6 +122,25 @@ class ChatService extends ChangeNotifier {
   RealtimeChannel? _agentChannel;
   RealtimeChannel? _ticketStatusChannel;
 
+  /// Backstop for [_ticketStatusChannel]. Runs only while the citizen is joined
+  /// to a live staff chat, and re-reads the ticket's status on an interval.
+  ///
+  /// WHY A POLL EXISTS BESIDE A WORKING SUBSCRIPTION: the end-of-chat signal is
+  /// a SINGLE realtime event. Realtime replays nothing, so if that one UPDATE
+  /// lands while the socket is down — backgrounded phone, sleeping browser tab,
+  /// a few seconds of bad signal, a channel that joined with an error — the
+  /// citizen never learns the chat ended and the rating card simply never
+  /// appears. Until they navigate away and reopen the chat, which is the only
+  /// other thing that re-reads the status ([onChatOpened]). That is exactly the
+  /// "rating only shows up after I move between screens" report.
+  ///
+  /// It is deliberately NOT a replacement for the subscription: the socket
+  /// still delivers the card in well under a second in the normal case. This
+  /// only bounds the worst case. One `select status` on one row per tick, and
+  /// only during an active live chat — no live chat, no timer, no query.
+  Timer? _statusPollTimer;
+  static const _statusPollInterval = Duration(seconds: 10);
+
   /// Post-chat rating state. When a staff member ends the live conversation the
   /// citizen is asked to rate it; [_submittedRating] locks in their score.
   bool _awaitingRating = false;
@@ -209,15 +228,30 @@ class ChatService extends ChangeNotifier {
 
   // ── Lifecycle ─────────────────────────────────────────────────────────
 
+  /// Drops everything that keeps a live-chat conversation talking to the
+  /// server: both realtime channels and the status-poll backstop.
+  ///
+  /// ONE helper rather than the four inline copies this replaced, because
+  /// [_statusPollTimer] must die at every one of those sites. A teardown that
+  /// forgets it leaves a timer polling a conversation that no longer exists —
+  /// the same orphaned-timer shape documented in StaffIntervalPoll.
+  ///
+  /// NOT used by [_onAgentEnded], which deliberately keeps the message channel
+  /// open for a moment longer; see the note there.
+  void _teardownLiveChannels() {
+    _agentChannel?.unsubscribe();
+    _agentChannel = null;
+    _ticketStatusChannel?.unsubscribe();
+    _ticketStatusChannel = null;
+    _cancelStatusPoll();
+  }
+
   @override
   void dispose() {
     _disposed = true;
     _sessionId++;
     _cancelIdleTimer();
-    _agentChannel?.unsubscribe();
-    _agentChannel = null;
-    _ticketStatusChannel?.unsubscribe();
-    _ticketStatusChannel = null;
+    _teardownLiveChannels();
     super.dispose();
   }
 
@@ -240,10 +274,7 @@ class ChatService extends ChangeNotifier {
   Future<void> _rebindToCurrentUser() async {
     _sessionId++;
     _cancelIdleTimer();
-    _agentChannel?.unsubscribe();
-    _agentChannel = null;
-    _ticketStatusChannel?.unsubscribe();
-    _ticketStatusChannel = null;
+    _teardownLiveChannels();
     _awaitingRating = false;
     _submittedRating = 0;
     _messages.clear();
@@ -279,8 +310,7 @@ class ChatService extends ChangeNotifier {
     if (!isFollowUp && _stage == ConversationStage.followUp) {
       _sessionId++;
       _cancelIdleTimer();
-      _ticketStatusChannel?.unsubscribe();
-      _ticketStatusChannel = null;
+      _teardownLiveChannels();
       _awaitingRating = false;
       _submittedRating = 0;
       _messages.clear();
@@ -305,9 +335,12 @@ class ChatService extends ChangeNotifier {
     // catches a chat the staff ended while the citizen's app was closed.
     if (_stage == ConversationStage.connectedToAgent && _lastTicketId != null) {
       if (_agentChannel == null) {
-        _startAgentSubscription(); // also verifies status
+        _startAgentSubscription(); // also verifies status + arms the backstop
       } else {
         unawaited(_verifyAgentStatus(_lastTicketId!, _sessionId));
+        // Re-arm the backstop too. A surviving channel is not proof the poll
+        // survived with it, and this is the branch a returning citizen takes.
+        _startStatusPoll(_lastTicketId!, _sessionId);
       }
     }
 
@@ -343,10 +376,7 @@ class ChatService extends ChangeNotifier {
   }) {
     _sessionId++;
     _cancelIdleTimer();
-    _agentChannel?.unsubscribe();
-    _agentChannel = null;
-    _ticketStatusChannel?.unsubscribe();
-    _ticketStatusChannel = null;
+    _teardownLiveChannels();
     _awaitingRating = false;
     _submittedRating = 0;
 
@@ -450,10 +480,7 @@ class ChatService extends ChangeNotifier {
     if (hasSaved) {
       _sessionId++;
       _cancelIdleTimer();
-      _agentChannel?.unsubscribe();
-      _agentChannel = null;
-      _ticketStatusChannel?.unsubscribe();
-      _ticketStatusChannel = null;
+      _teardownLiveChannels();
       _activeBoxName = boxName;
 
       _followUpReportStatus = reportStatus;
@@ -1333,11 +1360,41 @@ class ChatService extends ChangeNotifier {
           _onAgentEnded(session);
         }
       },
+      // Every (re)join re-reads the row. A rejoin means the socket was down,
+      // and realtime does not replay what it missed while it was.
+      onJoined: () => unawaited(_verifyAgentStatus(ticketId, session)),
     );
 
     // Catch a chat the staff already ended while the app was closed — the
     // realtime channel above only sees changes from now on.
     unawaited(_verifyAgentStatus(ticketId, session));
+    _startStatusPoll(ticketId, session);
+  }
+
+  /// Arms the [_statusPollTimer] backstop for a live chat. Safe to call
+  /// repeatedly — the previous timer is always cancelled first, so there is
+  /// never more than one in flight.
+  void _startStatusPoll(String ticketId, int session) {
+    _cancelStatusPoll();
+    _statusPollTimer = Timer.periodic(_statusPollInterval, (_) {
+      // A poll that outlives its conversation must touch nothing: the session
+      // guard inside _verifyAgentStatus already refuses to act, but stopping
+      // here also spares the query.
+      if (_disposed || session != _sessionId) {
+        _cancelStatusPoll();
+        return;
+      }
+      if (_stage != ConversationStage.connectedToAgent) {
+        _cancelStatusPoll();
+        return;
+      }
+      unawaited(_verifyAgentStatus(ticketId, session));
+    });
+  }
+
+  void _cancelStatusPoll() {
+    _statusPollTimer?.cancel();
+    _statusPollTimer = null;
   }
 
   /// One-shot check of the ticket's current status on (re)connect; if it's
@@ -1373,6 +1430,9 @@ class ChatService extends ChangeNotifier {
     // be in flight. It's torn down on dispose / reset / new conversation.
     _ticketStatusChannel?.unsubscribe();
     _ticketStatusChannel = null;
+    // The status can never change again in a way this chat cares about, so the
+    // backstop stops here rather than at the next teardown.
+    _cancelStatusPoll();
     _cancelIdleTimer();
     _isAgentTyping = false;
     _stage = ConversationStage.ended;
@@ -1486,10 +1546,7 @@ class ChatService extends ChangeNotifier {
     }
     _sessionId++;
     _cancelIdleTimer();
-    _agentChannel?.unsubscribe();
-    _agentChannel = null;
-    _ticketStatusChannel?.unsubscribe();
-    _ticketStatusChannel = null;
+    _teardownLiveChannels();
     _awaitingRating = false;
     _submittedRating = 0;
     _lastSendAt = null;

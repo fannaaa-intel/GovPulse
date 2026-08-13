@@ -235,6 +235,35 @@ class StaffConversationsNotifier extends AsyncNotifier<List<StaffConversation>>
     }
   }
 
+  /// Refetches ONE ticket and patches it into the cached list, leaving every
+  /// other row — and the list's order — exactly as it was.
+  ///
+  /// For the open chat thread, which needs the citizen's rating to appear while
+  /// the staff is looking at it rather than up to 30s later on the next
+  /// [poll]. It writes into the SAME list the thread already resolves from, so
+  /// there is still one source of truth: the inbox tile and the thread cannot
+  /// disagree about a ticket.
+  ///
+  /// Deliberately quiet: no loading state (the list must not flash), no stale
+  /// flag on failure (this is a targeted extra, not the poll whose failure the
+  /// banner reports), and a no-op if the ticket is not in the cached window —
+  /// the caller keeps whatever it had rather than losing the row.
+  Future<void> refreshOne(String ticketId) async {
+    final cur = state.valueOrNull;
+    if (cur == null) return;
+    final idx = cur.indexWhere((c) => c.id == ticketId);
+    if (idx < 0) return;
+    final fresh = await AsyncValue.guard(() => _repo.fetchConversation(ticketId));
+    final row = fresh.valueOrNull;
+    if (row == null) return;
+    // The batch photo lookup only runs in fetchConversations, so carry the
+    // avatar across or the header would drop to an initial on every tick.
+    row.photoUrl = cur[idx].photoUrl;
+    final next = List<StaffConversation>.of(cur);
+    next[idx] = row;
+    state = AsyncData(next);
+  }
+
   Future<void> claim(String ticketId) async {
     await _repo.claimConversation(ticketId);
     await _reload();

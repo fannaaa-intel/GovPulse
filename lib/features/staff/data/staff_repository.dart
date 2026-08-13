@@ -479,6 +479,35 @@ class StaffRepository {
     return convos;
   }
 
+  /// ONE ticket's live row, for the open thread's targeted refresh.
+  ///
+  /// Same view and same column list as [fetchConversations] — a second reader of
+  /// `concern_tickets` would need a base-table SELECT policy that deliberately
+  /// does not exist (20260721000007 §4).
+  ///
+  /// WHY THIS EXISTS: the citizen's star rating lands minutes after the staff
+  /// ends the chat, and staff cannot subscribe to `concern_tickets` at all —
+  /// realtime authorises delivery through SELECT policies, so a subscription
+  /// would connect, report success and deliver nothing forever (see the long
+  /// note below `setConversationStatus`). The 30s inbox poll is therefore the
+  /// only thing that can notice a rating, and 30s of nothing on the screen you
+  /// are looking at reads as broken. The thread polls this instead while it is
+  /// waiting on a rating. Returns null if the ticket is outside the caller's
+  /// department, which the view enforces rather than this query.
+  Future<StaffConversation?> fetchConversation(String ticketId) async {
+    final row = await _db
+        .from('staff_tickets_view')
+        .select(
+          'id, reference_code, category, department, status, assigned_staff_id, '
+          'contact_name, contact_number, is_anonymous, rating, '
+          'created_at, updated_at',
+        )
+        .eq('id', ticketId)
+        .maybeSingle();
+    if (row == null) return null;
+    return StaffConversation.fromRow(row);
+  }
+
   /// The ticket's citizen photo URL (public `profile-photos` bucket), for the
   /// chat header + bubbles. Reads the `ticket_citizen` SECURITY DEFINER RPC
   /// (staff can't read citizen_details directly). Returns null for anonymous

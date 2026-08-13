@@ -506,6 +506,24 @@ class _StaffThreadViewState extends ConsumerState<StaffThreadView> {
   Timer? _idleEndTimer;
   bool _idleWarned = false;
 
+  // ── Rating watch ───────────────────────────────────────────────────────────
+  // The citizen's stars are the ONE piece of this thread that arrives after the
+  // staff stops acting, and the one thing no socket can bring them: staff hold
+  // no SELECT policy on concern_tickets, so a postgres_changes subscription
+  // there would connect, report success and deliver nothing (see the long note
+  // in staff_repository). The 30s inbox poll does eventually pick it up — which
+  // is why the stars "appear when you navigate away and come back" — but on the
+  // screen you are already looking at, 30s of nothing reads as broken.
+  //
+  // So: while this thread is ended and still unrated, refresh THIS ticket
+  // alone on a short interval. It stops the moment a rating lands, and gives up
+  // after [_kRatingWatchFor] so an ended chat left open all afternoon is not
+  // polling all afternoon — the inbox poll remains the backstop either way.
+  static const _kRatingPoll = Duration(seconds: 4);
+  static const _kRatingWatchFor = Duration(minutes: 5);
+  Timer? _ratingTimer;
+  DateTime? _ratingWatchUntil;
+
   StaffRepository get _repo => ref.read(staffRepoProvider);
 
   /// This ticket's id. Immutable for the life of the view, so it is the one
@@ -554,10 +572,48 @@ class _StaffThreadViewState extends ConsumerState<StaffThreadView> {
   void dispose() {
     _idleWarnTimer?.cancel();
     _idleEndTimer?.cancel();
+    _ratingTimer?.cancel();
     _channel?.unsubscribe();
     _input.dispose();
     _scroll.dispose();
     super.dispose();
+  }
+
+  /// Starts (or keeps) the rating watch if this chat is ended and unrated, and
+  /// stops it as soon as it is neither. Cheap and idempotent — safe to call from
+  /// anywhere that might have changed either condition.
+  void _syncRatingWatch() {
+    final c = _liveNow;
+    final wants = (_ended || c.isResolved) && c.rating == null;
+    if (!wants) {
+      _ratingTimer?.cancel();
+      _ratingTimer = null;
+      _ratingWatchUntil = null;
+      return;
+    }
+    if (_ratingTimer != null) return; // already watching
+    _ratingWatchUntil = DateTime.now().add(_kRatingWatchFor);
+    _ratingTimer = Timer.periodic(_kRatingPoll, (t) async {
+      if (!mounted) {
+        t.cancel();
+        return;
+      }
+      final until = _ratingWatchUntil;
+      if (until != null && DateTime.now().isAfter(until)) {
+        t.cancel();
+        _ratingTimer = null;
+        return;
+      }
+      // Writes into staffConversationsProvider, so the rebuild that shows the
+      // stars comes from the same watch as every other field on this screen.
+      await ref.read(staffConversationsProvider.notifier).refreshOne(_ticketId);
+      if (!mounted) return;
+      if (_liveNow.rating != null) {
+        t.cancel();
+        _ratingTimer = null;
+        _ratingWatchUntil = null;
+      }
+    });
   }
 
   /// Restarts the inactivity clock — called after load and on every citizen
@@ -602,6 +658,8 @@ class _StaffThreadViewState extends ConsumerState<StaffThreadView> {
       _maybeAutoGreet();
       _resetIdle();
       _loadCitizenPhoto();
+      // Reopening a chat that ended earlier and still has no stars.
+      _syncRatingWatch();
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
@@ -780,6 +838,8 @@ class _StaffThreadViewState extends ConsumerState<StaffThreadView> {
           .setStatus(_ticketId, 'closed');
       if (mounted) {
         setState(() => _ended = true);
+        // From here the citizen is being asked to rate — start watching for it.
+        _syncRatingWatch();
         showAppSnackBar(context,
             auto ? 'Chat auto-ended after inactivity.' : 'Chat ended.',
             type: AppSnackType.success);
@@ -808,6 +868,11 @@ class _StaffThreadViewState extends ConsumerState<StaffThreadView> {
     // got a fresh object pushed down from the page, and the narrow pushed route
     // — which the page above cannot rebuild — now subscribes for itself.
     final c = _resolve(ref.watch(staffConversationsProvider).valueOrNull);
+    // Side effect, so it belongs in a listener rather than in the build body.
+    // Covers the case neither _load nor _closeChat can: a COLLEAGUE ends this
+    // chat, or a rating lands from the inbox poll — either way the watch has to
+    // start or stop without this staff member touching anything.
+    ref.listen(staffConversationsProvider, (_, _) => _syncRatingWatch());
     final identity = ref.watch(staffIdentityProvider).valueOrNull;
     final staffName = identity?.displayName;
     final department = identity?.department;

@@ -67,6 +67,14 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
   // ── Track agent-message arrivals so we can notify the bubble (unread badge)
   int _lastSeenMsgCount = 0;
 
+  /// Stars picked in the post-chat rating card, 0 = none yet.
+  int _ratingStars = 0;
+
+  /// Whether that card was showing on the previous rebuild, so a FRESH card
+  /// always starts empty instead of inheriting the last conversation's stars.
+  /// Same false→true edge ChatAgentScreen resets on.
+  bool _wasShowingRating = false;
+
   /// The citizen's own profile photo, for their outgoing bubbles.
   String? _myPhotoUrl;
 
@@ -124,6 +132,12 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
       if (!newest.isUser) widget.onAgentMessage();
     }
     _lastSeenMsgCount = messages.length;
+
+    // Reset the picked stars each time a fresh rating card appears, so a new
+    // conversation never inherits the previous chat's selection.
+    final showingRating = ChatService.I.showRatingBar;
+    if (showingRating && !_wasShowingRating) _ratingStars = 0;
+    _wasShowingRating = showingRating;
 
     setState(() {});
     _scrollDownSoon();
@@ -206,9 +220,13 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
                   color: Color(0xFFE3E6EF),
                 ),
 
-                // ── Terminal stages show the "Start new conversation" card
-                // instead of the input bar, so the user has a clear next action.
-                if (ChatService.I.isTerminal)
+                // ── Terminal stages show a card instead of the input bar, so
+                // the user has a clear next action. The rating card comes first:
+                // `ended` is a terminal stage too, and a citizen whose chat the
+                // staff just closed is being ASKED for something here.
+                if (ChatService.I.showRatingBar)
+                  _buildRatingCard()
+                else if (ChatService.I.isTerminal)
                   _buildTerminalCard()
                 else
                   _buildInput(),
@@ -220,9 +238,105 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
     );
   }
 
+  // ── Post-chat rating card ────────────────────────────────────────────────
+  // The compact sibling of ChatAgentScreen's full-width card. It has to exist
+  // in BOTH places: this panel is the whole chat for anyone using the floating
+  // bubble or the web docked window, and without it a chat the staff ended left
+  // the panel with no composer and no card at all — a dead strip. The rating
+  // then only showed up if the citizen happened to open the full chat screen,
+  // which is what "the rating only appears after I move between screens" was.
+  //
+  // Trimmed, not redesigned: no hero icon, no "Need more help?" (the terminal
+  // card's "Start new conversation" covers it one tap later), because this card
+  // lives in a 360×520 window and has to fit under the thread, not replace it.
+  Widget _buildRatingCard() {
+    const tint = AppColors.primaryBlue;
+    final selected = _ratingStars;
+    return Container(
+      width: double.infinity,
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            'How was your chat?',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: _kTextPri,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(5, (i) {
+              final star = i + 1;
+              final active = star <= selected;
+              return GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => setState(() => _ratingStars = star),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 3),
+                  child: Icon(
+                    active ? Icons.star_rounded : Icons.star_outline_rounded,
+                    size: 26,
+                    color: active ? const Color(0xFFF5A623) : AppColors.stroke,
+                  ),
+                ),
+              );
+            }),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: selected == 0
+                      ? null
+                      : () => ChatService.I.submitRating(selected),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: tint,
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: tint.withValues(alpha: 0.35),
+                    disabledForegroundColor: Colors.white,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  child: const Text('Submit rating'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Skip never blocks the citizen behind a rating they don't want
+              // to give — it dismisses the card and leaves the chat ended.
+              TextButton(
+                onPressed: () => ChatService.I.dismissRating(),
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.hint,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                ),
+                child: const Text(
+                  'Skip',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   // ── Terminal-state card ──────────────────────────────────────────────────
   // Shown when the conversation is in ticketCreated / connectedToAgent /
-  // timedOut. Replaces the input bar with context + a clear CTA.
+  // ended / timedOut. Replaces the input bar with context + a clear CTA.
   Widget _buildTerminalCard() {
     final stage = ChatService.I.stage;
     final reference = ChatService.I.lastTicketReference;
@@ -253,6 +367,19 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
         tint = AppColors.hint;
         title = 'Session ended';
         subtitle = 'No activity for 15 minutes.';
+        break;
+      // `ended` fell through to the default below, so a chat the staff closed
+      // left this panel showing NOTHING where the composer had been: no notice,
+      // no rating, no way forward. It is a terminal stage like the three above
+      // and gets the same treatment. Reached once the citizen has rated or
+      // skipped — before that, _buildRatingCard has the slot.
+      case ConversationStage.ended:
+        icon = Icons.check_circle_outline_rounded;
+        tint = AppColors.hint;
+        title = 'Chat ended';
+        subtitle = ChatService.I.submittedRating > 0
+            ? 'Thank you for your feedback.'
+            : 'The staff member has closed this conversation.';
         break;
       default:
         return const SizedBox.shrink();

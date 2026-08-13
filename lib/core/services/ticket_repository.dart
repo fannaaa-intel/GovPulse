@@ -417,9 +417,18 @@ class TicketRepository {
 
   /// Watches a ticket's row for status changes so the citizen chat learns when
   /// a staff member ends the conversation (status → resolved / ended / closed).
+  ///
+  /// [onJoined] fires every time the channel reaches `subscribed` — the FIRST
+  /// join and every silent re-join after a dropped socket (backgrounded phone,
+  /// tab sleep, network blip). Realtime replays nothing on rejoin, so a status
+  /// change that happened while the socket was down is lost forever unless the
+  /// caller re-reads it here. That gap is what made the rating card show up only
+  /// after the citizen navigated away and back: the one-shot check on open was
+  /// the only thing left that could see it. See ChatService._startAgentSub.
   RealtimeChannel subscribeToTicketStatus({
     required String ticketId,
     required void Function(String status) onStatus,
+    void Function()? onJoined,
   }) {
     return _db
         .channel('ticket_status:$ticketId')
@@ -437,7 +446,16 @@ class TicketRepository {
             if (s != null) onStatus(s);
           },
         )
-        .subscribe();
+        .subscribe((status, error) {
+          if (status == RealtimeSubscribeStatus.subscribed) {
+            onJoined?.call();
+          } else {
+            // Never silent: a channel that errors or times out stops delivering
+            // with no other symptom, and the poll backstop is what carries the
+            // feature from here.
+            debugPrint('ticket_status channel $status ${error ?? ''}');
+          }
+        });
   }
 
   /// Records the citizen's post-chat rating (1–5) for a ticket they own, via a
