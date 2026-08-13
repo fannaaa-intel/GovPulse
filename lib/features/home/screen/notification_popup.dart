@@ -933,9 +933,114 @@ class _NotificationPopupState extends State<NotificationPopup> {
           ..addAll(List.generate(_notifications.length, (_) => GlobalKey()));
       });
     });
+    // An open sheet is a live view, not a snapshot — a notification arriving
+    // (or being cleared from another device) has to land in the list, not only
+    // in the badge behind it. See [_syncFromService] for why this one cannot
+    // just replace the backing list the way the web panel does.
+    NotificationService.revision.addListener(_syncFromService);
+  }
+
+  @override
+  void dispose() {
+    NotificationService.revision.removeListener(_syncFromService);
+    super.dispose();
+  }
+
+  // ── Live reconciliation ────────────────────────────────────────────────────
+
+  /// Brings the local list in line with [NotificationService.notifications],
+  /// one structural operation at a time.
+  ///
+  /// WHY THIS IS NOT `setState(() => _list = service.list)`. The list is an
+  /// [AnimatedList], which keeps its OWN item count and only stays in agreement
+  /// with the backing list if every add/remove is paired with an
+  /// `insertItem`/`removeItem`. Swapping the backing list wholesale desyncs the
+  /// two, and the itemBuilder then indexes a list shorter than the count the
+  /// AnimatedList still believes in. Each item also carries a [GlobalKey] that
+  /// drives its own slide-out, so the keys have to move with their rows rather
+  /// than be regenerated — a fresh key mid-flight cancels the animation.
+  ///
+  /// Reconciliation is BY ID, never by position, so it composes with the
+  /// optimistic local paths instead of fighting them: [_removeNotification]
+  /// deletes locally and then hits the database, whose echo lands back here as
+  /// a revision — by which point the row is already gone and this is a no-op.
+  ///
+  /// A row with a null id is left alone in both directions. Those never come
+  /// from [NotificationService.load] (the database always supplies one), so
+  /// this only ever matters for a locally-built stand-in, and quietly deleting
+  /// something we cannot identify would be the worse failure.
+  void _syncFromService() {
+    // Not yet loaded: the AnimatedList is not mounted, and initState's load()
+    // is about to install the authoritative list anyway.
+    // Mid-cascade: Clear All is removing rows one at a time on purpose, and
+    // reconciling underneath it would fight the stagger. _clearAll syncs once
+    // when it finishes.
+    if (!mounted || _loading || _clearingAll) return;
+
+    final incoming = NotificationService.notifications;
+    final listState = _listKey.currentState;
+    final incomingIds = incoming.map((n) => n.id).whereType<String>().toSet();
+
+    // 1. Gone from the service → collapse out. Backwards, so each removal
+    //    cannot invalidate the index of the next one.
+    for (int i = _notifications.length - 1; i >= 0; i--) {
+      final id = _notifications[i].id;
+      if (id == null || incomingIds.contains(id)) continue;
+      final removed = _notifications.removeAt(i);
+      _itemKeys.removeAt(i);
+      listState?.removeItem(i, _collapseBuilder(removed),
+          duration: _kCollapseD);
+    }
+
+    // 2. New to the service → insert at the position it holds there, so the
+    //    newest-first order the service returns is preserved. Rows already
+    //    present are swapped in place: same id, possibly a new read state, and
+    //    the card has to restyle without losing its key.
+    final localIds = {
+      for (final n in _notifications)
+        if (n.id != null) n.id!,
+    };
+    for (int i = 0; i < incoming.length; i++) {
+      final n = incoming[i];
+      final id = n.id;
+      if (id == null) continue;
+      if (localIds.contains(id)) {
+        final at = _notifications.indexWhere((x) => x.id == id);
+        if (at >= 0 && !identical(_notifications[at], n)) {
+          _notifications[at] = n;
+        }
+        continue;
+      }
+      final at = i > _notifications.length ? _notifications.length : i;
+      _notifications.insert(at, n);
+      _itemKeys.insert(at, GlobalKey());
+      listState?.insertItem(at, duration: _kCollapseD);
+      localIds.add(id);
+    }
+
+    setState(() {}); // empty-state overlay + any swapped read states
   }
 
   // ── Removal helpers ────────────────────────────────────────────────────────
+
+  /// The exit animation for a card leaving the list: it is already off-screen
+  /// horizontally, so this collapses the vertical space it occupied. Rendering
+  /// the real card is what gives Flutter a natural height to collapse FROM.
+  ///
+  /// Shared by the tap-to-delete path and [_syncFromService], so a row removed
+  /// on another device leaves exactly the way a locally-deleted one does.
+  AnimatedRemovedItemBuilder _collapseBuilder(AppNotification removed) {
+    return (_, anim) => SizeTransition(
+          sizeFactor: CurvedAnimation(parent: anim, curve: Curves.easeOut),
+          axisAlignment: -1, // top-anchored collapse (bottom shrinks up)
+          child: IgnorePointer(
+            child: Transform.translate(
+              offset: Offset(-_w * 2, 0), // already off-screen
+              child: _NotifItem(width: _w, notification: removed),
+            ),
+          ),
+        );
+  }
 
   /// Removes [target] from local list + AnimatedList + DB.
   /// Uses ID-lookup (not index) so concurrent deletions can't corrupt state.
@@ -949,24 +1054,14 @@ class _NotificationPopupState extends State<NotificationPopup> {
     _itemKeys.removeAt(idx);
 
     // Collapse the freed vertical space with a smooth height animation.
-    // We render the already-offscreen card as a size placeholder so Flutter
-    // knows the natural height to collapse from.
     _listKey.currentState?.removeItem(
       idx,
-      (_, anim) => SizeTransition(
-        sizeFactor: CurvedAnimation(parent: anim, curve: Curves.easeOut),
-        axisAlignment: -1, // top-anchored collapse (bottom shrinks up)
-        child: IgnorePointer(
-          child: Transform.translate(
-            offset: Offset(-_w * 2, 0), // already off-screen
-            child: _NotifItem(width: _w, notification: removed),
-          ),
-        ),
-      ),
+      _collapseBuilder(removed),
       duration: _kCollapseD,
     );
 
-    // Persist to DB (fire-and-forget)
+    // Persist to DB (fire-and-forget). The realtime echo comes back as a
+    // revision, by which point this row is already gone — see _syncFromService.
     NotificationService.remove(removed);
 
     // Rebuild: updates the empty-state overlay; resets _clearingAll when done
@@ -1002,6 +1097,11 @@ class _NotificationPopupState extends State<NotificationPopup> {
     );
     await Future.delayed(fallback);
     if (mounted && _clearingAll) setState(() => _clearingAll = false);
+    // Reconcile once the cascade is over: [_syncFromService] stands down while
+    // _clearingAll is set, so anything that ARRIVED during the stagger has been
+    // ignored until now. Without this it would sit unseen until the sheet was
+    // reopened — the exact staleness this whole change removes.
+    _syncFromService();
   }
 
   // ── Build ──────────────────────────────────────────────────────────────────
