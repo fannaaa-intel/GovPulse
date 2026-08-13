@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/router/legacy_nav.dart';
 import '../../core/theme/app_colors.dart';
-import '../../core/widgets/app_back_chevron.dart';
+import '../../core/widgets/app_screen_header.dart';
 import '../../core/widgets/mobile_form_shell.dart';
 
 class VerificationScreen extends StatefulWidget {
@@ -347,37 +347,28 @@ class _VerificationScreenState extends State<VerificationScreen>
   /// BUILD
   @override
   Widget build(BuildContext context) {
+    // No AppBar. It carried the PLATFORM back arrow and its own 16px w500
+    // title on a grey bar — three ways of differing from every Settings screen
+    // this is reached from. AppScreenHeader is the Settings header itself: a
+    // white bar with a shadow, the chevron chip, and a w700 blue title.
     return Scaffold(
       resizeToAvoidBottomInset: true,
       backgroundColor: const Color(0xFFF3F4F6),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFFF3F4F6),
-        elevation: 0,
-        // Explicit, not automaticallyImplyLeading. The implied leading is the
-        // PLATFORM default — a bare black arrow that changes glyph between
-        // Android and iOS — which is the odd one out next to every Settings
-        // screen this wizard is reached from.
-        leadingWidth: 56,
-        // No explicit width: the default is the same clamped screen width the
-        // Settings headers compute, so the chip comes out the same size here.
-        leading: const Center(child: AppBackChevron()),
-        title: const Text(
-          "Profile Verification",
-          style: TextStyle(
-            color: Color.fromARGB(255, 0, 106, 255),
-            fontSize: 16,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ),
-
       body: SafeArea(
-        child: FadeTransition(
-          opacity: _fadeAnim,
-          child: SlideTransition(
-            position: _slideAnim,
-            child: MobileFormShell(child: _buildContent()),
-          ),
+        child: Column(
+          children: [
+            // Pinned, like Settings — the header does not slide with the body.
+            const AppScreenHeader(title: 'Profile Verification'),
+            Expanded(
+              child: FadeTransition(
+                opacity: _fadeAnim,
+                child: SlideTransition(
+                  position: _slideAnim,
+                  child: MobileFormShell(child: _buildContent()),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
