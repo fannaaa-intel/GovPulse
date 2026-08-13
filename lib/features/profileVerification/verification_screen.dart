@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/router/legacy_nav.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/widgets/app_back_chevron.dart';
 import '../../core/widgets/mobile_form_shell.dart';
 
 class VerificationScreen extends StatefulWidget {
@@ -352,7 +353,14 @@ class _VerificationScreenState extends State<VerificationScreen>
       appBar: AppBar(
         backgroundColor: const Color(0xFFF3F4F6),
         elevation: 0,
-        automaticallyImplyLeading: true,
+        // Explicit, not automaticallyImplyLeading. The implied leading is the
+        // PLATFORM default — a bare black arrow that changes glyph between
+        // Android and iOS — which is the odd one out next to every Settings
+        // screen this wizard is reached from.
+        leadingWidth: 56,
+        // No explicit width: the default is the same clamped screen width the
+        // Settings headers compute, so the chip comes out the same size here.
+        leading: const Center(child: AppBackChevron()),
         title: const Text(
           "Profile Verification",
           style: TextStyle(

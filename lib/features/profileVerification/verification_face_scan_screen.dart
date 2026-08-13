@@ -12,6 +12,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/providers/user_profile_provider.dart';
 import '../../core/router/legacy_nav.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/widgets/app_back_chevron.dart';
 import '../home/screen/home_screen.dart';
 import '../home/screen/notification_popup.dart';
 // CitizenTab.home.path — the shell's Home location, for the web arm of the
@@ -821,25 +822,11 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
                 children: [
-                  GestureDetector(
-                    onTap: () => Navigator.pop(context),
-                    child: Container(
-                      width: 38,
-                      height: 38,
-                      decoration: BoxDecoration(
-                        color: AppColors.primaryBlue.withValues(alpha: 0.08),
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: AppColors.primaryBlue.withValues(alpha: 0.20),
-                        ),
-                      ),
-                      child: const Icon(
-                        Icons.arrow_back_ios_new_rounded,
-                        color: AppColors.primaryBlue,
-                        size: 16,
-                      ),
-                    ),
-                  ),
+                  // Was a 38px blue-tinted CIRCLE with arrow_back_ios_new —
+                  // one of four different back chevrons this wizard had. The
+                  // Scaffold behind it is white, so the standard light chip
+                  // reads here exactly as it does in Settings.
+                  const AppBackChevron(),
                   const Spacer(),
                   Image.asset(
                     "assets/images/applogocrop.webp",
@@ -847,7 +834,14 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
                     fit: BoxFit.contain,
                   ),
                   const Spacer(),
-                  const SizedBox(width: 38),
+                  // Mirrors the chevron's width so the logo stays optically
+                  // centred. Tracks the chip's own sizing rule rather than the
+                  // 38 that matched the old circle.
+                  SizedBox(
+                    width:
+                        MediaQuery.of(context).size.width.clamp(0.0, 480.0) *
+                            0.09,
+                  ),
                 ],
               ),
             ),

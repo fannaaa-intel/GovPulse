@@ -6,6 +6,7 @@ import 'package:camera/camera.dart';
 import 'package:image/image.dart' as img;
 import '../../core/router/legacy_nav.dart';
 import '../../core/services/id_verification_service.dart';
+import '../../core/widgets/app_back_chevron.dart';
 
 class VerificationScanScreen extends StatefulWidget {
   final String username;
@@ -411,13 +412,17 @@ class _VerificationScanScreenState extends State<VerificationScanScreen>
                       ),
                     ),
 
+                    // Was a bare white IconButton with the Material
+                    // Icons.arrow_back — the fourth distinct back chevron in
+                    // this one wizard. The Scaffold here is BLACK behind a
+                    // full-bleed camera preview, so the chip takes its dark
+                    // variant: same shape and proportions as Settings, inverted
+                    // colours, because a light fill has nothing to sit against
+                    // and a light border would vanish.
                     Positioned(
-                      top: 20,
-                      left: 10,
-                      child: IconButton(
-                        icon: const Icon(Icons.arrow_back, color: Colors.white),
-                        onPressed: () => Navigator.pop(context),
-                      ),
+                      top: MediaQuery.of(context).padding.top + 8,
+                      left: 16,
+                      child: const AppBackChevron(onDark: true),
                     ),
                   ],
                 );
