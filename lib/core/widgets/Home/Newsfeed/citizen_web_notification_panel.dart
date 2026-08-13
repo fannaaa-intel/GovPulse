@@ -135,6 +135,23 @@ class _CitizenWebNotificationPanelState
         _items = List.of(NotificationService.notifications);
       });
     });
+    // A panel left open is a live view, not a snapshot: a notification arriving
+    // (or being cleared from another tab) has to land in the list, not just in
+    // the badge behind it. Mirrors the admin/staff panels' revision listener.
+    NotificationService.revision.addListener(_onRevision);
+  }
+
+  @override
+  void dispose() {
+    NotificationService.revision.removeListener(_onRevision);
+    super.dispose();
+  }
+
+  void _onRevision() {
+    if (!mounted) return;
+    // Never re-raises the skeleton: the list is already on screen and the
+    // service has been refreshed by whoever bumped the revision.
+    setState(() => _items = List.of(NotificationService.notifications));
   }
 
   Future<void> _markAllRead() async {

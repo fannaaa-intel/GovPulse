@@ -11,6 +11,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/utils/burst_coalescer.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../theme/staff_ui.dart';
 import 'staff_common.dart';
@@ -209,6 +210,10 @@ class StaffNotifCenter {
   RealtimeChannel? _channel;
   String? _subscribedUid;
 
+  /// One refetch per burst, not one per row — see [BurstCoalescer]. Clearing
+  /// the panel deletes every row and realtime reports each one separately.
+  final _refresh = BurstCoalescer();
+
   Future<void> start() async {
     final uid = _uid;
     if (uid == null) return;
@@ -228,8 +233,19 @@ class StaffNotifCenter {
           value: uid,
         ),
         callback: (payload) {
-          refreshUnread();
-          revision.value++;
+          // Coalesced: the count and the panel only need the FINAL state of a
+          // burst. The per-event routing below is not coalesced — each arrival
+          // is its own signal to whichever section owns it.
+          _refresh.schedule(() {
+            refreshUnread();
+            revision.value++;
+          });
+          // A DELETE carries no new record, and (RLS being on) only the primary
+          // key in the old one — there is no topic to route. Deletions are a
+          // count change and nothing more. This was unreachable until migration
+          // 20260813000000 made delete events deliverable at all; stated
+          // explicitly so the routing below is never read as covering them.
+          if (payload.eventType == PostgresChangeEvent.delete) return;
           // `topic` is the discriminator the console already routes on (see
           // StaffConsoleScreen._onNotifNavigate); `type` carries the same value
           // for ticket rows, so fall back to it if topic is absent.
@@ -252,6 +268,7 @@ class StaffNotifCenter {
   }
 
   void stop() {
+    _refresh.cancel(); // never let a pending refetch outlive the session
     _channel?.unsubscribe();
     _channel = null;
     _subscribedUid = null;

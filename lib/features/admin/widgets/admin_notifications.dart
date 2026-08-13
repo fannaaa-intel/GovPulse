@@ -18,6 +18,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/utils/burst_coalescer.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../theme/admin_ui.dart';
 import 'admin_skeleton.dart';
@@ -278,6 +279,10 @@ class AdminNotifCenter {
   RealtimeChannel? _channel;
   String? _subscribedUid;
 
+  /// One refetch per burst, not one per row — see [BurstCoalescer]. "Clear all"
+  /// deletes every row and realtime reports each one separately.
+  final _refresh = BurstCoalescer();
+
   /// Call once after the admin is authenticated (e.g. in the dashboard shell).
   /// Safe to call repeatedly — no-ops when already live for the same user, and
   /// re-subscribes automatically if a different user has signed in.
@@ -299,16 +304,17 @@ class AdminNotifCenter {
           column: 'user_id',
           value: uid,
         ),
-        callback: (_) {
+        callback: (_) => _refresh.schedule(() {
           refreshUnread();
           revision.value++;
-        },
+        }),
       )
       ..subscribe();
   }
 
   /// Tear down on logout so a new session re-subscribes cleanly.
   void stop() {
+    _refresh.cancel(); // never let a pending refetch outlive the session
     _channel?.unsubscribe();
     _channel = null;
     _subscribedUid = null;

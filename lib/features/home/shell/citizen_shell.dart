@@ -1173,38 +1173,46 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
                   children: [
                     if (isDrawerMode) _hamburger(),
                     Expanded(
-                      child: HomeTopNav(
-                        currentIndex: _index,
-                        onTap: _selectIndex,
-                        // Home · My Reports · Emergency. NewsFeed is gone: Home's centre
-                        // is the feed now. Settings is reached from the user chip, so it
-                        // is not a nav link — but its index moved to 3 when NewsFeed left,
-                        // hence settingsIndex.
-                        items: [
-                          if (showNavLinks)
-                            for (final tab in CitizenTab.values)
-                              if (tab != CitizenTab.settings)
-                                (label: tab.label, index: tab.index),
-                        ],
-                        settingsIndex: CitizenTab.settings.index,
-                        notificationCount: NotificationService.count,
-                        onNotificationTap: () => _showNotifications(width),
-                        // The shared flow, same as Settings and the nav chrome use.
-                        onLogoutTap: () => performCitizenLogout(context),
-                        // Below ~600 the brand + bell + named chip cannot fit
-                        // alongside the hamburger, and the chip's name is the
-                        // only part that is redundant — the dropdown still
-                        // shows it in full. Opt-in, so no other caller of this
-                        // shared widget is affected.
-                        avatarOnlyChip: width < _kAvatarOnlyChipBelow,
-                        username: profile?.username ?? '',
-                        fullName: profile?.fullName,
-                        facePhotoUrl: profile?.facePhotoUrl,
-                        verifStatus: switch (verif) {
-                          VerifStatus.verified => 'approved',
-                          VerifStatus.pending => 'pending',
-                          VerifStatus.none => 'none',
-                        },
+                      // LISTEN, don't read — see NotificationService.count.
+                      // This is the citizen web shell's bell, and the snapshot
+                      // that used to be here is what made it look dead on web:
+                      // the badge only moved when the shell happened to rebuild,
+                      // i.e. when the citizen changed screens.
+                      child: ValueListenableBuilder<int>(
+                        valueListenable: NotificationService.unread,
+                        builder: (_, unreadCount, _) => HomeTopNav(
+                          currentIndex: _index,
+                          onTap: _selectIndex,
+                          // Home · My Reports · Emergency. NewsFeed is gone: Home's centre
+                          // is the feed now. Settings is reached from the user chip, so it
+                          // is not a nav link — but its index moved to 3 when NewsFeed left,
+                          // hence settingsIndex.
+                          items: [
+                            if (showNavLinks)
+                              for (final tab in CitizenTab.values)
+                                if (tab != CitizenTab.settings)
+                                  (label: tab.label, index: tab.index),
+                          ],
+                          settingsIndex: CitizenTab.settings.index,
+                          notificationCount: unreadCount,
+                          onNotificationTap: () => _showNotifications(width),
+                          // The shared flow, same as Settings and the nav chrome use.
+                          onLogoutTap: () => performCitizenLogout(context),
+                          // Below ~600 the brand + bell + named chip cannot fit
+                          // alongside the hamburger, and the chip's name is the
+                          // only part that is redundant — the dropdown still
+                          // shows it in full. Opt-in, so no other caller of this
+                          // shared widget is affected.
+                          avatarOnlyChip: width < _kAvatarOnlyChipBelow,
+                          username: profile?.username ?? '',
+                          fullName: profile?.fullName,
+                          facePhotoUrl: profile?.facePhotoUrl,
+                          verifStatus: switch (verif) {
+                            VerifStatus.verified => 'approved',
+                            VerifStatus.pending => 'pending',
+                            VerifStatus.none => 'none',
+                          },
+                        ),
                       ),
                     ),
                   ],

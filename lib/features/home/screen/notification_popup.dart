@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:math' as math;
 import '../../../core/router/legacy_nav.dart';
+import '../../../core/utils/burst_coalescer.dart';
 import '../settings/my-submission/my_submissions_screen.dart'
     show MySubmissionsArgs, MySubmissionsScreen;
 import '../my_report/my_reports_screen.dart' show ReportItem;
@@ -175,14 +176,26 @@ class NotificationService {
   /// can never drift negative because it's always recomputed from the list.
   static final ValueNotifier<int> unread = ValueNotifier<int>(0);
 
+  /// Bumped on every change to [notifications], so a panel that is already open
+  /// can reload. The citizen twin of AdminNotifCenter.revision.
+  ///
+  /// SEPARATE FROM [unread] ON PURPOSE, and not redundant with it: a
+  /// ValueNotifier only notifies when the value actually CHANGES, so deleting a
+  /// notification that was already read leaves `unread` on the same number and
+  /// tells an open panel nothing — while the row it is still rendering has gone.
+  /// This one is unconditional.
+  static final ValueNotifier<int> revision = ValueNotifier<int>(0);
+
   /// Keep [unread] in lock-step with the backing list. Called after every
   /// mutation below.
   ///
   /// Counts UNREAD rows, not the list length: a tapped notification stays in
   /// the list (the user may want to find it again) but must stop counting, or
   /// the badge sits there at 1 after the thing it pointed at has been opened.
-  static void _sync() =>
-      unread.value = notifications.where((n) => !n.read).length;
+  static void _sync() {
+    unread.value = notifications.where((n) => !n.read).length;
+    revision.value++;
+  }
 
   static SupabaseClient get _db => Supabase.instance.client;
   static String? get _uid => _db.auth.currentUser?.id;
@@ -199,6 +212,10 @@ class NotificationService {
   // admin console's AdminNotifCenter.
   static RealtimeChannel? _channel;
   static String? _subscribedUid;
+
+  /// One refetch per burst, not one per row — see [BurstCoalescer]. "Clear all"
+  /// deletes every row the citizen has and realtime reports each one.
+  static final _refresh = BurstCoalescer();
 
   /// Start the live subscription for the signed-in user. Call once the user is
   /// authenticated (see main.dart). Idempotent: no-ops when already live for the
@@ -225,8 +242,8 @@ class NotificationService {
           value: uid,
         ),
         // Any change to this user's rows → reload the list, which re-syncs
-        // `unread` (== list length). Handles both increase and decrease.
-        callback: (_) => load(),
+        // `unread`. Handles arrivals, reads and deletions alike.
+        callback: (_) => _refresh.schedule(load),
       )
       ..subscribe();
   }
@@ -234,6 +251,7 @@ class NotificationService {
   /// Tear down on sign-out so the next session re-subscribes cleanly and the
   /// badge doesn't linger on the previous user's count.
   static void stopRealtime() {
+    _refresh.cancel(); // never let a pending refetch outlive the session
     _channel?.unsubscribe();
     _channel = null;
     _subscribedUid = null;
@@ -421,8 +439,20 @@ class NotificationService {
     }
   }
 
-  /// Unread count — what every badge shows. Kept in step with [unread]; the
-  /// two must never disagree, so both are derived the same way.
+  /// Unread count — a POINT-IN-TIME READ of [unread].
+  ///
+  /// ⚠ NOT LIVE. Reading this in a build method paints whatever the count was
+  /// at that instant and never changes again until something else rebuilds the
+  /// widget — which is why the web top nav's badge only moved when the citizen
+  /// navigated between screens. A badge must listen:
+  ///
+  ///     ValueListenableBuilder<int>(
+  ///       valueListenable: NotificationService.unread,
+  ///       builder: (_, count, _) => ...,
+  ///     )
+  ///
+  /// Kept for the widgets that take the count as a plain parameter — their
+  /// CALLERS do the listening (see responsive_nav_scaffold / home_screen).
   static int get count => unread.value;
 
   /// Total rows currently held, read or not. Only for callers that need the

@@ -644,18 +644,22 @@ class _HomePageState extends ConsumerState<HomePage>
                     0,
                     Transform.translate(
                       offset: Offset(0, -cardPull),
-                      child: HomeProfileCard(
-                        width: contentW,
-                        username: widget.username,
-                        verifStatus: verifStatus,
-                        fullName: fullName,
-                        facePhotoUrl: facePhotoUrl,
-                        facePhotoPath: facePhotoPath,
-                        profileLoading: profileLoading,
-                        notificationCount: NotificationService.count,
-                        onNotificationTap: () =>
-                            _showNotificationsDialog(width),
-                        onVerifyTap: _goToVerification,
+                      // LISTEN, don't read — see NotificationService.count.
+                      child: ValueListenableBuilder<int>(
+                        valueListenable: NotificationService.unread,
+                        builder: (_, unreadCount, _) => HomeProfileCard(
+                          width: contentW,
+                          username: widget.username,
+                          verifStatus: verifStatus,
+                          fullName: fullName,
+                          facePhotoUrl: facePhotoUrl,
+                          facePhotoPath: facePhotoPath,
+                          profileLoading: profileLoading,
+                          notificationCount: unreadCount,
+                          onNotificationTap: () =>
+                              _showNotificationsDialog(width),
+                          onVerifyTap: _goToVerification,
+                        ),
                       ),
                     ),
                   ),
@@ -752,20 +756,25 @@ class _HomePageState extends ConsumerState<HomePage>
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             if (showTopNav)
-              HomeTopNav(
-                currentIndex: _navIndex,
-                onTap: _handleNavTap,
-                notificationCount: NotificationService.count,
-                onNotificationTap: () => _showNotificationsDialog(width),
-                onLogoutTap: _handleLogout,
-                username: widget.username,
-                fullName: fullName,
-                facePhotoUrl: facePhotoUrl,
-                verifStatus: verifStatus == VerifStatus.verified
-                    ? 'approved'
-                    : verifStatus == VerifStatus.pending
-                    ? 'pending'
-                    : 'none',
+              // LISTEN, don't read — see NotificationService.count. A snapshot
+              // here left the web bell frozen until the next navigation.
+              ValueListenableBuilder<int>(
+                valueListenable: NotificationService.unread,
+                builder: (_, unreadCount, _) => HomeTopNav(
+                  currentIndex: _navIndex,
+                  onTap: _handleNavTap,
+                  notificationCount: unreadCount,
+                  onNotificationTap: () => _showNotificationsDialog(width),
+                  onLogoutTap: _handleLogout,
+                  username: widget.username,
+                  fullName: fullName,
+                  facePhotoUrl: facePhotoUrl,
+                  verifStatus: verifStatus == VerifStatus.verified
+                      ? 'approved'
+                      : verifStatus == VerifStatus.pending
+                      ? 'pending'
+                      : 'none',
+                ),
               ),
             _animated(
               0,

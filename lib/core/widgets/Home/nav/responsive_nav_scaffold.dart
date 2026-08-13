@@ -434,22 +434,31 @@ class ResponsiveNavScaffold extends ConsumerWidget {
           body: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              HomeTopNav(
-                currentIndex: currentIndex,
-                onTap: (i) => _navigate(
-                  context,
-                  i,
-                  effectiveBarangay: effBarangay,
-                  effectiveIsVerified: effIsVerified,
+              // LISTEN, don't read. This is the desktop/web bell, and
+              // `NotificationService.count` is a plain int snapshot — passing it
+              // straight in pinned the badge to whatever the count was when
+              // this scaffold last rebuilt, so it only ever moved when the
+              // citizen navigated. The mobile AppBar bell above already
+              // subscribes; this is the same subscription for the top nav.
+              ValueListenableBuilder<int>(
+                valueListenable: NotificationService.unread,
+                builder: (_, unreadCount, _) => HomeTopNav(
+                  currentIndex: currentIndex,
+                  onTap: (i) => _navigate(
+                    context,
+                    i,
+                    effectiveBarangay: effBarangay,
+                    effectiveIsVerified: effIsVerified,
+                  ),
+                  notificationCount: unreadCount,
+                  onNotificationTap: () =>
+                      _showNotifications(context, width, effVerif),
+                  onLogoutTap: () => _handleLogout(context),
+                  username: username,
+                  fullName: effFullName,
+                  facePhotoUrl: effFacePhotoUrl,
+                  verifStatus: effVerifString,
                 ),
-                notificationCount: NotificationService.count,
-                onNotificationTap: () =>
-                    _showNotifications(context, width, effVerif),
-                onLogoutTap: () => _handleLogout(context),
-                username: username,
-                fullName: effFullName,
-                facePhotoUrl: effFacePhotoUrl,
-                verifStatus: effVerifString,
               ),
               Expanded(child: _constrained(context, body)),
             ],
