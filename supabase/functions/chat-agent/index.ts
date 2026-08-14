@@ -1,11 +1,30 @@
 // supabase/functions/chat-agent/index.ts
 //
-// Kuya Gov — LGU Aparri virtual assistant (v3)
+// Kuya Gov — LGU Aparri virtual assistant (v4)
 //
 // Deploy with:  supabase functions deploy chat-agent
 // Set secret:   supabase secrets set GROQ_API_KEY=gsk_...
 //
-// v3 changes vs v2:
+// v4 changes vs v3:
+//   • Model migrated llama-3.3-70b-versatile → openai/gpt-oss-120b (Groq
+//     deprecated the 70B on 2026-06-17, the same notice as the 8B). Same
+//     OpenAI-compatible Groq endpoint; request/response contract unchanged.
+//   • reasoning_effort "low" — see the call site for why.
+//   • max_tokens 800 → 1200: GPT-OSS spends reasoning tokens out of the SAME
+//     completion budget as the visible reply, and 800 was sized for a model
+//     that emitted none. A truncated reply is a visibly broken answer.
+//   • ⚠️ WATCH ON FIRST DEPLOY: this function returns PLAIN TEXT (no JSON mode)
+//     straight to the citizen. If the reasoning trace ever lands in
+//     message.content rather than a separate field, two things break at once —
+//     internal deliberation leaks into the chat bubble, and a tag the model was
+//     merely *considering* ("should I emit [ACTION:REPORT] here?") gets picked
+//     up by normalizeActionTag as a real one. Smoke-test the raw content field
+//     before trusting this in production; if it leaks, the fix is to pass
+//     Groq's reasoning_format so reasoning is returned separately or omitted.
+//     Deliberately NOT set pre-emptively — an unsupported parameter would 400
+//     the whole function, which is a worse failure than the one it prevents.
+//
+// v3 changes vs v2 (historical — the 8B named below is long decommissioned):
 //   • Model upgraded llama-3.1-8b-instant → llama-3.3-70b-versatile
 //     (far better multilingual + instruction-following; fixes tag leakage
 //      and Ilocano/Ybanag fallback). Same OpenAI-compatible Groq endpoint.
@@ -21,6 +40,12 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+// Named, rather than inlined in the request body as it was through v3 — the
+// inline literal was the one model reference in the repo that a grep for
+// `const MODEL` missed, which is exactly how a decommission notice turns into
+// a production outage. Every other Groq function here declares it this way.
+const MODEL = "openai/gpt-oss-120b";
 
 interface ChatMessage {
   text: string;
@@ -514,9 +539,20 @@ serve(async (req: Request) => {
           "Authorization": `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          model: "llama-3.3-70b-versatile",
+          model: MODEL,
           messages,
-          max_tokens: 800,
+          // Reasoning tokens share this budget with the visible reply, so the
+          // v3 value of 800 can now truncate a normal six-step answer
+          // mid-sentence. Headroom is free — generation stops at the stop token.
+          max_tokens: 1200,
+          // "low" on purpose. A citizen is waiting on this call, and everything
+          // above is explicit instruction-following (language mirroring, tag
+          // rules, KB grounding) rather than a reasoning problem. The v3 notes
+          // blame tag leakage and Ybanag/Ilocano fallback on the 8B — that was a
+          // capability ceiling, which a 120B clears at any effort level, so
+          // buying reasoning depth here mostly buys latency. Raise to "medium"
+          // ONLY if testing shows language mirroring or tag discipline slipping.
+          reasoning_effort: "low",
           temperature: 0.25,
           top_p: 0.9,
         }),

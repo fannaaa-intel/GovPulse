@@ -1,6 +1,6 @@
 // supabase/functions/recommend-actions/index.ts
 //
-// GovPulse — AI predictive-outlook recommendations (Groq / Llama)
+// GovPulse — AI predictive-outlook recommendations (Groq / GPT-OSS)
 //
 // Aggregates recent citizen feedback + reports server-side, asks Groq to write a
 // short outlook summary and up to 3 concrete "focus + suggested action" items,
@@ -17,9 +17,13 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { groqChat } from "../_shared/groq.ts";
 
-// Recommendations benefit from stronger reasoning and run rarely (on-demand /
-// daily cron), so the 70B model is the right quality/cost trade-off here.
-const MODEL = "llama-3.3-70b-versatile";
+// Replaces llama-3.3-70b-versatile, deprecated by Groq on 2026-06-17 (same
+// notice as the 8B). Recommendations genuinely benefit from reasoning depth —
+// grounding every number in the aggregate and refusing to invent offices or
+// metrics IS the job here — and this runs rarely (dashboard-kicked behind a
+// 10-minute debounce), so the larger model plus a real reasoning budget is the
+// right quality/cost trade-off. See reasoning_effort at the call site.
+const MODEL = "openai/gpt-oss-120b";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -367,7 +371,19 @@ serve(async (req: Request) => {
         },
       ],
       temperature: 0.3,
-      max_tokens: 600,
+      // Reasoning tokens are drawn from the SAME completion budget as the JSON
+      // answer. 600 was sized for a model that emitted none; a medium-effort
+      // reasoning pass can now eat most of it and truncate the JSON mid-object,
+      // at which point parseResult returns null and the call 502s. Headroom is
+      // free — generation still stops at the stop token, so an unused budget
+      // costs nothing. See the truncation case in the parser notes.
+      max_tokens: 2000,
+      // "medium", not "low": the Rules block above is entirely about grounding
+      // numbers and NOT inventing offices/metrics, which is exactly what
+      // reasoning budget buys. Not "high" either — the input is a small
+      // pre-aggregated JSON, not a problem that rewards deep search, and the
+      // 10-minute client debounce means latency here is invisible anyway.
+      reasoning_effort: "medium",
       response_format: { type: "json_object" },
     });
     if (raw === null) {
