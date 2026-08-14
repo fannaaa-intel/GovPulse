@@ -1,13 +1,14 @@
 -- ════════════════════════════════════════════════════════════════════════════
 --  AI catch-up sweep — makes recovery after an AI outage AUTOMATIC
 --
---  The insert triggers (trg_classify_feedback / trg_classify_report) fire only
---  ONCE per row. If Groq is rate-limited/usage-exhausted at that moment, the row
---  gets no AI label (ai_classified_at stays NULL) and the dashboard shows the
+--  The insert triggers (trg_classify_feedback / trg_classify_report /
+--  trg_moderate_post / trg_moderate_comment) fire only ONCE per row. If Groq is
+--  rate-limited/usage-exhausted at that moment, the row gets no AI label
+--  (ai_classified_at / ai_moderated_at stays NULL) and the dashboard shows the
 --  on-device fallback — correct, but the trigger won't retry.
 --
---  This cron runs each function's `batch` mode every 15 minutes. Batch classifies
---  every row where ai_classified_at IS NULL:
+--  This cron runs each function's `batch` mode every 15 minutes. Batch processes
+--  every row where the AI timestamp IS NULL:
 --    • AI healthy + nothing pending → finds 0 rows, makes 0 Groq calls (free).
 --    • After an outage → sweeps the backlog and upgrades those on-device rows to
 --      AI automatically. If usage is still exhausted it simply retries next run.
@@ -17,6 +18,8 @@
 --
 --  Prerequisite: the 'classify_feedback_sr_key' Vault secret (from any of the
 --  AUTO_CLASSIFY / classify-report SETUP files) holding the REAL service-role key.
+--  The moderation sweep also accepts 'moderate_content_sr_key' (AUTO_MODERATE.sql)
+--  and prefers it when present — either real service-role key works.
 -- ════════════════════════════════════════════════════════════════════════════
 
 create extension if not exists pg_cron;
@@ -66,5 +69,53 @@ select cron.schedule(
   $$
 );
 
--- Verify both are scheduled:
+-- ── Moderation catch-up ──────────────────────────────────────────────────────
+--  moderate-content had NO sweep before this: its trigger fired once, and a
+--  rate-limited (or, on 2026-08-16, a decommissioned-model) call left the row
+--  unflagged permanently — unlike feedback/reports, which self-healed here.
+--  Unrecoverable in the worst case, because moderation is a safety layer.
+--
+--  Two POSTs because batch mode is per-table: the function requires an explicit
+--  `table` (community_posts | community_comments) and rejects anything else.
+--
+--  Offset to :07/:22/:37/:52 rather than :00/:15/:30/:45 on purpose — all three
+--  sweeps share ONE Groq API key, so firing them on the same minute stacks up to
+--  150 serial calls into one rate-limit window. Same 15-minute cadence, staggered.
+select cron.unschedule('catchup-moderate-content')
+where exists (select 1 from cron.job where jobname = 'catchup-moderate-content');
+
+select cron.schedule(
+  'catchup-moderate-content',
+  '7-59/15 * * * *',   -- every 15 minutes, offset from the classify sweeps
+  $$
+  select net.http_post(
+    url     := 'https://vxvflhjbafqwehuxnmeq.supabase.co/functions/v1/moderate-content',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'Authorization', 'Bearer ' || coalesce(
+        (select decrypted_secret from vault.decrypted_secrets
+         where name = 'moderate_content_sr_key' limit 1),
+        (select decrypted_secret from vault.decrypted_secrets
+         where name = 'classify_feedback_sr_key' limit 1)
+      )
+    ),
+    body := '{"table":"community_comments","mode":"batch","limit":50}'::jsonb
+  );
+  select net.http_post(
+    url     := 'https://vxvflhjbafqwehuxnmeq.supabase.co/functions/v1/moderate-content',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'Authorization', 'Bearer ' || coalesce(
+        (select decrypted_secret from vault.decrypted_secrets
+         where name = 'moderate_content_sr_key' limit 1),
+        (select decrypted_secret from vault.decrypted_secrets
+         where name = 'classify_feedback_sr_key' limit 1)
+      )
+    ),
+    body := '{"table":"community_posts","mode":"batch","limit":50}'::jsonb
+  );
+  $$
+);
+
+-- Verify all three are scheduled:
 --   select jobname, schedule, active from cron.job order by jobname;

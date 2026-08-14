@@ -1,6 +1,6 @@
 // supabase/functions/classify-report/index.ts
 //
-// GovPulse — Citizen-report urgency triage (Groq / Llama)
+// GovPulse — Citizen-report urgency triage (Groq / GPT-OSS)
 //
 // Classifies each citizen report into ai_urgency = "high" | "medium" | "low"
 // (with a short ai_urgency_reason) and writes it back to public.reports. The
@@ -21,7 +21,10 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { groqChat } from "../_shared/groq.ts";
 
-const MODEL = "llama-3.1-8b-instant"; // fast + cheap; triage is a simple call
+// Replaces llama-3.1-8b-instant, decommissioned by Groq on 2026-08-16. Still
+// fast + cheap, and triage is a simple call. See reasoning_effort at the call
+// site — GPT-OSS is a reasoning model and needs to be told not to deliberate.
+const MODEL = "openai/gpt-oss-20b";
 const MAX_BATCH = 50;
 
 const corsHeaders = {
@@ -101,6 +104,9 @@ async function classifyOne(apiKey: string, r: ReportRow): Promise<Triage | null>
     ],
     temperature: 0,
     max_tokens: 100,
+    // GPT-OSS reasons before answering. Left at the default it spends reasoning
+    // tokens — latency and cost — deliberating over a three-way label.
+    reasoning_effort: "low",
     response_format: { type: "json_object" },
   });
   return raw === null ? null : parseTriage(raw);

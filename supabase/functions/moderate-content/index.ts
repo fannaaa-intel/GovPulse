@@ -1,6 +1,6 @@
 // supabase/functions/moderate-content/index.ts
 //
-// GovPulse — Community content moderator (Groq / Llama)
+// GovPulse — Community content moderator (Groq / GPT-OSS)
 //
 // Context-aware profanity / abuse moderation for community POSTS and COMMENTS,
 // in English, Filipino/Tagalog, Taglish, and Ilocano. Catches what the on-device
@@ -27,8 +27,17 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { groqChat } from "../_shared/groq.ts";
 
-const MODEL = "llama-3.1-8b-instant";
+// Replaces llama-3.1-8b-instant, decommissioned by Groq on 2026-08-16. This is
+// the highest-volume AI call in the app (every post AND comment), so the
+// cheapest/fastest tier wins. See reasoning_effort at the call site — GPT-OSS is
+// a reasoning model and needs to be told not to deliberate.
+//
+// Validate replacements against CODED and MIXED-LANGUAGE toxicity specifically:
+// catching what the on-device word list misses is the entire reason this layer
+// exists, so a weaker multilingual model here is a silent safety regression.
+const MODEL = "openai/gpt-oss-20b";
 const MAX_BATCH = 50;
 const ALLOWED_TABLES = new Set(["community_posts", "community_comments"]);
 
@@ -96,29 +105,25 @@ function parseVerdict(raw: string): Verdict | null {
 async function moderateOne(apiKey: string, row: Row): Promise<Verdict | null> {
   const content = textOf(row);
   if (!content) return { toxic: false, reason: "clean" };
-  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: `Text: "${content}"` },
-      ],
-      temperature: 0,
-      max_tokens: 60,
-      response_format: { type: "json_object" },
-    }),
+  // Via the shared wrapper, which retries 429/5xx and honours Retry-After. This
+  // used to be a bare fetch that returned null on the first rate-limit — and
+  // because nothing rescheduled the row (ai_moderated_at stays NULL on failure,
+  // but no cron swept it), a rate-limited post stayed unflagged forever. The
+  // catch-up sweep in CATCHUP_CRON.sql is the second half of that fix.
+  const raw = await groqChat(apiKey, {
+    model: MODEL,
+    messages: [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: `Text: "${content}"` },
+    ],
+    temperature: 0,
+    max_tokens: 60,
+    // GPT-OSS reasons before answering. Left at the default it spends reasoning
+    // tokens — latency and cost — deliberating over a boolean verdict.
+    reasoning_effort: "low",
+    response_format: { type: "json_object" },
   });
-  if (!res.ok) {
-    console.error("Groq error", res.status, await res.text());
-    return null;
-  }
-  const data = await res.json();
-  return parseVerdict(data.choices?.[0]?.message?.content ?? "");
+  return raw === null ? null : parseVerdict(raw);
 }
 
 serve(async (req: Request) => {

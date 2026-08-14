@@ -1,6 +1,6 @@
 // supabase/functions/classify-feedback/index.ts
 //
-// GovPulse — Citizen-feedback NLP classifier (Groq / Llama)
+// GovPulse — Citizen-feedback NLP classifier (Groq / GPT-OSS)
 //
 // Classifies each citizen feedback comment into:
 //   • ai_sentiment : "positive" | "neutral" | "negative"
@@ -29,9 +29,15 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { groqChat } from "../_shared/groq.ts";
 
-// Small/fast is plenty for classification; swap to llama-3.3-70b-versatile if
-// you want more nuance on Taglish/Ilocano comments (same free Groq endpoint).
-const MODEL = "llama-3.1-8b-instant";
+// Replaces llama-3.1-8b-instant, decommissioned by Groq on 2026-08-16. Small +
+// fast is plenty for classification. See reasoning_effort at the call site —
+// GPT-OSS is a reasoning model and needs to be told not to deliberate.
+//
+// This is the most language-sensitive of the three classifiers (sentiment
+// nuance in Taglish/Ilocano). If quality regresses on real comments, escalate
+// to llama-3.3-70b-versatile — volume here is low enough to afford it, and the
+// rating-only shortcut below already keeps most rows off the API entirely.
+const MODEL = "openai/gpt-oss-20b";
 const MAX_BATCH = 50;
 
 const corsHeaders = {
@@ -151,6 +157,9 @@ async function classifyOne(
     ],
     temperature: 0,
     max_tokens: 120,
+    // GPT-OSS reasons before answering. Left at the default it spends reasoning
+    // tokens — latency and cost — deliberating over three fixed labels.
+    reasoning_effort: "low",
     response_format: { type: "json_object" },
   });
   return raw === null ? null : parseClassification(raw);
