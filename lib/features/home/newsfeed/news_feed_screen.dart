@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../core/theme/citizen_ui.dart';
+import '../../../core/widgets/Home/Account/account_web_kit.dart'
+    show kAccountStackBelow;
 import '../screen/home_screen.dart';
 import '../../../core/router/legacy_nav.dart';
 // CitizenTab.home.path — the shell's Home location, for the web arm of the
@@ -915,8 +917,7 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
     final feed = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildTopBar(w, webFilterStyle: true),
-        const SizedBox(height: 20),
+        _buildWebFeedHeader(),
         if (provider.error != null)
           _buildErrorState(w, provider)
         else if (visiblePosts.isEmpty)
@@ -1071,6 +1072,111 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
           ),
         ],
       ),
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  WEB feed header
+  //
+  //  ── Why not [_buildTopBar] ──────────────────────────────────────────────
+  //  That bar is a white full-bleed slab with a shadow, carrying
+  //  `newslogo.webp` above the heading. On a phone the screen IS the app, so
+  //  the mark belongs there. In the browser the shell's top nav shows the same
+  //  GovPulse mark about 60px above it, so the page printed it twice — and the
+  //  slab's own padding sits INSIDE the column's, so the logo and the posts
+  //  below it started at different x.
+  //
+  //  ── Why no card at all ──────────────────────────────────────────────────
+  //  The posts are already white cards on [CitizenUi.pageBg]. A white slab
+  //  directly above them merges with the first card into one continuous sheet,
+  //  which is what stopped the feed reading as a feed. Transparent, the heading
+  //  sits ON the page and every card below it is plainly a separate object.
+  //
+  //  Mobile is untouched: [_buildTopBar] still renders exactly as it did, and
+  //  the mobile arm still calls it.
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /// Below this the heading and the filter stop sharing a line comfortably on a
+  /// phone browser, so the type steps down rather than the two colliding.
+  static const double _kFeedHeaderTightBelow = 520;
+
+  Widget _buildWebFeedHeader() {
+    return LayoutBuilder(
+      builder: (context, c) {
+        // Measured on the header's OWN box, not the viewport: this column is
+        // one of three in the shell, and the viewport says nothing useful about
+        // how much room the heading actually has.
+        final double titleSize = c.maxWidth >= kAccountStackBelow
+            ? 24
+            : c.maxWidth >= _kFeedHeaderTightBelow
+            ? 22
+            : 20;
+
+        return Padding(
+          padding: EdgeInsets.only(bottom: titleSize >= 24 ? 18 : 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // The guest feed is a top-level route with no rail and no shell
+              // chrome, so this is its only way back out. It lived in the slab
+              // that just went away.
+              if (widget.isGuest)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () {
+                      if (mounted) leaveGuestFeed(context);
+                    },
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.arrow_back_ios_new_rounded,
+                          size: 15,
+                          color: CitizenUi.accent,
+                        ),
+                        SizedBox(width: 7),
+                        Text(
+                          'Back',
+                          style: TextStyle(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w600,
+                            color: CitizenUi.accent,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Community Updates',
+                      style: TextStyle(
+                        fontSize: titleSize,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.4,
+                        // Kept blue. This heading is the feed's identity, and
+                        // nothing about moving it off a card changes that.
+                        color: AppColors.primaryBlue,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: _openFilterSheet,
+                    child: _webFilterControl(),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
