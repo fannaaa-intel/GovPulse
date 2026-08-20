@@ -67,13 +67,23 @@ const double _kDialogHeightFactor = 0.85;
 /// boxes and they do not collapse into one another: at a 1000px window the
 /// panel stacks while still clearly being a dialog over the shell.
 ///
-/// 600 is where the floating treatment stops paying for itself. A centred card
-/// costs 48px of inset, 40px of padding and two rounded edges; on a phone that
-/// is a tenth of the width spent on framing, to show the shell behind through a
-/// gap too narrow to recognise. Taking the screen gives it back to the form,
-/// and it is the size at which the citizen is holding a phone rather than
-/// resizing a window.
-const double kSplitDialogFullscreenBelow = 600;
+/// 1024 is the tablet/desktop line — the same one the verification wizard uses
+/// to decide whether to offer a camera, for the same underlying reason: below
+/// it you are probably holding the thing, and a held device gets a soft
+/// keyboard.
+///
+/// It was 600, which covered phones only. Between 600 and here the panel was
+/// already STACKED — a floating card is only worth its inset when there are two
+/// columns inside it to frame — so that band got the worst of both: a card too
+/// narrow to lay out side by side, floating inside a viewport it could not use,
+/// with a keyboard that a Dialog cannot help it with. Fullscreen from here down
+/// means every touch-sized viewport gets the Scaffold keyboard behaviour, and
+/// the floating card is kept for the widths where it is actually framing
+/// something.
+///
+/// The four quick-action forms read this constant too, so they and the host
+/// cannot disagree about which presentation they are in.
+const double kSplitDialogFullscreenBelow = 1024;
 
 /// Lets a form hosted in [showCitizenFormDialog] keep its "discard changes?"
 /// guard when the dialog is closed from the outside (the X, or the barrier).
@@ -211,20 +221,41 @@ Future<T?> showCitizenSplitPanelDialog<T>({
       // area. The 12px inside is the panel's only margin; the three-zone
       // stacked layout takes the height from there and pins its actions to the
       // bottom of the screen.
+      // ── Fullscreen is a SCAFFOLD, deliberately not a Dialog ─────────────
+      //
+      // It was a Dialog with zero inset and BoxConstraints.expand(), which
+      // looks the same and behaves quite differently once a keyboard is
+      // involved. [Dialog] pads itself by `viewInsets` and then strips them
+      // from its subtree, so:
+      //
+      //   • the panel is handed a shorter box, but nothing INSIDE it knows a
+      //     keyboard exists, and
+      //   • the padding is animated (AnimatedPadding, 100ms) while the browser
+      //     reports the inset in steps, so the panel re-laid out against a
+      //     moving target every frame — which is what read as the transition
+      //     going "brick by brick".
+      //
+      // A [Scaffold] with `resizeToAvoidBottomInset` is the mechanism
+      // keyboard_visibility_test.dart already pins as correct: it shrinks the
+      // body AND removes the inset from the MediaQuery the body sees, so a
+      // nested Scaffold cannot double-count it, and — the part that matters
+      // here — a focused field below the fold is scrolled above the keyboard
+      // by the framework instead of being left under it.
+      //
+      // The panel still needs to be TOLD about the keyboard, because Scaffold
+      // strips the inset for exactly the same reason Dialog does. That is what
+      // [QaKeyboardScope] is for, and why it is still read from `dialogContext`
+      // above rather than from inside.
       if (fullscreen) {
-        return Dialog(
-          backgroundColor: Colors.transparent,
-          insetPadding: EdgeInsets.zero,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints.expand(),
-            child: Material(
-              color: CitizenUi.pageBg,
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: QaKeyboardScope(
-                  keyboardUp: keyboardUp,
-                  child: builder(dialogContext, close),
-                ),
+        return Scaffold(
+          backgroundColor: CitizenUi.pageBg,
+          resizeToAvoidBottomInset: true,
+          body: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: QaKeyboardScope(
+                keyboardUp: keyboardUp,
+                child: builder(dialogContext, close),
               ),
             ),
           ),

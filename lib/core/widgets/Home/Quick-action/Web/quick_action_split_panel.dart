@@ -230,11 +230,14 @@ class QaSplitPanel extends StatelessWidget {
                 // working area grows into the space they leave — one continuous
                 // movement, and the reverse on the way back.
                 //
-                // 200ms easeOutCubic is close enough to a soft keyboard's own
-                // rise that the two read as the same gesture.
+                // easeInOutCubic, not easeOut: this plays in BOTH directions and
+                // an ease-out curve leaves the return springing away from rest.
+                // 260ms is a touch slower than a soft keyboard's own rise, which
+                // keeps our movement reading as the follower of the two rather
+                // than a second thing happening at the same time.
                 AnimatedSize(
-                  duration: const Duration(milliseconds: 200),
-                  curve: Curves.easeOutCubic,
+                  duration: const Duration(milliseconds: 260),
+                  curve: Curves.easeInOutCubic,
                   alignment: Alignment.topCenter,
                   child: keyboardUp
                       ? const SizedBox.shrink()
