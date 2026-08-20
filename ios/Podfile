@@ -1,0 +1,72 @@
+# ══════════════════════════════════════════════════════════════════════════════
+#  iOS CocoaPods configuration.
+#
+#  ── Why the platform line is set, and not left commented out ─────────────────
+#  Flutter's template ships `# platform :ios, '13.0'` commented, which lets
+#  CocoaPods fall back to whatever each pod asks for. Three of this app's
+#  dependencies ask for more than the project offers:
+#
+#    firebase_core  4.4.0  ->  iOS 15.0
+#    firebase_auth  6.1.4  ->  iOS 15.0
+#    GoogleMLKit    ~> 6.0 ->  iOS 15.5   (via google_mlkit_face_detection
+#                                          and google_mlkit_text_recognition)
+#
+#  With the project at 13.0 `pod install` refuses outright — "The platform of
+#  the target `Runner` (iOS 13.0) is not compatible with firebase_core". 15.5 is
+#  the highest floor of the three, so it is the lowest version this app can
+#  actually ship to.
+#
+#  Keep this in step with IPHONEOS_DEPLOYMENT_TARGET in
+#  Runner.xcodeproj/project.pbxproj — they are set to 15.5 in both places, and
+#  a mismatch shows up as a link error rather than as a clear message.
+# ══════════════════════════════════════════════════════════════════════════════
+platform :ios, '15.5'
+
+# CocoaPods analytics sends network stats synchronously affecting flutter build latency.
+ENV['COCOAPODS_DISABLE_STATS'] = 'true'
+
+project 'Runner', {
+  'Debug' => :debug,
+  'Profile' => :release,
+  'Release' => :release,
+}
+
+def flutter_root
+  generated_xcode_build_settings_path = File.expand_path(File.join('..', 'Flutter', 'Generated.xcconfig'), __FILE__)
+  unless File.exist?(generated_xcode_build_settings_path)
+    raise "#{generated_xcode_build_settings_path} must exist. If you're running pod install manually, make sure flutter pub get is executed first"
+  end
+
+  File.foreach(generated_xcode_build_settings_path) do |line|
+    matches = line.match(/FLUTTER_ROOT\=(.*)/)
+    return matches[1].strip if matches
+  end
+  raise "FLUTTER_ROOT not found in #{generated_xcode_build_settings_path}. Try deleting Generated.xcconfig, then run flutter pub get"
+end
+
+require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelper'), flutter_root)
+
+flutter_ios_podfile_setup
+
+target 'Runner' do
+  use_frameworks!
+
+  flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+  target 'RunnerTests' do
+    inherit! :search_paths
+  end
+end
+
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    flutter_additional_ios_build_settings(target)
+
+    # Pods that declare a lower floor than the project are re-stamped to match.
+    # Without this, a single pod defaulting to 12.0 produces "compiling for iOS
+    # 12.0, but module has a minimum deployment target of iOS 15.5" at link
+    # time, which reads as a compiler bug rather than a configuration one.
+    target.build_configurations.each do |config|
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.5'
+    end
+  end
+end
