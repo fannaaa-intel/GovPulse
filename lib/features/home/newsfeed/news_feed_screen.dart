@@ -7,6 +7,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../core/theme/citizen_ui.dart';
 import '../../../core/widgets/Home/Account/account_web_kit.dart'
     show kAccountStackBelow;
+import '../../../core/widgets/app_dialog.dart';
 import '../screen/home_screen.dart';
 import '../../../core/router/legacy_nav.dart';
 // CitizenTab.home.path — the shell's Home location, for the web arm of the
@@ -689,114 +690,201 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
     }
   }
 
+  // ══════════════════════════════════════════════════════════════════════════
+  //  Filter by date
+  //
+  //  ── Two presentations on web, one on the phone ─────────────────────────
+  //  A bottom sheet is a thumb affordance: it comes up from the edge your hand
+  //  is already at. On a desktop pointer it is a long throw to the bottom of a
+  //  1080px window for a five-item list, and the sheet spans the whole width to
+  //  hold content that needs 400px. Above the breakpoint this is a centred
+  //  dialog instead.
+  //
+  //  [kCommentsDialogBreakpoint] rather than a new number: showCommentsSheet
+  //  already makes exactly this choice, and two popovers in the same feed
+  //  disagreeing about where a panel comes from would be worse than either
+  //  answer on its own.
+  //
+  //  ── The overflow ───────────────────────────────────────────────────────
+  //  `showModalBottomSheet` caps an unscrolled sheet at 9/16 of the screen.
+  //  On a phone `width` is the real viewport and the content fits inside that
+  //  cap. In a browser `width` clamps to its 480 ceiling, so every `width * k`
+  //  in here draws at the largest phone size there is and the content grows
+  //  past the cap — "BOTTOM OVERFLOWED BY 26 PIXELS", at every window size.
+  //  The web sheet is scroll-controlled and height-capped so it cannot happen
+  //  again at any content length.
+  // ══════════════════════════════════════════════════════════════════════════
+
   void _openFilterSheet() {
     final width = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+
+    if (kIsWeb &&
+        MediaQuery.of(context).size.width >= kCommentsDialogBreakpoint) {
+      showAppDialog(
+        context: context,
+        builder: (ctx) => Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 24,
+            vertical: 28,
+          ),
+          child: ConstrainedBox(
+            // Wide enough for a label over its subtitle without wrapping,
+            // narrow enough that the check mark stays near the text it marks.
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Material(
+              color: Colors.white,
+              clipBehavior: Clip.antiAlias,
+              borderRadius: BorderRadius.circular(CitizenUi.cardRadius + 2),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // No drag handle: nothing here is draggable.
+                  _filterHeader(width),
+                  Container(height: 1, color: CitizenUi.sharedBorder),
+                  ..._filterOptions(ctx, width),
+                  SizedBox(height: width * 0.02),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      return;
+    }
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.white,
+      // Web only — on the phone this stays false and the sheet is the one it
+      // has always been.
+      isScrollControlled: kIsWeb,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(width * 0.06)),
       ),
-      builder: (ctx) => SafeArea(
-        top: false,
+      builder: (ctx) {
+        final body = SafeArea(
+          top: false,
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(0, width * 0.025, 0, width * 0.03),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                dragHandle(width),
+                _filterHeader(width),
+                Container(height: 1, color: CitizenUi.sharedBorder),
+                ..._filterOptions(ctx, width),
+              ],
+            ),
+          ),
+        );
+
+        if (!kIsWeb) return body;
+
+        // A cap and a scroller, so a sheet whose content outgrows the room
+        // scrolls instead of overflowing.
+        return ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(ctx).height * 0.85,
+          ),
+          child: SingleChildScrollView(child: body),
+        );
+      },
+    );
+  }
+
+  /// The icon and title both presentations open with.
+  Widget _filterHeader(double width) => Padding(
+    padding: EdgeInsets.fromLTRB(
+      width * 0.05,
+      width * 0.015,
+      width * 0.05,
+      width * 0.025,
+    ),
+    child: Row(
+      children: [
+        Icon(
+          Icons.tune_rounded,
+          size: width * 0.05,
+          color: AppColors.primaryBlue,
+        ),
+        SizedBox(width: width * 0.02),
+        Text(
+          'Filter by Date',
+          style: TextStyle(
+            fontSize: width * 0.045,
+            fontWeight: FontWeight.w800,
+            color: const Color(0xFF1F2937),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  /// The five options, lifted unchanged out of the sheet so the dialog can show
+  /// the same list. Same widgets, same order, same values — only the thing
+  /// wrapping them differs.
+  List<Widget> _filterOptions(BuildContext ctx, double width) => [
+    ...PostFilter.values.map((filter) {
+      final isSelected = filter == _currentFilter;
+      const subtitles = {
+        PostFilter.latest: 'Show all posts',
+        PostFilter.day: 'Posts from the last 24 hours',
+        PostFilter.week: 'Posts from the last 7 days',
+        PostFilter.month: 'Posts from the last 30 days',
+        PostFilter.year: 'Posts from the last 365 days',
+      };
+      return InkWell(
+        onTap: () {
+          setState(() => _currentFilter = filter);
+          Navigator.pop(ctx);
+        },
         child: Padding(
-          padding: EdgeInsets.fromLTRB(0, width * 0.025, 0, width * 0.03),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+          padding: EdgeInsets.symmetric(
+            horizontal: width * 0.05,
+            vertical: width * 0.032,
+          ),
+          child: Row(
             children: [
-              dragHandle(width),
-              Padding(
-                padding: EdgeInsets.fromLTRB(
-                  width * 0.05,
-                  width * 0.015,
-                  width * 0.05,
-                  width * 0.025,
-                ),
-                child: Row(
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(
-                      Icons.tune_rounded,
-                      size: width * 0.05,
-                      color: AppColors.primaryBlue,
-                    ),
-                    SizedBox(width: width * 0.02),
                     Text(
-                      'Filter by Date',
+                      filter.label,
                       style: TextStyle(
-                        fontSize: width * 0.045,
-                        fontWeight: FontWeight.w800,
-                        color: const Color(0xFF1F2937),
+                        fontSize: width * 0.04,
+                        fontWeight: isSelected
+                            ? FontWeight.w700
+                            : FontWeight.w500,
+                        color: isSelected
+                            ? AppColors.primaryBlue
+                            : const Color(0xFF374151),
+                      ),
+                    ),
+                    SizedBox(height: width * 0.005),
+                    Text(
+                      subtitles[filter] ?? '',
+                      style: TextStyle(
+                        fontSize: width * 0.030,
+                        color: const Color(0xFF9CA3AF),
                       ),
                     ),
                   ],
                 ),
               ),
-              Container(height: 1, color: CitizenUi.sharedBorder),
-              ...PostFilter.values.map((filter) {
-                final isSelected = filter == _currentFilter;
-                const subtitles = {
-                  PostFilter.latest: 'Show all posts',
-                  PostFilter.day: 'Posts from the last 24 hours',
-                  PostFilter.week: 'Posts from the last 7 days',
-                  PostFilter.month: 'Posts from the last 30 days',
-                  PostFilter.year: 'Posts from the last 365 days',
-                };
-                return InkWell(
-                  onTap: () {
-                    setState(() => _currentFilter = filter);
-                    Navigator.pop(ctx);
-                  },
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: width * 0.05,
-                      vertical: width * 0.032,
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                filter.label,
-                                style: TextStyle(
-                                  fontSize: width * 0.04,
-                                  fontWeight: isSelected
-                                      ? FontWeight.w700
-                                      : FontWeight.w500,
-                                  color: isSelected
-                                      ? AppColors.primaryBlue
-                                      : const Color(0xFF374151),
-                                ),
-                              ),
-                              SizedBox(height: width * 0.005),
-                              Text(
-                                subtitles[filter] ?? '',
-                                style: TextStyle(
-                                  fontSize: width * 0.030,
-                                  color: const Color(0xFF9CA3AF),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        if (isSelected)
-                          Icon(
-                            Icons.check_rounded,
-                            size: width * 0.06,
-                            color: AppColors.primaryBlue,
-                          ),
-                      ],
-                    ),
-                  ),
-                );
-              }),
+              if (isSelected)
+                Icon(
+                  Icons.check_rounded,
+                  size: width * 0.06,
+                  color: AppColors.primaryBlue,
+                ),
             ],
           ),
         ),
-      ),
-    );
-  }
+      );
+    }),
+  ];
 
   void _openCommentsSheet(
     Map<String, dynamic> post, {
