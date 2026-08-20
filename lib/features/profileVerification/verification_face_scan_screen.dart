@@ -186,6 +186,7 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
   /// than an exception, because the footer has to be able to offer the file
   /// picker instead of leaving the user looking at an empty oval.
   Future<void> _initWebCamera() async {
+    CameraController? controller;
     try {
       final cameras = await availableCameras();
       if (cameras.isEmpty) throw 'no cameras';
@@ -193,7 +194,7 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
         (c) => c.lensDirection == CameraLensDirection.front,
         orElse: () => cameras.first,
       );
-      final controller = CameraController(
+      controller = CameraController(
         cam,
         ResolutionPreset.high,
         enableAudio: false,
@@ -211,6 +212,18 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
       });
     } catch (e) {
       debugPrint('[FACE/WEB] camera unavailable: $e');
+      // A controller whose initialize() threw can still be holding a live
+      // getUserMedia stream, and this screen then falls back to the file
+      // picker and never touches it again. Without this the browser keeps
+      // reporting the camera as in use for the rest of the session - and the
+      // ID scan screen, which wants the same device, finds it busy.
+      if (controller != null) {
+        try {
+          await controller.dispose();
+        } catch (e) {
+          debugPrint('[FACE/WEB] dispose after failed init: $e');
+        }
+      }
       if (!mounted) return;
       setState(() {
         _webUsesCamera = false;

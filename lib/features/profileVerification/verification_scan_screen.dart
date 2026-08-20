@@ -38,6 +38,18 @@ class _VerificationScanScreenState extends State<VerificationScanScreen>
   /// mobile - see [_initCamera].
   bool _webCameraFailed = false;
 
+  /// WEB only: why the camera could not be started, in the browser's words.
+  ///
+  /// The screen used to say "your browser blocked it, or this device has no
+  /// camera" for every failure, which sends people to check a permission that
+  /// is already granted. The common case is a camera another app or tab is
+  /// still holding, and that one is fixable from here - see [_webCameraHint].
+  String? _webCameraErrorCode;
+
+  /// WEB only: guards [_retryWebCamera] against a second tap while the first
+  /// attempt is still asking the browser for a stream.
+  bool _webCameraRetrying = false;
+
   bool isFront = true;
   bool _isCapturing = false;
   bool _showScanLine = false;
@@ -94,7 +106,7 @@ class _VerificationScanScreenState extends State<VerificationScanScreen>
       // async error from initState - is exactly what it was.
       if (!kIsWeb) rethrow;
       debugPrint('[CAMERA] availableCameras failed: $e');
-      if (mounted) setState(() => _webCameraFailed = true);
+      _failWebCamera(e);
       return;
     }
 
@@ -110,7 +122,7 @@ class _VerificationScanScreenState extends State<VerificationScanScreen>
     final CameraDescription camera;
     if (kIsWeb) {
       if (cameras.isEmpty) {
-        if (mounted) setState(() => _webCameraFailed = true);
+        _failWebCamera('notFound');
         return;
       }
       camera = cameras.firstWhere(
@@ -123,41 +135,69 @@ class _VerificationScanScreenState extends State<VerificationScanScreen>
       );
     }
 
-    // Try max → veryHigh → high. Some Android devices silently downgrade
-    // `max`, so we fall back rather than ending up with .high anyway.
-    final presetsToTry = [
-      ResolutionPreset.ultraHigh,
-      ResolutionPreset.veryHigh,
-      ResolutionPreset.high,
-    ];
+    // MOBILE: try max -> veryHigh -> high. Some Android devices silently
+    // downgrade `max`, so we fall back rather than ending up with .high
+    // anyway.
+    //
+    // WEB: one attempt only. camera_web turns a ResolutionPreset into `ideal`
+    // width/height constraints, and a browser rounds `ideal` to the nearest
+    // mode it actually has - asking a 720p webcam for 4096x2160 returns 720p
+    // rather than failing. A preset can therefore never be the reason a web
+    // attempt failed, and walking the list only opened the same device twice
+    // more, each attempt competing with the stream the previous one left
+    // running.
+    final List<ResolutionPreset> presetsToTry = kIsWeb
+        ? const <ResolutionPreset>[ResolutionPreset.ultraHigh]
+        : const <ResolutionPreset>[
+            ResolutionPreset.ultraHigh,
+            ResolutionPreset.veryHigh,
+            ResolutionPreset.high,
+          ];
 
     CameraController? working;
+    Object? lastError;
     for (final preset in presetsToTry) {
+      CameraController? candidate;
       try {
-        final c = CameraController(
+        candidate = CameraController(
           camera,
           preset,
           enableAudio: false,
           imageFormatGroup: ImageFormatGroup.jpeg,
         );
-        await c.initialize();
+        await candidate.initialize();
         debugPrint(
           '[CAMERA] Init OK at preset=$preset '
-          'preview=${c.value.previewSize}',
+          'preview=${candidate.value.previewSize}',
         );
-        working = c;
+        working = candidate;
         break;
       } catch (e) {
-        debugPrint('[CAMERA] Preset $preset failed: $e — trying next');
+        lastError = e;
+        debugPrint('[CAMERA] Preset $preset failed: $e - trying next');
+        // A controller whose initialize() threw still holds whatever the
+        // platform handed it before the failure. On web that is a live
+        // getUserMedia stream: without this the browser goes on reporting
+        // "Camera - Using now" for a screen that has just told the user it
+        // cannot open the camera, and the next attempt has to fight the
+        // abandoned stream for the device.
+        await _releaseController(candidate);
       }
     }
 
-    // WEB: all three presets failing means there is no usable camera here -
-    // blocked by permission, already in use, or unsupported. Without this the
-    // screen sat on a spinner whose only sibling, the back chevron, is inside
-    // the branch that needs a live controller. That was a trap with no exit.
+    // The screen can be popped while the browser is still deciding. Releasing
+    // here is what keeps that from leaving the camera light on.
+    if (!mounted) {
+      await _releaseController(working);
+      return;
+    }
+
+    // WEB: no usable camera here - blocked by permission, already in use, or
+    // unsupported. Without this the screen sat on a spinner whose only
+    // sibling, the back chevron, is inside the branch that needs a live
+    // controller. That was a trap with no exit.
     if (kIsWeb && working == null) {
-      if (mounted) setState(() => _webCameraFailed = true);
+      _failWebCamera(lastError);
       return;
     }
 
@@ -165,7 +205,18 @@ class _VerificationScanScreenState extends State<VerificationScanScreen>
     _initializeControllerFuture = Future.value();
 
     if (_controller != null) {
-      await _controller!.setFlashMode(FlashMode.off);
+      // Guarded, and not only on web. camera_web throws
+      // `torchModeNotSupported` from setFlashMode for any camera without a
+      // torch - which is every laptop webcam - and that exception escaped
+      // _initCamera before the setState below, so a camera that had started
+      // perfectly well was never shown: a permanent spinner over a live
+      // stream. Failing to turn a flash off is not a reason to withhold the
+      // preview on any platform.
+      try {
+        await _controller!.setFlashMode(FlashMode.off);
+      } catch (e) {
+        debugPrint('[CAMERA] setFlashMode unsupported: $e');
+      }
       try {
         await _controller!.setFocusMode(FocusMode.auto);
         await _controller!.setExposureMode(ExposureMode.auto);
@@ -173,6 +224,50 @@ class _VerificationScanScreenState extends State<VerificationScanScreen>
     }
 
     if (mounted) setState(() {});
+  }
+
+  /// Releases a controller that will not be used, swallowing what that costs.
+  ///
+  /// `dispose()` throws when the controller never got as far as a platform id,
+  /// so the guard is the point: the caller wants the stream stopped and has
+  /// nothing useful to do about a failure to stop it.
+  Future<void> _releaseController(CameraController? controller) async {
+    if (controller == null) return;
+    try {
+      await controller.dispose();
+    } catch (e) {
+      debugPrint('[CAMERA] dispose after failed init: $e');
+    }
+  }
+
+  /// WEB only: moves the screen to its "no camera" state, remembering why.
+  void _failWebCamera(Object? error) {
+    if (!mounted) return;
+    setState(() {
+      _webCameraFailed = true;
+      _webCameraRetrying = false;
+      _webCameraErrorCode = error is CameraException
+          ? error.code
+          : error?.toString();
+    });
+  }
+
+  /// WEB only: starts over, for the failures a second try can fix.
+  ///
+  /// A camera held by another tab, another app, or by this screen's own
+  /// abandoned stream is free again moments later, and re-entering the flow
+  /// from the previous screen was a long way to go for a retry.
+  Future<void> _retryWebCamera() async {
+    if (_webCameraRetrying) return;
+    setState(() {
+      _webCameraRetrying = true;
+      _webCameraFailed = false;
+      _webCameraErrorCode = null;
+    });
+    await _initCamera();
+    if (mounted && _webCameraRetrying) {
+      setState(() => _webCameraRetrying = false);
+    }
   }
 
   @override
@@ -234,12 +329,45 @@ class _VerificationScanScreenState extends State<VerificationScanScreen>
     );
   }
 
+  /// What to tell the user about [_webCameraErrorCode], and what to do next.
+  ///
+  /// camera_web reports a `CameraErrorCode` name, so these match on the
+  /// substring rather than the whole string - a code arrives as either
+  /// `notReadable` or `CameraErrorCode.notReadable` depending on which layer
+  /// wrapped it.
+  String get _webCameraHint {
+    final code = (_webCameraErrorCode ?? '').toLowerCase();
+    if (code.contains('notreadable') || code.contains('trackstart')) {
+      return 'Another app or browser tab is already using the camera. Close '
+          'it and tap Try again, or continue with a photo from your device.';
+    }
+    if (code.contains('permissiondenied') || code.contains('notallowed')) {
+      return 'Your browser is blocking the camera. Allow it from the padlock '
+          'in the address bar and tap Try again, or continue with a photo '
+          'from your device.';
+    }
+    if (code.contains('notfound') || code.contains('devicesnotfound')) {
+      return 'This device has no camera available. Go back and choose '
+          '"Upload a file instead" to continue with a photo from your device.';
+    }
+    if (code.contains('security') || code.contains('type')) {
+      return 'This browser will not open a camera on an insecure page. Go '
+          'back and choose "Upload a file instead" to continue with a photo '
+          'from your device.';
+    }
+    return 'The camera could not be started. Tap Try again, or go back and '
+        'choose "Upload a file instead" to continue with a photo from your '
+        'device.';
+  }
+
   /// Shown when the camera cannot be started at all.
   ///
-  /// The way out is Back rather than a file picker embedded here: the picker
-  /// lives on the previous screen, which is also where the user chose the camera
-  /// in the first place, so returning there puts them in front of the same two
-  /// options with the other one already spelled out.
+  /// Two ways out, because the two causes need different ones. A camera held
+  /// by another tab or app is free again seconds later, so Try again re-runs
+  /// [_initCamera] in place; a blocked or absent camera is not going to
+  /// appear, so the second button leaves for the file picker on the previous
+  /// screen - which is where the user chose the camera in the first place, so
+  /// it puts them back in front of the same two options.
   Widget _buildWebCameraError() {
     return SafeArea(
       child: Stack(
@@ -268,12 +396,10 @@ class _VerificationScanScreenState extends State<VerificationScanScreen>
                       ),
                     ),
                     const SizedBox(height: 8),
-                    const Text(
-                      'Your browser blocked it, or this device has no camera '
-                      'available. Go back and choose "Upload a file instead" to '
-                      'continue with a photo from your device.',
+                    Text(
+                      _webCameraHint,
                       textAlign: TextAlign.center,
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 13.5,
                         height: 1.5,
                         color: Colors.white70,
@@ -283,10 +409,12 @@ class _VerificationScanScreenState extends State<VerificationScanScreen>
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
-                        onPressed: () => Navigator.pop(context),
+                        onPressed: _webCameraRetrying ? null : _retryWebCamera,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.white,
                           foregroundColor: Colors.black87,
+                          disabledBackgroundColor: Colors.white24,
+                          disabledForegroundColor: Colors.white70,
                           elevation: 0,
                           padding: const EdgeInsets.symmetric(vertical: 15),
                           shape: RoundedRectangleBorder(
@@ -297,7 +425,27 @@ class _VerificationScanScreenState extends State<VerificationScanScreen>
                             fontWeight: FontWeight.w700,
                           ),
                         ),
-                        child: const Text('Go back'),
+                        child: const Text('Try again'),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(color: Colors.white24),
+                          padding: const EdgeInsets.symmetric(vertical: 15),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          textStyle: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        child: const Text('Upload a file instead'),
                       ),
                     ),
                   ],
