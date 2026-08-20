@@ -3,6 +3,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/citizen_ui.dart';
+import '../../../core/widgets/Home/Quick-action/Web/quick_action_split_panel.dart'
+    show QaKeyboardScope;
 import '../../../core/widgets/app_dialog.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -182,6 +184,20 @@ Future<T?> showCitizenSplitPanelDialog<T>({
       final size = MediaQuery.sizeOf(dialogContext);
       final fullscreen = size.width < kSplitDialogFullscreenBelow;
 
+      // ── The keyboard flag has to be read HERE ────────────────────────
+      //
+      // This context is ABOVE the [Dialog] built below, which is the only
+      // place the real inset is still visible: Dialog pads itself by
+      // viewInsets and then strips them from everything it contains, so a
+      // check made inside the panel reads zero forever. That is exactly how
+      // the first attempt at this shipped without doing anything.
+      //
+      // `viewInsetsOf` rather than reusing `size`: the note above is right
+      // that `sizeOf` alone does not rebuild on a keyboard, so this call is
+      // doing two jobs — reading the value, and subscribing this subtree to
+      // it so the panel is rebuilt on the frame the keyboard moves.
+      final keyboardUp = MediaQuery.viewInsetsOf(dialogContext).bottom > 0;
+
       Future<void> close() async {
         final ask = guard?.confirmDiscard;
         if (ask != null && !await ask()) return;
@@ -205,7 +221,10 @@ Future<T?> showCitizenSplitPanelDialog<T>({
               color: CitizenUi.pageBg,
               child: Padding(
                 padding: const EdgeInsets.all(12),
-                child: builder(dialogContext, close),
+                child: QaKeyboardScope(
+                  keyboardUp: keyboardUp,
+                  child: builder(dialogContext, close),
+                ),
               ),
             ),
           ),
@@ -246,7 +265,10 @@ Future<T?> showCitizenSplitPanelDialog<T>({
               color: CitizenUi.pageBg,
               child: Padding(
                 padding: const EdgeInsets.all(20),
-                child: builder(dialogContext, close),
+                child: QaKeyboardScope(
+                  keyboardUp: keyboardUp,
+                  child: builder(dialogContext, close),
+                ),
               ),
             ),
           ),

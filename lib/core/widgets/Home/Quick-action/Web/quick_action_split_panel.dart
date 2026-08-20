@@ -121,6 +121,44 @@ const double kQaSplitPanelHeight = 820;
 /// anything, by giving `left` an [Expanded] and letting `right` size itself.
 /// Which is why the stacked branch needs a BOUNDED height — see the fallback in
 /// [build] for what happens when it does not get one.
+
+/// Carries "a soft keyboard is open" ACROSS the dialog boundary.
+///
+/// ── Why MediaQuery cannot answer this inside the panel ────────────────────
+/// Flutter's [Dialog] pads itself by `MediaQuery.viewInsets` and then wraps its
+/// child in `MediaQuery.removeViewInsets(removeBottom: true, ...)` — see
+/// dialog.dart, which does this so a dialog's contents are not asked to dodge a
+/// keyboard the dialog has already dodged for them. The consequence here is
+/// absolute: anywhere inside the panel, `viewInsets.bottom` is ZERO, no matter
+/// what the keyboard is doing. A check written against it is not merely
+/// unreliable, it is dead code that always takes the same branch.
+///
+/// The host builds the [Dialog], so its own context is ABOVE that strip and can
+/// still see the real inset. It reads it there and puts the answer in here.
+///
+/// Defaults to FALSE with no scope present, so the panel keeps its pinned
+/// actions anywhere it is mounted without a host — tests, previews, and the
+/// side-by-side desktop layout, which never has a keyboard over it anyway.
+class QaKeyboardScope extends InheritedWidget {
+  final bool keyboardUp;
+
+  const QaKeyboardScope({
+    super.key,
+    required this.keyboardUp,
+    required super.child,
+  });
+
+  static bool of(BuildContext context) =>
+      context
+          .dependOnInheritedWidgetOfExactType<QaKeyboardScope>()
+          ?.keyboardUp ??
+      false;
+
+  @override
+  bool updateShouldNotify(QaKeyboardScope oldWidget) =>
+      oldWidget.keyboardUp != keyboardUp;
+}
+
 class QaSplitPanel extends StatelessWidget {
   final Widget Function(bool stacked) left;
   final Widget Function(bool stacked) right;
@@ -171,12 +209,14 @@ class QaSplitPanel extends StatelessWidget {
             // lets the framework scroll the focused field back into view. It
             // comes straight back when the keyboard closes.
             //
-            // Read as a BOOLEAN, not subtracted: the Dialog has already applied
-            // the inset, and using the number again here would double-count it.
+            // From [QaKeyboardScope], NOT from MediaQuery. This was written as
+            // `MediaQuery.viewInsetsOf(context).bottom > 0` and shipped, and it
+            // never once fired: [Dialog] strips viewInsets from its subtree, so
+            // the value read here is always zero. See QaKeyboardScope.
             //
             // Web-only by construction — `splitPanel: true` is passed in exactly
             // one place, the citizen web shell — so the app never runs this.
-            final keyboardUp = MediaQuery.viewInsetsOf(context).bottom > 0;
+            final keyboardUp = QaKeyboardScope.of(context);
 
             final zones = Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
