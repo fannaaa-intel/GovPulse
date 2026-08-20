@@ -10,6 +10,7 @@ import '../../../core/widgets/ai_detection_badge.dart';
 import '../theme/admin_ui.dart';
 import '../providers/admin_identity_reveal_provider.dart';
 import '../providers/admin_suggestions_provider.dart';
+import '../widgets/report_detail_kit.dart';
 import '../widgets/admin_detail_screen.dart';
 import '../widgets/admin_moderation.dart';
 import '../widgets/admin_skeleton.dart';
@@ -933,19 +934,19 @@ class _SuggestionDetailDialogState
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _KvRow(
+                    DetailKvRow(
                       label: 'Status',
                       trailing: StatusPill(
                         label: suggestionStatusLabel(_status),
                         color: _statusColor(_status),
                       ),
                     ),
-                    _KvRow(label: 'ID', value: '#SUG-${s.shortId}'),
-                    _KvRow(
+                    DetailKvRow(label: 'ID', value: '#SUG-${s.shortId}'),
+                    DetailKvRow(
                       label: 'Date Submitted',
                       value: adminShortDate(s.createdAt),
                     ),
-                    _KvRow(
+                    DetailKvRow(
                       label: 'Time Submitted',
                       value: adminClockTime(s.createdAt),
                     ),
@@ -1408,61 +1409,6 @@ class _HeroThumb extends StatelessWidget {
 
 /// "Label: value" line in the details pane's id block. Pass [value] for plain
 /// text or [trailing] for a widget (the status pill).
-class _KvRow extends StatelessWidget {
-  final String label;
-  final String? value;
-  final Widget? trailing;
-  const _KvRow({required this.label, this.value, this.trailing});
-
-  /// Height of one status pill — label 11px in 4px of vertical padding.
-  static const double _pillLine = 21;
-
-  @override
-  Widget build(BuildContext context) {
-    final labelText = Text(
-      '$label: ',
-      style: const TextStyle(
-        fontSize: 12.5,
-        fontWeight: FontWeight.w700,
-        color: AdminUi.textPrimary,
-      ),
-    );
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // A pill stands taller than the label beside it, so tops flush left
-          // the label riding above the pill's own text. Give the label the
-          // pill's line height and centre it in that — trailing content that
-          // wraps still grows downward from the same first line.
-          if (trailing == null)
-            labelText
-          else
-            SizedBox(
-              height: _pillLine,
-              child: Center(widthFactor: 1, child: labelText),
-            ),
-          Expanded(
-            child: trailing == null
-                ? Text(
-                    value ?? '—',
-                    style: const TextStyle(
-                      fontSize: 12.5,
-                      height: 1.35,
-                      color: AdminUi.textSecondary,
-                    ),
-                  )
-                // Loosens the Expanded's tight width so a pill keeps its own
-                // width instead of stretching across the pane.
-                : Align(alignment: Alignment.centerLeft, child: trailing!),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 /// An icon + heading with its content indented beneath — the repeating unit of
 /// the details pane (Category, Location, Suggested By, Details, Attachments).
 class _IconSection extends StatelessWidget {

@@ -909,27 +909,58 @@ double attachmentTileSize(double maxWidth, {double gap = 10}) {
   return tile.clamp(minTile, maxTile);
 }
 
+/// Where one line of [style] puts its alphabetic baseline, measured in the font
+/// that is actually in force under [context] and at the reader's text scale.
+///
+/// Point size alone does not answer this: the ratio of ascent to line height is
+/// a property of the face, and the web build, Android and iOS do not resolve
+/// the default family to the same one. Anything that lines text up with text
+/// that is set at a DIFFERENT size — a caption beside a pill — has to measure.
+double alphabeticBaselineOf(BuildContext context, TextStyle style) {
+  final painter = TextPainter(
+    text: TextSpan(text: 'x', style: DefaultTextStyle.of(context).style.merge(style)),
+    textDirection: TextDirection.ltr,
+    textScaler: MediaQuery.textScalerOf(context),
+  )..layout();
+  return painter.computeDistanceToActualBaseline(TextBaseline.alphabetic);
+}
+
 class StatusPill extends StatelessWidget {
   final String label;
   final Color color;
   const StatusPill({super.key, required this.label, required this.color});
 
+  /// The pill's own padding and text size, public because anything that has to
+  /// sit level with a pill needs them: a caption beside a pill lines its
+  /// baseline up with the pill's text, which sits [verticalPadding] plus one
+  /// ascent of [textStyle] below the top of the pill. The other status pills
+  /// (events, verification) build from these too, so all of them stay the same
+  /// height and the shared row keeps working.
+  static const double verticalPadding = 4;
+  static const double horizontalPadding = 9;
+  static const TextStyle textStyle = TextStyle(
+    fontSize: 11,
+    fontWeight: FontWeight.w600,
+  );
+
+  /// Distance from the top of a pill down to its text's alphabetic baseline,
+  /// measured against the font actually in force rather than assumed from the
+  /// point size — the web build and the phone do not resolve to the same face.
+  static double baselineFromTop(BuildContext context) =>
+      verticalPadding + alphabeticBaselineOf(context, textStyle);
+
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      padding: const EdgeInsets.symmetric(
+        horizontal: horizontalPadding,
+        vertical: verticalPadding,
+      ),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(20),
       ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          color: color,
-        ),
-      ),
+      child: Text(label, style: textStyle.copyWith(color: color)),
     );
   }
 }

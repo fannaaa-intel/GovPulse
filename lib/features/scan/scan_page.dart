@@ -583,10 +583,15 @@ class _ScanPageState extends State<ScanPage> {
     child: child,
   );
 
+  // Label and value are set at different sizes and the value carries a line
+  // height, so tops flush put the value's baseline a couple of pixels under the
+  // label's. Both sides are plain text and report a baseline, so let the row
+  // line them up on it.
   Widget _row(String label, String value) => Padding(
     padding: const EdgeInsets.only(bottom: 10),
     child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.baseline,
+      textBaseline: TextBaseline.alphabetic,
       children: [
         SizedBox(
           width: 116,

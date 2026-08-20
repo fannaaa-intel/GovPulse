@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
@@ -212,48 +214,66 @@ class DetailKvRow extends StatelessWidget {
   final Widget? trailing;
   const DetailKvRow({super.key, required this.label, this.value, this.trailing});
 
-  /// Height of one status pill — label 11px in 4px of vertical padding.
-  static const double _pillLine = 21;
+  /// Label and value are set at the same size AND the same line height. They
+  /// used to differ — the value carried `height: 1.35` and the label carried
+  /// none — which pushed the value's baseline about 2px below the label's on
+  /// every row, since a line box distributes its extra leading around the
+  /// glyphs rather than under them.
+  static const double _fontSize = 12.5;
+  static const double _lineHeight = 1.35;
+  static const TextStyle labelStyle = TextStyle(
+    fontSize: _fontSize,
+    height: _lineHeight,
+    fontWeight: FontWeight.w700,
+    color: AdminUi.textPrimary,
+  );
+  static const TextStyle valueStyle = TextStyle(
+    fontSize: _fontSize,
+    height: _lineHeight,
+    color: AdminUi.textSecondary,
+  );
 
   @override
   Widget build(BuildContext context) {
-    final labelText = Text(
-      '$label: ',
-      style: const TextStyle(
-        fontSize: 12.5,
-        fontWeight: FontWeight.w700,
-        color: AdminUi.textPrimary,
-      ),
-    );
+    final labelText = Text('$label: ', style: labelStyle);
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // A pill stands taller than the label beside it, so tops flush left
-          // the label riding above the pill's own text. Give the label the
-          // pill's line height and centre it in that — trailing content that
-          // wraps still grows downward from the same first line.
           if (trailing == null)
             labelText
           else
-            SizedBox(
-              height: _pillLine,
-              child: Center(widthFactor: 1, child: labelText),
+            // A pill sets its text lower than a bare line does — its own
+            // padding, then a shorter ascent. Drop the label by the difference
+            // so the two baselines meet. Measured, not assumed, because the
+            // face differs between the web build and the phone; clamped at 0
+            // so a reader's larger text scale can never pull the label up out
+            // of the row. Content that wraps still grows down from this line.
+            Padding(
+              padding: EdgeInsets.only(
+                top: math.max(
+                  0.0,
+                  StatusPill.baselineFromTop(context) -
+                      alphabeticBaselineOf(context, labelStyle),
+                ),
+              ),
+              child: labelText,
             ),
           Expanded(
             child: trailing == null
-                ? Text(
-                    value ?? '—',
-                    style: const TextStyle(
-                      fontSize: 12.5,
-                      height: 1.35,
-                      color: AdminUi.textSecondary,
-                    ),
-                  )
+                ? Text(value ?? '—', style: valueStyle)
                 // Loosens the Expanded's tight width so a pill keeps its own
-                // width instead of stretching across the pane.
-                : Align(alignment: Alignment.centerLeft, child: trailing!),
+                // width instead of stretching across the pane. heightFactor
+                // pins it to the child's height: without it the Align takes
+                // whatever height it is offered, and in a pane with a bounded
+                // height that made the row tall and floated the pill down the
+                // middle of it.
+                : Align(
+                    alignment: Alignment.centerLeft,
+                    heightFactor: 1,
+                    child: trailing!,
+                  ),
           ),
         ],
       ),

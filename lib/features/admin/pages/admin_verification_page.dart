@@ -6,6 +6,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/deeplink_highlight.dart';
 import '../theme/admin_ui.dart';
 import '../providers/admin_verification_provider.dart';
+import '../widgets/report_detail_kit.dart';
 import '../widgets/admin_detail_screen.dart';
 import '../widgets/admin_skeleton.dart';
 import '../widgets/admin_submission_ui.dart';
@@ -1139,13 +1140,13 @@ class _VerificationDetailDialogState
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _KvRow(
+                    DetailKvRow(
                       label: 'Status',
                       trailing: _StatusPill(v.status),
                     ),
-                    _KvRow(label: 'Applicant', value: v.fullName),
-                    _KvRow(label: 'ID', value: '#IDV-${_shortIdOf(v.id)}'),
-                    _KvRow(
+                    DetailKvRow(label: 'Applicant', value: v.fullName),
+                    DetailKvRow(label: 'ID', value: '#IDV-${_shortIdOf(v.id)}'),
+                    DetailKvRow(
                       label: 'Date Submitted',
                       value: _shortDate(v.createdAt),
                     ),
@@ -1662,61 +1663,6 @@ class _FactStrip extends StatelessWidget {
 
 /// "Label: value" line in the details pane's id block. Pass [value] for plain
 /// text or [trailing] for a widget (the status pill).
-class _KvRow extends StatelessWidget {
-  final String label;
-  final String? value;
-  final Widget? trailing;
-  const _KvRow({required this.label, this.value, this.trailing});
-
-  /// Height of one status pill — label 11px in 4px of vertical padding.
-  static const double _pillLine = 21;
-
-  @override
-  Widget build(BuildContext context) {
-    final labelText = Text(
-      '$label: ',
-      style: const TextStyle(
-        fontSize: 12.5,
-        fontWeight: FontWeight.w700,
-        color: AdminUi.textPrimary,
-      ),
-    );
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // A pill stands taller than the label beside it, so tops flush left
-          // the label riding above the pill's own text. Give the label the
-          // pill's line height and centre it in that — trailing content that
-          // wraps still grows downward from the same first line.
-          if (trailing == null)
-            labelText
-          else
-            SizedBox(
-              height: _pillLine,
-              child: Center(widthFactor: 1, child: labelText),
-            ),
-          Expanded(
-            child: trailing == null
-                ? Text(
-                    value ?? '—',
-                    style: const TextStyle(
-                      fontSize: 12.5,
-                      height: 1.35,
-                      color: AdminUi.textSecondary,
-                    ),
-                  )
-                // Loosens the Expanded's tight width so a pill keeps its own
-                // width instead of stretching across the pane.
-                : Align(alignment: Alignment.centerLeft, child: trailing!),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 /// An icon + heading with its content indented beneath — the repeating unit of
 /// both panes (Documents, Identification, Personal, Contact, Timeline).
 class _IconSection extends StatelessWidget {
