@@ -152,12 +152,61 @@ class QaSplitPanel extends StatelessWidget {
             // set it. `left` takes everything that is left over and scrolls
             // inside it; `right` keeps its intrinsic height at the bottom,
             // which is what pins the actions.
+            //
+            // ── The action zone stands down while the keyboard is up ──────
+            //
+            // The host [Dialog] already shrinks by `viewInsets`, so when the
+            // keyboard opens the panel loses that height. The pinned zone,
+            // though, keeps its full intrinsic height — Continue over Back over
+            // Cancel is three stacked buttons, well over 200px — and it takes
+            // that out of the ONE part that needed the room. On a phone browser
+            // the working area collapsed to a sliver of the step notice and the
+            // field being typed into was pushed off the bottom, so the citizen
+            // was typing into something they could not see.
+            //
+            // Pinning exists so Continue is always reachable. While the keyboard
+            // is up it is not reachable anyway — the keyboard is over it — so
+            // the pin is costing height and buying nothing. Standing the zone
+            // down gives the body every pixel the keyboard left, which is what
+            // lets the framework scroll the focused field back into view. It
+            // comes straight back when the keyboard closes.
+            //
+            // Read as a BOOLEAN, not subtracted: the Dialog has already applied
+            // the inset, and using the number again here would double-count it.
+            //
+            // Web-only by construction — `splitPanel: true` is passed in exactly
+            // one place, the citizen web shell — so the app never runs this.
+            final keyboardUp = MediaQuery.viewInsetsOf(context).bottom > 0;
+
             final zones = Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Expanded(child: left(true)),
-                const SizedBox(height: kQaGap),
-                right(true),
+                // Animated, not switched. Dropping the zone between two frames
+                // made the whole panel jump at the same moment the keyboard was
+                // sliding up, and two unrelated movements at once read as a
+                // glitch. [AnimatedSize] collapses the zone's HEIGHT instead, so
+                // the buttons slide out of the bottom of the panel while the
+                // working area grows into the space they leave — one continuous
+                // movement, and the reverse on the way back.
+                //
+                // 200ms easeOutCubic is close enough to a soft keyboard's own
+                // rise that the two read as the same gesture.
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeOutCubic,
+                  alignment: Alignment.topCenter,
+                  child: keyboardUp
+                      ? const SizedBox.shrink()
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const SizedBox(height: kQaGap),
+                            right(true),
+                          ],
+                        ),
+                ),
               ],
             );
             // A pinned zone needs a bottom to be pinned to. Every real host

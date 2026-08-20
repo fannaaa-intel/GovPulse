@@ -2305,8 +2305,16 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
 
   void _openMediaViewer(int initialIndex) {
     if (_mediaItems.isEmpty) return;
-    Navigator.push(
-      context,
+    // On WEB this screen renders inside the shell's centre column, and its
+    // BRANCH navigator bounds the viewer: the barrier stopped at the column,
+    // so the left rail and the quick-actions sidebar stayed bright either side
+    // of a black strip. The root navigator is the whole window.
+    //
+    // Same fix, same reason, as the news feed card's [openImageViewer] call.
+    // kIsWeb rather than a bare `true` so MOBILE takes exactly the path it
+    // takes today - there `Navigator.of(context, rootNavigator: false)` is
+    // what the bare `Navigator.push(context, ...)` already resolved to.
+    Navigator.of(context, rootNavigator: kIsWeb).push(
       PageRouteBuilder(
         opaque: false,
         barrierColor: Colors.black87,
@@ -2391,20 +2399,35 @@ class _MediaViewerScreenState extends State<_MediaViewerScreen> {
             onPageChanged: (i) => setState(() => _current = i),
             itemBuilder: (_, i) => InteractiveViewer(
               child: Center(
-                child: CachedNetworkImage(
-                  imageUrl: widget.urls[i],
-                  cacheKey: widget.cacheKeys[i],
-                  fit: BoxFit.contain,
-                  placeholder: (context, url) => const Center(
-                    child: CircularProgressIndicator(
-                      color: Colors.white54,
-                      strokeWidth: 2,
+                // ── The plate behind the image ─────────────────────────
+                //
+                // A PNG or WebP with an alpha channel and dark artwork is
+                // INVISIBLE on this black scaffold - it loads, it paints, and
+                // there is nothing to see, which reads as a broken viewer
+                // rather than as a transparent image. The card behind it does
+                // not have the problem because it sits on white.
+                //
+                // A neutral plate sized to the image fixes that and costs an
+                // opaque photo nothing: at BoxFit.contain the photo covers the
+                // plate exactly, so it is only ever visible THROUGH the
+                // transparent parts of an image that has any.
+                child: DecoratedBox(
+                  decoration: const BoxDecoration(color: Color(0xFFE5E7EB)),
+                  child: CachedNetworkImage(
+                    imageUrl: widget.urls[i],
+                    cacheKey: widget.cacheKeys[i],
+                    fit: BoxFit.contain,
+                    placeholder: (context, url) => const Center(
+                      child: CircularProgressIndicator(
+                        color: Colors.white54,
+                        strokeWidth: 2,
+                      ),
                     ),
-                  ),
-                  errorWidget: (context, url, error) => const Icon(
-                    Icons.broken_image_outlined,
-                    color: Colors.white54,
-                    size: 60,
+                    errorWidget: (context, url, error) => const Icon(
+                      Icons.broken_image_outlined,
+                      color: Colors.white54,
+                      size: 60,
+                    ),
                   ),
                 ),
               ),
