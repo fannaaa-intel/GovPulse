@@ -1,15 +1,18 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import '../../../../core/widgets/responsive_page.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart' show LatLng;
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' as ll;
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:geolocator/geolocator.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/widgets/app_dialog.dart';
 import '../../../../core/theme/citizen_ui.dart';
+import '../../../../core/widgets/Home/Account/account_web_kit.dart';
 
 // ── Aparri bounding box (expanded to cover all 42 official barangays) ─────
 const double _aparriMinLat = 18.2750;
@@ -281,7 +284,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
   /// with the route perfectly smoothly, needs no API key or billing, and never
   /// shows the platform-view flicker a live GoogleMap does. Location is chosen
   /// via the GPS toggle / barangay dropdown, so the map is non-interactive.
-  Widget _mapArea(double width) {
+  Widget _mapArea(double width, {double? height, double? radius}) {
     final center = _markerPosition ?? _aparriCenter;
     // `width` here is the 480px MOBILE scale, not the panel's: on a phone the
     // map is 480 × 0.62 ≈ 298 tall under a 480-wide column, which is a squarish
@@ -292,15 +295,21 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
     // every OTHER step, which is where the emptiness was showing.
     //
     // Display-only either way: nothing is chosen by touching the map.
-    final double h = widget.readOnly
-        ? width * 1.10
-        : _inline
-        ? 220
-        : width * 0.62;
+    //
+    // `height` is passed only by the WEB read-only page, which sizes the map
+    // from the box it is actually given rather than from the 480px phone
+    // scale — see [_buildWebReadOnly].
+    final double h =
+        height ??
+        (widget.readOnly
+            ? width * 1.10
+            : _inline
+            ? 220
+            : width * 0.62);
     final llCenter = ll.LatLng(center.latitude, center.longitude);
 
     return ClipRRect(
-      borderRadius: BorderRadius.circular(width * 0.035),
+      borderRadius: BorderRadius.circular(radius ?? width * 0.035),
       child: SizedBox(
         height: h,
         width: double.infinity,
@@ -685,6 +694,23 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
           child: _pickerContent(width),
         ),
       );
+    }
+
+    // ── The citizen WEB "View on map" page ────────────────────────
+    //
+    // Pushed from a report's detail screen, which on web is no longer a phone
+    // screen in a browser: it is a centred 760 column of white cards on grey,
+    // opened by an [AccountPageTitle] whose chevron, 24px title and muted
+    // subtitle are the shape every citizen-web page uses. This page arrived
+    // through that door, so it has to be built from the same pieces — the
+    // alternative is a phone header, laid out in fractions of a 480px width it
+    // does not have, sitting under a desktop one.
+    //
+    // Guarded on [kIsWeb] AND [widget.readOnly]: the MOBILE route below is
+    // untouched, and so is the editable picker, which on web is hosted inline
+    // by the report panel and never reaches here at all.
+    if (kIsWeb && widget.readOnly) {
+      return _buildWebReadOnly();
     }
 
     return PopScope(
@@ -1220,6 +1246,191 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
       _markerPosition = barangayCoords[b];
     });
     _confirm();
+  }
+
+  // ── WEB read-only page ──────────────────────────────────────────────────
+
+  /// The "View on map" page as the citizen web shell renders it.
+  ///
+  /// Same content as the phone screen — where the issue is, and a locator map
+  /// with it pinned — rebuilt in the layout the rest of citizen web uses: one
+  /// 760 column centred on the page background, opened by [AccountPageTitle],
+  /// with the map inside a normal card.
+  ///
+  /// ── Why nothing here is a fraction of `width` ──────────────────────────
+  /// The phone layout derives every size from `MediaQuery.width` clamped to
+  /// 480. In a browser that clamp is always hit, so the fractions are frozen at
+  /// phone values while the column around them is 760 wide and the type beside
+  /// them (the shell nav, the detail page it came from) is set in real pixels.
+  /// That is the whole of what looked wrong: a 12px subtitle and a 43px chevron
+  /// box designed for a 480px screen, stranded in a desktop page. Web sizes are
+  /// fixed here, and the one measurement that must respond — the map's height —
+  /// is taken from a [LayoutBuilder] on the card's own box.
+  Widget _buildWebReadOnly() {
+    final barangay = widget.initialBarangay;
+    final address = barangay == null
+        ? 'Aparri, Cagayan'
+        : '$barangay, Aparri, Cagayan';
+
+    return Scaffold(
+      backgroundColor: CitizenUi.pageBg,
+      body: LayoutBuilder(
+        builder: (context, outer) {
+          // Measured on the CONTENT box, not the window: this page renders
+          // inside the shell's centre column, so the viewport width is not the
+          // width it is given. Same reasoning as [AccountPageBody]'s `stack`.
+          final narrow = outer.maxWidth < kAccountStackBelow;
+          final pad = narrow ? 20.0 : 32.0;
+
+          return SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 760),
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(pad, narrow ? 20 : 28, pad, 48),
+                  child: FadeTransition(
+                    opacity: _fadeAnim,
+                    child: SlideTransition(
+                      position: _slideAnim,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          AccountPageTitle(
+                            title: 'Report Location',
+                            subtitle: address,
+                            onBack: _close,
+                            backLabel: 'Back to report details',
+                          ),
+                          Padding(
+                            // Indented past the chevron to the title's left
+                            // edge, exactly as the detail page indents its
+                            // status pills, so the two headers line up.
+                            padding: const EdgeInsets.only(
+                              left:
+                                  kAccountBackChevron + kAccountBackChevronGap,
+                            ),
+                            child: _webViewOnlyPill(),
+                          ),
+                          const SizedBox(height: kAccountSectionGap),
+                          const Text(
+                            'Pinned location',
+                            style: TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
+                              color: CitizenUi.accent,
+                              letterSpacing: 0.2,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          _webMapCard(narrow, address),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// The map, its address and the one line saying what the page is showing.
+  Widget _webMapCard(bool narrow, String address) {
+    final inset = narrow ? 14.0 : 18.0;
+
+    return AccountCard(
+      padding: EdgeInsets.all(inset),
+      raised: true,
+      child: LayoutBuilder(
+        builder: (context, c) {
+          // A locator, not a viewport: tall enough to place the pin among its
+          // surroundings, never so tall it pushes its own caption off screen.
+          // Bounded by the WINDOW as well as by the card, so a short browser
+          // still shows the whole card without scrolling.
+          final ceiling = math.min(
+            420.0,
+            MediaQuery.of(context).size.height * 0.55,
+          );
+          final h = math.max(200.0, math.min(c.maxWidth * 0.55, ceiling));
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 480 is only the fallback scale for the sizes this call does not
+              // override; the height and the corner are both given explicitly.
+              _mapArea(480, height: h, radius: CitizenUi.controlRadius),
+              SizedBox(height: inset * 0.85),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(
+                    Icons.location_on_rounded,
+                    size: 18,
+                    color: CitizenUi.accent,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          address,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: CitizenUi.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        const Text(
+                          'Showing the exact location of the reported issue.',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            color: CitizenUi.textMuted,
+                            height: 1.4,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  /// The read-only badge, in fixed web pixels rather than phone fractions.
+  Widget _webViewOnlyPill() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+      decoration: BoxDecoration(
+        color: CitizenUi.accentWash,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: CitizenUi.accent.withValues(alpha: 0.20)),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.visibility_rounded, size: 13, color: CitizenUi.accent),
+          SizedBox(width: 6),
+          Text(
+            'View only',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: CitizenUi.accent,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   // ── Header ─────────────────────────────────────────────────────────────────
