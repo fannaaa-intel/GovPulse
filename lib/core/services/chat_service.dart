@@ -1030,23 +1030,37 @@ class ChatService extends ChangeNotifier {
 
   // ── AI call ───────────────────────────────────────────────────────────
 
+  /// How many past messages ride along with each chat-agent call. Every token
+  /// in that payload is spent against a Groq quota metered per API KEY — 8K
+  /// tokens/minute across the whole app, not per citizen — so an untrimmed
+  /// payload does not just cost latency, it brings the next citizen's 429
+  /// forward. See the v5 notes in supabase/functions/chat-agent/index.ts.
+  static const _historyMessages = 6;
+
+  /// An event blurb long enough to be useful, short enough that five of them
+  /// don't outweigh the citizen's actual question.
+  static const _eventDescriptionLimit = 200;
+
   Future<String> _callAgent(int session) async {
     final priorMessages = _messages.take(_messages.length - 1).toList();
-    final history =
-        (_stage == ConversationStage.askingQuestion ||
-            _stage == ConversationStage.followUp)
-        ? priorMessages
-              .skip(priorMessages.length > 6 ? priorMessages.length - 6 : 0)
-              .map((m) => {'text': m.text, 'isUser': m.isUser})
-              .toList()
-        : priorMessages
-              .map((m) => {'text': m.text, 'isUser': m.isUser})
-              .toList();
+    // Capped for EVERY stage. The cap used to apply only to askingQuestion and
+    // followUp; the other stages sent the whole transcript, which grew without
+    // bound over a long chat and quietly ate the per-minute token budget.
+    final history = priorMessages
+        .skip(
+          priorMessages.length > _historyMessages
+              ? priorMessages.length - _historyMessages
+              : 0,
+        )
+        .map((m) => {'text': m.text, 'isUser': m.isUser})
+        .toList();
     final latest = _messages.last;
 
     List<Map<String, dynamic>> events = [];
     if (_stage == ConversationStage.askingQuestion) {
-      events = await TicketRepository.I.getLatestEvents();
+      events = (await TicketRepository.I.getLatestEvents())
+          .map(_trimEvent)
+          .toList();
     }
     if (session != _sessionId) return '';
 
@@ -1093,6 +1107,32 @@ class ChatService extends ChangeNotifier {
       if (session != _sessionId) return '';
       return _offlineReply(latest.text);
     }
+  }
+
+  /// Drops an event row down to what Kuya Gov actually reads out. The full row
+  /// carries a free-text description that can run to several paragraphs, and
+  /// five of those are sent on every single question turn.
+  Map<String, dynamic> _trimEvent(Map<String, dynamic> e) {
+    final desc = (e['description'] as String?)?.trim() ?? '';
+    return {
+      'title': e['title'],
+      'event_date': e['event_date'],
+      'event_time': e['event_time'],
+      'location': e['location'],
+      'category': e['category'],
+      if (desc.isNotEmpty) 'description': _clip(desc),
+    };
+  }
+
+  /// Truncates [text] to [_eventDescriptionLimit] without cutting a surrogate
+  /// pair in half — an emoji sliced down the middle leaves a lone surrogate
+  /// that is not valid UTF-8, and this string is about to be JSON-encoded.
+  static String _clip(String text) {
+    if (text.length <= _eventDescriptionLimit) return text;
+    var end = _eventDescriptionLimit;
+    final last = text.codeUnitAt(end - 1);
+    if (last >= 0xD800 && last <= 0xDBFF) end -= 1; // high surrogate, no tail
+    return '${text.substring(0, end)}…';
   }
 
   /// On-device fallback answer for [userText], tagged with [_lastReplyOffline].

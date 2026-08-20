@@ -5,6 +5,28 @@
 // Deploy with:  supabase functions deploy chat-agent
 // Set secret:   supabase secrets set GROQ_API_KEY=gsk_...
 //
+// v5 changes vs v4:
+//   • 429 handling rewritten. Groq's free tier is metered PER API KEY (30 RPM /
+//     1K RPD / 8K TPM / 200K TPD on this model, shared with recommend-actions),
+//     so a rate-limited citizen is never a citizen-side problem — but v4 told
+//     them "marami pong gumagamit ng serbisyo" in Kuya Gov's voice and returned
+//     it as HTTP 200. Two bugs in one: it blamed public traffic for our own
+//     quota, and the 200 made the Flutter client accept it as a real answer, so
+//     the on-device LocalAssistant fallback the app already ships never ran.
+//     Now: one bounded retry when Groq asks for a short wait, then a real 429
+//     that lets ChatService fall back to LocalAssistant with the offline chip.
+//   • 429s log the full x-ratelimit-* header set and which limit fired (minute
+//     vs day). v4 logged the status only, which made "it fails on my iPad but
+//     works on my laptop" impossible to explain from the logs — the answer was
+//     that the key window had rolled over between the two attempts.
+//   • The greeting turn no longer ships the knowledge base. It has no citizen
+//     message to ground, and paying ~4K tokens to open the chat panel meant the
+//     first real question of a conversation ran into a half-spent minute.
+//   • Successful calls log usage.prompt_tokens_details.cached_tokens. The
+//     system prompt is ~4K byte-identical tokens and cached tokens do not count
+//     against TPM, so a 0 there on a warm key means every turn is paying full
+//     freight against an 8K/minute ceiling.
+//
 // v4 changes vs v3:
 //   • Model migrated llama-3.3-70b-versatile → openai/gpt-oss-120b (Groq
 //     deprecated the 70B on 2026-06-17, the same notice as the 8B). Same
@@ -308,6 +330,42 @@ Never write the word ACTION or the brackets inside the body of a normal answer.
 ${KNOWLEDGE_BASE}
 `.trim();
 
+// The greeting turn is the one call in the whole conversation that cannot
+// possibly need the knowledge base: there is no citizen message yet, nothing to
+// mirror, and nothing to ground — the stage instruction just asks for two or
+// three welcoming sentences. Sending the full ~4K-token prompt for it meant
+// opening the chat panel spent roughly half of the key's 8K/minute budget
+// before the citizen typed a character, so the FIRST real question of a fresh
+// conversation landed on a bucket that was already half empty. That is the most
+// reproducible way to hit the 429 handled further down.
+//
+// ⚠️ Keep the identity and tone rules here in sync with SYSTEM_PROMPT above —
+// this is a deliberate copy, not a derivation, because SYSTEM_PROMPT has to
+// stay byte-identical call to call for Groq's prefix cache to hit.
+const GREETING_SYSTEM_PROMPT = `
+You are "Kuya Gov" — the official virtual assistant of the Local Government Unit (LGU)
+of Aparri, Cagayan, Philippines, operating under the Mayor's Office.
+
+- You are Kuya Gov. You are NOT an AI, NOT a chatbot, NOT a language model. Never say or imply
+  otherwise, even if asked directly.
+- You work for the people of Aparri — like a trusted, knowledgeable barangay officer who genuinely cares.
+- Warm, patient, clear, confident. Never cold, never robotic, never overly formal.
+- Sound like a real person — not a government brochure.
+- Use "po" and "opo" naturally; don't stuff it into every line.
+- Never use filler like "Of course!", "Certainly!", "Great question!", "Absolutely!".
+- Write in friendly Taglish unless told otherwise.
+- Never output an [ACTION:...] tag on this turn.
+`.trim();
+
+/**
+ * The system prompt for a given stage. Everything except the greeting gets the
+ * full grounded prompt — an unknown stage must fall through to the full one,
+ * since the cost of a missing knowledge base is a fabricated fee.
+ */
+function systemPromptFor(stage: ConversationStage): string {
+  return stage === "greeting" ? GREETING_SYSTEM_PROMPT : SYSTEM_PROMPT;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // STAGE INSTRUCTIONS  (v3)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -433,6 +491,78 @@ const corsHeaders = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GROQ RATE-LIMIT HANDLING
+// ─────────────────────────────────────────────────────────────────────────────
+// Groq meters the free tier PER API KEY — not per user, per session, or per
+// device. On openai/gpt-oss-120b that is 30 RPM / 1K RPD / 8K TPM / 200K TPD,
+// and `recommend-actions` runs on the same model off the same key, so it draws
+// from the same buckets.
+//
+// The practical consequence, and the reason this block exists: a 429 here has
+// NOTHING to do with the citizen's device or network. It fires for whoever
+// happens to send the next message after the key's window fills, which makes it
+// look device-specific ("the iPad can't chat but the laptop can") when it is
+// really a shared server-side quota that rolled over between the two tries.
+// Diagnosing that from the old logs was impossible — they recorded the status
+// and nothing else — hence the header dump below.
+
+/** Longest we will make a waiting citizen sit through a retry, in seconds. */
+const MAX_RETRY_WAIT_SECONDS = 6;
+
+interface GroqLimit {
+  /** "minute" resets in seconds; "day" is done until the quota rolls over. */
+  scope: "minute" | "day" | "unknown";
+  retryAfterSeconds: number | null;
+}
+
+/**
+ * Reads which Groq limit fired, from the `retry-after` header plus the error
+ * body (Groq spells it out: "...on tokens per minute (TPM): Limit 8000, Used
+ * ... Please try again in 12.4s", or "...on requests per day (RPD)").
+ */
+function readGroqLimit(res: Response, body: string): GroqLimit {
+  const lower = body.toLowerCase();
+  const daily = lower.includes("per day") || lower.includes("(rpd)") ||
+    lower.includes("(tpd)");
+
+  const header = Number(res.headers.get("retry-after"));
+  let retryAfterSeconds = Number.isFinite(header) && header > 0 ? header : null;
+
+  // Groq usually also states the wait in the message body with sub-second
+  // precision, which is finer-grained than the header's whole seconds.
+  if (retryAfterSeconds === null) {
+    const m = lower.match(/try again in ([\d.]+)s/);
+    if (m) {
+      const parsed = Number(m[1]);
+      if (Number.isFinite(parsed) && parsed > 0) retryAfterSeconds = parsed;
+    }
+  }
+
+  return {
+    scope: daily ? "day" : retryAfterSeconds !== null ? "minute" : "unknown",
+    retryAfterSeconds,
+  };
+}
+
+/** Every quota header Groq returns, for the log line. */
+function rateLimitSnapshot(res: Response): Record<string, string> {
+  const snapshot: Record<string, string> = {};
+  for (const key of [
+    "retry-after",
+    "x-ratelimit-limit-requests",
+    "x-ratelimit-remaining-requests",
+    "x-ratelimit-reset-requests",
+    "x-ratelimit-limit-tokens",
+    "x-ratelimit-remaining-tokens",
+    "x-ratelimit-reset-tokens",
+  ]) {
+    const value = res.headers.get(key);
+    if (value !== null) snapshot[key] = value;
+  }
+  return snapshot;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // MAIN HANDLER
 // ─────────────────────────────────────────────────────────────────────────────
 serve(async (req: Request) => {
@@ -502,7 +632,7 @@ serve(async (req: Request) => {
 
   // ── Build message history (OpenAI format) ─────────────────────────────────
   const messages: Array<{ role: string; content: string }> = [
-    { role: "system", content: SYSTEM_PROMPT },
+    { role: "system", content: systemPromptFor(body.stage) },
   ];
 
   for (const m of body.history) {
@@ -529,8 +659,27 @@ serve(async (req: Request) => {
   messages.push({ role: "user", content: currentUserText });
 
   // ── Call Groq API ──────────────────────────────────────────────────────────
+  const groqBody = {
+    model: MODEL,
+    messages,
+    // Reasoning tokens share this budget with the visible reply, so the
+    // v3 value of 800 can now truncate a normal six-step answer
+    // mid-sentence. Headroom is free — generation stops at the stop token.
+    max_tokens: 1200,
+    // "low" on purpose. A citizen is waiting on this call, and everything
+    // above is explicit instruction-following (language mirroring, tag
+    // rules, KB grounding) rather than a reasoning problem. The v3 notes
+    // blame tag leakage and Ybanag/Ilocano fallback on the 8B — that was a
+    // capability ceiling, which a 120B clears at any effort level, so
+    // buying reasoning depth here mostly buys latency. Raise to "medium"
+    // ONLY if testing shows language mirroring or tag discipline slipping.
+    reasoning_effort: "low",
+    temperature: 0.25,
+    top_p: 0.9,
+  };
+
   try {
-    const groqRes = await fetch(
+    let groqRes = await fetch(
       "https://api.groq.com/openai/v1/chat/completions",
       {
         method: "POST",
@@ -538,42 +687,92 @@ serve(async (req: Request) => {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${apiKey}`,
         },
-        body: JSON.stringify({
-          model: MODEL,
-          messages,
-          // Reasoning tokens share this budget with the visible reply, so the
-          // v3 value of 800 can now truncate a normal six-step answer
-          // mid-sentence. Headroom is free — generation stops at the stop token.
-          max_tokens: 1200,
-          // "low" on purpose. A citizen is waiting on this call, and everything
-          // above is explicit instruction-following (language mirroring, tag
-          // rules, KB grounding) rather than a reasoning problem. The v3 notes
-          // blame tag leakage and Ybanag/Ilocano fallback on the 8B — that was a
-          // capability ceiling, which a 120B clears at any effort level, so
-          // buying reasoning depth here mostly buys latency. Raise to "medium"
-          // ONLY if testing shows language mirroring or tag discipline slipping.
-          reasoning_effort: "low",
-          temperature: 0.25,
-          top_p: 0.9,
-        }),
+        body: JSON.stringify(groqBody),
       },
     );
+
+    // One bounded retry on a per-minute burst. The TPM bucket is rolling, so
+    // the wait Groq asks for is usually a few seconds — cheaper to absorb here
+    // than to bounce the citizen to the offline assistant for a window that has
+    // already reopened by the time they retype their question. A daily limit is
+    // never retried: nothing resets within a wait a person will sit through.
+    if (groqRes.status === 429) {
+      const firstBody = await groqRes.text();
+      const limit = readGroqLimit(groqRes, firstBody);
+      console.error(
+        "Groq 429 — scope:",
+        limit.scope,
+        "retryAfter:",
+        limit.retryAfterSeconds,
+        "quota:",
+        JSON.stringify(rateLimitSnapshot(groqRes)),
+        "body:",
+        firstBody,
+      );
+
+      if (
+        limit.scope === "minute" &&
+        limit.retryAfterSeconds !== null &&
+        limit.retryAfterSeconds <= MAX_RETRY_WAIT_SECONDS
+      ) {
+        await new Promise((r) =>
+          setTimeout(r, Math.ceil(limit.retryAfterSeconds! * 1000))
+        );
+        groqRes = await fetch(
+          "https://api.groq.com/openai/v1/chat/completions",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify(groqBody),
+          },
+        );
+      }
+
+      if (groqRes.status === 429) {
+        const finalBody = groqRes.bodyUsed ? firstBody : await groqRes.text();
+        const finalLimit = groqRes.bodyUsed
+          ? limit
+          : readGroqLimit(groqRes, finalBody);
+
+        // Deliberately a 429 STATUS, not a 200 with an apology in `reply`.
+        // Through v4 this branch answered "marami pong gumagamit ng serbisyo"
+        // in Kuya Gov's own voice, which was wrong twice over: it blamed
+        // citizen traffic for our own key's quota, and — because it was a 200 —
+        // the Flutter client took it for a real AI answer and never reached the
+        // on-device LocalAssistant fallback it already ships. A non-2xx makes
+        // functions.invoke throw, ChatService falls back to LocalAssistant, and
+        // the citizen gets an actual answer about cedula/clearance/PSA with the
+        // offline chip on it instead of a dead end.
+        return new Response(
+          JSON.stringify({
+            error: "rate_limited",
+            scope: finalLimit.scope,
+            retryAfterSeconds: finalLimit.retryAfterSeconds,
+          }),
+          {
+            status: 429,
+            headers: {
+              "Content-Type": "application/json",
+              ...corsHeaders,
+              ...(finalLimit.retryAfterSeconds !== null
+                ? {
+                  "Retry-After": String(
+                    Math.ceil(finalLimit.retryAfterSeconds),
+                  ),
+                }
+                : {}),
+            },
+          },
+        );
+      }
+    }
 
     if (!groqRes.ok) {
       const err = await groqRes.text();
       console.error("Groq API error — status:", groqRes.status, "body:", err);
-
-      if (groqRes.status === 429) {
-        const busyReply: ChatResponse = {
-          reply:
-            "Pasensya na po, marami pong gumagamit ng serbisyo ngayon. " +
-            "Paki-subukan po ulit in a moment. 🙏",
-        };
-        return new Response(JSON.stringify(busyReply), {
-          headers: { "Content-Type": "application/json", ...corsHeaders },
-        });
-      }
-
       return new Response(
         JSON.stringify({ error: "AI service error", detail: err }),
         { status: 502, headers: corsHeaders },
@@ -581,6 +780,22 @@ serve(async (req: Request) => {
     }
 
     const data = await groqRes.json();
+
+    // Cached prefix tokens do not count against the TPM bucket, so the system
+    // prompt (~4K tokens, byte-identical every call) should be a cache hit on
+    // everything after the first request in a 2-hour window. If cached_tokens
+    // reads 0 here on a warm key, caching is silently off and every turn is
+    // paying full freight against an 8K/minute ceiling — that is the first
+    // thing to check when the 429s above start clustering.
+    const cachedTokens = data.usage?.prompt_tokens_details?.cached_tokens ?? 0;
+    console.log(
+      "Groq usage — prompt:",
+      data.usage?.prompt_tokens,
+      "cached:",
+      cachedTokens,
+      "completion:",
+      data.usage?.completion_tokens,
+    );
 
     const rawReply: string =
       data.choices?.[0]?.message?.content?.trim() ??
