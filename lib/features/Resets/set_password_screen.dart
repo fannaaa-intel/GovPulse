@@ -6,6 +6,7 @@ import '../../../core/widgets/responsive_page.dart';
 import '../../../core/utils/password_validator.dart';
 import '../../../core/widgets/indicators/password_strength_bar.dart';
 import '../../../core/network/network_wrapper.dart';
+import '../../core/theme/citizen_ui.dart';
 
 class SetPasswordScreen extends StatefulWidget {
   const SetPasswordScreen({super.key});
@@ -404,7 +405,7 @@ class _SetPasswordScreenState extends State<SetPasswordScreen>
               decoration: BoxDecoration(
                 color: const Color(0xFFF3F4F6),
                 borderRadius: BorderRadius.circular(w * 0.025),
-                border: Border.all(color: AppColors.stroke),
+                border: Border.all(color: CitizenUi.sharedStroke),
               ),
               child: Icon(
                 Icons.arrow_back_ios_rounded,

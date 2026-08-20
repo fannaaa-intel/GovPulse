@@ -1,8 +1,11 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import '../../core/router/legacy_nav.dart';
+import '../../core/widgets/Home/Account/account_web_kit.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/app_screen_header.dart';
 import '../../core/widgets/mobile_form_shell.dart';
+import '../../core/theme/citizen_ui.dart';
 
 class VerificationScreen extends StatefulWidget {
   final String username;
@@ -59,7 +62,7 @@ class _VerificationScreenState extends State<VerificationScreen>
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.stroke),
+        border: Border.all(color: CitizenUi.sharedStroke),
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -127,7 +130,7 @@ class _VerificationScreenState extends State<VerificationScreen>
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: AppColors.stroke),
+              border: Border.all(color: CitizenUi.sharedStroke),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.04),
@@ -197,7 +200,7 @@ class _VerificationScreenState extends State<VerificationScreen>
                   decoration: BoxDecoration(
                     color: const Color(0xFFF3F4F6),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.stroke),
+                    border: Border.all(color: CitizenUi.sharedStroke),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -344,9 +347,220 @@ class _VerificationScreenState extends State<VerificationScreen>
     );
   }
 
+  // ==========================================================================
+  //  WEB
+  //
+  //  -- This screen owns the whole window ------------------------------------
+  //  The wizard is reached by `pushLegacy` from the SHELL's own context, and
+  //  Navigator.of() is nearest-first: the shell's context sits ABOVE the branch
+  //  navigators, above the centre-column MediaQuery override and above
+  //  CitizenShellScope, so the nearest Navigator looking up from it is
+  //  go_router's ROOT one. The gate dialog agrees - showAppDialog defaults to
+  //  `useRootNavigator: true`, so `Navigator.of(ctx)` inside it is root too.
+  //
+  //  So unlike every account page, this is NOT a pane: there is no rail beside
+  //  it, no top nav above it, and the MediaQuery it sees is the real viewport.
+  //  It gets the kit's page frame because it is a citizen web page, not because
+  //  it is inside the shell.
+  //
+  //  -- Why AppScreenHeader goes ---------------------------------------------
+  //  It is a FULL-BLEED white bar. On a phone that is the screen, so its title
+  //  and the content below it share an edge. In a browser the bar spans the
+  //  window while the content is centred, so on a wide monitor the page's name
+  //  sat about a thousand pixels from the card it named. [AccountPageTitle] is
+  //  the same header idea - chevron, then the page's name - drawn INSIDE the
+  //  measure, so the title, the section labels and the cards share one left
+  //  edge. That is rule 1, and there is a test that fails when it drifts.
+  //
+  //  -- The chevron is not optional here -------------------------------------
+  //  `pushLegacy` writes no URL, and there is no shell underneath to fall back
+  //  to, so browser Back does not close this page - it leaves the app. Without
+  //  a chevron this is a room with no door.
+  //
+  //  -- No stepper on this screen --------------------------------------------
+  //  This is the "why", not a step: nothing has been asked for yet and nothing
+  //  can be filled in wrong. A progress bar reading "step 1 of n" before the
+  //  flow starts makes the intro look like work.
+  // ==========================================================================
+
+  Widget _buildWebScaffold() {
+    return Scaffold(
+      // Matches the ColorFilter the illustration is modulated with, so the gif's
+      // white plate keeps disappearing into the page rather than sitting on a
+      // visible square.
+      backgroundColor: CitizenUi.pageBg,
+      body: SafeArea(
+        child: AccountPageBody(
+          builder: (context, stack) => FadeTransition(
+            opacity: _fadeAnim,
+            child: SlideTransition(
+              position: _slideAnim,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  AccountPageTitle(
+                    title: 'Profile Verification',
+                    subtitle:
+                        'Confirm your identity to unlock the full range of '
+                        'LGU services.',
+                    onBack: () => Navigator.pop(context),
+                    backLabel: 'Back to Settings',
+                  ),
+
+                  Center(
+                    child: ColorFiltered(
+                      colorFilter: const ColorFilter.mode(
+                        CitizenUi.pageBg,
+                        BlendMode.modulate,
+                      ),
+                      child: Image.asset(
+                        'assets/images/verification/getver.gif',
+                        // The phone draws this at 150 inside a 480 column. The
+                        // web measure is 880, so it keeps roughly the same share
+                        // of the page instead of shrinking into the middle of it.
+                        height: stack ? 150 : 180,
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: kAccountSectionGap),
+
+                  const AccountSectionLabel('Why verify your profile'),
+                  AccountCard(child: _webFeatureGrid(stack)),
+                  const SizedBox(height: kAccountSectionGap),
+
+                  const AccountSectionLabel('Before you start'),
+                  const AccountCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _WebInfoRow(
+                          icon: Icons.badge_outlined,
+                          text:
+                              'Only valid government-issued IDs are accepted '
+                              'for verification.',
+                        ),
+                        SizedBox(height: 12),
+                        _WebInfoRow(
+                          icon: Icons.location_on_outlined,
+                          text:
+                              'Verification is currently available for Aparri '
+                              'residents only.',
+                        ),
+                        SizedBox(height: 12),
+                        _WebInfoRow(
+                          icon: Icons.person_outline,
+                          text:
+                              'Non-residents may continue using the app with '
+                              'limited access.',
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: kAccountSectionGap),
+
+                  _webStartButton(stack),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Four benefits, one row when there is room and two-by-two when there is not.
+  ///
+  /// [IntrinsicHeight] rather than the phone's `childAspectRatio: 1.3`. A fixed
+  /// ratio inside an 880 column makes each cell over 400px tall to hold two
+  /// short lines of text; worse, it is a hand-computed shape, so at 125% browser
+  /// font size - the 0.6-scale case the kit tests pin - the text outgrows the
+  /// box it was measured for. Letting the tallest card set the height cannot
+  /// overflow at any text scale.
+  Widget _webFeatureGrid(bool stack) {
+    const cards = <(String, String, String)>[
+      (
+        'assets/images/verification/access.webp',
+        'Access Full Services',
+        'Unlock all LGU features',
+      ),
+      (
+        'assets/images/verification/checksec.webp',
+        'Secure & Trusted',
+        'Safe and protected account',
+      ),
+      (
+        'assets/images/verification/faster.webp',
+        'Faster Transaction',
+        'Quick processing of request',
+      ),
+      (
+        'assets/images/verification/verified.webp',
+        'Verified Access',
+        'Be recognized as a verified citizen',
+      ),
+    ];
+
+    Widget row(List<(String, String, String)> group) => IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < group.length; i++) ...[
+            if (i > 0) const SizedBox(width: kAccountGap),
+            Expanded(
+              child: _WebFeatureCard(
+                icon: group[i].$1,
+                title: group[i].$2,
+                subtitle: group[i].$3,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+
+    if (!stack) return row(cards);
+    return Column(
+      children: [
+        row(cards.sublist(0, 2)),
+        const SizedBox(height: kAccountGap),
+        row(cards.sublist(2)),
+      ],
+    );
+  }
+
+  /// The CTA keeps the phone's green.
+  ///
+  /// [accountPrimaryButtonStyle] is reused for every other property - padding,
+  /// radius, type - so this sits at exactly the weight of the primary button on
+  /// Edit Profile or Change Password, and only the fill differs. The green is
+  /// [CitizenUi.accentGreen], an existing token, not a new colour; it is the
+  /// app's own colour for THIS action, and the rule is that the app's design
+  /// wins where a screen is the same object in both products.
+  Widget _webStartButton(bool stack) {
+    final button = ElevatedButton(
+      onPressed: () => pushLegacy(
+        context,
+        '/verification_id_selection',
+        arguments: widget.username,
+      ),
+      style: accountPrimaryButtonStyle().copyWith(
+        backgroundColor: const WidgetStatePropertyAll(CitizenUi.accentGreen),
+      ),
+      child: const Text('Verify Now'),
+    );
+
+    // Same rule as [AccountActions]: right-aligned when there is room to its
+    // right, full width when there is not.
+    return stack
+        ? SizedBox(width: double.infinity, child: button)
+        : Row(mainAxisAlignment: MainAxisAlignment.end, children: [button]);
+  }
+
   /// BUILD
   @override
   Widget build(BuildContext context) {
+    if (kIsWeb) return _buildWebScaffold();
     // No AppBar. It carried the PLATFORM back arrow and its own 16px w500
     // title on a grey bar — three ways of differing from every Settings screen
     // this is reached from. AppScreenHeader is the Settings header itself: a
@@ -371,6 +585,99 @@ class _VerificationScreenState extends State<VerificationScreen>
           ],
         ),
       ),
+    );
+  }
+}
+
+// ==============================================================================
+//  Web-only leaves. Nothing below is reachable from the mobile app.
+// ==============================================================================
+
+/// One benefit tile.
+///
+/// The phone draws these at 12.5/10.5 because four of them share a 480 column.
+/// On web they share 880, so they are set at the kit's own body sizes - the
+/// phone's caption scale inside a desktop card reads as a screenshot of the app
+/// rather than as the page you are on.
+class _WebFeatureCard extends StatelessWidget {
+  final String icon;
+  final String title;
+  final String subtitle;
+
+  const _WebFeatureCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+      decoration: BoxDecoration(
+        color: CitizenUi.subtle,
+        borderRadius: BorderRadius.circular(CitizenUi.controlRadius),
+        border: Border.all(color: CitizenUi.border),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.start,
+        children: [
+          SizedBox(
+            height: 36,
+            width: 36,
+            child: Image.asset(icon, fit: BoxFit.contain),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 13.5,
+              fontWeight: FontWeight.w700,
+              color: CitizenUi.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 12,
+              height: 1.35,
+              color: CitizenUi.textMuted,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One line of the "Before you start" card.
+class _WebInfoRow extends StatelessWidget {
+  final IconData icon;
+  final String text;
+
+  const _WebInfoRow({required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 17, color: CitizenUi.textFaint),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            text,
+            style: const TextStyle(
+              fontSize: 13.5,
+              height: 1.45,
+              color: CitizenUi.textSecondary,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

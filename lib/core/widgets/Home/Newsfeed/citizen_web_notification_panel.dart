@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 import '../../../../features/home/screen/notification_popup.dart';
+import '../../../../core/theme/citizen_ui.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  Citizen WEB notification panel.
@@ -196,7 +197,7 @@ class _CitizenWebNotificationPanelState
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFE5E7EB)),
+          border: Border.all(color: CitizenUi.sharedBorder),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.16),
@@ -210,7 +211,7 @@ class _CitizenWebNotificationPanelState
         child: Column(
           children: [
             _header(),
-            const Divider(height: 1, color: Color(0xFFE5E7EB)),
+            const Divider(height: 1, color: CitizenUi.sharedBorder),
             Expanded(child: _body()),
           ],
         ),
@@ -444,7 +445,8 @@ class _NotifListSkeleton extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final maxH = constraints.maxHeight.isFinite
-            ? constraints.maxHeight - 12 // the 6+6 outer padding below
+            ? constraints.maxHeight -
+                  12 // the 6+6 outer padding below
             : _rowExtent * 6;
         final count = (maxH / _rowExtent).floor().clamp(1, 8);
         return _PanelShimmer(
@@ -453,7 +455,10 @@ class _NotifListSkeleton extends StatelessWidget {
               padding: const EdgeInsets.symmetric(vertical: 6),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
-                children: List.generate(count, (_) => const _NotifSkeletonRow()),
+                children: List.generate(
+                  count,
+                  (_) => const _NotifSkeletonRow(),
+                ),
               ),
             ),
           ),
@@ -568,11 +573,7 @@ class _PanelShimmerState extends State<_PanelShimmer>
         shaderCallback: (bounds) => LinearGradient(
           begin: Alignment.centerLeft,
           end: Alignment.centerRight,
-          colors: const [
-            _kSkeletonBase,
-            _kSkeletonHighlight,
-            _kSkeletonBase,
-          ],
+          colors: const [_kSkeletonBase, _kSkeletonHighlight, _kSkeletonBase],
           stops: const [0.25, 0.5, 0.75],
           // Reused from the phone popup — same sweep, one implementation.
           transform: GradientTranslation(

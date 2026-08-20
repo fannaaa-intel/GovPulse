@@ -8,6 +8,7 @@ import '../../../core/services/guest_session.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/web/web.dart';
 import '../../../core/widgets/mobile_form_shell.dart';
+import '../../../core/theme/citizen_ui.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  Guests get the bare feed, NOT the citizen shell. That is a product decision,
@@ -88,15 +89,9 @@ class _GuestScreenState extends State<GuestScreen>
     // first-frame stutter, which is a separate concern from the blank gap.
     _fadeAnim = kIsWeb
         ? Tween<double>(begin: _kWebFadeFloor, end: 1.0).animate(
-            CurvedAnimation(
-              parent: _entranceController,
-              curve: Curves.easeOut,
-            ),
+            CurvedAnimation(parent: _entranceController, curve: Curves.easeOut),
           )
-        : CurvedAnimation(
-            parent: _entranceController,
-            curve: Curves.easeOut,
-          );
+        : CurvedAnimation(parent: _entranceController, curve: Curves.easeOut);
     _slideAnim = Tween<Offset>(begin: const Offset(0, 0.06), end: Offset.zero)
         .animate(
           CurvedAnimation(
@@ -323,7 +318,7 @@ class _GuestScreenState extends State<GuestScreen>
                             padding: const EdgeInsets.all(18),
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: AppColors.stroke),
+                              border: Border.all(color: CitizenUi.sharedStroke),
                               color: const Color(0xFFF6F7FB),
                             ),
                             child: const Column(

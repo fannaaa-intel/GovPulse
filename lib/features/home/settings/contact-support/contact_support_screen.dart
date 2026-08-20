@@ -1,8 +1,11 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import '../../../../core/widgets/responsive_page.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/app_snackbar.dart';
+import '../../../../core/theme/citizen_ui.dart';
+import '../../../../core/widgets/Home/Account/account_web_kit.dart';
 
 class ContactSupportScreen extends StatefulWidget {
   final String username;
@@ -97,6 +100,10 @@ class _ContactSupportScreenState extends State<ContactSupportScreen>
   // ── Build ──────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
+    // The browser always gets the web layout — `kIsWeb` alone, no width test,
+    // for the reason EditProfileScreen spells out.
+    if (kIsWeb) return _buildWebScaffold();
+
     final w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
     return Scaffold(
       backgroundColor: const Color(0xFFF3F4F6),
@@ -216,7 +223,7 @@ class _ContactSupportScreenState extends State<ContactSupportScreen>
               decoration: BoxDecoration(
                 color: const Color(0xFFF3F4F6),
                 borderRadius: BorderRadius.circular(w * 0.025),
-                border: Border.all(color: AppColors.stroke),
+                border: Border.all(color: CitizenUi.sharedStroke),
               ),
               child: Icon(
                 Icons.arrow_back_ios_rounded,
@@ -248,7 +255,7 @@ class _ContactSupportScreenState extends State<ContactSupportScreen>
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(w * 0.04),
-        border: Border.all(color: AppColors.stroke),
+        border: Border.all(color: CitizenUi.sharedStroke),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.05),
@@ -319,7 +326,7 @@ class _ContactSupportScreenState extends State<ContactSupportScreen>
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(w * 0.035),
-        border: Border.all(color: AppColors.stroke),
+        border: Border.all(color: CitizenUi.sharedStroke),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.04),
@@ -403,7 +410,7 @@ class _ContactSupportScreenState extends State<ContactSupportScreen>
         if (showDivider)
           Padding(
             padding: EdgeInsets.only(left: w * 0.175),
-            child: const Divider(height: 1, color: AppColors.stroke),
+            child: const Divider(height: 1, color: CitizenUi.sharedStroke),
           ),
       ],
     );
@@ -458,7 +465,7 @@ class _ContactSupportScreenState extends State<ContactSupportScreen>
         if (showDivider)
           Padding(
             padding: EdgeInsets.only(left: w * 0.175),
-            child: const Divider(height: 1, color: AppColors.stroke),
+            child: const Divider(height: 1, color: CitizenUi.sharedStroke),
           ),
       ],
     );
@@ -514,4 +521,108 @@ class _ContactSupportScreenState extends State<ContactSupportScreen>
       ),
     );
   }
+
+  // ═════════════════════════════════════════════════════════════════════════
+  //  WEB
+  //
+  //  Reached only from the `kIsWeb` branch of build(). The mobile layout above
+  //  is untouched; this is a second layout over the same launch handlers.
+  // ═════════════════════════════════════════════════════════════════════════
+
+  Widget _buildWebScaffold() {
+    // No ResponsivePageBody and so no `shellTitle`: that path wraps the page in
+    // SettingsWebShell's 600px column beside a decorative brand panel, which is
+    // wrong inside a pane that already has a top nav and a left rail.
+    //
+    // No skeleton either. This page fetches nothing — every value on it is a
+    // compile-time constant — so there is no loading state to draw.
+    return Scaffold(
+      backgroundColor: CitizenUi.pageBg,
+      body: SafeArea(child: AccountPageBody(builder: _buildWebBody)),
+    );
+  }
+
+  Widget _buildWebBody(BuildContext context, bool stack) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // ── The intro hero card is gone on web, deliberately ────────────────
+        //
+        // It was an avatar circle over "We're here to help" over a sentence
+        // telling you to choose an option below. The page title now says the
+        // same thing in the same place every other account page says it, and a
+        // second restatement of it — as a 200px card above the two rows it is
+        // describing — is the "slab of colour above the thing it describes"
+        // that [AccountNotice] documents as the pattern this kit rejects.
+        const AccountPageTitle(
+          title: 'Contact Support',
+          subtitle:
+              'Reach the Aparri LGU team for help with your account, your '
+              'submissions, or anything else on GovPulse.',
+        ),
+        AccountSectionList(
+          sections: [
+            AccountListSection(
+              title: 'Get in touch',
+              children: [
+                // Outbound arrow rather than the chevron [AccountRow] supplies
+                // by default: these rows leave GovPulse for Facebook, the
+                // dialer or Maps, and a chevron promises another page inside
+                // the app.
+                AccountRow(
+                  icon: Icons.facebook_rounded,
+                  title: 'Message on Facebook',
+                  subtitle: 'Official Aparri LGU page',
+                  onTap: _openFacebook,
+                  trailing: _webOutboundIcon(),
+                ),
+                AccountRow(
+                  icon: Icons.call_outlined,
+                  title: 'Call us',
+                  subtitle: _supportPhoneDisplay,
+                  onTap: _callSupport,
+                  trailing: _webOutboundIcon(),
+                ),
+              ],
+            ),
+            AccountListSection(
+              title: 'Office',
+              children: [
+                AccountRow(
+                  icon: Icons.location_on_outlined,
+                  title: _officeName,
+                  subtitle: _officeAddress,
+                  onTap: _openMaps,
+                  trailing: _webOutboundIcon(),
+                ),
+                // No onTap and no trailing: office hours are a value, not a
+                // destination, and [AccountRow] draws no affordance for one.
+                const AccountRow(
+                  icon: Icons.schedule_rounded,
+                  title: 'Office hours',
+                  subtitle: _officeHours,
+                ),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: kAccountSectionGap),
+        AccountNotice(
+          icon: Icons.info_outline_rounded,
+          title: 'Response times',
+          message:
+              'Support requests are usually answered within 1–3 working days. '
+              'For emergencies, contact your barangay or local hotline '
+              'directly.',
+          stack: stack,
+        ),
+      ],
+    );
+  }
+
+  Widget _webOutboundIcon() => const Icon(
+    Icons.north_east_rounded,
+    size: 18,
+    color: CitizenUi.textFaint,
+  );
 }

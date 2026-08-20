@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../theme/app_colors.dart';
+import '../../../../core/theme/citizen_ui.dart';
 
 class HomeQuickActionsSection extends StatelessWidget {
   final double width;
@@ -71,7 +72,7 @@ class HomeQuickActionsSection extends StatelessWidget {
               offset: const Offset(0, 2),
             ),
           ],
-          border: Border.all(color: const Color(0xFFE5E7EB)),
+          border: Border.all(color: CitizenUi.sharedBorder),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -115,7 +116,7 @@ class HomeQuickActionsSection extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(width * 0.03),
-          border: Border.all(color: const Color(0xFFE5E7EB)),
+          border: Border.all(color: CitizenUi.sharedBorder),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: .04),

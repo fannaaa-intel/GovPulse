@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/services/ticket_repository.dart';
 import '../../../../core/theme/app_colors.dart';
 import 'online_pulse.dart';
+import '../../../../core/theme/citizen_ui.dart';
 
 const _kTextPri = Color(0xFF111827);
 
@@ -46,9 +47,12 @@ class _ChatAgentInfoBarState extends State<ChatAgentInfoBar> {
   }
 
   Widget _personIcon(double width) => Center(
-        child: Icon(Icons.person_rounded,
-            size: width * 0.062, color: AppColors.primaryBlue),
-      );
+    child: Icon(
+      Icons.person_rounded,
+      size: width * 0.062,
+      color: AppColors.primaryBlue,
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -69,7 +73,7 @@ class _ChatAgentInfoBarState extends State<ChatAgentInfoBar> {
         decoration: BoxDecoration(
           color: AppColors.inputBg,
           borderRadius: BorderRadius.circular(width * 0.032),
-          border: Border.all(color: AppColors.stroke, width: 1),
+          border: Border.all(color: CitizenUi.sharedStroke, width: 1),
         ),
         child: Row(
           children: [
@@ -96,12 +100,12 @@ class _ChatAgentInfoBarState extends State<ChatAgentInfoBar> {
                       ),
                     )
                   : (widget.staffPhotoUrl?.isNotEmpty ?? false)
-                      ? CachedNetworkImage(
-                          imageUrl: widget.staffPhotoUrl!,
-                          fit: BoxFit.cover,
-                          errorWidget: (_, _, _) => _personIcon(width),
-                        )
-                      : _personIcon(width),
+                  ? CachedNetworkImage(
+                      imageUrl: widget.staffPhotoUrl!,
+                      fit: BoxFit.cover,
+                      errorWidget: (_, _, _) => _personIcon(width),
+                    )
+                  : _personIcon(width),
             ),
             SizedBox(width: width * 0.028),
 
@@ -113,8 +117,8 @@ class _ChatAgentInfoBarState extends State<ChatAgentInfoBar> {
                   Text(
                     widget.connected
                         ? (widget.staffLabel?.trim().isNotEmpty ?? false
-                            ? widget.staffLabel!.trim()
-                            : 'LGU Staff')
+                              ? widget.staffLabel!.trim()
+                              : 'LGU Staff')
                         : 'LGU Aparri Agent',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -167,7 +171,7 @@ class _ChatAgentInfoBarState extends State<ChatAgentInfoBar> {
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(width * 0.020),
-                border: Border.all(color: AppColors.stroke, width: 1),
+                border: Border.all(color: CitizenUi.sharedStroke, width: 1),
               ),
               child: Column(
                 children: [

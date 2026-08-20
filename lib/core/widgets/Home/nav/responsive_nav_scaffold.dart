@@ -49,6 +49,7 @@ import 'home_nav_drawer.dart';
 import 'home_top_nav.dart';
 import 'nav_band.dart';
 import '../../app_dialog.dart';
+import '../../../../core/theme/citizen_ui.dart';
 
 export 'nav_band.dart' show NavBand, resolveNavBand, kNavTopBreakpoint;
 
@@ -292,7 +293,7 @@ class ResponsiveNavScaffold extends ConsumerWidget {
         ),
       ),
       shape: const Border(
-        bottom: BorderSide(color: Color(0xFFE5E7EB), width: 1),
+        bottom: BorderSide(color: CitizenUi.sharedBorder, width: 1),
       ),
       actions: [
         IconButton(

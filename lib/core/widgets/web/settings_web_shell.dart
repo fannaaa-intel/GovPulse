@@ -15,6 +15,7 @@ import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
 import 'web_constants.dart'; // kHeroBgTop / kHeroBgBottom
 import 'web_hero_panel.dart' show GridPainter, GlowOrb;
+import '../../../core/theme/citizen_ui.dart';
 
 /// One fixed content width for EVERY shelled screen, so the content column and
 /// the brand panel stay the same size no matter which sub-screen you're on.
@@ -61,7 +62,7 @@ class SettingsWebShell extends StatelessWidget {
                 decoration: const BoxDecoration(
                   color: Color(0xFFF3F4F6),
                   border: Border(
-                    right: BorderSide(color: Color(0xFFE5E7EB)),
+                    right: BorderSide(color: CitizenUi.sharedBorder),
                   ),
                 ),
                 child: MediaQuery(

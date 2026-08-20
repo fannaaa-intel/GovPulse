@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
-import '../../shell/citizen_shell_dialogs.dart' show FormDialogGuard;
+import '../../shell/citizen_shell_dialogs.dart'
+    show FormDialogGuard, kSplitDialogFullscreenBelow;
 import '../../../../core/widgets/responsive_page.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/theme/citizen_ui.dart';
+import '../../../../core/widgets/Home/Quick-action/Web/quick_action_split_panel.dart';
 import '../../../../core/widgets/modal/media_picker_sheet.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
@@ -22,6 +25,14 @@ import '../../../../core/widgets/app_dialog.dart';
 import '../../../../core/utils/submission_id.dart';
 import '../../../../core/utils/picked_media.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+
+/// The split panel's SQUARE "Add file" tile — the first cell of the panel's
+/// 4-column attachment grid, sized to match the file tiles beside it.
+///
+/// A private widget rather than a method so the hover flag is local state; the
+/// form's own `setState` must not be spent on a pointer moving over a box.
+/// Web-only by construction: it is built solely from the `splitPanel` branch,
+/// and [MouseRegion] reports nothing without a real pointer anyway.
 
 // ── Aparri bounding box — must match location_picker_screen.dart ──────────
 const double _riMinLat = 18.2750;
@@ -79,8 +90,9 @@ class _NearbyReport {
   /// The original reporter plus everyone who has confirmed since.
   int get reporterCount => confirmCount + 1;
 
-  String get distanceLabel =>
-      distanceM < 1000 ? '$distanceM m away' : '${(distanceM / 1000).toStringAsFixed(1)} km away';
+  String get distanceLabel => distanceM < 1000
+      ? '$distanceM m away'
+      : '${(distanceM / 1000).toStringAsFixed(1)} km away';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -223,8 +235,7 @@ class ReportIssueScreen extends StatelessWidget {
   const ReportIssueScreen({super.key, required this.username});
 
   @override
-  Widget build(BuildContext context) =>
-      ReportIssueForm(username: username);
+  Widget build(BuildContext context) => ReportIssueForm(username: username);
 }
 
 /// The Report an Issue form.
@@ -238,15 +249,33 @@ class ReportIssueScreen extends StatelessWidget {
 /// the decorative hero panel is dropped because it is pure waste in a modal.
 /// [guard] lets the dialog's close button reuse this form's discard
 /// confirmation.
+///
+/// `splitPanel: true` renders the SAME sections as a two-column web panel — a
+/// stepper over the working area on the left, a live summary and the buttons on
+/// the right. Only the citizen web shell passes it. See [_splitPanelBody] for
+/// why every section is still built on every step.
 class ReportIssueForm extends StatefulWidget {
   final String username;
   final bool embedded;
   final FormDialogGuard? guard;
+
+  /// Two-column web layout. Default false, and the default is what mobile, the
+  /// native-tablet home body and the standalone route all get — none of them
+  /// pass this, so their widget tree is unchanged.
+  final bool splitPanel;
+
+  /// Dismisses the hosting dialog. Only read in the [splitPanel] branch, whose
+  /// rail owns the × and the Cancel button; the other two branches close
+  /// through the dialog's own header or through `Navigator.pop`.
+  final VoidCallback? onClose;
+
   const ReportIssueForm({
     super.key,
     required this.username,
     this.embedded = false,
     this.guard,
+    this.splitPanel = false,
+    this.onClose,
   });
 
   @override
@@ -302,6 +331,70 @@ class _ReportIssueScreenState extends State<ReportIssueForm>
   bool _isFetchingLocation = true;
   bool _locationOutsideAparri = false;
   bool _locationPermissionDenied = false;
+
+  // ── Split-panel step (web only) ───────────────────────────────────────────
+  /// Which step the two-column web panel is showing. Read ONLY by the
+  /// `widget.splitPanel` branch; mobile and the standalone route never look at
+  /// it, so it cannot change what they render.
+  ///
+  /// This is a view index, not a wizard position: it decides which sections are
+  /// VISIBLE, never which are built, and it gates nothing on submit.
+  int _splitStep = 0;
+
+  /// The working area's scroll position, so changing step can return it to the
+  /// top. Web only: the [_splitScrollable] that attaches it is built solely
+  /// from the `widget.splitPanel` branch, and an unattached controller costs a
+  /// mobile build nothing.
+  final ScrollController _splitScrollCtrl = ScrollController();
+
+  static const List<String> _kSplitSteps = [
+    'Category',
+    'Location',
+    'Details',
+    'Review',
+  ];
+
+  /// Which PANE the stacked panel is showing: 0 = Report, 1 = Summary.
+  ///
+  /// Read ONLY by the `widget.splitPanel` branch, and within it only when the
+  /// panel is stacked — side by side the summary is a rail beside the work and
+  /// there is nothing to switch between. Mobile and the standalone route never
+  /// look at it.
+  ///
+  /// ── A pane, not a step ───────────────────────────────────────────────────
+  /// This is the one piece of state in the panel that is purely about what is
+  /// on screen. [_splitStep] is where the citizen is in the form and is EARNED:
+  /// `_splitStepGate` can refuse to move it. A tab is never refused, because
+  /// looking at the recap is not progress and cannot fail. Keeping the two
+  /// apart is why switching tabs does not touch `_splitStep`, why the buttons
+  /// keep reading `_splitStep` rather than this, and why the two controls are
+  /// drawn as visibly different things.
+  int _splitTab = 0;
+
+  static const List<String> _kSplitTabs = ['Report', 'Summary'];
+
+  /// Inline error under the offending field on the current split-panel step,
+  /// and which field it belongs under ('category' | 'location' | 'remarks' |
+  /// 'attach').
+  ///
+  /// Set only when Continue is pressed on an unsatisfied step, cleared the
+  /// moment the field it complains about changes. It never reaches
+  /// `_validate()` or `_submitReport()` — those stay the sole authority on what
+  /// may be filed, so a citizen who clicks the stepper straight to Review is
+  /// still refused there by the existing dialog rather than by this.
+  String? _stepError;
+  String? _stepErrorField;
+
+  /// Whether [_stepError] belongs under [field] right now.
+  bool _errorOn(String field) => _stepError != null && _stepErrorField == field;
+
+  /// Drops the inline error once the citizen acts on the field it named.
+  void _clearStepError(String field) {
+    if (_errorOn(field)) {
+      _stepError = null;
+      _stepErrorField = null;
+    }
+  }
 
   bool _hasAnyInput() {
     return _selectedCategory != null ||
@@ -379,6 +472,7 @@ class _ReportIssueScreenState extends State<ReportIssueForm>
     _othersCtrl.dispose();
     _remarksCtrl.dispose();
     _streetDetailCtrl.dispose();
+    _splitScrollCtrl.dispose();
     super.dispose();
   }
 
@@ -659,14 +753,26 @@ class _ReportIssueScreenState extends State<ReportIssueForm>
     );
 
     if (result != null && mounted) {
-      setState(() {
-        _pickedLatLng = result['latLng'] as LatLng?;
-        _pickedBarangay = result['barangay'] as String?;
-        _useCurrentLocation = result['useCurrentLocation'] as bool;
-        _locationOutsideAparri = false;
-        _locationPermissionDenied = false;
-      });
+      _applyLocationResult(result);
     }
+  }
+
+  /// Folds a confirmed pick into the form's location state.
+  ///
+  /// Extracted so the pushed picker (mobile, the standalone route) and the
+  /// inline picker (the web split panel's step 2) run byte-identical code —
+  /// they differ only in how the map gets here, never in what it does.
+  void _applyLocationResult(Map<String, dynamic> result) {
+    setState(() {
+      _pickedLatLng = result['latLng'] as LatLng?;
+      _pickedBarangay = result['barangay'] as String?;
+      _useCurrentLocation = result['useCurrentLocation'] as bool;
+      _locationOutsideAparri = false;
+      _locationPermissionDenied = false;
+      // A confirmed location clears step 2's inline error, same as any other
+      // field change clearing its own.
+      _stepError = null;
+    });
   }
 
   // ── Animations ──────────────────────────────────────────────────────────────
@@ -703,6 +809,16 @@ class _ReportIssueScreenState extends State<ReportIssueForm>
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+
+    // The citizen web shell's two-column panel. Checked FIRST because it is the
+    // most specific host; the two branches below are untouched.
+    if (widget.splitPanel) {
+      return GestureDetector(
+        onTap: () => FocusScope.of(context).unfocus(),
+        behavior: HitTestBehavior.translucent,
+        child: _splitPanelBody(width),
+      );
+    }
 
     // Inside the shell's dialog there is no page to own: the dialog supplies the
     // header, the close button and the bounds, and the form just scrolls in it.
@@ -792,6 +908,1112 @@ class _ReportIssueScreenState extends State<ReportIssueForm>
     );
   }
 
+  // ══════════════════════════════════════════════════════════════════════════
+  //  Split panel (citizen web only)
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /// The two-column web layout.
+  ///
+  /// ── Every section is built on every step ─────────────────────────────────
+  /// The four steps switch VISIBILITY, not construction: each group is wrapped
+  /// in an [Offstage], which leaves the widget mounted, its element alive and
+  /// its state intact while skipping layout and paint. So no TextEditingController
+  /// is ever torn down mid-form, no picked file or lat/lng is dropped by moving
+  /// between steps, and `_validate()` at submit sees exactly the same state it
+  /// sees on mobile — including fields that are not currently on screen.
+  ///
+  /// ── The stepper gates nothing ────────────────────────────────────────────
+  /// Continue simply advances the index and the numbers are clickable, so a
+  /// citizen can reach Review with an empty category. That is on purpose: the
+  /// existing `_validate()` is left as the single authority on what may be
+  /// submitted, and Submit here calls the unmodified `_submitReport()`.
+  ///
+  /// ── The review step has no copy of the data ──────────────────────────────
+  /// [_splitReviewStep] reads `_selectedCategory`, `_pickedBarangay`,
+  /// `_remarksCtrl` and friends directly on each build — the very fields the
+  /// inputs write to — so it cannot drift from them.
+  Widget _splitPanelBody(double width) {
+    // Rebuild the summary and the review as the citizen types. Scoped to this
+    // branch rather than added as initState listeners, so mobile keeps its
+    // existing rebuild behaviour untouched.
+    return AnimatedBuilder(
+      animation: Listenable.merge([
+        _remarksCtrl,
+        _streetDetailCtrl,
+        _othersCtrl,
+      ]),
+      builder: (context, _) => QaSplitPanel(
+        left: (stacked) => _splitLeftPanel(width, stacked),
+        right: (stacked) => _splitRightRail(stacked),
+      ),
+    );
+  }
+
+  // ── Left panel ────────────────────────────────────────────────────────────
+
+  /// The instruction block's copy for the step in hand. Extracted so the two
+  /// layouts read the same words from one place — side by side it sits in the
+  /// fixed head, stacked it scrolls with the body.
+  (String title, String body) _splitStepCopy() {
+    return switch (_splitStep) {
+      0 => (
+        'Step 1 — What kind of issue is it?',
+        'Pick the category that best describes the problem. Choose "Others" '
+            'if none of them fit and tell us in a few words.',
+      ),
+      1 => (
+        'Step 2 — Where is it?',
+        'We use your location so the Municipality of Aparri knows where to '
+            'send help. Pick a barangay manually if the detected spot is off.',
+      ),
+      2 => (
+        'Step 3 — Describe it and add proof',
+        'A short description and at least one photo or video. Photos taken '
+            'with the camera carry a GPS stamp.',
+      ),
+      _ => (
+        'Step 4 — Check before you send',
+        'Everything below is what will be filed. Use the steps above to go '
+            'back and change anything.',
+      ),
+    };
+  }
+
+  /// The four steps, stacked as [Offstage] siblings. Identical in both layouts —
+  /// only what is wrapped AROUND it differs.
+  Widget _splitStepStack(double width) {
+    return Center(
+      child: ConstrainedBox(
+        // The location section still renders against the 480px
+        // mobile-proportional scale, so the column is capped to keep it
+        // from stretching into something that scale never anticipated.
+        //
+        // 700 does not bind at the dialog's own maximum (1160 wide
+        // leaves the working area ~660), which is deliberate: the
+        // category grid is meant to run the full width of the panel,
+        // and a cap 40px inside it left a visible margin on both sides
+        // that read as the content being narrower than its card.
+        constraints: const BoxConstraints(maxWidth: 700),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Offstage, NOT `if` — see [_splitPanelBody]'s doc.
+            Offstage(offstage: _splitStep != 0, child: _splitCategoryStep()),
+            Offstage(
+              offstage: _splitStep != 1,
+              child: _splitLocationStep(width),
+            ),
+            Offstage(
+              offstage: _splitStep != 2,
+              child: Column(
+                children: [
+                  _buildRemarksSection(width, bare: true),
+                  const SizedBox(height: 18),
+                  _buildAttachSection(width, bare: true),
+                  const SizedBox(height: 18),
+                  _splitAnonymousRow(),
+                ],
+              ),
+            ),
+            Offstage(offstage: _splitStep != 3, child: _splitReviewStep(width)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// The working card: a fixed head over a scrolling working area.
+  ///
+  /// ── What [stacked] changes, and why ──────────────────────────────────────
+  /// Side by side this card is one of two columns and the rail beside it owns
+  /// the panel's identity — its title, its × and its summary. Stacked there is
+  /// no rail: [QaSplitPanel] reduces `right` to the pinned action zone, so this
+  /// card becomes zones 1 and 2 of the three and takes on what the rail can no
+  /// longer carry.
+  ///
+  ///   • The title and the dismiss control move into this head.
+  ///   • The summary becomes the second of two PANES — "Report | Summary" —
+  ///     rather than a column beside the work. See [_splitTab].
+  ///
+  /// The instruction block moves from the head into the scrolling body: at a
+  /// phone's width it is four lines, and four lines of advice pinned over a
+  /// step is most of the room the step has to be filled in.
+  Widget _splitLeftPanel(double width, bool stacked) {
+    final (String title, String body) = _splitStepCopy();
+
+    // Phone-web, derived LOCALLY and only where it is used: `stacked` short
+    // circuits, so the side-by-side path never even reads the size and does not
+    // gain a dependency on it. It is the host's own fullscreen threshold — one
+    // definition of 600, not a second copy that can drift out of step with the
+    // presentation it describes. Deliberately NOT the 480-clamped `width` this
+    // method already carries: that is the mobile proportional scale the shared
+    // sections are drawn against, and reusing it as a breakpoint would tie the
+    // two together.
+    final bool phone =
+        stacked &&
+        MediaQuery.sizeOf(context).width < kSplitDialogFullscreenBelow;
+
+    return QaPanelCard(
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        // Fit the card to the step, not to the height on offer. Paired with
+        // [QaSplitPanel]'s measuring row: that row asks this column how tall it
+        // wants to be, and a `MainAxisSize.max` column would answer "all of it"
+        // and put the dead space straight back. The `Expanded` below still
+        // gives the working area every pixel that is left over when a step IS
+        // taller than the dialog, so the scroll behaviour is unchanged.
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // ── Zone 1: the fixed head ───────────────────────────────────────
+          if (stacked) ...[
+            // Title and dismiss control in one row — the rail's own header
+            // widget, reused rather than rebuilt, so it is the same control in
+            // both layouts. Fullscreen it wears a back chevron instead of an ×,
+            // which is the same tap: see [QaRailHeader.useBackArrow].
+            QaRailHeader(
+              title: 'Report an Issue',
+              onClose: widget.onClose ?? () {},
+              useBackArrow: phone,
+            ),
+            const SizedBox(height: 14),
+            // The pane switcher. Deliberately NOT the stepper — see [_splitTab]
+            // for why the two controls have to stay tellable apart.
+            QaSegmentedTabs(
+              labels: _kSplitTabs,
+              selected: _splitTab,
+              onSelect: (i) => setState(() => _splitTab = i),
+            ),
+            const SizedBox(height: 14),
+          ] else ...[
+            const QaPanelTitle('Report an Issue'),
+            const SizedBox(height: 16),
+            QaStepper(
+              labels: _kSplitSteps,
+              current: _splitStep,
+              onSelect: _onStepperTap,
+            ),
+            const SizedBox(height: 16),
+            QaInstructionBlock(title: title, body: body),
+            const SizedBox(height: 16),
+          ],
+
+          // ── Zone 2: the working area, the panel's only scroller ──────────
+          _splitScrollable(
+            child: stacked
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Offstage, NOT `if` — for the reason the steps are, and
+                      // one more besides. `LocationPickerScreen` seeds its GPS
+                      // toggle to false in initState, so a picker rebuilt from
+                      // scratch after a glance at the Summary would silently
+                      // flick "Use my current location" back off. Keeping the
+                      // pane mounted is what makes the tabs cost nothing.
+                      Offstage(
+                        offstage: _splitTab != 0,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // The stepper is UNCHANGED — same widget, same
+                            // gating, same messages. `compact` only lets its
+                            // columns narrow when the row cannot seat four
+                            // 82px ones; above that it is pixel-identical.
+                            QaStepper(
+                              labels: _kSplitSteps,
+                              current: _splitStep,
+                              onSelect: _onStepperTap,
+                              compact: true,
+                            ),
+                            const SizedBox(height: 16),
+                            QaInstructionBlock(title: title, body: body),
+                            const SizedBox(height: 16),
+                            _splitStepStack(width),
+                          ],
+                        ),
+                      ),
+                      Offstage(
+                        offstage: _splitTab != 1,
+                        child: _splitSummaryBlock(),
+                      ),
+                    ],
+                  )
+                : _splitStepStack(width),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Wraps the working area in the panel's one scroll view.
+  ///
+  /// ── Why there is no longer a stacked fork ────────────────────────────────
+  /// This used to hand the stacked layout its child bare, because stacked meant
+  /// "inside the shell's one long scroll view", where an `Expanded` has no
+  /// height to expand into. It does not mean that any more: [QaSplitPanel]'s
+  /// stacked branch is three bounded zones, and this is zone 2 of them. So both
+  /// layouts arrive here with a bounded height and both scroll the same way —
+  /// which is also what stops the rail's own scroll view from ever ending up
+  /// nested inside a second one.
+  ///
+  /// ── Where a short step's surplus goes ────────────────────────────────────
+  /// The frame is a fixed [kQaSplitPanelHeight] and Category needs less than
+  /// that, so something has to hold the difference. `Expanded` gives the scroll
+  /// view the whole remaining column, and the `minHeight` below makes its
+  /// CONTENT at least that tall — so the [Center] already wrapping the step
+  /// splits the surplus evenly above and below instead of letting it pool at
+  /// the bottom as one dead band. A step that overruns the frame is unaffected:
+  /// its content is taller than the minimum, and it simply scrolls.
+  Widget _splitScrollable({required Widget child}) {
+    return Expanded(
+      child: LayoutBuilder(
+        builder: (context, c) => SingleChildScrollView(
+          controller: _splitScrollCtrl,
+          physics: const BouncingScrollPhysics(),
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: c.maxHeight),
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Moves the panel to [step] and returns the working area to the top.
+  ///
+  /// All four steps share ONE scroll view (they are stacked as [Offstage]
+  /// siblings), so without this a citizen who scrolled to the bottom of the
+  /// location step arrives at Review already scrolled past its first field —
+  /// with nothing on screen to explain why the step starts in the middle.
+  void _goToSplitStep(int step) {
+    setState(() => _splitStep = step);
+    if (_splitScrollCtrl.hasClients) _splitScrollCtrl.jumpTo(0);
+  }
+
+  // ── Per-step gates ────────────────────────────────────────────────────────
+
+  /// What [step] still needs before it may be left, or null if it is
+  /// satisfied. Returns the message and the field it belongs under.
+  ///
+  /// The one authority on step-to-step progress: both ways forward consult it —
+  /// [_continueSplitStep] for the step in hand, [_onStepperTap] for every step
+  /// it would skip over — so there is exactly one set of rules and one set of
+  /// words for them.
+  ///
+  /// ── Relationship to `_validate()` ────────────────────────────────────────
+  /// These are the SAME conditions `_validate()` checks, split across the steps
+  /// that own them and worded identically, so a citizen never sees one message
+  /// here and a different one at submit. `_validate()` itself is untouched and
+  /// still runs in full on Submit — it remains the only authority on what may
+  /// actually be FILED.
+  ///
+  /// One asymmetry is worth knowing about: step 3 requires a non-empty
+  /// description, which `_validate()` does NOT — mobile can still file without
+  /// one. Now that the stepper gates too, the panel has no route to Review that
+  /// skips it, so on web a description is effectively required. That is a
+  /// stricter panel, not a changed submit rule; `_validate()` is untouched, and
+  /// making description mandatory at submit for every client would be a
+  /// separate decision.
+  (String message, String field)? _splitStepGate(int step) {
+    switch (step) {
+      case 0:
+        // Mirrors the first two checks in _validate().
+        if (_selectedCategory == null) {
+          return ('Please select an issue category.', 'category');
+        }
+        if (_selectedCategory == 'others' && _othersCtrl.text.trim().isEmpty) {
+          return ('Please specify the category under "Others".', 'category');
+        }
+      case 1:
+        // Mirrors _validate()'s location check.
+        if (_pickedLatLng == null || _pickedBarangay == null) {
+          return ('Please set a location before continuing.', 'location');
+        }
+      case 2:
+        if (_remarksCtrl.text.trim().isEmpty) {
+          return ('Please describe the issue before continuing.', 'remarks');
+        }
+        // Mirrors _validate()'s attachment and processing checks.
+        if (_attachedFiles.isEmpty) {
+          return ('Please attach at least one photo or video.', 'attach');
+        }
+        if (_processingPaths.isNotEmpty) {
+          return ('Please wait for your photo to finish processing.', 'attach');
+        }
+    }
+    return null;
+  }
+
+  /// A tap on one of the stepper's numbers.
+  ///
+  /// ── Backwards is free, forwards is earned ────────────────────────────────
+  /// Going back to a step already passed is just re-reading your own answer,
+  /// so it is never blocked. Jumping FORWARD past an unfinished step is not:
+  /// the numbers used to be a plain view switcher, which meant a citizen could
+  /// land on Review with no category, no location and no photo, press Submit,
+  /// and only then be told — four steps from where the problem actually was.
+  ///
+  /// So a forward tap walks the steps in between and stops at the first one
+  /// that is not satisfied. It does not just refuse: it MOVES to that step and
+  /// raises the same message [_continueSplitStep] raises, under the same field,
+  /// because a tap that appears to do nothing reads as a broken control.
+  ///
+  /// [_splitStepGate] is the single source of those rules — this method adds no
+  /// conditions and no wording of its own, so the stepper and Continue can
+  /// never disagree about what is missing.
+  void _onStepperTap(int step) {
+    if (step <= _splitStep) {
+      _goToSplitStep(step);
+      return;
+    }
+    for (var i = 0; i < step; i++) {
+      final gate = _splitStepGate(i);
+      if (gate == null) continue;
+      setState(() {
+        _stepError = gate.$1;
+        _stepErrorField = gate.$2;
+      });
+      // Show it where the offending field actually is. Already being there is
+      // the common case (tapping ahead from an empty step), and jumping then
+      // would only reset the scroll for nothing.
+      if (i != _splitStep) _goToSplitStep(i);
+      return;
+    }
+    _goToSplitStep(step);
+  }
+
+  /// Continue: gate the CURRENT step, then advance. Never skips ahead, never
+  /// touches the submit path.
+  void _continueSplitStep() {
+    final gate = _splitStepGate(_splitStep);
+    if (gate != null) {
+      setState(() {
+        _stepError = gate.$1;
+        _stepErrorField = gate.$2;
+      });
+      return;
+    }
+    setState(() {
+      _stepError = null;
+      _stepErrorField = null;
+    });
+    _goToSplitStep(_splitStep + 1);
+  }
+
+  /// The inline message under a field, when it is the one that failed AND the
+  /// condition it names is still unsatisfied.
+  ///
+  /// Re-checking the live gate is what clears the message the instant the
+  /// citizen fixes the field, without any shared add/remove handler having to
+  /// know this error exists — which is why picking a photo or picking a
+  /// barangay makes it disappear even though `_pickMedia` and the attachment
+  /// tile were left alone.
+  Widget _splitFieldError(String field) {
+    if (!_errorOn(field)) return const SizedBox.shrink();
+    final live = _splitStepGate(_splitStep);
+    if (live == null || live.$2 != field) return const SizedBox.shrink();
+    return QaFieldError(_stepError);
+  }
+
+  // ── Step 1: category ──────────────────────────────────────────────────────
+
+  /// The category grid, sized to the PANEL rather than to the 480px mobile
+  /// scale, with the numbered section card dropped — the stepper already says
+  /// this is step 1, so a second "1. Select Issue Category" heading inside it
+  /// was saying the same thing twice.
+  ///
+  /// Reads and writes `_selectedCategory` and `_othersCtrl`, the same two
+  /// fields the mobile grid writes to; `_categories` is the same list. Only the
+  /// tiles are different, and only because [QaChoiceTile] adds a hover state
+  /// that has no meaning on touch.
+  Widget _splitCategoryStep() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const QaFieldLabel(
+          'Select a category',
+          hint: 'Required',
+          hintColor: CitizenUi.danger,
+        ),
+        LayoutBuilder(
+          builder: (context, c) {
+            // Three across, filling whatever the panel gives us. The tile is
+            // sized from that width rather than from a viewport fraction, so
+            // it stays compact as the panel grows instead of ballooning.
+            //
+            // Category is the SHORTEST step and the panel's frame is fixed,
+            // so these tiles are what stands between "a grid of choices" and
+            // "six small boxes floating in an empty card". They are sized to
+            // FILL: at the panel's ~660px the ratio draws a 210 × 200 card and
+            // the two rows plus the label come to within ~85px of the working
+            // area, which the step then splits evenly above and below. Drop
+            // the ratio and that 85 becomes a visible hole under the banner —
+            // the grid has to earn the height, the spacing cannot fake it.
+            //
+            // The FLOOR is not cosmetic: a narrow panel wraps the longer
+            // labels ("Environment & Pollution") onto two lines, and the 64px
+            // icon disc, a 12px gap, two 16px label lines and 24px of tile
+            // padding come to 133. Below the floor the tile overflows, which is
+            // what the width sweep in report_split_panel_test.dart catches.
+            // ── Why the count is not always three ────────────────────────
+            // The floor above stops the tile getting too SHORT; nothing was
+            // stopping it getting too NARROW. [QaChoiceTile] draws a fixed
+            // 64px icon disc inside 10px of horizontal padding a side, so a
+            // tile below ~84px overflows sideways no matter how tall it is —
+            // and three across reaches that at ~280px of column, which is a
+            // phone in the fullscreen panel. Dropping to two there keeps the
+            // tile above its own minimum. The threshold is above the 280 it
+            // has to clear so the last usable 3-up row is not a hairline
+            // fit; every side-by-side width (~620–700) is far above it and
+            // still draws three.
+            final cols = c.maxWidth < 300 ? 2 : 3;
+            const gap = 14.0;
+            final tileW = (c.maxWidth - gap * (cols - 1)) / cols;
+            final tileH = (tileW * 0.95).clamp(138.0, 205.0);
+
+            return Wrap(
+              spacing: gap,
+              runSpacing: gap,
+              children: [
+                for (final cat in _categories)
+                  SizedBox(
+                    width: tileW,
+                    height: tileH,
+                    child: QaChoiceTile(
+                      // Pinned to the CATEGORY, not to its position. Without a
+                      // key the element at index 2 is whatever the grid builds
+                      // at index 2, so a rebuild can hand a tile's State — and
+                      // with it, its live hover flag and running animation — to
+                      // a different tile. That is what made hovering flash.
+                      key: ValueKey(cat['key']),
+                      selected: _selectedCategory == cat['key'],
+                      // Same handler as the mobile grid, plus clearing this
+                      // step's inline error now that the field has changed.
+                      onTap: () => setState(() {
+                        _selectedCategory = cat['key'] as String;
+                        _clearStepError('category');
+                      }),
+                      // The grid labels carry a hard wrap sized for a phone
+                      // tile; the web tile is wider, so let it flow.
+                      label: (cat['label'] as String).replaceAll('\n', ' '),
+                      icon: Image.asset(
+                        cat['icon'] as String,
+                        width: 34,
+                        height: 34,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, _, _) =>
+                            Icon(cat['fallbackIcon'] as IconData),
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+        if (_selectedCategory == 'others') ...[
+          const SizedBox(height: 16),
+          const QaFieldLabel('Specify the category'),
+          TextField(
+            controller: _othersCtrl,
+            maxLength: 50,
+            style: const TextStyle(fontSize: 13.5),
+            onChanged: (_) => setState(() => _clearStepError('category')),
+            decoration: _splitInputDecoration(
+              hint: 'Describe it in a few words…',
+            ),
+          ),
+        ],
+        _splitFieldError('category'),
+      ],
+    );
+  }
+
+  // ── Step 2: location, hosted inline ───────────────────────────────────────
+
+  /// The Edit Location picker, rendered INSIDE the panel instead of pushed as a
+  /// route.
+  ///
+  /// Same widget, same GPS logic, same barangay list — the only difference is
+  /// that `onConfirm` is non-null, so a pick hands the result map straight to
+  /// [_applyLocationResult] rather than popping a route. Nothing here dismisses
+  /// the dialog or navigates.
+  ///
+  /// ── Why the key is now constant ──────────────────────────────────────────
+  /// It used to carry the current pick, which rebuilt the picker from scratch
+  /// on every confirm so its `initialPosition`/`initialBarangay` were re-read.
+  /// Now that a pick SAVES ITSELF, that key would fire on every barangay tap —
+  /// throwing away the picker's state, replaying its entry animation, and
+  /// (because a fresh picker seeds `_useCurrentLocation` to false) silently
+  /// flicking the GPS toggle back off after a GPS pick. The picker keeps its
+  /// own state instead and re-seeds from `didUpdateWidget` when the form's
+  /// location changes underneath it — the auto-fetch on open being the case
+  /// that matters.
+  Widget _splitLocationStep(double width) {
+    final hasLocation = _pickedLatLng != null && _pickedBarangay != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        LocationPickerScreen(
+          key: const ValueKey('inline-picker'),
+          initialPosition: _pickedLatLng,
+          initialBarangay: _pickedBarangay,
+          onConfirm: _applyLocationResult,
+        ),
+        _splitFieldError('location'),
+
+        // The optional street detail, which the mobile section also shows only
+        // once a location resolves. Same `_streetDetailCtrl`, at panel scale.
+        if (hasLocation) ...[
+          const SizedBox(height: 18),
+          const QaFieldLabel(
+            'Street name & detailed location',
+            hint: 'Optional',
+          ),
+          TextField(
+            controller: _streetDetailCtrl,
+            maxLines: 2,
+            style: const TextStyle(fontSize: 13.5),
+            decoration: _splitInputDecoration(
+              hint: 'e.g. Near the church, beside the market…',
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  // ── Step 3: details ───────────────────────────────────────────────────────
+
+  /// Shared field chrome for the panel's inputs, so the textarea, the "others"
+  /// box and anything added later cannot drift apart.
+  InputDecoration _splitInputDecoration({required String hint}) =>
+      qaInputDecoration(hint: hint);
+
+  /// The description field at panel scale. Same `_remarksCtrl`, same
+  /// `maxLength: 1000` (the 0/1000 counter is Flutter's, drawn from it), same
+  /// `onChanged` — only the metrics differ.
+  Widget _splitRemarksField() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const QaFieldLabel('Describe the issue', hint: 'Required'),
+        TextField(
+          controller: _remarksCtrl,
+          maxLength: 1000,
+          maxLines: 6,
+          style: const TextStyle(fontSize: 13.5, height: 1.45),
+          onChanged: (_) => setState(() => _clearStepError('remarks')),
+          decoration: _splitInputDecoration(
+            hint: 'What is the problem, and where exactly is it?',
+          ),
+        ),
+        _splitFieldError('remarks'),
+      ],
+    );
+  }
+
+  /// Step 4 — the DETAILED render of the report, in the left working area.
+  ///
+  /// ── Why the detail lives on the left ─────────────────────────────────────
+  /// The left panel is the main area on every step and the rail is the summary
+  /// on every step; Review keeps that. So this is the full, rendered report —
+  /// the category as its own tile, the real description in a field-shaped box,
+  /// the actual photo thumbnails — while the rail goes on showing the same
+  /// compact Category/Location/Details/Attachments list it shows on steps 1–3.
+  /// Nothing swaps sides, and the 1.7 : 1 ratio is the panel's, not the step's.
+  ///
+  /// Every value below is read straight off the fields the inputs write to
+  /// (`_selectedCategory`, `_pickedBarangay`, `_streetDetailCtrl`,
+  /// `_remarksCtrl`, `_attachedFiles`, `_submitAnonymously`), so the detail and
+  /// the rail are two renderings of one state, not two copies of it.
+  Widget _splitReviewStep(double width) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ── Category, as its selected tile ────────────────────────────────
+        const QaFieldLabel('Category'),
+        _splitReviewCategoryTile(),
+        const SizedBox(height: 16),
+
+        // ── Location ──────────────────────────────────────────────────────
+        const QaFieldLabel('Location'),
+        _splitReviewBox(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                _useCurrentLocation
+                    ? Icons.my_location_rounded
+                    : Icons.location_on_rounded,
+                size: 18,
+                color: _pickedBarangay == null
+                    ? CitizenUi.textFaint
+                    : CitizenUi.accent,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _pickedBarangay ?? 'No location set',
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w700,
+                        fontStyle: _pickedBarangay == null
+                            ? FontStyle.italic
+                            : FontStyle.normal,
+                        color: _pickedBarangay == null
+                            ? CitizenUi.textFaint
+                            : CitizenUi.textPrimary,
+                      ),
+                    ),
+                    if (_pickedBarangay != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        _useCurrentLocation
+                            ? 'Via GPS · Aparri, Cagayan'
+                            : 'Aparri, Cagayan',
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          color: CitizenUi.textFaint,
+                        ),
+                      ),
+                    ],
+                    // The optional street detail, when one was typed.
+                    if (_streetDetailCtrl.text.trim().isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        _streetDetailCtrl.text.trim(),
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          height: 1.4,
+                          color: CitizenUi.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // ── Description, in a box shaped like the field it was typed in ───
+        const QaFieldLabel('Description'),
+        _splitReviewBox(
+          minHeight: 76,
+          child: SelectableText(
+            _remarksCtrl.text.trim().isEmpty
+                ? 'No description written'
+                : _remarksCtrl.text.trim(),
+            style: TextStyle(
+              fontSize: 13.5,
+              height: 1.45,
+              fontStyle: _remarksCtrl.text.trim().isEmpty
+                  ? FontStyle.italic
+                  : FontStyle.normal,
+              color: _remarksCtrl.text.trim().isEmpty
+                  ? CitizenUi.textFaint
+                  : CitizenUi.textPrimary,
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // ── Attachments, as the real thumbnails ───────────────────────────
+        QaFieldLabel(
+          'Attachments',
+          hint: _splitAttachmentLabel() ?? 'Nothing attached',
+        ),
+        if (_attachedFiles.isEmpty)
+          _splitReviewBox(
+            child: const Text(
+              'No photo or video attached',
+              style: TextStyle(
+                fontSize: 12.5,
+                fontStyle: FontStyle.italic,
+                color: CitizenUi.textFaint,
+              ),
+            ),
+          )
+        else
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            // Sized by EXTENT, not by column count. A fixed four-across grid
+            // stretches its thumbnails as the panel widens — at the panel's
+            // ~660px that is a 157px tile, which on a step whose job is to be
+            // read at a glance is a photo album, not a summary. Capping the
+            // tile instead keeps the row compact and, since the form allows at
+            // most six files, fits every attachment on ONE row here — which is
+            // also what keeps Review inside the panel's fixed height.
+            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+              maxCrossAxisExtent: 120,
+              crossAxisSpacing: 10,
+              mainAxisSpacing: 10,
+              childAspectRatio: 1,
+            ),
+            itemCount: _attachedFiles.length,
+            // The same tile step 3 draws — real previews, video thumbnails and
+            // the tap-to-enlarge viewers, not a second thumbnail widget.
+            itemBuilder: (context, i) => _attachFileTile(i, width),
+          ),
+        const SizedBox(height: 16),
+
+        // ── Submitted as ──────────────────────────────────────────────────
+        const QaFieldLabel('Submitted as'),
+        _splitReviewBox(
+          child: Row(
+            children: [
+              Icon(
+                _submitAnonymously
+                    ? Icons.visibility_off_rounded
+                    : Icons.person_rounded,
+                size: 18,
+                color: CitizenUi.accent,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  _submitAnonymously ? 'Anonymous' : widget.username,
+                  style: const TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
+                    color: CitizenUi.textPrimary,
+                  ),
+                ),
+              ),
+              if (_submitAnonymously)
+                const Text(
+                  'Name hidden from the public feed',
+                  style: TextStyle(fontSize: 11.5, color: CitizenUi.textFaint),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// A field-shaped read-only container — same border, radius and padding as
+  /// [_splitInputDecoration], so a reviewed value reads as the input it came
+  /// from rather than as plain text on the card.
+  Widget _splitReviewBox({required Widget child, double? minHeight}) =>
+      QaReviewBox(minHeight: minHeight, child: child);
+
+  /// The chosen category drawn as its own tile — the same illustration and
+  /// label the step-1 grid uses, in the accent-selected treatment, but inert.
+  Widget _splitReviewCategoryTile() {
+    final key = _selectedCategory;
+    if (key == null) {
+      return _splitReviewBox(
+        child: const Text(
+          'No category selected',
+          style: TextStyle(
+            fontSize: 12.5,
+            fontStyle: FontStyle.italic,
+            color: CitizenUi.textFaint,
+          ),
+        ),
+      );
+    }
+    final def = _categories.firstWhere(
+      (c) => c['key'] == key,
+      orElse: () => const <String, dynamic>{},
+    );
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+      decoration: BoxDecoration(
+        color: CitizenUi.accent.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(CitizenUi.controlRadius),
+        border: Border.all(color: CitizenUi.accent, width: 2),
+      ),
+      child: Row(
+        children: [
+          if (def['icon'] != null)
+            Image.asset(
+              def['icon'] as String,
+              width: 26,
+              height: 26,
+              fit: BoxFit.contain,
+              errorBuilder: (_, _, _) => Icon(
+                def['fallbackIcon'] as IconData? ?? Icons.flag_rounded,
+                size: 26,
+                color: CitizenUi.accent,
+              ),
+            ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              // Same derivation the rail uses, so the tile and the rail can
+              // never disagree about which category this is.
+              _splitCategoryLabel() ?? '',
+              style: const TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w700,
+                color: CitizenUi.accent,
+              ),
+            ),
+          ),
+          const Icon(
+            Icons.check_circle_rounded,
+            size: 18,
+            color: CitizenUi.accent,
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Summary values — derived, never stored ────────────────────────────────
+
+  String? _splitCategoryLabel() {
+    final key = _selectedCategory;
+    if (key == null) return null;
+    if (key == 'others') {
+      final other = _othersCtrl.text.trim();
+      return other.isEmpty ? 'Others' : 'Others — $other';
+    }
+    final match = _categories.firstWhere(
+      (c) => c['key'] == key,
+      orElse: () => const {'label': ''},
+    );
+    // The grid labels carry a hard wrap for the tile; flatten it for a line.
+    return (match['label'] as String).replaceAll('\n', ' ').trim();
+  }
+
+  String? _splitLocationLabel() {
+    if (_pickedBarangay == null) return null;
+    final street = _streetDetailCtrl.text.trim();
+    return street.isEmpty ? _pickedBarangay : '$_pickedBarangay — $street';
+  }
+
+  String? _splitAttachmentLabel() {
+    if (_attachedFiles.isEmpty) return null;
+    final n = _attachedFiles.length;
+    final pending = _processingPaths.length;
+    final base = '$n file${n == 1 ? '' : 's'} attached';
+    return pending == 0 ? base : '$base · $pending still processing';
+  }
+
+  // ── Right rail ────────────────────────────────────────────────────────────
+
+  /// The four summary rows and the step's callout.
+  ///
+  /// One block, two homes: the rail renders it side by side, and the stacked
+  /// panel renders THE SAME widget inside its collapsible Summary section.
+  /// Every value is read live off the form's own fields on each build, so the
+  /// two placements cannot drift — there is no second copy of anything here.
+  Widget _splitSummaryBlock() {
+    final isLast = _splitStep == _kSplitSteps.length - 1;
+    final waitingOnMedia = _processingPaths.isNotEmpty;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Four ruled rows, one per field the form collects, in the order the
+        // steps collect them. The glyphs are picked to be recognisable at
+        // 20px and grey — a grid for the category chooser, a pin for the
+        // map, ruled lines for the written description, a clip for files.
+        QaSummaryRow(
+          icon: Icons.grid_view_rounded,
+          label: 'CATEGORY',
+          value: _splitCategoryLabel(),
+        ),
+        QaSummaryRow(
+          icon: Icons.place_rounded,
+          label: 'LOCATION',
+          value: _splitLocationLabel(),
+        ),
+        QaSummaryRow(
+          icon: Icons.format_list_bulleted_rounded,
+          label: 'DETAILS',
+          value: _remarksCtrl.text,
+          maxLines: 2,
+        ),
+        QaSummaryRow(
+          icon: Icons.attach_file_rounded,
+          label: 'ATTACHMENTS',
+          value: _splitAttachmentLabel(),
+        ),
+
+        const SizedBox(height: 26),
+        // Three states, most urgent first. On Review the info line gives way
+        // to the truthfulness warning — the one thing a citizen should read
+        // immediately before pressing Submit. Same sentence as the mobile
+        // disclaimer, cut to one line for the rail; the left panel no longer
+        // repeats it, since the warning belongs beside the button it warns
+        // about.
+        if (waitingOnMedia)
+          const QaCallout(
+            icon: Icons.hourglass_top_rounded,
+            accent: AppColors.orange,
+            text:
+                'A photo is still being prepared. Submit unlocks once it '
+                'finishes.',
+          )
+        else if (isLast)
+          const QaCallout(
+            icon: Icons.gpp_maybe_rounded,
+            accent: CitizenUi.warn,
+            text:
+                'False or misleading reports may carry penalties. Check the '
+                'details before submitting.',
+          )
+        else
+          const QaCallout(
+            icon: Icons.shield_outlined,
+            accent: CitizenUi.accent,
+            text:
+                'Your report goes to the Municipality of Aparri for triage. '
+                'You can track its status under My Reports.',
+          ),
+      ],
+    );
+  }
+
+  /// Continue/Submit, Back and Cancel.
+  ///
+  /// Extracted for the same reason as [_splitSummaryBlock]: side by side these
+  /// sit at the foot of the rail, stacked they ARE the pinned action zone, and
+  /// neither placement may fork what the buttons do.
+  /// [compact] is the PINNED zone's sizing — see [QaActionStack.compact]. The
+  /// buttons, their order, their handlers and their disabled rules are the same
+  /// either way: only the metrics differ, so there is still one answer to what
+  /// each button does.
+  Widget _splitActionStack({bool compact = false}) {
+    final isLast = _splitStep == _kSplitSteps.length - 1;
+    final busy = _isSubmitting;
+    final waitingOnMedia = _processingPaths.isNotEmpty;
+
+    void handleCancel() {
+      final close = widget.onClose;
+      if (close == null) return;
+      close();
+    }
+
+    return QaActionStack(
+      compact: compact,
+      children: [
+        if (isLast)
+          QaActionButton(
+            label: waitingOnMedia ? 'Finishing photo…' : 'Submit Report',
+            icon: Icons.send_rounded,
+            color: AppColors.green,
+            busy: busy,
+            compact: compact,
+            // The existing handler, unmodified — it runs `_validate()`
+            // first, so an incomplete form is refused here exactly as it
+            // is on mobile.
+            onTap: waitingOnMedia ? null : _submitReport,
+          )
+        else
+          QaActionButton(
+            label: 'Continue',
+            icon: Icons.arrow_forward_rounded,
+            compact: compact,
+            onTap: _continueSplitStep,
+          ),
+        if (_splitStep > 0)
+          QaActionButton(
+            label: 'Back',
+            icon: Icons.arrow_back_rounded,
+            kind: QaActionKind.secondary,
+            compact: compact,
+            onTap: busy ? null : () => _goToSplitStep(_splitStep - 1),
+          ),
+        QaActionButton(
+          label: 'Cancel',
+          kind: QaActionKind.danger,
+          compact: compact,
+          onTap: busy ? null : handleCancel,
+        ),
+      ],
+    );
+  }
+
+  /// The right-hand column.
+  ///
+  /// ── Side by side (`stacked == false`) ────────────────────────────────────
+  /// The full rail, exactly as before: header, summary, callout, buttons, all
+  /// inside a [SingleChildScrollView]. That scroll view is not decoration. The
+  /// rail is drawn to the panel's FIXED height, so its content cannot simply
+  /// grow when it needs more room — and on Review it needs the most, carrying
+  /// three buttons instead of two. At a narrow rail (a ~1200px window, where
+  /// the values start wrapping onto second lines) that ran a few pixels past
+  /// the card. Scrolling is the honest fallback: on any normal window there is
+  /// nothing to scroll, and where there is, the Cancel button stays reachable
+  /// instead of being clipped. The panel's ScrollConfiguration keeps the bar
+  /// itself hidden.
+  ///
+  /// ── Stacked (`stacked == true`) ──────────────────────────────────────────
+  /// The rail is reduced to the ACTION ZONE and returned BARE — a card holding
+  /// the buttons and nothing else, no scroll view of its own.
+  ///
+  /// Bare is not a tidy-up, it is the point. Stacked, [QaSplitPanel] pins this
+  /// card to the bottom of the panel while the working area scrolls above it;
+  /// a scroll view here would be a second scrollable sharing an edge with the
+  /// first, and a drag that started on the buttons would be arbitrated between
+  /// them instead of doing the obvious thing. The header and the summary are
+  /// not dropped either — the working card takes them over (see
+  /// [_splitLeftPanel]), so nothing this rail carried has been lost.
+  ///
+  /// ── Why the Summary pane has no buttons ──────────────────────────────────
+  /// The buttons act on the STEP ("Continue" from Location to Details), and the
+  /// Summary pane is not a step — it is a glance at what has been filled in.
+  /// Leaving Continue under it would invite the reading that it continues from
+  /// the summary, and Submit under a read-only recap is worse: it would look
+  /// like the recap is the thing being confirmed. So the zone goes away with
+  /// the pane, and comes back exactly as it was — the buttons never stopped
+  /// reading `_splitStep`, so nothing about the wizard moved while it was gone.
+  Widget _splitRightRail(bool stacked) {
+    if (stacked) {
+      if (_splitTab != 0) return const SizedBox.shrink();
+      // Tighter chrome than the rail's 20 a side: this card is a bar, and every
+      // pixel of padding on it is a pixel the step above loses. The border and
+      // radius stay, so it still reads as one of the panel's cards.
+      return QaPanelCard(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+        child: _splitActionStack(compact: true),
+      );
+    }
+
+    return QaPanelCard(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+      // ── Head and actions fixed, only the SUMMARY scrolls ────────────────
+      // The rail is drawn to the panel's fixed height, so when its contents
+      // exceed that something has to give. Scrolling the whole column gave way
+      // at the bottom — the buttons — which is the one part that must never be
+      // out of reach: a citizen who cannot see Cancel cannot leave, and a
+      // Continue below the fold reads as a form with no way forward.
+      //
+      // `MainAxisSize.min` + `Flexible` is what keeps this free where there is
+      // room. Below the frame the column shrink-wraps exactly as it always did
+      // and the summary keeps its natural height, so nothing moves; only once
+      // the content genuinely overruns does the summary give up the difference
+      // and scroll inside itself. The panel's ScrollConfiguration keeps the bar
+      // hidden either way.
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          QaRailHeader(title: 'Summary', onClose: widget.onClose ?? () {}),
+          const SizedBox(height: 20),
+          Flexible(child: SingleChildScrollView(child: _splitSummaryBlock())),
+          const SizedBox(height: 34),
+          _splitActionStack(),
+        ],
+      ),
+    );
+  }
+
   // ── Header ──────────────────────────────────────────────────────────────────
   Widget _buildHeader(double width) {
     return Container(
@@ -863,7 +2085,7 @@ class _ReportIssueScreenState extends State<ReportIssueForm>
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(width * 0.04),
-          border: Border.all(color: const Color(0xFFE5E7EB)),
+          border: Border.all(color: CitizenUi.sharedBorder),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.05),
@@ -929,7 +2151,7 @@ class _ReportIssueScreenState extends State<ReportIssueForm>
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(width * 0.04),
-          border: Border.all(color: const Color(0xFFE5E7EB)),
+          border: Border.all(color: CitizenUi.sharedBorder),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.04),
@@ -1056,11 +2278,15 @@ class _ReportIssueScreenState extends State<ReportIssueForm>
                     ),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(width * 0.025),
-                      borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                      borderSide: const BorderSide(
+                        color: CitizenUi.sharedBorder,
+                      ),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(width * 0.025),
-                      borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                      borderSide: const BorderSide(
+                        color: CitizenUi.sharedBorder,
+                      ),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(width * 0.025),
@@ -1139,11 +2365,11 @@ class _ReportIssueScreenState extends State<ReportIssueForm>
                 ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(width * 0.025),
-                  borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                  borderSide: const BorderSide(color: CitizenUi.sharedBorder),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(width * 0.025),
-                  borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                  borderSide: const BorderSide(color: CitizenUi.sharedBorder),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(width * 0.025),
@@ -1243,7 +2469,7 @@ class _ReportIssueScreenState extends State<ReportIssueForm>
       return _locationTile(
         width: width,
         bgColor: const Color(0xFFF9FAFB),
-        borderColor: const Color(0xFFE5E7EB),
+        borderColor: CitizenUi.sharedBorder,
         leading: Icon(
           Icons.location_on_rounded,
           size: width * 0.07,
@@ -1261,7 +2487,7 @@ class _ReportIssueScreenState extends State<ReportIssueForm>
     return _locationTile(
       width: width,
       bgColor: const Color(0xFFF9FAFB),
-      borderColor: const Color(0xFFE5E7EB),
+      borderColor: CitizenUi.sharedBorder,
       leading: Icon(
         Icons.location_searching_rounded,
         size: width * 0.07,
@@ -1359,7 +2585,12 @@ class _ReportIssueScreenState extends State<ReportIssueForm>
   }
 
   // ── 3. Remarks ──────────────────────────────────────────────────────────────
-  Widget _buildRemarksSection(double width) {
+  /// [bare] true drops the numbered section card and sizes the field for the
+  /// web panel instead of the 480px mobile scale — same controller, same
+  /// `maxLength: 1000` (which is what draws the 0/1000 counter), same
+  /// `onChanged`. Only the citizen web split panel passes it.
+  Widget _buildRemarksSection(double width, {bool bare = false}) {
+    if (bare) return _splitRemarksField();
     return _sectionCard(
       width: width,
       title: '3. Remarks / Concern',
@@ -1377,11 +2608,11 @@ class _ReportIssueScreenState extends State<ReportIssueForm>
           ),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(width * 0.025),
-            borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+            borderSide: const BorderSide(color: CitizenUi.sharedBorder),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(width * 0.025),
-            borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+            borderSide: const BorderSide(color: CitizenUi.sharedBorder),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(width * 0.025),
@@ -1397,6 +2628,75 @@ class _ReportIssueScreenState extends State<ReportIssueForm>
     );
   }
 
+  /// One attached file's square tile — preview or video thumbnail, the
+  /// processing reveal, and the delete button.
+  ///
+  /// Extracted verbatim from the mobile grid's itemBuilder so the web panel's
+  /// 4-column square grid can lay the SAME tile out differently without a
+  /// second copy of the preview, reveal or delete behaviour. Both grids call
+  /// this; only the surrounding delegate differs.
+  Widget _attachFileTile(int index, double width) {
+    final file = _attachedFiles[index];
+    final processing = _processingPaths.contains(file.path);
+    return GestureDetector(
+      onTap: processing
+          ? null
+          : () {
+              _isVideo(file)
+                  ? _previewVideo(context, file, width)
+                  : _previewImage(context, file, width);
+            },
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(width * 0.025),
+            child: _isVideo(file)
+                ? _videoThumb(file, width)
+                : Image(image: pickedImageProvider(file), fit: BoxFit.cover),
+          ),
+          // Bottom-to-top reveal while the GPS stamp bakes; it fills to the top
+          // the moment processing completes.
+          if (processing)
+            Positioned.fill(
+              child: RevealLoading(
+                borderRadius: BorderRadius.circular(width * 0.025),
+                completed: _completedPaths.contains(file.path),
+                onFinished: () {
+                  if (!mounted) return;
+                  setState(() {
+                    _processingPaths.remove(file.path);
+                    _completedPaths.remove(file.path);
+                  });
+                },
+              ),
+            ),
+          if (!processing)
+            Positioned(
+              top: 5,
+              right: 5,
+              child: GestureDetector(
+                onTap: () => setState(() => _attachedFiles.removeAt(index)),
+                child: Container(
+                  width: width * 0.055,
+                  height: width * 0.055,
+                  decoration: const BoxDecoration(
+                    color: Colors.red,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.close_rounded,
+                    color: Colors.white,
+                    size: width * 0.034,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   // ── Media helpers ───────────────────────────────────────────────────────────
   bool _isVideo(XFile file) {
     final ext = file.name.toLowerCase();
@@ -1408,6 +2708,24 @@ class _ReportIssueScreenState extends State<ReportIssueForm>
     if (remaining <= 0) return;
 
     FocusManager.instance.primaryFocus?.unfocus();
+
+    // ── The panel goes straight to the browser's file picker ────────────────
+    // On the web there is no camera path and no separate photo/video library
+    // to choose between — both branches of the chooser sheet end in the same
+    // OS file dialog. Asking "photos or video?" first is a pop-up on top of a
+    // pop-up that only makes the citizen pick the accept filter by hand, and
+    // gets it wrong if they meant the other one. `pickMultipleMedia` opens
+    // that dialog directly with `image/*,video/*`, so one click reaches the
+    // files and either kind can be selected.
+    //
+    // Mobile is untouched: it keeps the sheet, because there the choice is
+    // real — camera capture is a genuinely different source, and it is the one
+    // that produces a GPS-stamped photo.
+    if (widget.splitPanel) {
+      final picked = await _picker.pickMultipleMedia(limit: remaining);
+      await _acceptPickedMedia(picked);
+      return;
+    }
 
     final choice = await showMediaPickerSheet(context);
 
@@ -1430,6 +2748,15 @@ class _ReportIssueScreenState extends State<ReportIssueForm>
       if (v != null) picked = [v];
     }
 
+    await _acceptPickedMedia(picked);
+  }
+
+  /// Size-checks a set of freshly picked files and adds what passes.
+  ///
+  /// Extracted verbatim from [_pickMedia] so the panel's direct file-picker
+  /// path and the sheet's gallery/video paths share one set of limits and one
+  /// message — the caller only decides how the files were chosen.
+  Future<void> _acceptPickedMedia(List<XFile> picked) async {
     if (picked.isEmpty) return;
 
     final List<XFile> validFiles = [];
@@ -1489,13 +2816,15 @@ class _ReportIssueScreenState extends State<ReportIssueForm>
     });
     Future.wait([
       VideoThumbnail.thumbnailData(
-        video: file.path,
-        imageFormat: ImageFormat.JPEG,
-        maxWidth: 200,
-        quality: 75,
-      ).then((data) {
-        if (data != null) _thumbCache[file.path] = data;
-      }).catchError((_) {}),
+            video: file.path,
+            imageFormat: ImageFormat.JPEG,
+            maxWidth: 200,
+            quality: 75,
+          )
+          .then((data) {
+            if (data != null) _thumbCache[file.path] = data;
+          })
+          .catchError((_) {}),
       Future<void>.delayed(_minReveal),
     ]).whenComplete(() {
       if (!mounted) return;
@@ -1639,177 +2968,218 @@ class _ReportIssueScreenState extends State<ReportIssueForm>
   }
 
   // ── 4. Attach ────────────────────────────────────────────────────────────────
-  Widget _buildAttachSection(double width) {
+  /// [bare] true drops the numbered section card and swaps the tall mobile
+  /// dropzone for a web-sized one. The attachment GRID below is deliberately
+  /// left on the shared path — it carries the processing reveal, the delete
+  /// buttons, the video thumbnails and the preview taps, and none of that is
+  /// layout worth forking. `_maxFiles`, `_pickMedia` and every limit are
+  /// untouched either way.
+  Widget _buildAttachSection(double width, {bool bare = false}) {
+    if (bare) return _splitAttachGrid(width);
+
     final slotCount = _attachedFiles.length < _maxFiles
         ? _attachedFiles.length + 1
         : _maxFiles;
 
+    final dropzone = GestureDetector(
+      onTap: _attachedFiles.length < _maxFiles ? _pickMedia : null,
+      child: Container(
+        width: double.infinity,
+        padding: EdgeInsets.symmetric(vertical: width * 0.065),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF0F9FF),
+          borderRadius: BorderRadius.circular(width * 0.03),
+          border: Border.all(
+            color: AppColors.primaryBlue.withValues(alpha: 0.35),
+            width: 1.5,
+          ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.add_a_photo_rounded,
+              size: width * 0.095,
+              color: AppColors.primaryBlue,
+            ),
+            SizedBox(height: width * 0.02),
+            Text(
+              'Tap to upload photo or video',
+              style: TextStyle(
+                fontSize: width * 0.034,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF374151),
+              ),
+            ),
+            SizedBox(height: width * 0.008),
+            Text(
+              _attachedFiles.isEmpty
+                  ? 'You can upload up to $_maxFiles files'
+                  : '${_attachedFiles.length}/$_maxFiles uploaded',
+              style: TextStyle(
+                fontSize: width * 0.028,
+                color: const Color(0xFF9CA3AF),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final body = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        dropzone,
+        if (_attachedFiles.isNotEmpty) ...[
+          SizedBox(height: width * 0.03),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              crossAxisSpacing: width * 0.025,
+              mainAxisSpacing: width * 0.025,
+              childAspectRatio: 1.0,
+            ),
+            itemCount: slotCount,
+            itemBuilder: (context, index) {
+              final isPlus = index == _attachedFiles.length;
+              if (isPlus) {
+                return GestureDetector(
+                  onTap: _pickMedia,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0F9FF),
+                      borderRadius: BorderRadius.circular(width * 0.025),
+                      border: Border.all(
+                        color: AppColors.primaryBlue.withValues(alpha: 0.4),
+                      ),
+                    ),
+                    child: Center(
+                      child: Image.asset(
+                        'assets/images/report/plus_sign.webp',
+                        width: width * 0.07,
+                        height: width * 0.07,
+                        errorBuilder: (_, _, _) => Icon(
+                          Icons.add_rounded,
+                          size: width * 0.07,
+                          color: AppColors.primaryBlue,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }
+              return _attachFileTile(index, width);
+            },
+          ),
+        ],
+        SizedBox(height: width * 0.022),
+        Text(
+          'Image: JPG, PNG (Max. 10MB)  •  Video: MP4 (Max. 50MB)',
+          style: TextStyle(
+            fontSize: width * 0.026,
+            color: const Color(0xFF9CA3AF),
+          ),
+        ),
+      ],
+    );
+
+    if (bare) return _splitAttachGrid(width);
+
     return _sectionCard(
       width: width,
       title: '4. Attach Image / Video (Required)',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          GestureDetector(
-            onTap: _attachedFiles.length < _maxFiles ? _pickMedia : null,
-            child: Container(
-              width: double.infinity,
-              padding: EdgeInsets.symmetric(vertical: width * 0.065),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF0F9FF),
-                borderRadius: BorderRadius.circular(width * 0.03),
-                border: Border.all(
-                  color: AppColors.primaryBlue.withValues(alpha: 0.35),
-                  width: 1.5,
-                ),
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.add_a_photo_rounded,
-                    size: width * 0.095,
-                    color: AppColors.primaryBlue,
-                  ),
-                  SizedBox(height: width * 0.02),
-                  Text(
-                    'Tap to upload photo or video',
-                    style: TextStyle(
-                      fontSize: width * 0.034,
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFF374151),
-                    ),
-                  ),
-                  SizedBox(height: width * 0.008),
-                  Text(
-                    _attachedFiles.isEmpty
-                        ? 'You can upload up to $_maxFiles files'
-                        : '${_attachedFiles.length}/$_maxFiles uploaded',
-                    style: TextStyle(
-                      fontSize: width * 0.028,
-                      color: const Color(0xFF9CA3AF),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+      child: body,
+    );
+  }
+
+  /// The panel's attachment area: one square "Add file" tile followed by the
+  /// attached files as square tiles, four across.
+  ///
+  /// The tiles themselves are [_attachFileTile] — the same previews, video
+  /// thumbnails, processing reveal and delete buttons the mobile grid draws.
+  /// Only the grid delegate and the leading tile are different.
+  Widget _splitAttachGrid(double width) {
+    final canAdd = _attachedFiles.length < _maxFiles;
+    // Leading dropzone tile, then one tile per file.
+    final itemCount = (canAdd ? 1 : 0) + _attachedFiles.length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const QaFieldLabel('Photos or video', hint: 'Required — at least one'),
+        // ── Reflow, don't shrink ────────────────────────────────────────────
+        // Four across was hard-coded, which is fine at the panel's ~620px and
+        // wrong below it: the cells are square, so a narrowing column drove the
+        // TILE down with it, and the dropzone's icon + "Add file" + "n/6" stack
+        // needs ~57px of height before it overflows its own cell. Sized by
+        // EXTENT instead, exactly as the Review grid is (see
+        // [_splitReviewStep]), the grid drops a column rather than shrinking
+        // what is in it.
+        //
+        // ── Why 170 ─────────────────────────────────────────────────────────
+        // The delegate takes `ceil(width / (extent + spacing))` columns, so the
+        // number chosen decides where the count CHANGES. 170 puts the 4→5
+        // boundary at 720px of grid — above the 700 the working column is
+        // capped at — so every side-by-side width still draws exactly four,
+        // at exactly the tile size it drew before. Below, the boundaries fall
+        // where the tile would otherwise start crowding: 3 across under ~540,
+        // 2 under ~360.
+        //
+        // It also sets the tile's FLOOR, which is the dropzone's real
+        // protection. The smallest tile this can produce is just past a
+        // boundary — ~85px, at the width where two columns first fit — and 85
+        // clears the 57px the dropzone's stack needs with room to spare. The
+        // [FittedBox] in [QaDropzoneTile] is the backstop under that.
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: 170,
+            crossAxisSpacing: 10,
+            mainAxisSpacing: 10,
+            childAspectRatio: 1, // square
           ),
-          if (_attachedFiles.isNotEmpty) ...[
-            SizedBox(height: width * 0.03),
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 3,
-                crossAxisSpacing: width * 0.025,
-                mainAxisSpacing: width * 0.025,
-                childAspectRatio: 1.0,
-              ),
-              itemCount: slotCount,
-              itemBuilder: (context, index) {
-                final isPlus = index == _attachedFiles.length;
-                if (isPlus) {
-                  return GestureDetector(
-                    onTap: _pickMedia,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF0F9FF),
-                        borderRadius: BorderRadius.circular(width * 0.025),
-                        border: Border.all(
-                          color: AppColors.primaryBlue.withValues(alpha: 0.4),
-                        ),
-                      ),
-                      child: Center(
-                        child: Image.asset(
-                          'assets/images/report/plus_sign.webp',
-                          width: width * 0.07,
-                          height: width * 0.07,
-                          errorBuilder: (_, _, _) => Icon(
-                            Icons.add_rounded,
-                            size: width * 0.07,
-                            color: AppColors.primaryBlue,
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                }
-                final file = _attachedFiles[index];
-                final processing = _processingPaths.contains(file.path);
-                return GestureDetector(
-                  onTap: processing
-                      ? null
-                      : () {
-                          _isVideo(file)
-                              ? _previewVideo(context, file, width)
-                              : _previewImage(context, file, width);
-                        },
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(width * 0.025),
-                        child: _isVideo(file)
-                            ? _videoThumb(file, width)
-                            : Image(
-                                image: pickedImageProvider(file),
-                                fit: BoxFit.cover,
-                              ),
-                      ),
-                      // Bottom-to-top reveal while the GPS stamp bakes; it fills
-                      // to the top the moment processing completes.
-                      if (processing)
-                        Positioned.fill(
-                          child: RevealLoading(
-                            borderRadius: BorderRadius.circular(width * 0.025),
-                            completed: _completedPaths.contains(file.path),
-                            onFinished: () {
-                              if (!mounted) return;
-                              setState(() {
-                                _processingPaths.remove(file.path);
-                                _completedPaths.remove(file.path);
-                              });
-                            },
-                          ),
-                        ),
-                      if (!processing)
-                        Positioned(
-                          top: 5,
-                          right: 5,
-                          child: GestureDetector(
-                            onTap: () =>
-                                setState(() => _attachedFiles.removeAt(index)),
-                            child: Container(
-                              width: width * 0.055,
-                              height: width * 0.055,
-                              decoration: const BoxDecoration(
-                                color: Colors.red,
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(
-                                Icons.close_rounded,
-                                color: Colors.white,
-                                size: width * 0.034,
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ],
-          SizedBox(height: width * 0.022),
-          Text(
-            'Image: JPG, PNG (Max. 10MB)  •  Video: MP4 (Max. 50MB)',
-            style: TextStyle(
-              fontSize: width * 0.026,
-              color: const Color(0xFF9CA3AF),
-            ),
-          ),
-        ],
-      ),
+          itemCount: itemCount,
+          itemBuilder: (context, index) {
+            if (canAdd && index == 0) {
+              return QaDropzoneTile(
+                count: _attachedFiles.length,
+                max: _maxFiles,
+                onTap: _pickMedia,
+              );
+            }
+            return _attachFileTile(canAdd ? index - 1 : index, width);
+          },
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Image: JPG, PNG (Max. 10MB)  ·  Video: MP4 (Max. 50MB)',
+          style: TextStyle(fontSize: 11.5, color: CitizenUi.textFaint),
+        ),
+        _splitFieldError('attach'),
+      ],
+    );
+  }
+
+  /// "Submit anonymously" as a single compact row.
+  ///
+  /// Writes the same `_submitAnonymously` field and goes through the same
+  /// `_showAnonymousConsentDialog` on the way on, so the consent copy a citizen
+  /// must read is identical to mobile's — only the row around it is smaller.
+  Widget _splitAnonymousRow() {
+    return QaAnonymousRow(
+      value: _submitAnonymously,
+      // Same gate as the mobile card: turning it ON asks for consent first,
+      // turning it OFF is immediate.
+      onChanged: (v) {
+        if (v) {
+          _showAnonymousConsentDialog();
+        } else {
+          setState(() => _submitAnonymously = false);
+        }
+      },
     );
   }
 
@@ -1893,7 +3263,7 @@ class _ReportIssueScreenState extends State<ReportIssueForm>
                         decoration: BoxDecoration(
                           color: const Color(0xFFF3F4F6),
                           borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: const Color(0xFFE5E7EB)),
+                          border: Border.all(color: CitizenUi.sharedBorder),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -2082,7 +3452,7 @@ class _ReportIssueScreenState extends State<ReportIssueForm>
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(width * 0.04),
-          border: Border.all(color: const Color(0xFFE5E7EB)),
+          border: Border.all(color: CitizenUi.sharedBorder),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.04),
@@ -2185,9 +3555,9 @@ class _ReportIssueScreenState extends State<ReportIssueForm>
           'p_limit': 3,
         },
       );
-      return List<Map<String, dynamic>>.from(rows as List)
-          .map(_NearbyReport.fromRow)
-          .toList();
+      return List<Map<String, dynamic>>.from(
+        rows as List,
+      ).map(_NearbyReport.fromRow).toList();
     } catch (_) {
       return const [];
     }
@@ -2331,12 +3701,17 @@ class _ReportIssueScreenState extends State<ReportIssueForm>
         // un-migrated DB / down detector) leaves the submission untouched.
         final mime = (mediaItems[i]['mime'] ?? '').toLowerCase();
         if (mime.startsWith('image/')) {
-          supabase.functions.invoke('check-ai-image', body: {
-            'bucket': 'report-media',
-            'path': mediaItems[i]['path'],
-            'table': 'report_media',
-            'id': inserted['id'],
-          }).ignore(); // swallow errors — never disturb the submission flow
+          supabase.functions
+              .invoke(
+                'check-ai-image',
+                body: {
+                  'bucket': 'report-media',
+                  'path': mediaItems[i]['path'],
+                  'table': 'report_media',
+                  'id': inserted['id'],
+                },
+              )
+              .ignore(); // swallow errors — never disturb the submission flow
         }
       }
       // ── 5. Success ────────────────────────────────────────────────────────
@@ -2524,7 +3899,7 @@ class _ReportIssueScreenState extends State<ReportIssueForm>
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          border: Border.all(color: const Color(0xFFE5E7EB)),
+          border: Border.all(color: CitizenUi.sharedBorder),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Column(

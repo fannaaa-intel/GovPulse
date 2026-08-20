@@ -2,6 +2,9 @@ import 'dart:async';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
+import '../citizen_shell_scope.dart';
+import '../../../core/theme/citizen_ui.dart';
+
 enum SkeletonLayout {
   none,
   home,
@@ -38,13 +41,35 @@ class LoadingOverlay extends StatelessWidget {
     this.skeletonLayout = SkeletonLayout.none,
   });
 
+  /// [webWide] is the CALLER's own "I am about to render my web body" flag —
+  /// the same `wide` the caller already computed to choose [child]. It is not
+  /// re-derived here, and that is the point.
+  ///
+  /// ── Why this cannot be a width test, or even `kIsWeb` ──────────────────
+  /// This picks a skeleton for a body it cannot see, and the callers disagree
+  /// about what they are about to render on web. MyReportsBody uses `kIsWeb`
+  /// alone, so on web its web body ALWAYS renders. NewsFeedBody uses
+  /// `embedded || …`, so the guest feed route — not embedded — still renders
+  /// the phone body in a browser. HomeScreen renders its mobile body at
+  /// `NavBand.phone`, which a narrow browser reaches.
+  ///
+  /// The old `screenW >= 900` here was measured against a MediaQuery the shell
+  /// has already overridden to describe the centre column, so inside the shell
+  /// it never passed and every web page flashed its PHONE skeleton before
+  /// rearranging into the web body on load. But swapping it for a blanket
+  /// `kIsWeb` would fix My Reports and the embedded feed while introducing the
+  /// same defect, reversed, in the guest feed and narrow home: a web skeleton
+  /// promising a layout that never arrives.
+  ///
+  /// Only the caller knows. So the caller says.
   static Widget bodyOrSkeleton({
     required bool isLoading,
     required SkeletonLayout layout,
     required Widget child,
+    bool webWide = false,
   }) {
     if (isLoading && layout != SkeletonLayout.none) {
-      return _SkeletonScreen(layout: layout);
+      return _SkeletonScreen(layout: layout, webWide: webWide);
     }
     return child;
   }
@@ -436,7 +461,15 @@ class _Shimmer extends StatelessWidget {
 // ── Skeleton screen router ────────────────────────────────────────────────────
 class _SkeletonScreen extends StatelessWidget {
   final SkeletonLayout layout;
-  const _SkeletonScreen({required this.layout});
+
+  /// See [LoadingOverlay.bodyOrSkeleton]. Defaults to false so the only other
+  /// construction site — [_SkeletonWithSlowToast], reached from the
+  /// [LoadingOverlay] widget whose `skeletonLayout` defaults to
+  /// [SkeletonLayout.none] and which no caller overrides — keeps compiling
+  /// without claiming a web body it knows nothing about.
+  final bool webWide;
+
+  const _SkeletonScreen({required this.layout, this.webWide = false});
 
   @override
   Widget build(BuildContext context) {
@@ -456,10 +489,12 @@ class _SkeletonScreen extends StatelessWidget {
     const double maxContentWidth = 480;
     final double screenW = mq.size.width;
 
-    // WEB / large screens: render a multi-column skeleton so the loading state
-    // matches the wide web body instead of stranding a single phone-width
-    // column. Only the screens that gained a web body opt in here; the mobile
-    // app never hits this branch (screenW < 900).
+    // WEB: render a multi-column skeleton so the loading state matches the wide
+    // web body instead of stranding a single phone-width column. Only the
+    // screens that gained a web body opt in here, and only when the caller says
+    // it is actually rendering that body — see [LoadingOverlay.bodyOrSkeleton].
+    // The mobile app never hits this branch: `kIsWeb` is a compile-time false
+    // there, so the whole thing is dead code in the app binary.
     const Set<SkeletonLayout> webMultiCol = {
       SkeletonLayout.home,
       SkeletonLayout.myReports,
@@ -468,7 +503,7 @@ class _SkeletonScreen extends StatelessWidget {
       SkeletonLayout.mySubmissions,
       SkeletonLayout.editProfile,
     };
-    if (kIsWeb && screenW >= 900 && webMultiCol.contains(layout)) {
+    if (kIsWeb && webWide && webMultiCol.contains(layout)) {
       final Widget web = switch (layout) {
         SkeletonLayout.home => const _WebHomeSkeleton(),
         SkeletonLayout.newsFeed => const _WebFeedSkeleton(),
@@ -520,23 +555,42 @@ Widget _skelSurface(
     decoration: BoxDecoration(
       color: Colors.white,
       borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: const Color(0xFFE5E7EB)),
+      border: Border.all(color: CitizenUi.sharedBorder),
     ),
     child: child,
   );
 }
 
+/// The page band a web skeleton sits in.
+///
+/// Standalone, it is centred and capped at 1080 — the measure the standalone
+/// web pages use. Inside the citizen shell it is neither: the pane has already
+/// been given exactly the width it should occupy, and re-centring inside it
+/// would inset the skeleton from a column the real content fills, so the page
+/// would appear to jump sideways on load.
 Widget _skelBand(Widget child) {
-  return SingleChildScrollView(
-    child: Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 1080),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 24, 24, 40),
-          child: child,
+  return Builder(
+    builder: (context) {
+      final inShell = CitizenShellScope.of(context);
+      return SingleChildScrollView(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: inShell ? double.infinity : 1080,
+            ),
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                inShell ? 0 : 24,
+                24,
+                inShell ? 0 : 24,
+                40,
+              ),
+              child: child,
+            ),
+          ),
         ),
-      ),
-    ),
+      );
+    },
   );
 }
 
@@ -885,7 +939,20 @@ class _WebFeedSkeleton extends StatelessWidget {
           // predict the layout that replaces it, so it has to break at the same
           // width; stretching the columns or scrolling sideways would both
           // predict a layout the feed never actually shows.
-          final showRail = constraints.maxWidth >= _kPairWidth;
+          //
+          // ── And it never shows inside the citizen shell ─────────────────
+          // The rail predicts the STANDALONE feed's second column. The shell's
+          // Home pane has no such column — the shell's own left rail and right
+          // sidebar live outside the pane entirely — so drawing one here
+          // promised a two-column layout and then delivered one column, which
+          // is the visible rearrangement a skeleton exists to prevent.
+          //
+          // The width test alone could not catch this: the pane reports the
+          // CENTRE COLUMN's width, which on a large monitor is comfortably over
+          // the threshold. Only the shell knows, so the shell says so.
+          final showRail =
+              constraints.maxWidth >= _kPairWidth &&
+              !CitizenShellScope.of(context);
 
           return Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -963,7 +1030,7 @@ class _HomeSkeletonScreen extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(w * 0.04),
-                      border: Border.all(color: const Color(0xFFE5E7EB)),
+                      border: Border.all(color: CitizenUi.sharedBorder),
                     ),
                     child: Column(
                       children: [
@@ -1058,7 +1125,7 @@ class _SettingsSkeletonScreen extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(w * 0.035),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        border: Border.all(color: CitizenUi.sharedBorder),
       ),
       child: Column(
         children: List.generate(
@@ -1092,7 +1159,10 @@ class _SettingsSkeletonScreen extends StatelessWidget {
               if (i < rows - 1)
                 Padding(
                   padding: EdgeInsets.only(left: w * 0.165),
-                  child: const Divider(height: 1, color: Color(0xFFE5E7EB)),
+                  child: const Divider(
+                    height: 1,
+                    color: CitizenUi.sharedBorder,
+                  ),
                 ),
             ],
           ),
@@ -1154,7 +1224,7 @@ class _SettingsSkeletonScreen extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(w * 0.04),
-                      border: Border.all(color: const Color(0xFFE5E7EB)),
+                      border: Border.all(color: CitizenUi.sharedBorder),
                     ),
                     child: Row(
                       children: [
@@ -1217,7 +1287,7 @@ class _EditProfileSkeletonScreen extends StatelessWidget {
     decoration: BoxDecoration(
       color: Colors.white,
       borderRadius: BorderRadius.circular(w * 0.035),
-      border: Border.all(color: const Color(0xFFE5E7EB)),
+      border: Border.all(color: CitizenUi.sharedBorder),
       boxShadow: [
         BoxShadow(
           color: Colors.black.withValues(alpha: 0.04),
@@ -1256,7 +1326,7 @@ class _EditProfileSkeletonScreen extends StatelessWidget {
       if (showDivider)
         Padding(
           padding: EdgeInsets.only(left: w * 0.165),
-          child: const Divider(height: 1, color: Color(0xFFE5E7EB)),
+          child: const Divider(height: 1, color: CitizenUi.sharedBorder),
         ),
     ],
   );
@@ -1287,7 +1357,7 @@ class _EditProfileSkeletonScreen extends StatelessWidget {
   );
 
   VerticalDivider _vDivider(double w) => VerticalDivider(
-    color: const Color(0xFFE5E7EB),
+    color: CitizenUi.sharedBorder,
     thickness: 1,
     width: w * 0.01,
   );
@@ -1322,7 +1392,7 @@ class _EditProfileSkeletonScreen extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(w * 0.04),
-                      border: Border.all(color: const Color(0xFFE5E7EB)),
+                      border: Border.all(color: CitizenUi.sharedBorder),
                       boxShadow: [
                         BoxShadow(
                           color: Colors.black.withValues(alpha: 0.05),
@@ -1359,7 +1429,7 @@ class _EditProfileSkeletonScreen extends StatelessWidget {
                           decoration: BoxDecoration(
                             color: const Color(0xFFF9FAFB),
                             borderRadius: BorderRadius.circular(w * 0.03),
-                            border: Border.all(color: const Color(0xFFE5E7EB)),
+                            border: Border.all(color: CitizenUi.sharedBorder),
                           ),
                           child: IntrinsicHeight(
                             child: Row(
@@ -1428,7 +1498,7 @@ class _MyReportsSkeletonScreen extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(w * .035),
-          border: Border.all(color: const Color(0xFFE5E7EB)),
+          border: Border.all(color: CitizenUi.sharedBorder),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1517,7 +1587,8 @@ class _MyReportsSkeletonScreen extends StatelessWidget {
             ],
           ),
         ),
-        if (showDivider) const Divider(height: 1, color: Color(0xFFE5E7EB)),
+        if (showDivider)
+          const Divider(height: 1, color: CitizenUi.sharedBorder),
       ],
     );
   }
@@ -1557,7 +1628,7 @@ class _MyReportsSkeletonScreen extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(w * .04),
-                  border: Border.all(color: const Color(0xFFE5E7EB)),
+                  border: Border.all(color: CitizenUi.sharedBorder),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1617,7 +1688,7 @@ class _MyReportsSkeletonScreen extends StatelessWidget {
                       ),
                     ),
 
-                    const Divider(height: 1, color: Color(0xFFE5E7EB)),
+                    const Divider(height: 1, color: CitizenUi.sharedBorder),
 
                     // 4 report rows
                     ...List.generate(
@@ -1711,7 +1782,7 @@ class _NewsFeedSkeletonScreen extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(w * 0.035),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        border: Border.all(color: CitizenUi.sharedBorder),
       ),
       padding: EdgeInsets.all(w * 0.035),
       child: Column(
@@ -1799,7 +1870,7 @@ class _NewsFeedSkeletonScreen extends StatelessWidget {
           ),
           Padding(
             padding: EdgeInsets.symmetric(vertical: w * 0.025),
-            child: const Divider(height: 1, color: Color(0xFFE5E7EB)),
+            child: const Divider(height: 1, color: CitizenUi.sharedBorder),
           ),
           ...List.generate(
             2,
@@ -1910,7 +1981,7 @@ class EventsSectionsSkeleton extends StatelessWidget {
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(w * 0.03),
-                border: Border.all(color: const Color(0xFFE5E7EB)),
+                border: Border.all(color: CitizenUi.sharedBorder),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1983,7 +2054,7 @@ class EventsSectionsSkeleton extends StatelessWidget {
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(w * 0.035),
-              border: Border.all(color: const Color(0xFFE5E7EB)),
+              border: Border.all(color: CitizenUi.sharedBorder),
             ),
             padding: EdgeInsets.all(w * 0.035),
             child: Row(

@@ -5,12 +5,27 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../router/legacy_nav.dart';
 import '../../theme/app_colors.dart';
+import '../app_dialog.dart';
 
 /// Width at which these dialogs stop scaling with the viewport.
 ///
 /// The same 440 [showVerificationRequiredDialog] has always capped at; named
-/// here so [showSuccessDialog] provably uses the identical number.
+/// here so [showSuccessDialog] provably uses the identical number. On web the
+/// cap is [kWebDialogMaxWidth] instead — see [_dw].
 const double _kMaxDialogWidth = 440.0;
+
+/// One dialog measurement, in whichever system is in play.
+///
+/// On the phone every dimension here is a fraction of the viewport, which is
+/// right: the dialog is nearly the screen. On web that fraction is read off a
+/// constant 440 however wide the browser is, which is how a confirm box ended
+/// up with a 97px illustration and 55px buttons on a desktop. `kIsWeb` is a
+/// compile-time constant, so the app still computes exactly `width * factor`.
+double _dw(double width, double factor, double web) =>
+    kIsWeb ? web : width * factor;
+
+/// The cap actually applied, which differs by platform.
+double get _dialogCap => kIsWeb ? kWebDialogMaxWidth : _kMaxDialogWidth;
 
 Future<bool> showVerificationRequiredDialog(
   BuildContext context, {
@@ -21,7 +36,7 @@ Future<bool> showVerificationRequiredDialog(
 }) async {
   // Cap the effective width so relative sizing stays phone-scaled and the
   // dialog doesn't stretch too wide on web/desktop (mirrors app_snackbar.dart).
-  const maxDialogWidth = 440.0;
+  final maxDialogWidth = _dialogCap;
   final width = math.min(MediaQuery.of(context).size.width, maxDialogWidth);
 
   // ── If caller knows the status, use it directly ───────────────────────────
@@ -73,48 +88,48 @@ Future<bool> showVerificationRequiredDialog(
     pageBuilder: (ctx, _, _) => Dialog(
       backgroundColor: Colors.white,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(width * 0.06),
+        borderRadius: BorderRadius.circular(_dw(width, 0.06, kWebDialogRadius)),
       ),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: maxDialogWidth),
+        constraints: BoxConstraints(maxWidth: maxDialogWidth),
         child: Padding(
-          padding: EdgeInsets.all(width * 0.06),
+          padding: EdgeInsets.all(_dw(width, 0.06, kWebDialogPad)),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               SizedBox(
-                width: width * 0.22,
-                height: width * 0.22,
+                width: _dw(width, 0.22, kWebDialogIcon),
+                height: _dw(width, 0.22, kWebDialogIcon),
                 child: Center(
                   child: Image.asset(
                     'assets/images/verification/verified.webp',
-                    width: width * 0.18,
-                    height: width * 0.18,
+                    width: _dw(width, 0.18, kWebDialogIcon * 0.85),
+                    height: _dw(width, 0.18, kWebDialogIcon * 0.85),
                     fit: BoxFit.contain,
                   ),
                 ),
               ),
-              SizedBox(height: width * 0.045),
+              SizedBox(height: _dw(width, 0.045, kWebDialogGapIcon)),
               Text(
                 'Verification Required',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontSize: width * 0.052,
+                  fontSize: _dw(width, 0.052, kWebDialogTitle),
                   fontWeight: FontWeight.w700,
                   color: const Color(0xFF1F2937),
                 ),
               ),
-              SizedBox(height: width * 0.022),
+              SizedBox(height: _dw(width, 0.022, kWebDialogGapTitle)),
               Text(
                 message,
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontSize: width * 0.034,
+                  fontSize: _dw(width, 0.034, kWebDialogBody),
                   color: AppColors.hint,
                   height: 1.55,
                 ),
               ),
-              SizedBox(height: width * 0.055),
+              SizedBox(height: _dw(width, 0.055, kWebDialogGapActions)),
               Row(
                 children: [
                   Expanded(
@@ -125,22 +140,26 @@ Future<bool> showVerificationRequiredDialog(
                         side: BorderSide(
                           color: AppColors.hint.withValues(alpha: 0.4),
                         ),
-                        padding: EdgeInsets.symmetric(vertical: width * 0.042),
+                        padding: EdgeInsets.symmetric(
+                          vertical: _dw(width, 0.042, kWebDialogButtonPadV),
+                        ),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(width * 0.03),
+                          borderRadius: BorderRadius.circular(
+                            _dw(width, 0.03, kWebDialogButtonRadius),
+                          ),
                         ),
                       ),
                       child: Text(
                         'Cancel',
                         maxLines: 1,
                         style: TextStyle(
-                          fontSize: width * 0.04,
+                          fontSize: _dw(width, 0.04, kWebDialogButtonFont),
                           fontWeight: FontWeight.w700,
                         ),
                       ),
                     ),
                   ),
-                  SizedBox(width: width * 0.035),
+                  SizedBox(width: _dw(width, 0.035, kWebDialogButtonGap)),
                   Expanded(
                     child: ElevatedButton(
                       onPressed: () {
@@ -165,16 +184,20 @@ Future<bool> showVerificationRequiredDialog(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primaryBlue,
                         elevation: 0,
-                        padding: EdgeInsets.symmetric(vertical: width * 0.042),
+                        padding: EdgeInsets.symmetric(
+                          vertical: _dw(width, 0.042, kWebDialogButtonPadV),
+                        ),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(width * 0.03),
+                          borderRadius: BorderRadius.circular(
+                            _dw(width, 0.03, kWebDialogButtonRadius),
+                          ),
                         ),
                       ),
                       child: Text(
                         'Verify',
                         maxLines: 1,
                         style: TextStyle(
-                          fontSize: width * 0.04,
+                          fontSize: _dw(width, 0.04, kWebDialogButtonFont),
                           fontWeight: FontWeight.w700,
                           color: Colors.white,
                         ),
@@ -213,7 +236,7 @@ Future<void> showSuccessDialog(
   // showVerificationRequiredDialog already does.
   //
   // Native keeps the raw viewport width, so phone rendering is untouched.
-  final width = kIsWeb ? math.min(mqWidth, _kMaxDialogWidth) : mqWidth;
+  final width = kIsWeb ? math.min(mqWidth, kWebDialogMaxWidth) : mqWidth;
 
   await showGeneralDialog(
     context: context,
@@ -237,13 +260,13 @@ Future<void> showSuccessDialog(
     pageBuilder: (ctx, _, _) => Dialog(
       backgroundColor: Colors.white,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(width * 0.06),
+        borderRadius: BorderRadius.circular(_dw(width, 0.06, kWebDialogRadius)),
       ),
       // maxWidth is infinity on native, which enforces to the parent's own
       // constraints unchanged — so this box is a no-op off the web.
       child: ConstrainedBox(
         constraints: BoxConstraints(
-          maxWidth: kIsWeb ? _kMaxDialogWidth : double.infinity,
+          maxWidth: kIsWeb ? kWebDialogMaxWidth : double.infinity,
         ),
         // Belt-and-braces against the stripe: if the message ever wraps to a
         // third line on a short viewport, this scrolls instead of overflowing.
@@ -251,13 +274,13 @@ Future<void> showSuccessDialog(
         // nothing moves in the common case.
         child: SingleChildScrollView(
           child: Padding(
-            padding: EdgeInsets.all(width * 0.06),
+            padding: EdgeInsets.all(_dw(width, 0.06, kWebDialogPad)),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 // ── Icon with optional tinted circle background ──────────────
                 () {
-                  final size = width * 0.22;
+                  final size = _dw(width, 0.22, kWebDialogIcon);
                   final bg =
                       iconBgColor ??
                       (iconColor != null
@@ -322,27 +345,27 @@ Future<void> showSuccessDialog(
                     ),
                   );
                 }(),
-                SizedBox(height: width * 0.045),
+                SizedBox(height: _dw(width, 0.045, kWebDialogGapIcon)),
                 Text(
                   title,
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    fontSize: width * 0.052,
+                    fontSize: _dw(width, 0.052, kWebDialogTitle),
                     fontWeight: FontWeight.w700,
                     color: const Color(0xFF1F2937),
                   ),
                 ),
-                SizedBox(height: width * 0.022),
+                SizedBox(height: _dw(width, 0.022, kWebDialogGapTitle)),
                 Text(
                   message,
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    fontSize: width * 0.034,
+                    fontSize: _dw(width, 0.034, kWebDialogBody),
                     color: AppColors.hint,
                     height: 1.55,
                   ),
                 ),
-                SizedBox(height: width * 0.055),
+                SizedBox(height: _dw(width, 0.055, kWebDialogGapActions)),
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
@@ -350,15 +373,19 @@ Future<void> showSuccessDialog(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primaryBlue,
                       elevation: 0,
-                      padding: EdgeInsets.symmetric(vertical: width * 0.042),
+                      padding: EdgeInsets.symmetric(
+                        vertical: _dw(width, 0.042, kWebDialogButtonPadV),
+                      ),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(width * 0.03),
+                        borderRadius: BorderRadius.circular(
+                          _dw(width, 0.03, kWebDialogButtonRadius),
+                        ),
                       ),
                     ),
                     child: Text(
                       buttonLabel,
                       style: TextStyle(
-                        fontSize: width * 0.04,
+                        fontSize: _dw(width, 0.04, kWebDialogButtonFont),
                         fontWeight: FontWeight.w700,
                         color: Colors.white,
                       ),

@@ -29,6 +29,49 @@ import 'package:flutter/material.dart';
 /// the app and the web console feel the same.
 const Duration kAppDialogDuration = Duration(milliseconds: 220);
 
+// ════════════════════════════════════════════════════════════════════════════
+//  Web dialog scale
+//
+//  These modals were drawn for a phone, where every measurement is a fraction
+//  of the viewport width and the dialog is very nearly the whole screen. On web
+//  that width is pinned to a constant (440) and the fractions are read off it
+//  regardless of the room available — so a confirm box arrived with a 97px
+//  illustration, a 23px headline and 55px buttons, sitting in the middle of a
+//  1900px desktop. Phone proportions at desktop distance read as oversized,
+//  because they are: on a phone that dialog fills your hand, and here it is a
+//  small object you are looking at from further away.
+//
+//  One scale, shared, so the confirm dialogs cannot drift apart from each
+//  other the way they had. Every value is applied behind `kIsWeb`, which is a
+//  compile-time constant, so the app keeps its own numbers exactly.
+// ════════════════════════════════════════════════════════════════════════════
+
+/// Widest a confirm/alert dialog gets on web.
+const double kWebDialogMaxWidth = 380;
+
+/// Card padding and corner.
+const double kWebDialogPad = 24;
+const double kWebDialogRadius = 18;
+
+/// The leading glyph's circle, and the mark inside it.
+const double kWebDialogIcon = 56;
+const double kWebDialogGlyph = 26;
+
+/// Type.
+const double kWebDialogTitle = 19;
+const double kWebDialogBody = 13.5;
+
+/// Buttons — vertical padding lands them at about 42, which is a web button.
+const double kWebDialogButtonPadV = 12;
+const double kWebDialogButtonFont = 14;
+const double kWebDialogButtonRadius = 10;
+const double kWebDialogButtonGap = 10;
+
+/// Gaps: after the glyph, after the title, before the buttons.
+const double kWebDialogGapIcon = 16;
+const double kWebDialogGapTitle = 8;
+const double kWebDialogGapActions = 22;
+
 /// How hard the page behind a pop-up frosts over. Matched to the citizen
 /// notification popup (the reference the rest of the app follows): enough that
 /// the surroundings clearly recede behind the card, not so much that context is

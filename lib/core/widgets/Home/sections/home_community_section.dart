@@ -3,6 +3,7 @@ import '../../../theme/app_colors.dart';
 import '../home_dots.dart';
 import '../../../providers/community_posts_provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import '../../../../core/theme/citizen_ui.dart';
 
 class HomeCommunitySection extends StatefulWidget {
   final double width;
@@ -107,7 +108,7 @@ class _HomeCommunitySectionState extends State<HomeCommunitySection> {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(width * 0.04),
-          border: Border.all(color: const Color(0xFFE5E7EB)),
+          border: Border.all(color: CitizenUi.sharedBorder),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.05),
@@ -300,7 +301,7 @@ class _HomeCommunitySectionState extends State<HomeCommunitySection> {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(width * 0.03),
-          border: Border.all(color: const Color(0xFFE5E7EB)),
+          border: Border.all(color: CitizenUi.sharedBorder),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.04),

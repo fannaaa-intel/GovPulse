@@ -24,6 +24,11 @@ import '../emergency/emergency_screen.dart';
 import '../my_report/my_reports_screen.dart';
 import '../my_report/report_detail_screen.dart';
 import '../newsfeed/news_feed_screen.dart';
+import '../settings/about/about_govpulse_screen.dart';
+import '../settings/change-password/change_password_send_screen.dart';
+import '../settings/contact-support/contact_support_screen.dart';
+import '../settings/edit_profile_screen.dart';
+import '../settings/my-submission/my_submissions_screen.dart';
 import '../settings/settings_screen.dart';
 import 'citizen_shell.dart';
 
@@ -46,9 +51,11 @@ import 'citizen_shell.dart';
 //  and the public /scan/<token> endorsement page.
 //
 //  Everything else stays off go_router on purpose:
-//    • Quick actions and the settings rail open as DIALOGS over a still-mounted
-//      feed (citizen_shell_dialogs.dart). A route would unmount the feed and add
-//      a history entry for what is really a panel.
+//    • Quick actions open as DIALOGS over a still-mounted feed
+//      (citizen_shell_dialogs.dart). A route would unmount the feed and add a
+//      history entry for what is really a panel. The settings rail used to work
+//      the same way and no longer does — its five ACCOUNT screens are pages
+//      under the Settings branch now; see [CitizenAccountPage].
 //    • The verification wizard passes Uint8List ID images between its six steps,
 //      and change-password carries access/refresh tokens. Neither belongs in an
 //      address bar. They stay on the legacy table, pushed via pushLegacy.
@@ -113,6 +120,113 @@ enum CitizenTab {
 
   /// Full location for this tab, e.g. `/my-reports`.
   String get path => '/$segment';
+}
+
+/// The ACCOUNT destinations — the five entries in the shell's left rail.
+///
+/// ── Why these are PAGES and the quick actions are not ──────────────────────
+/// Both used to open as dialogs over the feed, and for the quick actions that
+/// is still right: a report is an interruption you finish and return from, so
+/// keeping the feed mounted behind it is the point. These five are somewhere
+/// you GO. Editing a profile or reading a submission history is a task measured
+/// in minutes, and a 620px card floating over a blurred feed gave it no width,
+/// no address, no browser Back and no way to say which section you are in.
+///
+/// They live under the SETTINGS branch, so the cost the file's opening comment
+/// warns about does not apply: [StatefulShellRoute.indexedStack] keeps the Home
+/// branch mounted while you are here, so the feed does not reload and its
+/// scroll offset survives the round trip. It is the same construction as
+/// `detail/:reportId` under My Reports.
+///
+/// [verifyMessage] non-null means the item is behind the verification gate.
+/// Only Edit Profile and My Submissions are — matching the mobile Settings
+/// page, which gates exactly those two and leaves Change Password, Contact
+/// Support and About open to everyone. Support in particular must stay
+/// reachable: an unverified citizen having trouble verifying needs it most.
+///
+/// The gate is enforced at the TAP, not by a redirect. Typing the URL directly
+/// while unverified is not a hole: Edit Profile renders its own not-verified
+/// state, and My Submissions can only ever show the caller's own RLS-scoped
+/// rows.
+enum CitizenAccountPage {
+  editProfile(
+    segment: 'edit-profile',
+    label: 'Edit Profile',
+    icon: Icons.person_outline_rounded,
+    verifyMessage:
+        'Only verified citizens can edit their profile information. '
+        'Please complete the identity verification process first.',
+  ),
+  changePassword(
+    segment: 'password',
+    label: 'Change Password',
+    icon: Icons.lock_outline_rounded,
+  ),
+  submissions(
+    segment: 'submissions',
+    label: 'My Submissions',
+    icon: Icons.folder_open_rounded,
+    verifyMessage:
+        'Only verified citizens can view their submission history. '
+        'Please complete the identity verification process first.',
+  ),
+  support(
+    segment: 'support',
+    label: 'Contact Support',
+    icon: Icons.support_agent_rounded,
+  ),
+  about(
+    segment: 'about',
+    label: 'About GovPulse',
+    icon: Icons.info_outline_rounded,
+  );
+
+  final String segment;
+  final String label;
+  final IconData icon;
+  final String? verifyMessage;
+
+  const CitizenAccountPage({
+    required this.segment,
+    required this.label,
+    required this.icon,
+    this.verifyMessage,
+  });
+
+  /// Full location, e.g. `/settings/edit-profile`.
+  String get path => '${CitizenTab.settings.path}/$segment';
+}
+
+/// True when [location] is one of the [CitizenAccountPage] paths.
+///
+/// The shell asks this to decide whether to stand the right sidebar down and
+/// hand its width to the account page. Compared against `uri.path`, so a query
+/// string (My Submissions carries one) does not defeat the match.
+bool isCitizenAccountLocation(String location) =>
+    CitizenAccountPage.values.any((page) => location == page.path);
+
+// ── My Submissions deep link ────────────────────────────────────────────────
+//
+// Query parameters, for the same reason the feed's are: `/settings/submissions`
+// on its own is a valid location, and the tab and the flashed row are an
+// initial STATE of that page rather than a different page.
+const String _kSubmissionsTabParam = 'tab';
+const String _kSubmissionsHighlightParam = 'highlight';
+
+/// Deep link into My Submissions on [tab] (0 Reports · 1 Suggestions ·
+/// 2 Feedback), optionally flashing [highlightId].
+///
+/// Both omitted gives the bare path — [Uri] would otherwise emit a trailing
+/// `?`, which would make the location stop matching [isCitizenAccountLocation].
+String shellSubmissionsPath({int? tab, String? highlightId}) {
+  final query = <String, String>{
+    if (tab != null) _kSubmissionsTabParam: '$tab',
+    _kSubmissionsHighlightParam: ?highlightId,
+  };
+  return Uri(
+    path: CitizenAccountPage.submissions.path,
+    queryParameters: query.isEmpty ? null : query,
+  ).toString();
 }
 
 /// Quick actions and other full-bleed flows open over the WHOLE shell rather
@@ -252,10 +366,8 @@ Widget _bodyFor(BuildContext context, CitizenTab tab, GoRouterState state) {
         // direct child of the branch route, the resulting stack is still
         // [list, detail] — Back returns to the list with its scroll intact,
         // same as push gave us.
-        onOpenReport: (report) => context.go(
-          shellReportDetailPath(report.fullId),
-          extra: report,
-        ),
+        onOpenReport: (report) =>
+            context.go(shellReportDetailPath(report.fullId), extra: report),
       );
     case CitizenTab.emergency:
       return const EmergencyBody();
@@ -265,6 +377,56 @@ Widget _bodyFor(BuildContext context, CitizenTab tab, GoRouterState state) {
       // duplicates of them and shows only what the rail does not.
       return const SettingsBody(embedded: true);
   }
+}
+
+/// Body for one [CitizenAccountPage].
+///
+/// The existing screens are hosted AS-IS. Each still brings its own Scaffold
+/// and header, which inside the centre column reads as the page's own title bar
+/// — and their back chevrons still call `Navigator.pop`, which on a route
+/// nested under the Settings branch returns to `/settings`, exactly as the
+/// report detail route behaves. So none of them needed changing to stop being
+/// dialogs.
+///
+/// They size themselves off `MediaQuery`, and the shell overrides it to report
+/// the CENTRE COLUMN's box rather than the viewport's — which is what makes
+/// hosting them here correct where hosting them in a fixed-width dialog was
+/// not.
+Widget _accountBodyFor(CitizenAccountPage page, GoRouterState state) {
+  switch (page) {
+    case CitizenAccountPage.editProfile:
+      return _WithIdentity(
+        (username, _) => EditProfileScreen(username: username),
+      );
+    case CitizenAccountPage.changePassword:
+      return const _ChangePasswordBody();
+    case CitizenAccountPage.submissions:
+      final query = state.uri.queryParameters;
+      return _WithIdentity(
+        (username, _) => MySubmissionsScreen(
+          username: username,
+          initialTab: int.tryParse(query[_kSubmissionsTabParam] ?? '') ?? 0,
+          highlightId: query[_kSubmissionsHighlightParam],
+        ),
+      );
+    case CitizenAccountPage.support:
+      return _WithIdentity(
+        (username, _) => ContactSupportScreen(username: username),
+      );
+    case CitizenAccountPage.about:
+      return const AboutGovPulseScreen();
+  }
+}
+
+/// Change Password, which needs the EMAIL rather than the username — the one
+/// account screen [_WithIdentity] cannot serve.
+class _ChangePasswordBody extends ConsumerWidget {
+  const _ChangePasswordBody();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => ChangePasswordSendScreen(
+    email: ref.watch(userProfileProvider).valueOrNull?.email ?? '',
+  );
 }
 
 // ── Auth guard ──────────────────────────────────────────────────────────────
@@ -497,7 +659,8 @@ final GoRouter citizenRouter = GoRouter(
     // legacy _instantInFadeOut helper wraps them in.
     GoRoute(
       path: _kLoginPath,
-      builder: (_, _) => NetworkWrapper(child: Builder(builder: buildLoginScreen)),
+      builder: (_, _) =>
+          NetworkWrapper(child: Builder(builder: buildLoginScreen)),
     ),
     GoRoute(
       path: _kSignupPath,
@@ -567,8 +730,15 @@ final GoRouter citizenRouter = GoRouter(
     // (see citizen_shell_dialogs.dart), which is the whole point — a route
     // would unmount the feed and add a history entry for what is really a panel.
     StatefulShellRoute.indexedStack(
-      builder: (context, state, navigationShell) =>
-          CitizenShell(navigationShell: navigationShell),
+      // `state.uri` here is the FULL current location, not just the shell's own
+      // match — which is what lets the shell know it is on an account page and
+      // stand the right sidebar down. Taken from the builder rather than looked
+      // up inside the shell so it arrives as a plain value that rebuilds the
+      // shell when it changes.
+      builder: (context, state, navigationShell) => CitizenShell(
+        navigationShell: navigationShell,
+        location: state.uri.path,
+      ),
       branches: <StatefulShellBranch>[
         for (final tab in CitizenTab.values)
           StatefulShellBranch(
@@ -640,6 +810,22 @@ final GoRouter citizenRouter = GoRouter(
                         );
                       },
                     ),
+
+                  // The five ACCOUNT pages, nested under Settings for the same
+                  // reason report detail nests under My Reports: the pane they
+                  // replace is this branch's, so the other three branches keep
+                  // their state and Back returns to /settings.
+                  //
+                  // These are what the left rail's ACCOUNT section opens. They
+                  // used to be dialogs; see [CitizenAccountPage] for why they
+                  // are not any more.
+                  if (tab == CitizenTab.settings)
+                    for (final page in CitizenAccountPage.values)
+                      GoRoute(
+                        path: page.segment,
+                        builder: (context, state) =>
+                            _accountBodyFor(page, state),
+                      ),
                 ],
               ),
             ],

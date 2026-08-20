@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/services/auth_ready.dart';
+import '../../../core/theme/citizen_ui.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  One report, as a row in My Reports.
@@ -320,7 +321,7 @@ class ReportCard extends StatelessWidget {
                                 color: const Color(0xFFF3F4F6),
                                 borderRadius: BorderRadius.circular(w * .04),
                                 border: Border.all(
-                                  color: const Color(0xFFE5E7EB),
+                                  color: CitizenUi.sharedBorder,
                                 ),
                               ),
                               child: Row(

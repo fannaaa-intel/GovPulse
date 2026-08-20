@@ -2166,9 +2166,9 @@ class _ComposerFormState extends ConsumerState<_ComposerForm> {
 
     final notifier = ref.read(communityUpdatesProvider.notifier);
     // The composer is about to close, so its own context won't survive to show
-    // the background success/failure toast — use the root navigator's context,
-    // which outlives this dialog/page.
-    final rootContext = Navigator.of(context, rootNavigator: true).context;
+    // the background success/failure toast — capture the root overlay, which
+    // lives for the app's lifetime, while we're still mounted.
+    final overlay = Overlay.of(context, rootOverlay: true);
 
     // Kick off the write (the notifier updates the feed optimistically the
     // instant it's called) and close immediately — the post already shows.
@@ -2199,11 +2199,7 @@ class _ComposerFormState extends ConsumerState<_ComposerForm> {
     }
 
     unawaited(
-      _reportSave(
-        op,
-        rootContext,
-        _isEdit ? 'Update saved.' : 'Update published.',
-      ),
+      _reportSave(op, overlay, _isEdit ? 'Update saved.' : 'Update published.'),
     );
     Navigator.of(context).pop();
   }
@@ -2235,19 +2231,23 @@ class _ComposerFormState extends ConsumerState<_ComposerForm> {
   }
 }
 
-/// Awaits a background post save and toasts the outcome on a context that
+/// Awaits a background post save and toasts the outcome into an overlay that
 /// outlives the (already-closed) composer. Top-level so it never touches the
 /// disposed composer State.
+///
+/// Takes the root [OverlayState], not a context: toasts render into the root
+/// overlay, which is a *descendant* of the root navigator, so a root-navigator
+/// context has nothing to look up and the toast is silently dropped.
 Future<void> _reportSave(
   Future<void> op,
-  BuildContext ctx,
+  OverlayState overlay,
   String successMsg,
 ) async {
   try {
     await op;
-    if (ctx.mounted) _toast(ctx, successMsg);
+    _toast(null, successMsg, overlay: overlay);
   } catch (e) {
-    if (ctx.mounted) _toast(ctx, 'Could not save: $e', error: true);
+    _toast(null, 'Could not save: $e', error: true, overlay: overlay);
   }
 }
 

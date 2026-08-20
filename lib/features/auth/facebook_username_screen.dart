@@ -7,6 +7,7 @@ import '../../core/widgets/inputs/rounded_input_field.dart';
 import '../../core/widgets/mobile_form_shell.dart';
 import '../../core/widgets/web/web.dart';
 import '../../core/services/auth_service.dart';
+import '../../core/theme/citizen_ui.dart';
 
 /// Shown right after a successful Facebook sign-in.
 /// The user picks a username before entering the app.
@@ -296,7 +297,7 @@ class _FacebookUsernameScreenState extends State<FacebookUsernameScreen>
                         height: 48,
                         child: OutlinedButton(
                           style: OutlinedButton.styleFrom(
-                            side: BorderSide(color: AppColors.stroke),
+                            side: BorderSide(color: CitizenUi.sharedStroke),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(16),
                             ),
@@ -523,7 +524,7 @@ class _FacebookUsernameScreenState extends State<FacebookUsernameScreen>
           height: 48,
           child: OutlinedButton(
             style: OutlinedButton.styleFrom(
-              side: BorderSide(color: AppColors.stroke),
+              side: BorderSide(color: CitizenUi.sharedStroke),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),

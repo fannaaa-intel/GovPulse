@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../core/theme/citizen_ui.dart';
 import '../screen/home_screen.dart';
 import '../../../core/router/legacy_nav.dart';
 // CitizenTab.home.path — the shell's Home location, for the web arm of the
@@ -17,6 +18,8 @@ import '../../../core/providers/user_profile_provider.dart';
 import '../../../core/widgets/Home/Newsfeed/news_feed_helpers.dart';
 import '../../../core/widgets/Home/Newsfeed/comments_sheet.dart';
 import '../../../core/widgets/Home/Newsfeed/newsfeed_post_card.dart';
+import '../../../core/widgets/Home/Newsfeed/feed_empty_state.dart';
+import '../shell/citizen_shell.dart' show CitizenShell;
 import '../../../core/widgets/loading/loading_overlay.dart';
 import '../../../core/widgets/app_snackbar.dart';
 import '../../../core/widgets/Home/nav/responsive_nav_scaffold.dart';
@@ -182,6 +185,7 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
   bool get _isVerified => _profile?.isVerified ?? false;
 
   final SupabaseClient _supabase = Supabase.instance.client;
+
   /// Opacity the staggered entrance starts from ON WEB, so the first painted
   /// frame already shows content. Mobile still fades from zero. Matches the
   /// floor the auth screens use — same problem, same value.
@@ -725,7 +729,7 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
                   ],
                 ),
               ),
-              Container(height: 1, color: const Color(0xFFE5E7EB)),
+              Container(height: 1, color: CitizenUi.sharedBorder),
               ...PostFilter.values.map((filter) {
                 final isSelected = filter == _currentFilter;
                 const subtitles = {
@@ -839,6 +843,11 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
         ? LoadingOverlay.bodyOrSkeleton(
             isLoading: !provider.initialLoadDone && provider.isLoading,
             layout: SkeletonLayout.newsFeed,
+            // Same `wide` that chose the web body. Embedded in the shell this is
+            // true and the feed skeleton is the two-column one; the standalone
+            // guest route in a narrow browser is false and keeps the phone
+            // skeleton, matching the phone body it is about to render.
+            webWide: wide,
             child: _buildNewsFeedWebBody(width, provider, visiblePosts),
           )
         : Center(
@@ -906,12 +915,12 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
     final feed = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildTopBar(w),
+        _buildTopBar(w, webFilterStyle: true),
         const SizedBox(height: 20),
         if (provider.error != null)
           _buildErrorState(w, provider)
         else if (visiblePosts.isEmpty)
-          _animated(1, _buildEmptyState(w))
+          _animated(1, _buildWebEmptyState())
         else
           for (int i = 0; i < visiblePosts.length; i++) ...[
             KeyedSubtree(
@@ -1015,7 +1024,7 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        border: Border.all(color: CitizenUi.sharedBorder),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: .03),
@@ -1065,7 +1074,10 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
     );
   }
 
-  Widget _buildTopBar(double width) {
+  /// [webFilterStyle] renders the mockup's lighter, text-weight filter control.
+  /// Defaults to false, so the mobile arm's call is unchanged and mobile keeps
+  /// the filled pill exactly as it is. Everything else in this bar is shared.
+  Widget _buildTopBar(double width, {bool webFilterStyle = false}) {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
@@ -1146,50 +1158,80 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
               GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: _openFilterSheet,
-                child: Container(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: width * 0.025,
-                    vertical: width * 0.012,
-                  ),
-                  decoration: BoxDecoration(
-                    color: _currentFilter != PostFilter.latest
-                        ? AppColors.primaryBlue.withValues(alpha: 0.15)
-                        : AppColors.primaryBlue.withValues(alpha: 0.10),
-                    borderRadius: BorderRadius.circular(width * 0.04),
-                    border: _currentFilter != PostFilter.latest
-                        ? Border.all(
-                            color: AppColors.primaryBlue.withValues(alpha: 0.4),
-                            width: 1.2,
-                          )
-                        : null,
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.tune_rounded,
-                        size: width * 0.044,
-                        color: AppColors.primaryBlue,
-                      ),
-                      SizedBox(width: width * 0.012),
-                      Text(
-                        _currentFilter.label,
-                        style: TextStyle(
-                          fontSize: width * 0.034,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.primaryBlue,
+                child: webFilterStyle
+                    ? _webFilterControl()
+                    : Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: width * 0.025,
+                          vertical: width * 0.012,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _currentFilter != PostFilter.latest
+                              ? AppColors.primaryBlue.withValues(alpha: 0.15)
+                              : AppColors.primaryBlue.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(width * 0.04),
+                          border: _currentFilter != PostFilter.latest
+                              ? Border.all(
+                                  color: AppColors.primaryBlue.withValues(
+                                    alpha: 0.4,
+                                  ),
+                                  width: 1.2,
+                                )
+                              : null,
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.tune_rounded,
+                              size: width * 0.044,
+                              color: AppColors.primaryBlue,
+                            ),
+                            SizedBox(width: width * 0.012),
+                            Text(
+                              _currentFilter.label,
+                              style: TextStyle(
+                                fontSize: width * 0.034,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.primaryBlue,
+                              ),
+                            ),
+                            SizedBox(width: width * 0.005),
+                            Icon(
+                              Icons.keyboard_arrow_down_rounded,
+                              size: width * 0.045,
+                              color: AppColors.primaryBlue,
+                            ),
+                          ],
                         ),
                       ),
-                      SizedBox(width: width * 0.005),
-                      Icon(
-                        Icons.keyboard_arrow_down_rounded,
-                        size: width * 0.045,
-                        color: AppColors.primaryBlue,
-                      ),
-                    ],
-                  ),
-                ),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The mockup's filter control: a funnel and a word, no fill and no border.
+  /// Same tap target, same [_openFilterSheet], same [PostFilter] values — only
+  /// the weight changes. Web arm only; mobile keeps the pill.
+  Widget _webFilterControl() {
+    final active = _currentFilter != PostFilter.latest;
+    final color = active ? CitizenUi.accent : CitizenUi.textMuted;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.filter_list_rounded, size: 16, color: color),
+          const SizedBox(width: 6),
+          Text(
+            _currentFilter.label,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: active ? FontWeight.w700 : FontWeight.w600,
+              color: color,
+            ),
           ),
         ],
       ),
@@ -1239,6 +1281,32 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
           ),
         ],
       ),
+    );
+  }
+
+  /// The WEB feed's empty state.
+  ///
+  /// Deliberately a SEPARATE method from [_buildEmptyState], which remains the
+  /// mobile arm's and is left exactly as it was: the mobile app must not change.
+  Widget _buildWebEmptyState() {
+    final filterActive = _currentFilter != PostFilter.latest;
+    // Read-only probe of the unfiltered cache. Nothing on the shared
+    // [_filteredPosts] path is touched, so mobile's behaviour is unchanged. With
+    // community_posts empty this is false and every citizen gets the first-run
+    // state whether or not a filter happens to be set.
+    final anyPosts = CommunityPostsProvider.instance.sortedPosts.isNotEmpty;
+
+    return FeedEmptyState(
+      kind: filterActive && anyPosts
+          ? FeedEmptyKind.filtered
+          : FeedEmptyKind.noPostsYet,
+      // Only inside the shell is there a quick-action dispatcher to reach. The
+      // guest feed mounts this same body at >=900px and has none, so it gets the
+      // headline and copy without a button that could not work.
+      onReportIssue: widget.embedded && !widget.isGuest
+          ? () => CitizenShell.runQuickAction(context, 'report')
+          : null,
+      onShowAll: () => setState(() => _currentFilter = PostFilter.latest),
     );
   }
 

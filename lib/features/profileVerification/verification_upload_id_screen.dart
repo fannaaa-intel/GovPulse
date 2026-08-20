@@ -5,6 +5,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../../core/router/legacy_nav.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/citizen_ui.dart';
+import '../../core/widgets/Home/Account/account_web_kit.dart';
 import '../../core/widgets/mobile_form_shell.dart';
 import '../../core/widgets/app_snackbar.dart';
 import '../../core/widgets/modal/verification_required_dialog.dart'
@@ -130,8 +132,7 @@ class _VerificationUploadIdScreenState extends State<VerificationUploadIdScreen>
       await showSuccessDialog(
         context,
         title: 'Front received',
-        message:
-            'Now choose a photo of the BACK of your ${widget.selectedId}.',
+        message: 'Now choose a photo of the BACK of your ${widget.selectedId}.',
         buttonLabel: 'Choose back',
         iconData: Icons.badge_outlined,
         iconColor: AppColors.primaryBlue,
@@ -164,8 +165,260 @@ class _VerificationUploadIdScreenState extends State<VerificationUploadIdScreen>
     }
   }
 
+  // ==========================================================================
+  //  WEB
+  // ==========================================================================
+
+  /// True when the camera should be the PRIMARY capture method.
+  ///
+  /// See [kVerificationCameraMaxWidth] for why this reads the window rather than
+  /// the content box, and why it only decides which method is offered first.
+  bool _webPrefersCamera(BuildContext context) =>
+      MediaQuery.of(context).size.width <= kVerificationCameraMaxWidth;
+
+  /// The web dropzone's primary action.
+  Future<void> _startWebCapture() async {
+    if (_webPrefersCamera(context)) {
+      _openWebCameraScan();
+      return;
+    }
+    await _pickIdImagesForWeb();
+  }
+
+  /// Hands off to the same camera screen the phone uses.
+  ///
+  /// No `Permission.camera.request()` on the way: permission_handler has no web
+  /// implementation, and the browser prompts for the camera itself the moment
+  /// getUserMedia runs. Asking first would throw before the browser ever got the
+  /// chance to ask properly.
+  void _openWebCameraScan() {
+    pushLegacy(
+      context,
+      '/verification_scan',
+      arguments: {'username': widget.username, 'selectedId': widget.selectedId},
+    );
+  }
+
+  Widget _buildWebScaffold() {
+    final images =
+        idImages[widget.selectedId] ??
+        {
+          'front': 'assets/images/idcards/phfront.webp',
+          'back': 'assets/images/idcards/phfront.webp',
+        };
+
+    return Scaffold(
+      backgroundColor: CitizenUi.pageBg,
+      body: SafeArea(
+        child: AccountPageBody(
+          builder: (context, stack) {
+            final camera = _webPrefersCamera(context);
+            return FadeTransition(
+              opacity: _fadeAnim,
+              child: SlideTransition(
+                position: _slideAnim,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    AccountPageTitle(
+                      title: 'Upload your ${widget.selectedId}',
+                      subtitle: camera
+                          ? 'Take a photo of the front and back of your ID.'
+                          : 'Choose a photo of the front and back of your ID.',
+                      onBack: () => Navigator.pop(context),
+                      backLabel: 'Back to photo instructions',
+                    ),
+                    const AccountStepper(step: 0, labels: kVerificationSteps),
+
+                    const AccountSectionLabel('Capture your ID'),
+                    AccountCard(child: _webCaptureRow(stack, camera, images)),
+                    const SizedBox(height: kAccountSectionGap),
+
+                    const AccountSectionLabel('Note'),
+                    AccountCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const _WebUploadNote(
+                            icon: Icons.lightbulb_outline,
+                            text:
+                                'Please ensure you are in a well-lit area for '
+                                'best results.',
+                          ),
+                          const SizedBox(height: 12),
+                          _WebUploadNote(
+                            icon: Icons.credit_card,
+                            // The phone always says "camera frame" because the
+                            // phone always uses the camera. On a desktop that
+                            // sentence describes a control that is not there.
+                            text: camera
+                                ? 'Align your ID properly within the camera '
+                                      'frame.'
+                                : 'Use a photo where the ID fills most of the '
+                                      'frame and all four corners are visible.',
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  /// The dropzone beside the two samples, stacking when there is no room.
+  Widget _webCaptureRow(bool stack, bool camera, Map<String, String> images) {
+    final dropzone = _webDropzone(camera);
+    final samples = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _webSample(images['front']!, 'Front sample'),
+        const SizedBox(height: kAccountGap),
+        _webSample(images['back']!, 'Back sample'),
+      ],
+    );
+
+    if (stack) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          dropzone,
+          const SizedBox(height: kAccountSectionGap),
+          samples,
+        ],
+      );
+    }
+
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(flex: 3, child: dropzone),
+          const SizedBox(width: kAccountSectionGap),
+          Expanded(flex: 2, child: samples),
+        ],
+      ),
+    );
+  }
+
+  /// The tap target, plus a way to reach the OTHER capture method.
+  ///
+  /// The secondary link is the whole reason the width test above is safe to make
+  /// at all: a desktop browser dragged narrow has no rear camera, and a tablet
+  /// can have its camera blocked, so whichever method the window picked, the
+  /// other one is one click away and nobody is stranded.
+  Widget _webDropzone(bool camera) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(CitizenUi.controlRadius),
+          child: InkWell(
+            onTap: _startWebCapture,
+            borderRadius: BorderRadius.circular(CitizenUi.controlRadius),
+            child: DottedBorder(
+              color: CitizenUi.accent,
+              strokeWidth: 1.4,
+              dashPattern: const [8, 5],
+              borderType: BorderType.RRect,
+              radius: Radius.circular(CitizenUi.controlRadius),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 34),
+                decoration: BoxDecoration(
+                  color: CitizenUi.accentWash,
+                  borderRadius: BorderRadius.circular(CitizenUi.controlRadius),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircleAvatar(
+                      radius: 28,
+                      backgroundColor: CitizenUi.accent,
+                      child: Icon(
+                        camera
+                            ? Icons.camera_alt_outlined
+                            : Icons.upload_file_outlined,
+                        color: Colors.white,
+                        size: 28,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      camera ? 'Open camera' : 'Choose files',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: CitizenUi.accent,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      camera
+                          ? 'Scan the front and back of your ID'
+                          : 'Pick the front and back from your computer',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: CitizenUi.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        TextButton(
+          onPressed: camera ? _pickIdImagesForWeb : _openWebCameraScan,
+          style: TextButton.styleFrom(
+            foregroundColor: CitizenUi.textSecondary,
+            textStyle: const TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          child: Text(
+            camera ? 'Upload a file instead' : 'Use my camera instead',
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _webSample(String imagePath, String label) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: CitizenUi.surface,
+            border: Border.all(color: CitizenUi.border),
+            borderRadius: BorderRadius.circular(CitizenUi.controlRadius),
+          ),
+          child: Image.asset(imagePath, height: 74, fit: BoxFit.contain),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 12, color: CitizenUi.textMuted),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (kIsWeb) return _buildWebScaffold();
+
     final images =
         idImages[widget.selectedId] ??
         {
@@ -255,11 +508,13 @@ class _VerificationUploadIdScreenState extends State<VerificationUploadIdScreen>
                               flex: 3,
                               child: GestureDetector(
                                 onTap: () async {
-                                  // WEB: no camera-scan screen exists, so pick
-                                  // the ID images from disk instead. Everything
-                                  // below is the unchanged mobile path.
+                                  // WEB: the capture method depends on the
+                                  // window - see [_startWebCapture]. This used
+                                  // to send every web user to the file picker.
+                                  // Everything below is the unchanged mobile
+                                  // path.
                                   if (kIsWeb) {
-                                    await _pickIdImagesForWeb();
+                                    await _startWebCapture();
                                     return;
                                   }
 
@@ -469,6 +724,35 @@ class _UploadNoteRow extends StatelessWidget {
           child: Text(
             text,
             style: const TextStyle(fontSize: 11, color: Colors.black87),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Web-only. The phone's [_UploadNoteRow] at the kit's type sizes.
+class _WebUploadNote extends StatelessWidget {
+  final IconData icon;
+  final String text;
+
+  const _WebUploadNote({required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 17, color: CitizenUi.textFaint),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            text,
+            style: const TextStyle(
+              fontSize: 13.5,
+              height: 1.45,
+              color: CitizenUi.textSecondary,
+            ),
           ),
         ),
       ],

@@ -45,6 +45,7 @@ import '../../../core/services/citizen_guard.dart';
 import '../../../core/widgets/citizen_guard_modals.dart';
 import '../../../core/providers/user_profile_provider.dart';
 import '../../../core/widgets/app_dialog.dart';
+import '../../../core/theme/citizen_ui.dart';
 
 class HomePage extends ConsumerStatefulWidget {
   final String username;
@@ -570,6 +571,10 @@ class _HomePageState extends ConsumerState<HomePage>
         body: LoadingOverlay.bodyOrSkeleton(
           isLoading: profileLoading,
           layout: SkeletonLayout.home,
+          // This one call wraps BOTH bodies, so the flag is simply the body
+          // selector. A narrow browser sits at NavBand.phone and renders the
+          // mobile body, and now gets the mobile skeleton to match.
+          webWide: !useMobile,
           child: useMobile
               ? SafeArea(
                   child: _buildMobileBody(
@@ -885,7 +890,7 @@ class _HomePageState extends ConsumerState<HomePage>
         ),
       ),
       shape: const Border(
-        bottom: BorderSide(color: Color(0xFFE5E7EB), width: 1),
+        bottom: BorderSide(color: CitizenUi.sharedBorder, width: 1),
       ),
       actions: [
         IconButton(

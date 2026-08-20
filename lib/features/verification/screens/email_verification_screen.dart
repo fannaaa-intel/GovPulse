@@ -9,6 +9,7 @@ import '../../../core/widgets/web/web.dart';
 import '../../../core/widgets/mobile_form_shell.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_snackbar.dart';
+import '../../../core/theme/citizen_ui.dart';
 
 class VerificationScreen extends StatefulWidget {
   final String email;
@@ -202,7 +203,9 @@ class VerificationScreenState extends State<VerificationScreen>
             (details["message"] as String?) ??
             "That username was just taken. Please sign up again with a different one.";
         showAppSnackBar(context, msg, type: AppSnackType.error);
-        Navigator.of(context).pop(); // VerificationScreen was pushed from signup
+        Navigator.of(
+          context,
+        ).pop(); // VerificationScreen was pushed from signup
       } else {
         // Genuine wrong / expired code (400) or any other non-2xx — keep the shake.
         triggerErrorAnimation();
@@ -508,7 +511,7 @@ class VerificationScreenState extends State<VerificationScreen>
 
                       const SizedBox(height: 22),
 
-                      Divider(color: AppColors.stroke),
+                      Divider(color: CitizenUi.sharedStroke),
 
                       const SizedBox(height: 16),
 
@@ -550,7 +553,7 @@ class VerificationScreenState extends State<VerificationScreen>
 
                       const SizedBox(height: 16),
 
-                      Divider(color: AppColors.stroke),
+                      Divider(color: CitizenUi.sharedStroke),
                     ],
                   ),
                 ),

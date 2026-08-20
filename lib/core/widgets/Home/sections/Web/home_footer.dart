@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../../../../core/theme/citizen_ui.dart';
 
 class HomeFooter extends StatelessWidget {
   const HomeFooter({super.key});
@@ -26,7 +27,7 @@ class HomeFooter extends StatelessWidget {
           // ── Contact strip ───────────────────────────────────────
           const _ContactStrip(),
 
-          Container(height: 1, color: const Color(0xFFE5E7EB)),
+          Container(height: 1, color: CitizenUi.sharedBorder),
 
           // ── Main footer columns ─────────────────────────────────
           Container(

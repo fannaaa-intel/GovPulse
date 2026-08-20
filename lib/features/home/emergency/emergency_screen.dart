@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart'
+    show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../core/widgets/Home/Account/account_web_kit.dart';
 import '../../../../core/widgets/app_snackbar.dart';
 
 import 'package:permission_handler/permission_handler.dart';
@@ -11,7 +13,6 @@ import 'package:android_intent_plus/flag.dart';
 import '../../../../core/network/network_wrapper.dart';
 
 import '../../../core/widgets/Home/nav/responsive_nav_scaffold.dart';
-import '../../../core/widgets/web/web_card_grid.dart';
 import 'dart:io';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -325,9 +326,18 @@ class _EmergencyScreenState extends State<EmergencyBody>
   }
 
   Future<void> _call(String number) async {
-    // Web can't place phone calls — copy the number to the clipboard instead.
-    if (kIsWeb) {
+    if (!canPlaceCalls(context)) {
       _copyNumber(number);
+      return;
+    }
+    // A phone browser CAN dial, but `dart:io` does not exist on web, so the
+    // Platform checks below are unreachable there. `tel:` through url_launcher
+    // is what a mobile browser understands.
+    if (kIsWeb) {
+      final uri = Uri(scheme: 'tel', path: number);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
       return;
     }
     if (Platform.isAndroid) {
@@ -371,6 +381,43 @@ class _EmergencyScreenState extends State<EmergencyBody>
         await launchUrl(uri, mode: LaunchMode.externalApplication);
       }
     }
+  }
+
+  /// Below this WINDOW width, assume a handheld and offer to dial.
+  static const double _kDialableBelow = 900;
+
+  /// Whether to offer to place a call.
+  ///
+  /// ── Why this is not `kIsWeb` ────────────────────────────────────────────
+  /// It was, and that was wrong in the direction that matters most on this
+  /// screen. `kIsWeb` is true for a citizen standing in the street with their
+  /// PHONE browser open — a device that dials perfectly well — so the one
+  /// person most likely to need 911 in a hurry was handed a clipboard copy
+  /// instead of a dialer.
+  ///
+  /// ── Two signals, because one is not enough ──────────────────────────────
+  /// `defaultTargetPlatform` catches phone browsers, which report android or
+  /// iOS. It does NOT catch tablets: iPadOS Safari requests desktop sites by
+  /// default and reports macOS, so an iPad looked exactly like an iMac.
+  ///
+  /// So the window's own width is the second signal. Anything under
+  /// [_kDialableBelow] is a handheld or a tablet, and those dial. Measured off
+  /// [View], not `MediaQuery` — inside the shell MediaQuery has been overridden
+  /// to describe the centre column, which is a fact about our layout rather
+  /// than about the device in someone's hand.
+  ///
+  /// The remaining false positive is a desktop user who narrowed their window:
+  /// they get a dial affordance that does nothing. That is the safe direction —
+  /// the number is printed beside it either way, and the copy button never
+  /// leaves — where the old behaviour failed in the dangerous one.
+  static bool canPlaceCalls(BuildContext context) {
+    if (!kIsWeb) return true;
+    if (defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS) {
+      return true;
+    }
+    final view = View.of(context);
+    return view.physicalSize.width / view.devicePixelRatio < _kDialableBelow;
   }
 
   void _copyNumber(String number) {
@@ -425,45 +472,58 @@ class _EmergencyScreenState extends State<EmergencyBody>
   @override
   Widget build(BuildContext context) {
     final rawWidth = MediaQuery.of(context).size.width;
-    // WEB / large screens: hero + services grid that fills the width. Phones &
-    // narrow web keep the original 480px body, byte-for-byte unchanged.
-    final bool wide = kIsWeb && rawWidth >= 900;
-    final double w = wide ? 460.0 : rawWidth.clamp(0.0, 480.0);
+    // ── The browser always gets the web layout ──────────────────────────
+    //
+    // `kIsWeb` alone, matching every other citizen-web screen. `rawWidth` is
+    // the centre column's, not the window's — the shell overrides MediaQuery
+    // before this page sees it — so `>= 900` failed on a perfectly wide
+    // monitor and dropped this page to the 480px phone body.
+    final bool wide = kIsWeb;
+    // ── 380, not 460 ────────────────────────────────────────────────────────
+    //
+    // Every size on this screen is a fraction of `w`, so `w` IS the scale. At
+    // 460 it was drawing phone proportions at their largest — a 60px call bar,
+    // a 64px service glyph, a 27px page title — which on a phone fill your hand
+    // and on a monitor just look oversized, because you are further away from
+    // it. Pulling the one number down takes the hero, the cards, the labels and
+    // the disclaimer with it in step, which is the only way they stay in
+    // proportion to each other.
+    final double w = wide ? 380.0 : rawWidth.clamp(0.0, 480.0);
     return wide
-            ? _buildEmergencyWebBody(w)
-            : Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 480),
-            child: Column(
-              children: [
-                _topBar(w),
-                Expanded(
-                  child: SingleChildScrollView(
-                    physics: const BouncingScrollPhysics(),
-                    padding: EdgeInsets.fromLTRB(
-                      w * .04,
-                      w * .04,
-                      w * .04,
-                      w * .08,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _hero911Card(w), // ← original sizes
-                        SizedBox(height: w * .055),
-                        _sectionLabel(w, 'Emergency Services'), // ← original
-                        SizedBox(height: w * .032),
-                        _categoryGrid(w), // ← bigger sizes only here
-                        SizedBox(height: w * .04),
-                        _disclaimer(w), // ← original sizes
-                      ],
+        ? _buildEmergencyWebBody(w)
+        : Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: Column(
+                children: [
+                  _topBar(w),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      physics: const BouncingScrollPhysics(),
+                      padding: EdgeInsets.fromLTRB(
+                        w * .04,
+                        w * .04,
+                        w * .04,
+                        w * .08,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _hero911Card(w), // ← original sizes
+                          SizedBox(height: w * .055),
+                          _sectionLabel(w, 'Emergency Services'), // ← original
+                          SizedBox(height: w * .032),
+                          _categoryGrid(w), // ← bigger sizes only here
+                          SizedBox(height: w * .04),
+                          _disclaimer(w), // ← original sizes
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        );
+          );
   }
 
   // ── WEB body: hero + services grid ─────────────────────────────────────────
@@ -478,8 +538,16 @@ class _EmergencyScreenState extends State<EmergencyBody>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _topBar(w),
-                const SizedBox(height: 28),
+                // Not _topBar. That is the phone's: a white slab carrying the
+                // GovPulse mark, which the top nav already shows about 60px
+                // above this row — and its own padding sat inside the page's,
+                // so the slab and the hero under it started at different x.
+                const AccountPageTitle(
+                  title: 'Emergency',
+                  subtitle:
+                      'Aparri, Cagayan — official hotlines. '
+                      'In a life-threatening emergency, dial 911.',
+                ),
                 Center(
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 720),
@@ -489,16 +557,65 @@ class _EmergencyScreenState extends State<EmergencyBody>
                 const SizedBox(height: 40),
                 _sectionLabel(w, 'Emergency Services'),
                 const SizedBox(height: 20),
-                WebCardGrid(
-                  targetColumnWidth: 300,
-                  children: [
-                    for (final cat in _categories)
-                      _CatCard(
-                        cat: cat,
-                        iconBoxSize: w * .14,
-                        onTap: () => _openCategory(cat),
-                      ),
-                  ],
+                // ── Rows, not tiles ─────────────────────────────────────
+                //
+                // The square card puts the count in a circle at the FAR right,
+                // roughly 200px from the icon it is counting, with nothing
+                // between them — and the card has to be tall enough to stack a
+                // glyph, a label and a link under that. Five short names then
+                // occupy a third of the page in mostly empty white.
+                //
+                // The row card was already in this file for the phone's
+                // National entry. It puts the count in words beside the label,
+                // ends in a chevron, and stands about half as tall, so the same
+                // five services read as a list you scan rather than a wall you
+                // survey.
+                // ── Never one across ────────────────────────────────────
+                //
+                // [WebCardGrid] fits `floor(width / target)` columns, so at a
+                // 624px pane a 330px target rounds down to ONE — five full-width
+                // rows a phone has to scroll the whole list to get past. Two is
+                // the floor here instead, because the thing being listed is
+                // five short names and nobody needs a 600px row to read
+                // "Hospital".
+                //
+                // Which CARD depends on the cell, not the page: a row needs
+                // about 260px to seat a glyph, two lines of text and a chevron.
+                // Below that the square tile is the shape that fits, which is
+                // the same call the phone layout already makes.
+                LayoutBuilder(
+                  builder: (context, c) {
+                    const gap = 16.0;
+                    final cols = c.maxWidth >= 900 ? 3 : 2;
+                    final cellW = (c.maxWidth - gap * (cols - 1)) / cols;
+                    final rows = cellW >= 260;
+                    return Wrap(
+                      spacing: gap,
+                      runSpacing: gap,
+                      children: [
+                        for (final cat in _categories)
+                          SizedBox(
+                            width: cellW,
+                            child: rows
+                                ? _CatCardWide(
+                                    cat: cat,
+                                    scale: w,
+                                    iconBoxSize: w * .12,
+                                    subtitle:
+                                        '${cat.hotlines.length} '
+                                        '${cat.hotlines.length == 1 ? 'hotline' : 'hotlines'}',
+                                    onTap: () => _openCategory(cat),
+                                  )
+                                : _CatCard(
+                                    cat: cat,
+                                    scale: w,
+                                    iconBoxSize: w * .14,
+                                    onTap: () => _openCategory(cat),
+                                  ),
+                          ),
+                      ],
+                    );
+                  },
                 ),
                 const SizedBox(height: 28),
                 Center(
@@ -766,10 +883,12 @@ class _EmergencyScreenState extends State<EmergencyBody>
                   ],
                 ),
                 SizedBox(height: w * .042),
-                // Web can't dial — offer a copy button instead of the slider.
-                kIsWeb
-                    ? _copy911Button(w)
-                    : _Slider911(onTriggered: () => _call('911')),
+                // Slide-to-call wherever a call can be placed — including a
+                // phone browser. Only a machine that cannot dial gets the copy
+                // affordance instead.
+                canPlaceCalls(context)
+                    ? _Slider911(onTriggered: () => _call('911'))
+                    : _copy911Button(w),
               ],
             ),
           ),
@@ -778,7 +897,14 @@ class _EmergencyScreenState extends State<EmergencyBody>
     );
   }
 
-  // Web-only: copy the 911 hotline (replaces the slide-to-call action).
+  /// Shown only where a call cannot be placed — a desktop browser.
+  ///
+  /// It used to read "In an emergency, call 911" and then copy to the
+  /// clipboard. On an emergency screen a control must not name an action it
+  /// does not perform: someone reading that in a hurry presses it and waits for
+  /// a dialer that is never coming. It says what it does now, and it puts the
+  /// number itself on screen so the fallback is to READ it — which works even
+  /// if the clipboard does not.
   Widget _copy911Button(double w) {
     return GestureDetector(
       onTap: () => _copyNumber('911'),
@@ -798,12 +924,12 @@ class _EmergencyScreenState extends State<EmergencyBody>
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.phone_in_talk_rounded, size: w * .05, color: AppColors.red),
-            SizedBox(width: w * .02),
+            Icon(Icons.copy_rounded, size: w * .045, color: AppColors.red),
+            SizedBox(width: w * .022),
             Text(
-              'In an emergency, call 911',
+              'Emergency: dial 911 · tap to copy',
               style: TextStyle(
-                fontSize: w * .04,
+                fontSize: w * .038,
                 fontWeight: FontWeight.w800,
                 color: AppColors.red,
                 letterSpacing: -.2,
@@ -879,15 +1005,15 @@ class _EmergencyScreenState extends State<EmergencyBody>
     // the SOS control rather than an entrance and must keep their real ranges.
     Animation<double> fade(int i) =>
         Tween<double>(begin: kIsWeb ? _kWebFadeFloor : 0, end: 1).animate(
-      CurvedAnimation(
-        parent: _entryCtrl,
-        curve: Interval(
-          (i * .12).clamp(0.0, 1.0),
-          ((i * .12) + .5).clamp(0.0, 1.0),
-          curve: Curves.easeOut,
-        ),
-      ),
-    );
+          CurvedAnimation(
+            parent: _entryCtrl,
+            curve: Interval(
+              (i * .12).clamp(0.0, 1.0),
+              ((i * .12) + .5).clamp(0.0, 1.0),
+              curve: Curves.easeOut,
+            ),
+          ),
+        );
     Animation<Offset> slide(int i) =>
         Tween<Offset>(begin: const Offset(0, .3), end: Offset.zero).animate(
           CurvedAnimation(
@@ -1210,10 +1336,17 @@ class _CatCard extends StatefulWidget {
   final _Category cat;
   final double iconBoxSize;
   final VoidCallback onTap;
+
+  /// The page's `w`. Without it the card re-derives a scale from a MediaQuery
+  /// clamped at 480 — always its ceiling on web — and draws at the largest
+  /// phone size while the page around it is at 380.
+  final double? scale;
+
   const _CatCard({
     required this.cat,
     required this.iconBoxSize,
     required this.onTap,
+    this.scale,
   });
 
   @override
@@ -1246,7 +1379,8 @@ class _CatCardState extends State<_CatCard>
 
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+    final w =
+        widget.scale ?? MediaQuery.of(context).size.width.clamp(0.0, 480.0);
     final cat = widget.cat;
     final box = widget.iconBoxSize; // uniform for all cards
 
@@ -1357,10 +1491,21 @@ class _CatCardWide extends StatefulWidget {
   final _Category cat;
   final double iconBoxSize;
   final VoidCallback onTap;
+
+  /// See [_CatCard.scale].
+  final double? scale;
+
+  /// Overrides the default "N national hotlines". The mobile grid uses this
+  /// card only for the National category, where that wording is right; every
+  /// other category needs its own.
+  final String? subtitle;
+
   const _CatCardWide({
     required this.cat,
     required this.iconBoxSize,
     required this.onTap,
+    this.scale,
+    this.subtitle,
   });
 
   @override
@@ -1393,7 +1538,8 @@ class _CatCardWideState extends State<_CatCardWide>
 
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+    final w =
+        widget.scale ?? MediaQuery.of(context).size.width.clamp(0.0, 480.0);
     final cat = widget.cat;
     final box = widget.iconBoxSize;
 
@@ -1451,7 +1597,8 @@ class _CatCardWideState extends State<_CatCardWide>
                     ),
                     SizedBox(height: w * .005),
                     Text(
-                      '${cat.hotlines.length} national hotlines',
+                      widget.subtitle ??
+                          '${cat.hotlines.length} national hotlines',
                       style: TextStyle(fontSize: w * .031, color: _C.textHint),
                     ),
                   ],
@@ -1497,7 +1644,11 @@ class _CategoryModal extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+    // Same reasoning as the page behind it: on web this clamp always resolved
+    // to its 480 ceiling, so the sheet drew at the biggest phone size there is.
+    final w = kIsWeb
+        ? 380.0
+        : MediaQuery.of(context).size.width.clamp(0.0, 480.0);
     final cat = category;
     final box = w * .14;
 
@@ -1604,6 +1755,7 @@ class _CategoryModal extends StatelessWidget {
                       .entries
                       .map(
                         (e) => _HotlineRow(
+                          scale: w,
                           hotline: e.value,
                           accentColor: cat.color,
                           formatNumber: formatNumber,
@@ -1627,6 +1779,7 @@ class _CategoryModal extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 // Hotline Row  ← BIGGER fonts & sizes
 // ─────────────────────────────────────────────────────────────────────────────
+/// One hotline inside [_CategoryModal].
 class _HotlineRow extends StatefulWidget {
   final _Hotline hotline;
   final Color accentColor;
@@ -1636,6 +1789,8 @@ class _HotlineRow extends StatefulWidget {
   final void Function(String) onCopy;
   final int index;
 
+  /// The modal's scale. See the note in build().
+  final double? scale;
   const _HotlineRow({
     required this.hotline,
     required this.accentColor,
@@ -1644,6 +1799,7 @@ class _HotlineRow extends StatefulWidget {
     required this.onCall,
     required this.onCopy,
     required this.index,
+    this.scale,
   });
 
   @override
@@ -1685,7 +1841,12 @@ class _HotlineRowState extends State<_HotlineRow>
 
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+    // The modal's scale, not one re-derived here. This clamp resolves to its
+    // 480 ceiling on any browser, so these rows were drawing at the largest
+    // phone size inside a sheet that had already come down to 380 — which is
+    // most of why three hotlines filled 400px of it.
+    final w =
+        widget.scale ?? MediaQuery.of(context).size.width.clamp(0.0, 480.0);
     final h = widget.hotline;
     final col = widget.accentColor;
 
@@ -1726,34 +1887,6 @@ class _HotlineRowState extends State<_HotlineRow>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (h.network != null) ...[
-                          Container(
-                            padding: EdgeInsets.symmetric(
-                              horizontal: w * .020,
-                              vertical: w * .006,
-                            ),
-                            decoration: BoxDecoration(
-                              color: widget
-                                  .networkColor(h.network)
-                                  .withValues(alpha: .1),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: widget
-                                    .networkColor(h.network)
-                                    .withValues(alpha: .25),
-                              ),
-                            ),
-                            child: Text(
-                              h.network!,
-                              style: TextStyle(
-                                fontSize: w * .026,
-                                fontWeight: FontWeight.w700,
-                                color: widget.networkColor(h.network),
-                              ),
-                            ),
-                          ),
-                          SizedBox(height: w * .010),
-                        ],
                         Text(
                           h.name,
                           style: TextStyle(
@@ -1764,14 +1897,55 @@ class _HotlineRowState extends State<_HotlineRow>
                           ),
                         ),
                         SizedBox(height: w * .007),
-                        Text(
-                          widget.formatNumber(h.number),
-                          style: TextStyle(
-                            fontSize: w * .040,
-                            fontWeight: FontWeight.w800,
-                            color: col,
-                            letterSpacing: .8,
-                          ),
+                        // ── The carrier tag rides WITH the number ──────────
+                        //
+                        // It had a line to itself above the name, which cost
+                        // every row a full row of height for one word. It also
+                        // sat furthest from the thing it describes: "Globe" is
+                        // a fact about the NUMBER, not about the station. Put
+                        // beside it, it reads as a label and costs nothing.
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                widget.formatNumber(h.number),
+                                style: TextStyle(
+                                  fontSize: w * .040,
+                                  fontWeight: FontWeight.w800,
+                                  color: col,
+                                  letterSpacing: .8,
+                                ),
+                              ),
+                            ),
+                            if (h.network != null) ...[
+                              SizedBox(width: w * .022),
+                              Container(
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: w * .020,
+                                  vertical: w * .006,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: widget
+                                      .networkColor(h.network)
+                                      .withValues(alpha: .1),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: widget
+                                        .networkColor(h.network)
+                                        .withValues(alpha: .25),
+                                  ),
+                                ),
+                                child: Text(
+                                  h.network!,
+                                  style: TextStyle(
+                                    fontSize: w * .026,
+                                    fontWeight: FontWeight.w700,
+                                    color: widget.networkColor(h.network),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ],
                     ),
@@ -1803,8 +1977,12 @@ class _HotlineRowState extends State<_HotlineRow>
                       ),
                     ),
                   ),
-                  // ── Call (native only — web can't dial, copy instead) ─────
-                  if (!kIsWeb) ...[
+                  // ── Call, wherever a call can actually be placed ────────
+                  //
+                  // A phone browser dials; a desktop one does not, and there
+                  // the copy button beside this is the whole affordance. The
+                  // number is printed on the row either way.
+                  if (_EmergencyScreenState.canPlaceCalls(context)) ...[
                     SizedBox(width: w * .022),
                     GestureDetector(
                       onTap: () {

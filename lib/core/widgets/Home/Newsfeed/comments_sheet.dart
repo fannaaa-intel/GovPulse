@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../theme/app_colors.dart';
@@ -9,6 +10,7 @@ import 'edit_comment_sheet.dart';
 import '../../app_snackbar.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../app_dialog.dart';
+import '../../../../core/theme/citizen_ui.dart';
 
 /// The width this sheet's `width * 0.xx` sizing is proportioned against.
 ///
@@ -32,8 +34,28 @@ import '../../app_dialog.dart';
 /// the type scale.
 const double kThreadMetrics = 400.0;
 
-double _sizingWidth(BuildContext context) =>
-    MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+/// Sizing base for the two modal sheets that ACT on the thread — edit a
+/// comment, confirm a delete — as opposed to the thread itself, which uses
+/// [kThreadMetrics] directly.
+///
+/// ── Why web is pinned to [kThreadMetrics] ─────────────────────────────────
+/// On a phone this clamp lands near the real viewport, so these sheets come out
+/// at roughly the same scale as the 400-wide thread they were opened from. In a
+/// browser the viewport is always wider than 480, so the clamp resolves to its
+/// CEILING every time and the sheets draw at the largest phone size that
+/// exists — 480 — over a thread that has already come down to 400. Same defect
+/// [_CategoryModal] and [_HotlineRow] had in emergency_screen: the host got a
+/// smaller web number and the surfaces inside it kept the ceiling.
+///
+/// Reusing [kThreadMetrics] rather than inventing a second number is the whole
+/// point of that constant: one fixed base, so the thread and the sheets that
+/// edit it cannot disagree about how big a comment is.
+///
+/// Mobile is untouched — `kIsWeb` is a compile-time false there, so the app
+/// compiles to exactly the expression that was here before.
+double _sizingWidth(BuildContext context) => kIsWeb
+    ? kThreadMetrics
+    : MediaQuery.of(context).size.width.clamp(0.0, 480.0);
 
 /// Opens [post]'s comment thread in the presentation that matches the viewport:
 /// a centred dialog on wide screens, the phone bottom sheet below that.
@@ -854,7 +876,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
       return Column(
         children: [
           _header(width),
-          Container(height: 1, color: const Color(0xFFE5E7EB)),
+          Container(height: 1, color: CitizenUi.sharedBorder),
           Expanded(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -875,7 +897,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
                     child: CommentPostRecap(post: _livePost(), width: width),
                   ),
                 ),
-                Container(width: 1, color: const Color(0xFFE5E7EB)),
+                Container(width: 1, color: CitizenUi.sharedBorder),
                 // Thread keeps the composer pinned beneath it, so replying
                 // never means scrolling back past the post.
                 Expanded(
@@ -900,7 +922,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
       children: [
         if (!widget.asDialog) dragHandle(width),
         _header(width),
-        Container(height: 1, color: const Color(0xFFE5E7EB)),
+        Container(height: 1, color: CitizenUi.sharedBorder),
         Expanded(
           child: _thread(
             width,
@@ -1045,7 +1067,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        border: const Border(top: BorderSide(color: Color(0xFFE5E7EB))),
+        border: const Border(top: BorderSide(color: CitizenUi.sharedBorder)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.04),
@@ -1070,7 +1092,9 @@ class _CommentsSheetState extends State<CommentsSheet> {
                 ),
                 decoration: const BoxDecoration(
                   color: Color(0xFFEFF6FF),
-                  border: Border(bottom: BorderSide(color: Color(0xFFE5E7EB))),
+                  border: Border(
+                    bottom: BorderSide(color: CitizenUi.sharedBorder),
+                  ),
                 ),
                 child: Row(
                   children: [

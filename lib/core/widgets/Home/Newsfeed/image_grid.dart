@@ -137,13 +137,30 @@ Widget buildImageGrid(
   );
 }
 
+/// Opens the full-screen image lightbox.
+///
+/// [useRootNavigator] decides WHICH navigator the viewer is pushed onto, and it
+/// is the difference between a lightbox and a lightbox-shaped hole in one
+/// column. The route is `opaque: false`, so every bit of its dimming comes from
+/// `barrierColor` — and a barrier can only fill the navigator it belongs to.
+///
+/// Pushed on the nearest navigator (the default, `false`) from inside the
+/// citizen web shell, that navigator is the StatefulShellRoute BRANCH navigator,
+/// whose box is the centre column: the rails and the top nav stay undimmed.
+/// `true` reaches the root navigator instead, so the barrier covers the window.
+///
+/// Defaults to FALSE so every existing caller — the admin console, the staff
+/// console, and the comments-sheet recap (which already lands on the root
+/// navigator by nesting, since `showAppDialog` uses `useRootNavigator: true`) —
+/// keeps the exact behaviour it has today.
 void openImageViewer(
   BuildContext context,
   int imageCount,
   int initialIndex, {
   List<String> urls = const [],
+  bool useRootNavigator = false,
 }) {
-  Navigator.of(context).push(
+  Navigator.of(context, rootNavigator: useRootNavigator).push(
     PageRouteBuilder(
       opaque: false,
       barrierColor: Colors.black.withValues(alpha: 0.92),

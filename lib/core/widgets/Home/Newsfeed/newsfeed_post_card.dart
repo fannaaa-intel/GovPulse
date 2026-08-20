@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../../../moderation/profanity_filter.dart';
@@ -5,6 +6,7 @@ import '../../../theme/app_colors.dart';
 import 'comment_item.dart';
 import 'image_grid.dart';
 import 'news_feed_helpers.dart';
+import '../../../../core/theme/citizen_ui.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  A single community post, as it appears in the feed.
@@ -118,7 +120,7 @@ class NewsfeedPostCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(width * 0.035),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        border: Border.all(color: CitizenUi.sharedBorder),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: .04),
@@ -176,6 +178,15 @@ class NewsfeedPostCard extends StatelessWidget {
                 post['imageCount'] as int,
                 index,
                 urls: post['imageUrls'] as List<String>? ?? [],
+                // On WEB this card renders inside the shell's centre column,
+                // whose branch navigator would bound the viewer's barrier to
+                // that column — rails and top nav stayed bright. The root
+                // navigator is the whole window.
+                //
+                // kIsWeb rather than a bare `true` so MOBILE takes exactly the
+                // path it takes today. On the web guest feed it is a no-op:
+                // /newsfeed is already a top-level route, so root IS nearest.
+                useRootNavigator: kIsWeb,
               ),
             ),
             SizedBox(height: width * 0.03),
@@ -190,7 +201,7 @@ class NewsfeedPostCard extends StatelessWidget {
             if (commentCount > 0) ...[
               Padding(
                 padding: EdgeInsets.symmetric(vertical: width * 0.025),
-                child: Container(height: 1, color: const Color(0xFFE5E7EB)),
+                child: Container(height: 1, color: CitizenUi.sharedBorder),
               ),
               ...previewComments.map((rawComment) {
                 final comment = _maskCommentForGuest(rawComment);

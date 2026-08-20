@@ -647,8 +647,18 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
 
     case '/verification_review':
       final args = settings.arguments as Map<String, dynamic>;
+      // The wizard's transition rule, which every OTHER step already
+      // followed: forward is INSTANT and the screen animates its own content
+      // up; back is a FADE OUT and nothing slides.
+      //
+      // This step alone pushed with a 420ms bottom-up SlideTransition, so
+      // arriving looked like a modal opening and leaving slid back down while
+      // its neighbours dissolved. It slid at the ROUTE level because it was
+      // the one screen with no entry animation of its own - see the controller
+      // added to VerificationReviewScreen, which is what makes Duration.zero
+      // read as an arrival rather than a jump cut.
       return PageRouteBuilder(
-        transitionDuration: const Duration(milliseconds: 420),
+        transitionDuration: Duration.zero,
         reverseTransitionDuration: const Duration(milliseconds: 300),
         pageBuilder: (_, _, _) => NetworkWrapper(
           child: VerificationReviewScreen(
@@ -659,20 +669,18 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
             extractedData: args['extractedData'] as Map<String, String>?,
           ),
         ),
-        transitionsBuilder: (_, anim, _, child) => SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(0, 1),
-            end: Offset.zero,
-          ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
-          child: child,
-        ),
+        transitionsBuilder: (_, anim, _, child) =>
+            FadeTransition(opacity: anim, child: child),
       );
 
     case '/verification_identity':
       final args = settings.arguments as Map<String, dynamic>;
       return PageRouteBuilder(
         transitionDuration: Duration.zero,
-        reverseTransitionDuration: const Duration(milliseconds: 220),
+        // 300 like every other step. 220 was not enough to read as a
+        // different animation, just enough to feel like this one screen
+        // closed quicker than the rest.
+        reverseTransitionDuration: const Duration(milliseconds: 300),
         pageBuilder: (_, _, _) => NetworkWrapper(
           child: VerificationIdentityScreen(
             username: args['username'] as String,

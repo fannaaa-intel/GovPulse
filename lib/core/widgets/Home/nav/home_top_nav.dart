@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import '../../../../core/theme/citizen_ui.dart';
 
 /// One destination in the top nav: the label, and the index handed back to
 /// `onTap`. Public so a caller with a different set of destinations can supply
@@ -97,7 +98,7 @@ class _HomeTopNavState extends State<HomeTopNav> {
       decoration: BoxDecoration(
         color: Colors.white,
         border: const Border(
-          bottom: BorderSide(color: Color(0xFFE5E7EB), width: 1),
+          bottom: BorderSide(color: CitizenUi.sharedBorder, width: 1),
         ),
         boxShadow: [
           BoxShadow(
@@ -542,7 +543,7 @@ class _UserChipState extends State<_UserChip>
                           decoration: BoxDecoration(
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: const Color(0xFFE5E7EB)),
+                            border: Border.all(color: CitizenUi.sharedBorder),
                             boxShadow: [
                               BoxShadow(
                                 color: Colors.black.withOpacity(0.12),
@@ -561,7 +562,7 @@ class _UserChipState extends State<_UserChip>
                               ),
                               const Divider(
                                 height: 1,
-                                color: Color(0xFFE5E7EB),
+                                color: CitizenUi.sharedBorder,
                               ),
                               if (isVerified) ...[
                                 _DropdownItem(
@@ -575,7 +576,7 @@ class _UserChipState extends State<_UserChip>
                                 ),
                                 const Divider(
                                   height: 1,
-                                  color: Color(0xFFE5E7EB),
+                                  color: CitizenUi.sharedBorder,
                                 ),
                               ],
                               _DropdownItem(
@@ -650,26 +651,26 @@ class _UserChipState extends State<_UserChip>
                   ),
                 ),
                 if (!widget.avatarOnly) ...[
-                const SizedBox(width: 8),
-                Text(
-                  displayName,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1F2937),
+                  const SizedBox(width: 8),
+                  Text(
+                    displayName,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1F2937),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 4),
-                AnimatedRotation(
-                  turns: _isOpen ? 0.5 : 0,
-                  duration: const Duration(milliseconds: 200),
-                  curve: Curves.easeOutCubic,
-                  child: const Icon(
-                    Icons.keyboard_arrow_down_rounded,
-                    size: 16,
-                    color: Color(0xFF6B7280),
+                  const SizedBox(width: 4),
+                  AnimatedRotation(
+                    turns: _isOpen ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeOutCubic,
+                    child: const Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      size: 16,
+                      color: Color(0xFF6B7280),
+                    ),
                   ),
-                ),
                 ],
               ],
             ),

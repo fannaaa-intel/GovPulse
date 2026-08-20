@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../core/theme/citizen_ui.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  /scan/<token> — the public endorsement confirmation page
@@ -27,7 +28,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 const Color _ink = Color(0xFF111827);
 const Color _muted = Color(0xFF6B7280);
-const Color _line = Color(0xFFE5E7EB);
+const Color _line = CitizenUi.sharedBorder;
 const Color _blue = Color(0xFF1D4ED8);
 const Color _green = Color(0xFF15803D);
 const Color _red = Color(0xFFB91C1C);
@@ -160,7 +161,8 @@ class _ScanPageState extends State<ScanPage> {
       if (!mounted) return;
       setState(() {
         _submitting = false;
-        _error = 'Could not reach the server. Check your connection and try '
+        _error =
+            'Could not reach the server. Check your connection and try '
             'again.';
       });
     }
@@ -207,10 +209,7 @@ class _ScanPageState extends State<ScanPage> {
         body: SafeArea(
           child: Center(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 24,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 480),
                 child: _content(),
@@ -369,7 +368,11 @@ class _ScanPageState extends State<ScanPage> {
   Widget _statusPill() {
     final (label, bg, fg) = switch (_state) {
       _State.endorsed => ('Awaiting receipt', const Color(0xFFEFF6FF), _blue),
-      _State.received => ('Received by agency', const Color(0xFFFFF7ED), const Color(0xFF9A3412)),
+      _State.received => (
+        'Received by agency',
+        const Color(0xFFFFF7ED),
+        const Color(0xFF9A3412),
+      ),
       _State.completed => ('Completed', const Color(0xFFECFDF5), _green),
     };
     return Container(

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import '../../../../core/widgets/responsive_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -8,6 +9,8 @@ import '../../../../core/widgets/inputs/rounded_input_field.dart';
 import '../../../../core/widgets/indicators/password_strength_bar.dart';
 import '../../../../core/widgets/mobile_form_shell.dart';
 import '../../../../core/widgets/app_snackbar.dart';
+import '../../../../core/theme/citizen_ui.dart';
+import '../../../../core/widgets/Home/Account/account_web_kit.dart';
 
 class ChangePasswordNewScreen extends StatefulWidget {
   final String accessToken;
@@ -189,6 +192,17 @@ class _ChangePasswordNewScreenState extends State<ChangePasswordNewScreen>
 
   @override
   Widget build(BuildContext context) {
+    // ── WEB ────────────────────────────────────────────────────────────────
+    // See the note on step 1. On success this pops S3 and S2, landing back on
+    // step 1 with its cooldown notice showing and the success toast on screen —
+    // inside the flow you started, never on Settings.
+    if (kIsWeb) {
+      return Scaffold(
+        backgroundColor: CitizenUi.pageBg,
+        body: SafeArea(child: _buildWebBody()),
+      );
+    }
+
     final w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
     return Scaffold(
       backgroundColor: Colors.white,
@@ -353,6 +367,196 @@ class _ChangePasswordNewScreenState extends State<ChangePasswordNewScreen>
     );
   }
 
+  // ══════════════════════════════════════════════════════════════════════════
+  //  WEB LAYOUT — step 3 of 3
+  // ══════════════════════════════════════════════════════════════════════════
+
+  Widget _buildWebBody() {
+    return AccountPageBody(
+      builder: (context, stack) => FadeTransition(
+        opacity: _fadeAnim,
+        child: SlideTransition(
+          position: _slideAnim,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const AccountPageTitle(
+                title: 'Change Password',
+                subtitle:
+                    'Confirm your email, enter the code we send you, then '
+                    'choose a new password.',
+              ),
+              const AccountStepper(step: 2, labels: kChangePasswordSteps),
+              AccountFieldSection(
+                title: 'New password',
+                stack: stack,
+                rows: [
+                  [
+                    AccountTextField(
+                      controller: _passwordCtrl,
+                      label: 'New password',
+                      hint: 'Enter a new password',
+                      obscureText: !_showPassword,
+                      autofocus: true,
+                      onChanged: (v) => _validatePassword(v),
+                      suffixIcon: _visibilityToggle(
+                        shown: _showPassword,
+                        onTap: () =>
+                            setState(() => _showPassword = !_showPassword),
+                      ),
+                    ),
+                    AccountTextField(
+                      controller: _confirmCtrl,
+                      label: 'Confirm new password',
+                      hint: 'Re-enter the new password',
+                      obscureText: !_showConfirm,
+                      onChanged: (_) => setState(() {}),
+                      suffixIcon: _visibilityToggle(
+                        shown: _showConfirm,
+                        onTap: () =>
+                            setState(() => _showConfirm = !_showConfirm),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              if (_isMismatch) ...[
+                const SizedBox(height: 10),
+                const Text(
+                  'Both passwords must match.',
+                  style: TextStyle(fontSize: 12.5, color: CitizenUi.danger),
+                ),
+              ],
+              const SizedBox(height: 16),
+              _buildWebRequirements(stack: stack),
+              if (_apiError != null) ...[
+                const SizedBox(height: 16),
+                AccountErrorStrip(_apiError!),
+              ],
+              const SizedBox(height: 28),
+              AccountActions(
+                stack: stack,
+                busy: _isLoading,
+                primaryLabel: 'Update password',
+                onPrimary: (_isFormValid && !_isLoading)
+                    ? _updatePassword
+                    : null,
+                secondaryLabel: 'Back',
+                onSecondary: _isLoading ? null : () => Navigator.pop(context),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _visibilityToggle({required bool shown, required VoidCallback onTap}) {
+    return IconButton(
+      onPressed: onTap,
+      icon: Icon(
+        shown ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+        size: 18,
+        color: CitizenUi.textMuted,
+      ),
+      splashRadius: 18,
+      tooltip: shown ? 'Hide password' : 'Show password',
+    );
+  }
+
+  /// Strength meter and the four rules, in one card.
+  ///
+  /// Kept as live feedback rather than an error you discover on submit: every
+  /// rule is checkable while typing, so telling you afterwards would be
+  /// withholding something already known.
+  Widget _buildWebRequirements({required bool stack}) {
+    final rules = <(String, bool)>[
+      ('At least 8 characters', _hasMinLength),
+      ('One uppercase letter', _hasUpper),
+      ('One number', _hasNumber),
+      ('One special character', _hasSpecial),
+    ];
+
+    return AccountCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text(
+                'Password strength',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: CitizenUi.textMuted,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                _passwordCtrl.text.isEmpty ? '—' : _strengthText,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: _passwordCtrl.text.isEmpty
+                      ? CitizenUi.textFaint
+                      : _strengthColor,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          PasswordStrengthBar(score: _strengthScore),
+          const SizedBox(height: 18),
+          // Two columns of rules where there is room, one where there is not.
+          // A rule that wraps mid-phrase is harder to scan than a longer list.
+          if (stack)
+            for (var i = 0; i < rules.length; i++) ...[
+              if (i > 0) const SizedBox(height: 8),
+              _webRule(rules[i].$1, rules[i].$2),
+            ]
+          else
+            for (var r = 0; r < rules.length; r += 2) ...[
+              if (r > 0) const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(child: _webRule(rules[r].$1, rules[r].$2)),
+                  const SizedBox(width: kAccountGap),
+                  Expanded(
+                    child: r + 1 < rules.length
+                        ? _webRule(rules[r + 1].$1, rules[r + 1].$2)
+                        : const SizedBox.shrink(),
+                  ),
+                ],
+              ),
+            ],
+        ],
+      ),
+    );
+  }
+
+  Widget _webRule(String label, bool met) {
+    return Row(
+      children: [
+        Icon(
+          met ? Icons.check_circle_rounded : Icons.radio_button_unchecked,
+          size: 16,
+          color: met ? CitizenUi.accentGreen : CitizenUi.textFaint,
+        ),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 12.5,
+              color: met ? CitizenUi.success : CitizenUi.textMuted,
+              fontWeight: met ? FontWeight.w600 : FontWeight.w400,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildHeader(double w) {
     return Container(
       width: double.infinity,
@@ -377,7 +581,7 @@ class _ChangePasswordNewScreenState extends State<ChangePasswordNewScreen>
               decoration: BoxDecoration(
                 color: const Color(0xFFF3F4F6),
                 borderRadius: BorderRadius.circular(w * 0.025),
-                border: Border.all(color: AppColors.stroke),
+                border: Border.all(color: CitizenUi.sharedStroke),
               ),
               child: Icon(
                 Icons.arrow_back_ios_rounded,

@@ -1,7 +1,10 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import '../../core/widgets/Home/Account/account_web_kit.dart';
 import 'package:flutter/services.dart';
 import '../../core/router/legacy_nav.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/citizen_ui.dart';
 
 class VerificationIdentityScreen extends StatefulWidget {
   final String username;
@@ -91,6 +94,145 @@ class _VerificationIdentityScreenState extends State<VerificationIdentityScreen>
     super.dispose();
   }
 
+  // ==========================================================================
+  //  WEB
+  //
+  //  Step 3 of 3. This screen and the face scan after it are both "Identity
+  //  Verification" - see [kVerificationSteps].
+  //
+  //  The hand-rolled stepper this screen carries is NOT wrong, and it is worth
+  //  saying so: it lights all three because it IS the third step, so one and two
+  //  are behind it. It is replaced on web only because [AccountStepper] is the
+  //  one every other flow on the site uses, not because it was lying.
+  // ==========================================================================
+
+  Widget _buildWebScaffold() {
+    return Scaffold(
+      backgroundColor: CitizenUi.pageBg,
+      body: SafeArea(
+        child: AccountPageBody(
+          builder: (context, stack) => FadeTransition(
+            opacity: _entryFade,
+            child: SlideTransition(
+              position: _entrySlide,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  AccountPageTitle(
+                    title: 'Identity verification',
+                    // "phone" on the phone; on a desktop the camera is a webcam
+                    // bolted to a monitor and there is nothing to hold.
+                    subtitle:
+                        'Hold your device at a comfortable distance and keep '
+                        'your face centred in the frame.',
+                    onBack: () => Navigator.pop(context),
+                    backLabel: 'Back to your details',
+                  ),
+                  const AccountStepper(step: 2, labels: kVerificationSteps),
+
+                  const AccountSectionLabel('Before you scan'),
+                  AccountCard(
+                    child: Column(
+                      children: [
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 240),
+                          child: Image.asset(
+                            'assets/images/face_ver.webp',
+                            fit: BoxFit.contain,
+                          ),
+                        ),
+                        const SizedBox(height: kAccountSectionGap),
+                        const Divider(
+                          height: 1,
+                          thickness: 1,
+                          color: CitizenUi.border,
+                        ),
+                        const SizedBox(height: kAccountSectionGap),
+                        const Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            _WebRestrictItem(
+                              image: 'assets/images/sunglasses.webp',
+                              label: 'No shades',
+                            ),
+                            _WebRestrictItem(
+                              image: 'assets/images/cap.webp',
+                              label: 'No cap',
+                            ),
+                            _WebRestrictItem(
+                              image: 'assets/images/face_mask.webp',
+                              label: 'No mask',
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: kAccountSectionGap),
+                        const Divider(
+                          height: 1,
+                          thickness: 1,
+                          color: CitizenUi.border,
+                        ),
+                        const SizedBox(height: 14),
+                        const Text(
+                          'Please make sure your entire face is clear and well '
+                          'lit.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 13,
+                            height: 1.45,
+                            color: CitizenUi.textMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: kAccountSectionGap),
+
+                  _webConfirmButton(stack),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Same green as every other step of the wizard on web.
+  Widget _webConfirmButton(bool stack) {
+    final button = ElevatedButton(
+      onPressed: () => pushLegacy(
+        context,
+        '/verification_face_scan',
+        arguments: {
+          'username': widget.username,
+          'selectedId': widget.selectedId,
+          'idNumber': widget.idNumber,
+          'firstName': widget.firstName,
+          'middleName': widget.middleName,
+          'lastName': widget.lastName,
+          'suffix': widget.suffix,
+          'gender': widget.gender,
+          'birthdate': widget.birthdate,
+          'birthplace': widget.birthplace,
+          'civilStatus': widget.civilStatus,
+          'contactNumber': widget.contactNumber,
+          'barangay': widget.barangay,
+          'street': widget.street,
+          'frontImage': widget.frontImage,
+          'backImage': widget.backImage,
+        },
+      ),
+      style: accountPrimaryButtonStyle().copyWith(
+        backgroundColor: const WidgetStatePropertyAll(CitizenUi.accentGreen),
+      ),
+      child: const Text('Confirm'),
+    );
+
+    return stack
+        ? SizedBox(width: double.infinity, child: button)
+        : Row(mainAxisAlignment: MainAxisAlignment.end, children: [button]);
+  }
+
   @override
   Widget build(BuildContext context) {
     SystemChrome.setSystemUIOverlayStyle(
@@ -99,6 +241,8 @@ class _VerificationIdentityScreenState extends State<VerificationIdentityScreen>
         statusBarIconBrightness: Brightness.dark,
       ),
     );
+
+    if (kIsWeb) return _buildWebScaffold();
 
     final bottomPadding = MediaQuery.of(context).padding.bottom;
 
@@ -113,26 +257,26 @@ class _VerificationIdentityScreenState extends State<VerificationIdentityScreen>
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 560),
             child: Column(
-          children: [
-            _buildHeader(context),
-            _buildStepper(),
-            Expanded(
-              child: FadeTransition(
-                opacity: _entryFade,
-                child: SlideTransition(
-                  position: _entrySlide,
-                  child: _buildContent(),
+              children: [
+                _buildHeader(context),
+                _buildStepper(),
+                Expanded(
+                  child: FadeTransition(
+                    opacity: _entryFade,
+                    child: SlideTransition(
+                      position: _entrySlide,
+                      child: _buildContent(),
+                    ),
+                  ),
                 ),
-              ),
-            ),
-            FadeTransition(
-              opacity: _entryFade,
-              child: SlideTransition(
-                position: _entrySlide,
-                child: _buildBottomButton(bottomPadding),
-              ),
-            ),
-          ],
+                FadeTransition(
+                  opacity: _entryFade,
+                  child: SlideTransition(
+                    position: _entrySlide,
+                    child: _buildBottomButton(bottomPadding),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -243,7 +387,7 @@ class _VerificationIdentityScreenState extends State<VerificationIdentityScreen>
           ),
         ),
         const SizedBox(height: 28),
-        const Divider(thickness: 1, color: Color(0xFFE5E7EB)),
+        const Divider(thickness: 1, color: CitizenUi.sharedBorder),
         const SizedBox(height: 20),
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -260,7 +404,7 @@ class _VerificationIdentityScreenState extends State<VerificationIdentityScreen>
           ],
         ),
         const SizedBox(height: 20),
-        const Divider(thickness: 1, color: Color(0xFFE5E7EB)),
+        const Divider(thickness: 1, color: CitizenUi.sharedBorder),
         const SizedBox(height: 14),
         const Text(
           "Please make sure your entire face is clear and well lit.",
@@ -363,7 +507,7 @@ class _RestrictItem extends StatelessWidget {
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.stroke),
+                border: Border.all(color: CitizenUi.sharedStroke),
               ),
               padding: const EdgeInsets.all(10),
               child: Image.asset(image, fit: BoxFit.contain),
@@ -386,6 +530,56 @@ class _RestrictItem extends StatelessWidget {
             fontSize: 11,
             fontWeight: FontWeight.w500,
             color: Colors.black54,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Web-only. The phone's [_RestrictItem] at the kit's type size.
+class _WebRestrictItem extends StatelessWidget {
+  final String image;
+  final String label;
+
+  const _WebRestrictItem({required this.image, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Container(
+              width: 68,
+              height: 68,
+              decoration: BoxDecoration(
+                color: CitizenUi.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: CitizenUi.border),
+              ),
+              padding: const EdgeInsets.all(11),
+              child: Image.asset(image, fit: BoxFit.contain),
+            ),
+            Positioned(
+              bottom: -8,
+              right: -8,
+              child: Image.asset(
+                'assets/images/notwear.webp',
+                width: 26,
+                height: 26,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w600,
+            color: CitizenUi.textMuted,
           ),
         ),
       ],

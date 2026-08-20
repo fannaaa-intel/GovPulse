@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import '../../../../core/widgets/responsive_page.dart';
 import 'package:http/http.dart' as http;
@@ -8,6 +9,8 @@ import '../../../../core/services/password_cooldown.dart';
 import '../../../../core/widgets/mobile_form_shell.dart';
 import 'change_password_verify_screen.dart';
 import '../../../../core/widgets/loading/loading_overlay.dart';
+import '../../../../core/theme/citizen_ui.dart';
+import '../../../../core/widgets/Home/Account/account_web_kit.dart';
 
 class ChangePasswordSendScreen extends StatefulWidget {
   final String email;
@@ -21,7 +24,8 @@ class _ChangePasswordSendScreenState extends State<ChangePasswordSendScreen>
     with TickerProviderStateMixin {
   static const String _baseUrl =
       'https://vxvflhjbafqwehuxnmeq.supabase.co/functions/v1';
-  static const String _apiKey = 'sb_publishable_ZBDaQPQdFyC5kOHGbce9Ig_zdtIi6Mo';
+  static const String _apiKey =
+      'sb_publishable_ZBDaQPQdFyC5kOHGbce9Ig_zdtIi6Mo';
 
   bool _isLoading = false;
   bool _isCheckingLock = true;
@@ -81,8 +85,7 @@ class _ChangePasswordSendScreenState extends State<ChangePasswordSendScreen>
     final supabase = Supabase.instance.client;
     final user = supabase.auth.currentUser;
     if (user != null) {
-      final remaining =
-          await PasswordCooldown.remainingDays(supabase, user.id);
+      final remaining = await PasswordCooldown.remainingDays(supabase, user.id);
       if (remaining != null && mounted) {
         setState(() {
           _isLocked = true;
@@ -172,6 +175,41 @@ class _ChangePasswordSendScreenState extends State<ChangePasswordSendScreen>
   @override
   Widget build(BuildContext context) {
     final w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+
+    // ── WEB ────────────────────────────────────────────────────────────────
+    //
+    // `kIsWeb` with no width test: a browser always gets this, the app never
+    // does. Everything below this branch is the mobile screen, untouched.
+    //
+    // It bypasses [ResponsivePageBody] rather than configuring it. That widget
+    // would wrap the page in SettingsWebShell — a 600px column beside a
+    // decorative brand panel — which was right when this was a standalone route
+    // and is wrong inside a pane that already has a top nav and a left rail.
+    //
+    // And there is no header, so there is no back chevron. On a phone the
+    // chevron returns you to the screen you pushed from; here it would pop the
+    // whole account route and drop you on Settings, a page you did not ask for.
+    if (kIsWeb) {
+      return Scaffold(
+        backgroundColor: CitizenUi.pageBg,
+        body: SafeArea(
+          // Mirrors this step exactly: title, stepper, one section holding the
+          // email field, a notice, and the action row. See the note on
+          // [AccountPageSkeleton] for why the SkeletonLayout entry is not used.
+          child: _isCheckingLock
+              ? const AccountPageSkeleton(
+                  stepper: true,
+                  sections: [
+                    [1],
+                  ],
+                  notice: true,
+                  actions: true,
+                )
+              : _buildWebBody(),
+        ),
+      );
+    }
+
     if (_isCheckingLock) {
       return Scaffold(
         backgroundColor: Colors.white,
@@ -291,6 +329,93 @@ class _ChangePasswordSendScreenState extends State<ChangePasswordSendScreen>
     );
   }
 
+  // ══════════════════════════════════════════════════════════════════════════
+  //  WEB LAYOUT — step 1 of 3
+  //
+  //  Built from account_web_kit.dart, like Edit Profile and Settings.
+  //
+  //  The three steps stay three pushed routes, as they are on mobile: they
+  //  stack INSIDE this pane, so the shell chrome never unmounts and the address
+  //  bar stays on /settings/password throughout. Finishing pops back to here,
+  //  which is why this step re-checks the cooldown on return — you land on the
+  //  page you started from with the new cooldown showing, never on Settings.
+  //
+  //  Step 1 has no secondary action. Steps 2 and 3 offer "Back", which moves
+  //  one step inside the flow; here there is nothing to go back TO that is not
+  //  outside the flow entirely.
+  // ══════════════════════════════════════════════════════════════════════════
+
+  Widget _buildWebBody() {
+    return AccountPageBody(
+      builder: (context, stack) => FadeTransition(
+        opacity: _fadeAnim,
+        child: SlideTransition(
+          position: _slideAnim,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const AccountPageTitle(
+                title: 'Change Password',
+                subtitle:
+                    'Confirm your email, enter the code we send you, then '
+                    'choose a new password.',
+              ),
+              const AccountStepper(step: 0, labels: kChangePasswordSteps),
+              AccountFieldSection(
+                title: 'Your email',
+                stack: stack,
+                rows: [
+                  [
+                    AccountReadonlyField(label: 'Email', value: widget.email),
+                    // Holds the second column open so the address keeps a
+                    // sensible input width instead of spanning the card.
+                    const SizedBox.shrink(),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 16),
+              if (_isLocked)
+                AccountNotice(
+                  stack: stack,
+                  tone: AccountNoticeTone.warning,
+                  icon: Icons.lock_clock_rounded,
+                  title: 'Password recently changed',
+                  message:
+                      'You can change it again once the cooldown has passed.',
+                  trailing: AccountNoticePill(
+                    label:
+                        '$_daysRemaining ${_daysRemaining == 1 ? 'day' : 'days'} left',
+                  ),
+                )
+              else
+                AccountNotice(
+                  stack: stack,
+                  icon: Icons.mark_email_read_rounded,
+                  title: 'We will email you a 6-digit code',
+                  message:
+                      'It goes to the address above and expires shortly, so '
+                      'keep this tab open.',
+                ),
+              if (_errorText != null) ...[
+                const SizedBox(height: 16),
+                AccountErrorStrip(_errorText!),
+              ],
+              const SizedBox(height: 28),
+              AccountActions(
+                stack: stack,
+                busy: _isLoading,
+                primaryLabel: _isLocked
+                    ? 'Change unavailable'
+                    : 'Send verification code',
+                onPrimary: (_isLoading || _isLocked) ? null : _sendOtp,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildHeader(double w) {
     return Container(
       width: double.infinity,
@@ -315,7 +440,7 @@ class _ChangePasswordSendScreenState extends State<ChangePasswordSendScreen>
               decoration: BoxDecoration(
                 color: const Color(0xFFF3F4F6),
                 borderRadius: BorderRadius.circular(w * 0.025),
-                border: Border.all(color: AppColors.stroke),
+                border: Border.all(color: CitizenUi.sharedStroke),
               ),
               child: Icon(
                 Icons.arrow_back_ios_rounded,
@@ -387,7 +512,7 @@ class _ChangePasswordSendScreenState extends State<ChangePasswordSendScreen>
       decoration: BoxDecoration(
         color: const Color(0xFFF9FAFB),
         borderRadius: BorderRadius.circular(w * 0.035),
-        border: Border.all(color: AppColors.stroke),
+        border: Border.all(color: CitizenUi.sharedStroke),
       ),
       child: Row(
         children: [

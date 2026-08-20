@@ -1,5 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -10,6 +12,10 @@ import '../../../core/widgets/Home/home_enums.dart';
 import '../../../core/widgets/Home/nav/home_top_nav.dart';
 import '../../../core/widgets/Home/nav/nav_band.dart';
 import '../../../core/widgets/Home/sections/Web/home_quick_actions_section_web.dart';
+import '../../../core/widgets/Home/sections/Web/home_app_download_card.dart';
+import '../../../core/widgets/Home/sections/Web/home_upcoming_events_card.dart';
+import '../../../core/widgets/Home/sections/Web/rail_verify_card.dart';
+import '../../../core/widgets/citizen_shell_scope.dart';
 import '../../../core/router/legacy_nav.dart';
 import '../../../core/services/auth_ready.dart';
 import '../../../core/services/citizen_guard.dart';
@@ -22,11 +28,6 @@ import '../Quick-action/Feedback/feedback_screen.dart';
 import '../Quick-action/Report/report_issue_screen.dart';
 import '../Quick-action/Suggestion/suggestion_screen.dart';
 import '../screen/notification_popup.dart';
-import '../settings/about/about_govpulse_screen.dart';
-import '../settings/change-password/change_password_send_screen.dart';
-import '../settings/contact-support/contact_support_screen.dart';
-import '../settings/edit_profile_screen.dart';
-import '../settings/my-submission/my_submissions_screen.dart';
 import 'citizen_docked_chat.dart';
 import 'citizen_shell_dialogs.dart';
 import 'citizen_shell_router.dart';
@@ -111,12 +112,42 @@ class CitizenShell extends ConsumerStatefulWidget {
   /// lazily-built IndexedStack of panes.
   final StatefulNavigationShell navigationShell;
 
-  const CitizenShell({super.key, required this.navigationShell});
+  /// The full current location's path, e.g. `/home` or
+  /// `/settings/edit-profile`.
+  ///
+  /// `navigationShell.currentIndex` answers WHICH BRANCH, which is all the top
+  /// nav needs. It cannot answer WHERE IN IT — and the ACCOUNT pages are five
+  /// different locations inside the one Settings branch, so the rail's
+  /// highlight and the right sidebar's stand-down both need the path itself.
+  final String location;
+
+  const CitizenShell({
+    super.key,
+    required this.navigationShell,
+    required this.location,
+  });
 
   /// Switch the shell under [context] to [tab]. Used by Bodies that need to
   /// send the user to another destination (Home's "View all" → NewsFeed).
   static void goToTab(BuildContext context, CitizenTab tab) {
     StatefulNavigationShell.of(context).goBranch(tab.index);
+  }
+
+  /// Runs the quick action [key] — the same dispatch the left rail and the right
+  /// sidebar use, so the caller inherits the verification and restriction gates
+  /// rather than reimplementing them.
+  ///
+  /// Peer of [goToTab], and there for the same reason: a Body mounted in the
+  /// centre column needs a shell-level behaviour it cannot otherwise name. The
+  /// feed's empty-state CTA is the first caller.
+  ///
+  /// Does nothing when there is no shell above [context] — the GUEST feed is not
+  /// in one — so callers must only offer the affordance when they know they are
+  /// embedded, rather than relying on this to no-op.
+  static void runQuickAction(BuildContext context, String key) {
+    context.findAncestorStateOfType<_CitizenShellState>()?._handleQuickAction(
+      key,
+    );
   }
 
   @override
@@ -125,6 +156,13 @@ class CitizenShell extends ConsumerStatefulWidget {
 
 class _CitizenShellState extends ConsumerState<CitizenShell> {
   int get _index => widget.navigationShell.currentIndex;
+
+  /// True while one of the rail's ACCOUNT pages is the current location.
+  ///
+  /// Two things read it — the right sidebar and the rail's quick-action
+  /// section — and they must agree, so it is asked once here rather than
+  /// recomputed at each site.
+  bool get _onAccountPage => isCitizenAccountLocation(widget.location);
 
   /// Needed because the hamburger is built in the SAME build() that returns the
   /// Scaffold, so `Scaffold.of(context)` there would look above it and fail.
@@ -369,11 +407,17 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
         break;
 
       case 'suggestion_response':
-        _openSubmissionsFromNotification(initialTab: 1, highlightId: n.referenceId);
+        _openSubmissionsFromNotification(
+          initialTab: 1,
+          highlightId: n.referenceId,
+        );
         break;
 
       case 'feedback_response':
-        _openSubmissionsFromNotification(initialTab: 2, highlightId: n.referenceId);
+        _openSubmissionsFromNotification(
+          initialTab: 2,
+          highlightId: n.referenceId,
+        );
         break;
 
       case 'post_like':
@@ -427,28 +471,34 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
   /// they submitted, which required verification at the time; and the screen
   /// shows only their own RLS-scoped rows. This matches the legacy notification
   /// path, which does not gate it either.
+  /// Goes to the page rather than opening a dialog, so the notification and the
+  /// rail now reach My Submissions the same way — and the tab and the flashed
+  /// row ride in the query string, which makes the target of a reply
+  /// notification pasteable and reload-proof for the first time.
+  ///
+  /// The old `MySubmissionsScreen.isOpen` guard is gone with the dialog. It
+  /// existed to stop a second copy stacking over the first, and `go` replaces
+  /// rather than stacks. Tapping a notification while already on the page is
+  /// therefore a no-op, exactly as the guard made it: [GoRoute] derives its page
+  /// key from the path, which has not changed, so the State is reused and
+  /// `initialTab` is not re-read.
   void _openSubmissionsFromNotification({
     required int initialTab,
     String? highlightId,
   }) {
-    // Don't stack a second copy over one already open — same guard the legacy
-    // path uses.
-    if (MySubmissionsScreen.isOpen) return;
-    showCitizenPanelDialog<void>(
-      context: context,
-      child: MySubmissionsScreen(
-        username: _username,
-        initialTab: initialTab,
-        highlightId: highlightId,
-      ),
-    );
+    context.go(shellSubmissionsPath(tab: initialTab, highlightId: highlightId));
   }
 
-  // ── Everything opens as a dialog ──────────────────────────────────────────
+  // ── Quick actions open as dialogs; account items are pages ────────────────
   //
-  // Nothing below pushes a full-screen route. The shell — feed, both rails, the
-  // top nav — stays mounted underneath, so closing returns you exactly where you
-  // were with no reload and no history entry for what is really a panel.
+  // Nothing below pushes a FULL-SCREEN route. The quick-action forms open as
+  // dialogs, so the shell — feed, both rails, the top nav — stays mounted
+  // underneath and closing one returns you exactly where you were, with no
+  // reload and no history entry for what is really a panel.
+  //
+  // The ACCOUNT items do navigate, but within the shell: they are routes under
+  // the Settings branch, so the chrome never unmounts and neither does the feed.
+  // See [_openAccountPage].
 
   String get _username =>
       ref.read(userProfileProvider).valueOrNull?.username ?? '';
@@ -611,116 +661,111 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
       return;
     }
 
-    // Events is a browsing surface, not a form — same big modal, no form guard.
+    // Events is a browsing surface, not a form — the same split panel, with the
+    // list on the left and the selected event on the right, but no form guard
+    // because there is nothing half-filled to discard.
     if (key == 'events') {
-      await showCitizenFormDialog<void>(
+      await showCitizenSplitPanelDialog<void>(
         context: context,
-        title: title,
-        icon: icon,
         builder: (dialogContext, close) => EventsScreen(
           username: username,
           isVerified: _isVerified,
-          // Close the browsing modal, then open the event at its own
-          // id-addressable URL so the detail is reload-proof and shareable
-          // rather than trapped inside a dialog.
+          splitPanel: true,
+          onClose: close,
+          // ── The panel reads events in place; it does not navigate ────────
+          // `onOpenEvent` is deliberately NOT passed. It closed the modal and
+          // went to the standalone `/home/event/:id` page — a phone-scaled
+          // surface with its own hero panel, reached by throwing away the
+          // browsing context. The split panel renders the full detail in its
+          // own left column instead, so there is nowhere to go.
           //
-          // go(), not push() — see the note on onOpenReport: a push leaves the
-          // reported location on the branch root, so the address bar would keep
-          // saying /home while an event was open and F5 would have no id.
-          onOpenEvent: (event) {
-            close();
-            context.go(shellEventDetailPath(event.id), extra: event);
-          },
+          // The route is untouched and still the address of an event: pasting
+          // one still opens the page, and it stays reload-proof. What changed
+          // is only that the modal hands that address out rather than
+          // following it.
+          onShareEvent: (event) => _shareEventLink(event),
         ),
       );
       return;
     }
 
     final guard = FormDialogGuard();
-    await showCitizenFormDialog<void>(
+
+    // Report, Suggestion and Feedback all open as the two-column split panel.
+    // This is the ONLY place `splitPanel: true` is passed anywhere in the app —
+    // each form defaults it to false, so mobile, the native-tablet home body and
+    // the standalone '/report', '/suggestion' and '/feedback' routes all keep
+    // the widget tree they had.
+    //
+    // One host, one guard, one close callback for all three: the panel supplies
+    // its own header and its own × (see [showCitizenSplitPanelDialog]), which is
+    // why none of them takes a `title` or an `icon` here any more.
+    await showCitizenSplitPanelDialog<void>(
       context: context,
-      title: title,
-      icon: icon,
       guard: guard,
-      builder: (_, _) => switch (key) {
+      builder: (_, close) => switch (key) {
         'report' => ReportIssueForm(
           username: username,
-          embedded: true,
+          splitPanel: true,
           guard: guard,
+          onClose: close,
         ),
         'suggestion' => SuggestionForm(
           username: username,
-          embedded: true,
+          splitPanel: true,
           guard: guard,
+          onClose: close,
         ),
-        _ => FeedbackForm(username: username, embedded: true, guard: guard),
+        _ => FeedbackForm(
+          username: username,
+          splitPanel: true,
+          guard: guard,
+          onClose: close,
+        ),
       },
+    );
+  }
+
+  /// Copies an event's own address to the clipboard.
+  ///
+  /// The split panel reads events in place rather than navigating, so this is
+  /// what keeps `/home/event/:id` useful: the citizen gets a link they can send
+  /// someone, and following it still lands on the standalone page.
+  ///
+  /// `Uri.base` is the browser's current address, so resolving the route
+  /// against it produces the real origin — localhost in development, the
+  /// deployed host in production — instead of a bare path nobody can paste.
+  /// The route is hash-based (see the router's `#/` URLs), which is why the
+  /// fragment is set rather than the path.
+  Future<void> _shareEventLink(EventItem event) async {
+    final path = shellEventDetailPath(event.id);
+    final link = Uri.base.replace(fragment: path).toString();
+
+    await Clipboard.setData(ClipboardData(text: link));
+    if (!mounted) return;
+    showAppSnackBar(
+      context,
+      'Event link copied. Paste it to share "${event.title}".',
+      type: AppSnackType.success,
     );
   }
 
   // ── Left rail ─────────────────────────────────────────────────────────────
 
-  /// Rail items, each opening the existing screen in a standard-size dialog.
-  /// The hosted screen keeps its own header and its back button pops the
-  /// dialog, so none of those screens needed changing.
-  /// `verifyMessage` non-null means the item is behind the verification gate.
-  /// Only Edit Profile and My Submissions are — matching the mobile Settings
-  /// page, which gates exactly those two and leaves Change Password, Contact
-  /// Support and About open to everyone. Support in particular must stay
-  /// reachable: an unverified citizen having trouble verifying needs it most.
-  List<({IconData icon, String label, String? verifyMessage, Widget Function() build})>
-  get _railItems => [
-    (
-      icon: Icons.person_outline_rounded,
-      label: 'Edit Profile',
-      verifyMessage:
-          'Only verified citizens can edit their profile information. '
-          'Please complete the identity verification process first.',
-      build: () => EditProfileScreen(username: _username),
-    ),
-    (
-      icon: Icons.lock_outline_rounded,
-      label: 'Change Password',
-      verifyMessage: null,
-      build: () => ChangePasswordSendScreen(
-        email: ref.read(userProfileProvider).valueOrNull?.email ?? '',
-      ),
-    ),
-    (
-      icon: Icons.folder_open_rounded,
-      label: 'My Submissions',
-      verifyMessage:
-          'Only verified citizens can view their submission history. '
-          'Please complete the identity verification process first.',
-      build: () => MySubmissionsScreen(username: _username),
-    ),
-    (
-      icon: Icons.support_agent_rounded,
-      label: 'Contact Support',
-      verifyMessage: null,
-      build: () => ContactSupportScreen(username: _username),
-    ),
-    (
-      icon: Icons.info_outline_rounded,
-      label: 'About GovPulse',
-      verifyMessage: null,
-      build: () => const AboutGovPulseScreen(),
-    ),
-  ];
-
-  Future<void> _openRailItem(
-    ({
-      IconData icon,
-      String label,
-      String? verifyMessage,
-      Widget Function() build,
-    })
-    item,
-  ) async {
-    final gate = item.verifyMessage;
+  /// Opens one of the rail's ACCOUNT destinations.
+  ///
+  /// `go`, not a dialog. The item is a real location under the Settings branch
+  /// — see [CitizenAccountPage] for why these five stopped being pop-ups — so
+  /// the address bar follows it, a reload lands back on the page, and Back
+  /// returns to `/settings` instead of leaving the shell.
+  ///
+  /// The verification gate is unchanged and still runs BEFORE the navigation,
+  /// so a refusal leaves the citizen exactly where they were.
+  Future<void> _openAccountPage(CitizenAccountPage page) async {
+    final gate = page.verifyMessage;
     if (gate != null && !await _requireVerified(gate)) return;
     if (!mounted) return;
-    await showCitizenPanelDialog<void>(context: context, child: item.build());
+    context.go(page.path);
   }
 
   /// Section heading in the rail ("ACCOUNT", "NAVIGATE", "QUICK ACTIONS").
@@ -801,16 +846,15 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
                 const SizedBox(height: 14),
               ],
               _railHeading('ACCOUNT'),
-              // Each opens its existing screen in a standard-size dialog over
-              // the still-mounted shell — see [_openRailItem].
-              for (final item in _railItems)
+              // Each navigates to its page under the Settings branch — see
+              // [_openAccountPage]. Because they are destinations now, they can
+              // and do show which one you are on.
+              for (final page in CitizenAccountPage.values)
                 _railRow(
-                  item.icon,
-                  item.label,
-                  _fromDrawer(
-                    () => _openRailItem(item),
-                    inDrawer: inDrawer,
-                  ),
+                  page.icon,
+                  page.label,
+                  _fromDrawer(() => _openAccountPage(page), inDrawer: inDrawer),
+                  selected: widget.location == page.path,
                 ),
               // Quick actions have no home once the right sidebar is dropped,
               // so the rail takes them. Routed through [_handleQuickAction] —
@@ -829,6 +873,23 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
                     ),
                   ),
               ],
+              // The rail's single verify affordance, pinned last so it never
+              // crowds the profile block or the sections above it. The status
+              // line in [_profileCard] is status-only now; this is the only
+              // place the wizard can be started from the rail.
+              //
+              // [RailVerifyCard.maybe] renders nothing until the profile has
+              // loaded — VerifStatus falls back to `none`, so keying on status
+              // alone would flash the red "unverified" card at a verified
+              // citizen on every cold load.
+              const SizedBox(height: 16),
+              RailVerifyCard.maybe(
+                profileLoaded: profile != null,
+                status: profile?.verifStatus ?? VerifStatus.none,
+                // _fromDrawer closes the drawer FIRST — otherwise the wizard
+                // opens behind a still-open drawer.
+                onVerify: _fromDrawer(_startVerification, inDrawer: inDrawer),
+              ),
             ],
           ),
         ),
@@ -852,7 +913,7 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
     final verif = profile?.verifStatus ?? VerifStatus.none;
     final (String statusLabel, Color statusColor) = switch (verif) {
       VerifStatus.verified => ('Verified', CitizenUi.success),
-      VerifStatus.pending => ('Pending', CitizenUi.pending),
+      VerifStatus.pending => ('Pending review', CitizenUi.pending),
       VerifStatus.none => ('Not verified', CitizenUi.textMuted),
     };
 
@@ -883,18 +944,7 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
                   ),
                 ),
                 const SizedBox(height: 3),
-                _statusPill(
-                  label: statusLabel,
-                  color: statusColor,
-                  // Only an account we KNOW is unverified gets the affordance.
-                  // `verif` falls back to none while the profile is still
-                  // loading, so without the null test the rail would flash
-                  // "Verify now" at a verified citizen on every cold load —
-                  // the same trap mobile's profile card guards with
-                  // `!profileLoading`.
-                  canVerify: profile != null && verif == VerifStatus.none,
-                  onTap: _fromDrawer(_startVerification, inDrawer: inDrawer),
-                ),
+                _statusPill(label: statusLabel, color: statusColor),
               ],
             ),
           ),
@@ -903,20 +953,16 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
     );
   }
 
-  /// The account card's status line.
+  /// The account card's status line — STATUS ONLY, a dot plus a label, inert in
+  /// all three states.
   ///
-  /// Verified and Pending render EXACTLY as before — dot plus label, inert.
-  /// Only a known-unverified account gets the extra "Verify now" affordance and
-  /// becomes tappable, which is the shell's one direct route into the wizard.
-  /// Pending is deliberately not actionable, matching mobile, where the Verify
-  /// button is present but disabled while a submission is under review.
-  Widget _statusPill({
-    required String label,
-    required Color color,
-    required bool canVerify,
-    required VoidCallback onTap,
-  }) {
-    final row = Row(
+  /// It used to append a tappable "Verify now ›" for a known-unverified account,
+  /// which made it the shell's one direct route into the wizard. That affordance
+  /// now lives in [RailVerifyCard] at the bottom of the rail, so there is
+  /// exactly one verify entry point instead of two competing ones, and this line
+  /// is free to do the single job its name implies.
+  Widget _statusPill({required String label, required Color color}) {
+    return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
@@ -933,45 +979,17 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
             color: color,
           ),
         ),
-        if (canVerify) ...[
-          const SizedBox(width: 7),
-          const Text(
-            '·',
-            style: TextStyle(fontSize: 12, color: CitizenUi.textFaint),
-          ),
-          const SizedBox(width: 7),
-          const Text(
-            'Verify now',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: CitizenUi.accent,
-            ),
-          ),
-          const Icon(
-            Icons.chevron_right_rounded,
-            size: 15,
-            color: CitizenUi.accent,
-          ),
-        ],
       ],
-    );
-
-    if (!canVerify) return row;
-
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(CitizenUi.controlRadius),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2),
-        child: row,
-      ),
     );
   }
 
-  /// [selected] is only ever set by the drawer's NAVIGATE rows, so it marks the
-  /// branch you are currently on. The account rows never pass it — they open
-  /// dialogs, and a dialog is not a destination you can be "on".
+  /// [selected] marks where you currently are. The NAVIGATE rows compare branch
+  /// indices; the ACCOUNT rows compare paths, which is the finer question — all
+  /// five live in the SAME branch, so `currentIndex` cannot tell them apart.
+  ///
+  /// The account rows could not pass it at all while they opened dialogs: a
+  /// dialog is not a destination you can be "on". Making them pages is what
+  /// gave the rail something true to highlight.
   Widget _railRow(
     IconData icon,
     String label,
@@ -1005,9 +1023,7 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
                 style: TextStyle(
                   fontSize: 13.5,
                   fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
-                  color: selected
-                      ? CitizenUi.accent
-                      : CitizenUi.textSecondary,
+                  color: selected ? CitizenUi.accent : CitizenUi.textSecondary,
                 ),
               ),
             ),
@@ -1045,9 +1061,12 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
             inDrawer: true,
             // The drawer only exists below 1024 — below the line where the top
             // nav can fit its links, and below the line where the right sidebar
-            // survives — so it always carries both sections.
+            // survives — so it always carries the destinations.
             showNav: true,
-            showQuickActions: true,
+            // Quick actions drop on an account page here too. The drawer is the
+            // same rail at a narrower width, and the reason they do not belong
+            // on an account page is about the PAGE, not the width.
+            showQuickActions: !_onAccountPage,
           ),
         ),
       ),
@@ -1067,7 +1086,7 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
       decoration: BoxDecoration(
         color: Colors.white,
         border: const Border(
-          bottom: BorderSide(color: Color(0xFFE5E7EB), width: 1),
+          bottom: BorderSide(color: CitizenUi.sharedBorder, width: 1),
         ),
         boxShadow: [
           BoxShadow(
@@ -1098,14 +1117,43 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
   Widget _rightSidebar() {
     return SizedBox(
       width: _kRightSidebarWidth,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(8, 20, 20, 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            HomeQuickActionsSectionWeb(onActionTap: _handleQuickAction),
-          ],
+      // Mirrors [_leftRail]: the Row lays both rails out under LOOSE vertical
+      // constraints (crossAxisAlignment.start), so a scroll view here
+      // shrink-wraps to its content on a tall window — the rail still hugs the
+      // top and stays pinned while the centre scrolls — and only scrolls
+      // internally once the content would exceed the height.
+      //
+      // Without this the rail was a bare Column and simply OVERFLOWED: its
+      // content runs ~849px once the quick actions, the download card and the
+      // events card are all in it, against ~610px of usable height on a
+      // 1366x768 browser.
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 20, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // flat: the rail's quick actions sit on the page background like the
+              // left rail's ACCOUNT / NAVIGATE sections. The two cards below keep
+              // their card treatment — that mix is the intended arrangement.
+              HomeQuickActionsSectionWeb(
+                onActionTap: _handleQuickAction,
+                flat: true,
+              ),
+              const SizedBox(height: 16),
+              const HomeAppDownloadCard(),
+              const SizedBox(height: 16),
+              // Same dispatch the rail's "View Events" row uses, so this inherits
+              // the verification and restriction gates rather than side-stepping
+              // them. The LIST itself is deliberately visible to unverified
+              // citizens — consistent with the feed, which shows posts to everyone
+              // and gates only the interactions.
+              HomeUpcomingEventsCard(
+                onViewAll: () => _handleQuickAction('events'),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1151,6 +1199,27 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
     // with no children — so this stays a caller-side change.
     final showNavLinks = !isDrawerMode;
 
+    // ── The sidebar stands down for an account page ──────────────────────────
+    //
+    // An account page is a working surface — a profile form, a submission
+    // history — and the centre column alone is about 600px of it. Standing the
+    // quick-actions sidebar down hands that page the sidebar's width too, which
+    // is what lets Edit Profile seat its identity card BESIDE its fields
+    // instead of stacking everything in a phone-width strip.
+    //
+    // The quick actions do NOT follow the sidebar into the rail here, and that
+    // is deliberate. They normally do — the rail takes them whenever the
+    // sidebar is not there to hold them, which is what the 1024–1280 band
+    // relies on — but an account page is the one place that rule is wrong.
+    //
+    // Report, Suggestion and Feedback belong to the FEED: you are reading the
+    // community and you act on it. On your own account settings there is
+    // nothing to act on, and offering them there turns a five-row account menu
+    // into a twelve-row column that mixes "where am I" with "what can I make".
+    // Facebook's settings nav carries settings and nothing else, for the same
+    // reason. They are one click away — Home — rather than gone.
+    final showRightSidebar = shellHasRightSidebar(layout) && !_onAccountPage;
+
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: CitizenUi.pageBg,
@@ -1160,127 +1229,181 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
       // The docked chat floats over the columns in a Stack rather than in a
       // route or a dialog. No barrier is inserted, so everything behind it stays
       // scrollable and clickable while it is open.
-      body: Stack(
-        children: [
-          SafeArea(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // One top nav, spanning ALL three columns — the rails sit flush
-                // beneath it rather than beside it. In drawer mode the
-                // hamburger is prepended as a seamless extension of the bar.
-                Row(
-                  children: [
-                    if (isDrawerMode) _hamburger(),
-                    Expanded(
-                      // LISTEN, don't read — see NotificationService.count.
-                      // This is the citizen web shell's bell, and the snapshot
-                      // that used to be here is what made it look dead on web:
-                      // the badge only moved when the shell happened to rebuild,
-                      // i.e. when the citizen changed screens.
-                      child: ValueListenableBuilder<int>(
-                        valueListenable: NotificationService.unread,
-                        builder: (_, unreadCount, _) => HomeTopNav(
-                          currentIndex: _index,
-                          onTap: _selectIndex,
-                          // Home · My Reports · Emergency. NewsFeed is gone: Home's centre
-                          // is the feed now. Settings is reached from the user chip, so it
-                          // is not a nav link — but its index moved to 3 when NewsFeed left,
-                          // hence settingsIndex.
-                          items: [
-                            if (showNavLinks)
-                              for (final tab in CitizenTab.values)
-                                if (tab != CitizenTab.settings)
-                                  (label: tab.label, index: tab.index),
-                          ],
-                          settingsIndex: CitizenTab.settings.index,
-                          notificationCount: unreadCount,
-                          onNotificationTap: () => _showNotifications(width),
-                          // The shared flow, same as Settings and the nav chrome use.
-                          onLogoutTap: () => performCitizenLogout(context),
-                          // Below ~600 the brand + bell + named chip cannot fit
-                          // alongside the hamburger, and the chip's name is the
-                          // only part that is redundant — the dropdown still
-                          // shows it in full. Opt-in, so no other caller of this
-                          // shared widget is affected.
-                          avatarOnlyChip: width < _kAvatarOnlyChipBelow,
-                          username: profile?.username ?? '',
-                          fullName: profile?.fullName,
-                          facePhotoUrl: profile?.facePhotoUrl,
-                          verifStatus: switch (verif) {
-                            VerifStatus.verified => 'approved',
-                            VerifStatus.pending => 'pending',
-                            VerifStatus.none => 'none',
-                          },
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                Expanded(
-                  child: Row(
-                    // Pins both rails to the top; only the centre column stretches.
-                    crossAxisAlignment: CrossAxisAlignment.start,
+      //
+      // ── Scrollbars ───────────────────────────────────────────────────────
+      // Hidden for every scrollable in the shell — both rails and whichever
+      // pane the centre is showing — so the columns read like a feed rather
+      // than like three boxes with grey bars. Scrolling itself is untouched:
+      // [_NoScrollbarBehavior] only declines to PAINT the thumb.
+      //
+      // Scoped HERE, deliberately, and not on GovPulseWebApp's MaterialApp:
+      // citizenRouter also serves /admin and /staff, so an app-level
+      // scrollBehavior would silently restyle both consoles and the auth
+      // screens. This wrapper reaches the shell subtree and nothing else.
+      body: ScrollConfiguration(
+        behavior: const _NoScrollbarBehavior(),
+        child: Stack(
+          children: [
+            SafeArea(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // One top nav, spanning ALL three columns — the rails sit flush
+                  // beneath it rather than beside it. In drawer mode the
+                  // hamburger is prepended as a seamless extension of the bar.
+                  Row(
                     children: [
-                      // Inline only above the drawer line. Not
-                      // shellHasLeftRail(layout), which still counts railIcons
-                      // as a rail — that band is the drawer's now.
-                      if (!isDrawerMode)
-                        _leftRail(
-                          profile: profile,
-                          // The inline rail only exists at >= 1024, where the
-                          // top nav is showing the destinations itself, so it
-                          // never duplicates them. Always false in practice;
-                          // kept as the explicit complement of the nav.
-                          showNav: !showNavLinks,
-                          // The rail takes the quick actions whenever the right
-                          // sidebar is not there to hold them. Without this they
-                          // were reachable only at >= 1280 (sidebar) and in the
-                          // drawer, and vanished in between.
-                          //
-                          // At >= 1280 this is false, so they live in the
-                          // sidebar and are NOT duplicated here.
-                          showQuickActions: !shellHasRightSidebar(layout),
-                        ),
-                      // The centre must fill the height — it owns the scrolling.
-                      //
-                      // The MediaQuery override reports the CENTRE COLUMN's size to
-                      // the panes rather than the viewport's. Bodies size themselves
-                      // off MediaQuery (`width * 0.0x`, and a >= 900 "wide" test),
-                      // so without this a pane in a ~650px column would lay itself
-                      // out for a 1280px page and overflow. Same trick
-                      // ResponsiveNavScaffold._constrained already uses to keep a
-                      // max-width body self-consistent.
+                      if (isDrawerMode) _hamburger(),
                       Expanded(
-                        child: LayoutBuilder(
-                          builder: (context, constraints) => MediaQuery(
-                            data: MediaQuery.of(context).copyWith(
-                              size: Size(
-                                constraints.maxWidth,
-                                constraints.maxHeight,
-                              ),
-                            ),
-                            child: SizedBox.expand(
-                              child: widget.navigationShell,
-                            ),
+                        // LISTEN, don't read — see NotificationService.count.
+                        // This is the citizen web shell's bell, and the snapshot
+                        // that used to be here is what made it look dead on web:
+                        // the badge only moved when the shell happened to rebuild,
+                        // i.e. when the citizen changed screens.
+                        child: ValueListenableBuilder<int>(
+                          valueListenable: NotificationService.unread,
+                          builder: (_, unreadCount, _) => HomeTopNav(
+                            currentIndex: _index,
+                            onTap: _selectIndex,
+                            // Home · My Reports · Emergency. NewsFeed is gone: Home's centre
+                            // is the feed now. Settings is reached from the user chip, so it
+                            // is not a nav link — but its index moved to 3 when NewsFeed left,
+                            // hence settingsIndex.
+                            items: [
+                              if (showNavLinks)
+                                for (final tab in CitizenTab.values)
+                                  if (tab != CitizenTab.settings)
+                                    (label: tab.label, index: tab.index),
+                            ],
+                            settingsIndex: CitizenTab.settings.index,
+                            notificationCount: unreadCount,
+                            onNotificationTap: () => _showNotifications(width),
+                            // The shared flow, same as Settings and the nav chrome use.
+                            onLogoutTap: () => performCitizenLogout(context),
+                            // Below ~600 the brand + bell + named chip cannot fit
+                            // alongside the hamburger, and the chip's name is the
+                            // only part that is redundant — the dropdown still
+                            // shows it in full. Opt-in, so no other caller of this
+                            // shared widget is affected.
+                            avatarOnlyChip: width < _kAvatarOnlyChipBelow,
+                            username: profile?.username ?? '',
+                            fullName: profile?.fullName,
+                            facePhotoUrl: profile?.facePhotoUrl,
+                            verifStatus: switch (verif) {
+                              VerifStatus.verified => 'approved',
+                              VerifStatus.pending => 'pending',
+                              VerifStatus.none => 'none',
+                            },
                           ),
                         ),
                       ),
-                      if (shellHasRightSidebar(layout)) _rightSidebar(),
                     ],
                   ),
-                ),
-              ],
+                  Expanded(
+                    child: Row(
+                      // Pins both rails to the top; only the centre column stretches.
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Inline only above the drawer line. Not
+                        // shellHasLeftRail(layout), which still counts railIcons
+                        // as a rail — that band is the drawer's now.
+                        if (!isDrawerMode)
+                          _leftRail(
+                            profile: profile,
+                            // The inline rail only exists at >= 1024, where the
+                            // top nav is showing the destinations itself, so it
+                            // never duplicates them. Always false in practice;
+                            // kept as the explicit complement of the nav.
+                            showNav: !showNavLinks,
+                            // The rail takes the quick actions whenever the right
+                            // sidebar is not there to hold them. Without this they
+                            // were reachable only at >= 1280 (sidebar) and in the
+                            // drawer, and vanished in between.
+                            //
+                            // At >= 1280 this is false, so they live in the
+                            // sidebar and are NOT duplicated here. On an
+                            // account page it is false at EVERY width — see the
+                            // note on [showRightSidebar]; the section is not
+                            // relocated there, it is dropped.
+                            showQuickActions:
+                                !showRightSidebar && !_onAccountPage,
+                          ),
+                        // The centre must fill the height — it owns the scrolling.
+                        //
+                        // The MediaQuery override reports the CENTRE COLUMN's size to
+                        // the panes rather than the viewport's. Bodies size themselves
+                        // off MediaQuery (`width * 0.0x`, and a >= 900 "wide" test),
+                        // so without this a pane in a ~650px column would lay itself
+                        // out for a 1280px page and overflow. Same trick
+                        // ResponsiveNavScaffold._constrained already uses to keep a
+                        // max-width body self-consistent.
+                        Expanded(
+                          child: LayoutBuilder(
+                            builder: (context, constraints) => MediaQuery(
+                              data: MediaQuery.of(context).copyWith(
+                                size: Size(
+                                  constraints.maxWidth,
+                                  constraints.maxHeight,
+                                ),
+                              ),
+                              // Marks everything in the centre column as
+                              // living inside the shell, so a screen shared
+                              // with the mobile app can drop the standalone
+                              // page chrome it would otherwise bring.
+                              child: CitizenShellScope(
+                                child: SizedBox.expand(
+                                  child: widget.navigationShell,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        if (showRightSidebar) _rightSidebar(),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-          CitizenDockedChat(
-            state: _chat,
-            onMinimise: () => setState(() => _chat = DockedChatState.minimised),
-            onRestore: () => setState(() => _chat = DockedChatState.open),
-            onClose: () => setState(() => _chat = DockedChatState.closed),
-          ),
-        ],
+            CitizenDockedChat(
+              state: _chat,
+              onMinimise: () =>
+                  setState(() => _chat = DockedChatState.minimised),
+              onRestore: () => setState(() => _chat = DockedChatState.open),
+              onClose: () => setState(() => _chat = DockedChatState.closed),
+            ),
+          ],
+        ),
       ),
     );
   }
+}
+
+/// [MaterialScrollBehavior] that scrolls exactly as the default does but paints
+/// no scrollbar.
+///
+/// Only [buildScrollbar] is overridden — returning the child untouched instead
+/// of wrapping it in a [Scrollbar]. Everything else is inherited, so wheel,
+/// trackpad, drag and keyboard scrolling, the overscroll indicator and the
+/// platform physics are all unchanged. This is deliberately NOT
+/// `physics: NeverScrollableScrollPhysics` or any other way of disabling
+/// scrolling: the bar goes, the scrolling stays.
+///
+/// [dragDevices] adds the mouse to the default set so click-and-drag keeps
+/// working on the web once there is no visible bar to grab.
+class _NoScrollbarBehavior extends MaterialScrollBehavior {
+  const _NoScrollbarBehavior();
+
+  @override
+  Widget buildScrollbar(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) => child;
+
+  @override
+  Set<PointerDeviceKind> get dragDevices => {
+    ...super.dragDevices,
+    PointerDeviceKind.mouse,
+  };
 }

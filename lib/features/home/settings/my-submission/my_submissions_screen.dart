@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
@@ -11,6 +12,8 @@ import '../../../../core/widgets/deeplink_highlight.dart';
 import '../../../../core/widgets/loading/loading_overlay.dart';
 import '../../my_report/my_reports_screen.dart' show ReportItem;
 import '../../../../core/widgets/app_dialog.dart';
+import '../../../../core/theme/citizen_ui.dart';
+import '../../../../core/widgets/Home/Account/account_web_kit.dart';
 // ── Private config classes ────────────────────────────────────────────────────
 
 class _CatCfg {
@@ -208,7 +211,9 @@ class _Feedback {
     aspectClarity: j['aspect_clarity'] as int?,
     aspectFacility: j['aspect_facility'] as int?,
     photoUrls:
-        (j['photo_urls'] as List<dynamic>?)?.map((e) => e.toString()).toList() ??
+        (j['photo_urls'] as List<dynamic>?)
+            ?.map((e) => e.toString())
+            .toList() ??
         const [],
     dismissedAt: j['dismissed_at'] == null
         ? null
@@ -650,17 +655,16 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
       final reportRows = results[0];
       _reportItemById
         ..clear()
-        ..addEntries(reportRows.map((r) {
-          final item = ReportItem.fromMap(r);
-          return MapEntry(item.fullId, item);
-        }));
+        ..addEntries(
+          reportRows.map((r) {
+            final item = ReportItem.fromMap(r);
+            return MapEntry(item.fullId, item);
+          }),
+        );
       setState(() {
-        _reports =
-            reportRows.map((e) => _Report.fromJson(e)).toList();
-        _suggestions =
-            results[1].map((e) => _Suggestion.fromJson(e)).toList();
-        _feedbacks =
-            results[2].map((e) => _Feedback.fromJson(e)).toList();
+        _reports = reportRows.map((e) => _Report.fromJson(e)).toList();
+        _suggestions = results[1].map((e) => _Suggestion.fromJson(e)).toList();
+        _feedbacks = results[2].map((e) => _Feedback.fromJson(e)).toList();
         _loading = false;
       });
       _subscribeRealtime(userId);
@@ -716,9 +720,11 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
 
     if (!mounted) return;
     setState(() {
-      _unseenSuggestion = _latestSuggestionReplyAt != null &&
+      _unseenSuggestion =
+          _latestSuggestionReplyAt != null &&
           (seenSug == null || _latestSuggestionReplyAt!.isAfter(seenSug));
-      _unseenFeedback = _latestFeedbackReplyAt != null &&
+      _unseenFeedback =
+          _latestFeedbackReplyAt != null &&
           (seenFb == null || _latestFeedbackReplyAt!.isAfter(seenFb));
     });
 
@@ -805,6 +811,17 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
 
   @override
   Widget build(BuildContext context) {
+    // ── The browser always gets the web layout ──────────────────────────────
+    //
+    // `kIsWeb` alone, no width test, for the reason spelled out in
+    // EditProfileScreen: a width test hands narrow BROWSERS the phone layout,
+    // and the phone layout is built for the app — proportional type sized off a
+    // 480px clamp, a back chevron for a screen you pushed, a pull-to-refresh
+    // gesture a mouse cannot make. The web layout collapses on its own via
+    // [AccountPageBody]'s `stack` flag, so it handles a narrow window without
+    // borrowing any of that.
+    if (kIsWeb) return _buildWebScaffold();
+
     final w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
     return Scaffold(
       backgroundColor: const Color(0xFFF3F4F6),
@@ -891,7 +908,7 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
               decoration: BoxDecoration(
                 color: const Color(0xFFF3F4F6),
                 borderRadius: BorderRadius.circular(w * 0.025),
-                border: Border.all(color: AppColors.stroke),
+                border: Border.all(color: CitizenUi.sharedStroke),
               ),
               child: Icon(
                 Icons.arrow_back_ios_rounded,
@@ -915,6 +932,21 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
     );
   }
 
+  /// Switches tab and resets both filters.
+  ///
+  /// Pure extraction of what the mobile tab strip's `onTap` already did, so the
+  /// web tab bar cannot drift from it — same three assignments, same
+  /// `_markTabSeen` call, same order.
+  void _selectTab(int i) {
+    setState(() {
+      _tab = i;
+      _filter = 'all';
+      _replyFilter = 'all';
+    });
+    // Opening Suggestions/Feedback clears its unseen dot.
+    if (i == 1 || i == 2) _markTabSeen(i);
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
   // TAB BAR
   // ─────────────────────────────────────────────────────────────────────────
@@ -935,15 +967,7 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
               final isActive = _tab == i;
               return Expanded(
                 child: GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      _tab = i;
-                      _filter = 'all';
-                      _replyFilter = 'all';
-                    });
-                    // Opening Suggestions/Feedback clears its unseen dot.
-                    if (i == 1 || i == 2) _markTabSeen(i);
-                  },
+                  onTap: () => _selectTab(i),
                   child: Container(
                     color: Colors.transparent,
                     padding: EdgeInsets.symmetric(vertical: w * 0.03),
@@ -1023,7 +1047,7 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
               );
             }),
           ),
-          Divider(height: 1, color: AppColors.stroke),
+          Divider(height: 1, color: CitizenUi.sharedStroke),
         ],
       ),
     );
@@ -1293,7 +1317,10 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
                         runSpacing: w * 0.012,
                         crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
-                          _metaId(w, 'RPT-${r.id.substring(0, 8).toUpperCase()}'),
+                          _metaId(
+                            w,
+                            'RPT-${r.id.substring(0, 8).toUpperCase()}',
+                          ),
                           if (r.barangay != null && r.barangay!.isNotEmpty)
                             _metaItem(
                               w,
@@ -1420,7 +1447,10 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
                         runSpacing: w * 0.012,
                         crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
-                          _metaId(w, 'SGS-${s.id.substring(0, 8).toUpperCase()}'),
+                          _metaId(
+                            w,
+                            'SGS-${s.id.substring(0, 8).toUpperCase()}',
+                          ),
                           _metaItem(
                             w,
                             Icons.calendar_today_outlined,
@@ -1536,7 +1566,10 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
                             Icons.calendar_today_outlined,
                             _fmt(f.visitDate),
                           ),
-                          _metaId(w, 'FBK-${f.id.substring(0, 8).toUpperCase()}'),
+                          _metaId(
+                            w,
+                            'FBK-${f.id.substring(0, 8).toUpperCase()}',
+                          ),
                           if (f.isAnonymous) _buildAnonBadge(w),
                         ],
                       ),
@@ -1628,7 +1661,11 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
                 ),
               ),
             )
-          : Icon(icon ?? Icons.business_rounded, size: size * 0.5, color: color),
+          : Icon(
+              icon ?? Icons.business_rounded,
+              size: size * 0.5,
+              color: color,
+            ),
     );
   }
 
@@ -1680,7 +1717,7 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
       decoration: BoxDecoration(
         color: const Color(0xFFF3F4F6),
         borderRadius: BorderRadius.circular(w * 0.05),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        border: Border.all(color: CitizenUi.sharedBorder),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1969,6 +2006,687 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
       ),
     ),
   );
+
+  // ═════════════════════════════════════════════════════════════════════════
+  //  WEB
+  //
+  //  Reached only from the `kIsWeb` branch of build(). Everything above this
+  //  line is the mobile app's and is untouched: this section adds a second
+  //  layout over the SAME state, filters, realtime subscription and deep-link
+  //  highlight, and never changes any of them.
+  // ═════════════════════════════════════════════════════════════════════════
+
+  /// True while a manual web refresh is in flight, so the Refresh button can
+  /// show it. Deliberately separate from `_loading`: a refresh must NOT tear
+  /// the list down to a skeleton, because the rows you are looking at are still
+  /// valid until the new ones land.
+  bool _webRefreshing = false;
+
+  Future<void> _webRefresh() async {
+    if (_webRefreshing) return;
+    setState(() => _webRefreshing = true);
+    await _fetchAll(showSpinner: false);
+    if (mounted) setState(() => _webRefreshing = false);
+  }
+
+  Widget _buildWebScaffold() {
+    // No ResponsivePageBody, and so no `shellTitle` — passing one wraps the
+    // page in SettingsWebShell's 600px column beside a decorative brand panel,
+    // which is right for a standalone route and wrong inside a pane that
+    // already has a top nav and a left rail.
+    return Scaffold(
+      backgroundColor: CitizenUi.pageBg,
+      body: SafeArea(
+        // Not MySubmissionsBodySkeleton — that one draws the MOBILE card at
+        // `w * 0.05` radii with no page header at all, so it promised a shape
+        // this layout never produces. [AccountPageSkeleton] is built from the
+        // same AccountPageBody/AccountCard the real page is, and `tabs`,
+        // `chips` and `cards` mirror the three things below it one for one.
+        child: _loading
+            ? const AccountPageSkeleton(tabs: true, chips: true, cards: 4)
+            : AccountPageBody(builder: _buildWebBody),
+      ),
+    );
+  }
+
+  Widget _buildWebBody(BuildContext context, bool stack) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const AccountPageTitle(
+          title: 'My Submissions',
+          subtitle:
+              'Everything you have filed — reports, suggestions and feedback — '
+              'and how the LGU responded.',
+        ),
+        AccountTabBar(
+          index: _tab,
+          stack: stack,
+          onChanged: _selectTab,
+          trailing: _buildWebRefreshButton(),
+          tabs: [
+            AccountTab('Reports', count: _reports.length),
+            AccountTab(
+              'Suggestions',
+              count: _suggestions.length,
+              dot: _unseenSuggestion,
+            ),
+            AccountTab(
+              'Feedback',
+              count: _feedbacks.length,
+              dot: _unseenFeedback,
+            ),
+          ],
+        ),
+        if (_hasError) ...[
+          const SizedBox(height: 18),
+          AccountEmptyState(
+            icon: Icons.cloud_off_rounded,
+            title: 'Could not load submissions',
+            message:
+                'Something went wrong reaching the server. Check your '
+                'connection and try again.',
+            actionLabel: 'Try again',
+            onAction: _fetchAll,
+          ),
+        ] else ...[
+          const SizedBox(height: 16),
+          AccountChipRow(
+            value: _tab == 0 ? _filter : _replyFilter,
+            onChanged: (v) => setState(() {
+              if (_tab == 0) {
+                _filter = v;
+              } else {
+                _replyFilter = v;
+              }
+            }),
+            chips: _tab == 0
+                ? const [
+                    AccountChip('all', 'All'),
+                    AccountChip('pending', 'Pending'),
+                    AccountChip('in_progress', 'In Progress'),
+                    AccountChip('resolved', 'Resolved'),
+                  ]
+                : const [
+                    AccountChip('all', 'All'),
+                    AccountChip('replied', 'Replied'),
+                    AccountChip('awaiting', 'No reply yet'),
+                  ],
+          ),
+          _buildWebContent(stack),
+        ],
+      ],
+    );
+  }
+
+  /// Web's replacement for pull-to-refresh, which needs a finger. Realtime
+  /// already pushes changes, so this is a reassurance control rather than the
+  /// only way to see a new reply — which is why it is quiet and secondary.
+  Widget _buildWebRefreshButton() {
+    return OutlinedButton.icon(
+      onPressed: _webRefreshing ? null : _webRefresh,
+      style: accountSecondaryButtonStyle().copyWith(
+        padding: const WidgetStatePropertyAll(
+          EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        ),
+      ),
+      icon: _webRefreshing
+          ? const SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.refresh_rounded, size: 16),
+      label: const Text('Refresh'),
+    );
+  }
+
+  // ── Lists ─────────────────────────────────────────────────────────────────
+  //
+  // A Column, not a ListView. [AccountPageBody] already owns the page's one
+  // scroller, and nesting a second one inside it is both an unbounded-height
+  // error and the wrong behaviour — a list that scrolls independently of the
+  // page it is on. Building every row also FIXES the deep-link highlight: a
+  // ListView.builder never builds an off-screen row, so `flashHighlight` could
+  // find no context to scroll to; a Column always has one.
+
+  Widget _buildWebContent(bool stack) {
+    return switch (_tab) {
+      0 => _buildWebReportsList(stack),
+      1 => _buildWebSuggestionsList(stack),
+      2 => _buildWebFeedbackList(stack),
+      _ => const SizedBox.shrink(),
+    };
+  }
+
+  Widget _buildWebList(List<Widget> cards) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      for (var i = 0; i < cards.length; i++) ...[
+        SizedBox(height: i == 0 ? 18 : 12),
+        cards[i],
+      ],
+    ],
+  );
+
+  Widget _buildWebEmpty({
+    required IconData icon,
+    required String title,
+    required String message,
+  }) => Padding(
+    padding: const EdgeInsets.only(top: 18),
+    child: AccountEmptyState(icon: icon, title: title, message: message),
+  );
+
+  Widget _buildWebReportsList(bool stack) {
+    final list = _filteredReports;
+    if (list.isEmpty) {
+      return _buildWebEmpty(
+        icon: Icons.flag_outlined,
+        title: 'No reports found',
+        message: _filter != 'all'
+            ? 'No reports with this status. Try a different filter.'
+            : 'You have not submitted any reports yet.',
+      );
+    }
+    return _buildWebList([for (final r in list) _buildWebReportCard(r, stack)]);
+  }
+
+  Widget _buildWebSuggestionsList(bool stack) {
+    final list = _filteredSuggestions;
+    if (list.isEmpty) {
+      return _buildWebEmpty(
+        icon: Icons.lightbulb_outline_rounded,
+        title: 'No suggestions found',
+        message: _replyFilter != 'all'
+            ? 'No suggestions in this filter. Try a different one.'
+            : 'You have not submitted any suggestions yet.',
+      );
+    }
+    return _buildWebList([
+      for (final s in list) _buildWebSuggestionCard(s, stack),
+    ]);
+  }
+
+  Widget _buildWebFeedbackList(bool stack) {
+    final list = _filteredFeedbacks;
+    if (list.isEmpty) {
+      return _buildWebEmpty(
+        icon: Icons.star_outline_rounded,
+        title: 'No feedback found',
+        message: _replyFilter != 'all'
+            ? 'No feedback in this filter. Try a different one.'
+            : 'You have not submitted any feedback yet.',
+      );
+    }
+    return _buildWebList([
+      for (final f in list) _buildWebFeedbackCard(f, stack),
+    ]);
+  }
+
+  // ── Card shell ────────────────────────────────────────────────────────────
+
+  /// The surface every web submission card sits on: [AccountCard]'s colour,
+  /// radius and hairline, plus a hover state and the deep-link flash.
+  ///
+  /// Not [AccountCard] itself, because the highlight has to animate the whole
+  /// decoration — border, wash and glow together — which means one
+  /// AnimatedContainer owning it rather than a Container that swaps children.
+  Widget _buildWebCard({
+    Key? cardKey,
+    bool highlighted = false,
+    required bool stack,
+    required VoidCallback onTap,
+    required Widget child,
+  }) {
+    return AnimatedContainer(
+      key: cardKey,
+      duration: kHighlightFade,
+      decoration: highlighted
+          ? highlightDecoration(
+              radius: kAccountRadius,
+              accent: CitizenUi.accent,
+            )
+          : BoxDecoration(
+              color: CitizenUi.surface,
+              borderRadius: BorderRadius.circular(kAccountRadius),
+              border: Border.all(color: CitizenUi.border),
+            ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(kAccountRadius),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(kAccountRadius),
+          child: Padding(
+            padding: EdgeInsets.all(stack ? 16 : 18),
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Cards ─────────────────────────────────────────────────────────────────
+
+  Widget _buildWebReportCard(_Report r, bool stack) {
+    final cat = _reportCats[r.category] ?? _reportCats['others']!;
+    final label = r.category == 'others' && r.categoryOther != null
+        ? r.categoryOther!
+        : cat.label;
+    final status = _statusCfg(r.status);
+
+    return _buildWebCard(
+      stack: stack,
+      onTap: () => _openReportDetail(r),
+      child: _webCardLayout(
+        stack: stack,
+        leading: _webIconChip(asset: cat.asset, color: cat.color),
+        title: label,
+        badge: _webStatusBadge(status),
+        meta: [
+          _webMetaId('RPT-${r.id.substring(0, 8).toUpperCase()}'),
+          if (r.barangay != null && r.barangay!.isNotEmpty)
+            _webMetaItem(
+              Icons.location_on_outlined,
+              r.barangay!,
+              maxWidth: 200,
+            ),
+          _webMetaItem(Icons.calendar_today_outlined, _fmt(r.createdAt)),
+          if (r.mediaCount > 0)
+            _webMetaItem(
+              Icons.attach_file_rounded,
+              '${r.mediaCount} ${r.mediaCount == 1 ? 'file' : 'files'}',
+            ),
+          if (r.isAnonymous) _webAnonBadge(),
+        ],
+        body: r.remarks,
+      ),
+    );
+  }
+
+  Widget _buildWebSuggestionCard(_Suggestion s, bool stack) {
+    final cat = _suggestionCats[s.category] ?? _suggestionCats['others']!;
+    final label = s.category == 'others' && s.categoryOther != null
+        ? s.categoryOther!
+        : cat.label;
+
+    return _buildWebCard(
+      cardKey: highlightKey(s.id),
+      highlighted: isHighlighted(s.id),
+      stack: stack,
+      onTap: () => _openSuggestionDetail(context, s, label),
+      child: _webCardLayout(
+        stack: stack,
+        leading: _webIconChip(asset: cat.asset, color: cat.color),
+        title: label,
+        badge: s.hasReply
+            ? _webRepliedBadge()
+            : s.isClosed
+            ? _webClosedBadge()
+            : null,
+        meta: [
+          _webMetaId('SGS-${s.id.substring(0, 8).toUpperCase()}'),
+          _webMetaItem(Icons.calendar_today_outlined, _fmt(s.createdAt)),
+          if (s.isAnonymous) _webAnonBadge(),
+        ],
+        body: s.details,
+        footer: s.hasReply
+            ? _webResponseBlock(
+                s.adminResponse!,
+                s.reviewedAt,
+                responderPhotoUrl: s.responderPhotoUrl,
+              )
+            : null,
+      ),
+    );
+  }
+
+  Widget _buildWebFeedbackCard(_Feedback f, bool stack) {
+    final office = _officeCfg[f.officeId];
+
+    return _buildWebCard(
+      cardKey: highlightKey(f.id),
+      highlighted: isHighlighted(f.id),
+      stack: stack,
+      onTap: () => _openFeedbackDetail(context, f),
+      child: _webCardLayout(
+        stack: stack,
+        leading: _webIconChip(
+          icon: office?.icon ?? Icons.business_rounded,
+          color: office?.color ?? CitizenUi.accent,
+        ),
+        title: f.officeLabel,
+        badge: f.hasReply
+            ? _webRepliedBadge()
+            : f.isClosed
+            ? _webClosedBadge()
+            : null,
+        subtitle: f.serviceName,
+        meta: [
+          _webStars(f.rating),
+          _webMetaItem(Icons.calendar_today_outlined, _fmt(f.visitDate)),
+          _webMetaId('FBK-${f.id.substring(0, 8).toUpperCase()}'),
+          if (f.isAnonymous) _webAnonBadge(),
+        ],
+        body: f.comment,
+        footer: f.hasReply
+            ? _webResponseBlock(
+                f.adminResponse!,
+                f.reviewedAt,
+                responderPhotoUrl: f.responderPhotoUrl,
+              )
+            : null,
+      ),
+    );
+  }
+
+  /// The one arrangement all three web cards use, so a report, a suggestion and
+  /// a feedback row cannot end up three different shapes: glyph, then title
+  /// with an optional state pill, an optional service line, a wrapping meta
+  /// line, an optional two-line excerpt, and an optional reply block.
+  Widget _webCardLayout({
+    required bool stack,
+    required Widget leading,
+    required String title,
+    required List<Widget> meta,
+    Widget? badge,
+    String? subtitle,
+    String? body,
+    Widget? footer,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            leading,
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            height: 1.3,
+                            color: CitizenUi.textPrimary,
+                          ),
+                        ),
+                      ),
+                      if (badge != null) ...[const SizedBox(width: 10), badge],
+                    ],
+                  ),
+                  if (subtitle != null && subtitle.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        color: CitizenUi.textFaint,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 9),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 7,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: meta,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        if (body != null && body.trim().isNotEmpty) ...[
+          SizedBox(height: stack ? 12 : 13),
+          Padding(
+            // Indented to the title's left edge, so the excerpt reads as part
+            // of the row rather than as a caption under the whole card.
+            padding: EdgeInsets.only(left: stack ? 0 : 58),
+            child: Text(
+              body,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 13,
+                height: 1.5,
+                color: CitizenUi.textSecondary,
+              ),
+            ),
+          ),
+        ],
+        if (footer != null) ...[const SizedBox(height: 14), footer],
+      ],
+    );
+  }
+
+  // ── Web card parts ────────────────────────────────────────────────────────
+  //
+  // Fixed sizes, not the mobile helpers' `w * 0.0xx`. Those multipliers are
+  // read off a width clamped to 480, so on a 880px page every glyph, pill and
+  // caption would arrive at phone scale regardless of the room available.
+
+  Widget _webIconChip({String? asset, IconData? icon, required Color color}) {
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            color.withValues(alpha: 0.18),
+            color.withValues(alpha: 0.08),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.22)),
+      ),
+      child: asset != null
+          ? Padding(
+              padding: const EdgeInsets.all(9),
+              child: Image.asset(
+                asset,
+                fit: BoxFit.contain,
+                errorBuilder: (_, _, _) =>
+                    Icon(Icons.category_rounded, size: 21, color: color),
+              ),
+            )
+          : Icon(icon ?? Icons.business_rounded, size: 21, color: color),
+    );
+  }
+
+  Widget _webPill({
+    IconData? icon,
+    Color? dot,
+    required String label,
+    required Color fg,
+    required Color bg,
+    required Color border,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (dot != null) ...[
+            Container(
+              width: 6,
+              height: 6,
+              decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 6),
+          ] else if (icon != null) ...[
+            Icon(icon, size: 12, color: fg),
+            const SizedBox(width: 5),
+          ],
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w700,
+              color: fg,
+              letterSpacing: 0.1,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _webStatusBadge(
+    ({Color bg, Color border, Color dot, Color text, String label}) s,
+  ) => _webPill(
+    dot: s.dot,
+    label: s.label,
+    fg: s.text,
+    bg: s.bg,
+    border: s.border,
+  );
+
+  Widget _webRepliedBadge() => _webPill(
+    icon: Icons.mark_chat_read_rounded,
+    label: 'Replied',
+    fg: CitizenUi.success,
+    bg: const Color(0xFFECFDF5),
+    border: AppColors.green.withValues(alpha: 0.45),
+  );
+
+  Widget _webClosedBadge() => _webPill(
+    icon: Icons.check_circle_outline_rounded,
+    label: 'Closed',
+    fg: CitizenUi.textMuted,
+    bg: CitizenUi.subtle,
+    border: CitizenUi.border,
+  );
+
+  Widget _webAnonBadge() => _webPill(
+    icon: Icons.person_off_rounded,
+    label: 'Anonymous',
+    fg: CitizenUi.textMuted,
+    bg: CitizenUi.subtle,
+    border: CitizenUi.border,
+  );
+
+  Widget _webMetaItem(IconData icon, String text, {double? maxWidth}) {
+    final label = Text(
+      text,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: const TextStyle(
+        fontSize: 12.5,
+        fontWeight: FontWeight.w500,
+        color: CitizenUi.textFaint,
+      ),
+    );
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 13, color: CitizenUi.textFaint),
+        const SizedBox(width: 5),
+        maxWidth == null
+            ? label
+            : ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: maxWidth),
+                child: label,
+              ),
+      ],
+    );
+  }
+
+  Widget _webMetaId(String id) => Text(
+    id,
+    style: const TextStyle(
+      fontSize: 11.5,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 0.4,
+      color: CitizenUi.textFaint,
+    ),
+  );
+
+  Widget _webStars(int rating) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: List.generate(
+      5,
+      (i) => Icon(
+        i < rating ? Icons.star_rounded : Icons.star_outline_rounded,
+        size: 16,
+        color: i < rating ? CitizenUi.warn : const Color(0xFFD1D5DB),
+      ),
+    ),
+  );
+
+  Widget _webResponseBlock(
+    String response,
+    DateTime? reviewedAt, {
+    String? responderPhotoUrl,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: CitizenUi.accentWash,
+        borderRadius: BorderRadius.circular(CitizenUi.controlRadius),
+        border: Border.all(color: CitizenUi.accent.withValues(alpha: 0.20)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              _ResponderAvatar(photoUrl: responderPhotoUrl, size: 22),
+              const SizedBox(width: 9),
+              const Text(
+                'LGU Response',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: CitizenUi.accent,
+                ),
+              ),
+              if (reviewedAt != null) ...[
+                const Spacer(),
+                Text(
+                  _fmt(reviewedAt),
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    color: CitizenUi.textFaint,
+                  ),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 9),
+          Text(
+            response,
+            style: const TextStyle(
+              fontSize: 13,
+              height: 1.5,
+              color: CitizenUi.textPrimary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1983,12 +2701,22 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
 const _kSheetText = Color(0xFF1F2937);
 const _kSheetMuted = Color(0xFF6B7280);
 const _kSheetHint = Color(0xFF9CA3AF);
-const _kSheetBorder = Color(0xFFE5E7EB);
+const _kSheetBorder = CitizenUi.sharedBorder;
 
 String _sheetDate(DateTime dt) {
   const m = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
   ];
   return '${m[dt.month - 1]} ${dt.day}, ${dt.year}';
 }
@@ -2037,6 +2765,12 @@ String _sheetDateTime(DateTime dt) {
 /// SliverAppBar carrying the short id, then centred content (max 760) whose
 /// sections stagger in with a fade + slide. Sized off a clamped width so it
 /// reads the same on phone, tablet and web. No bottom bar / chat agent.
+/// The measure both halves of a detail screen sit in.
+///
+/// It was already the body's cap, written inline as a bare 760; the hero now
+/// has to agree with it, so it gets a name.
+const double _kDetailMeasure = 760;
+
 class _DetailScaffold extends StatefulWidget {
   /// Small kicker above the title, e.g. 'Suggestion details'.
   final String kicker;
@@ -2115,12 +2849,28 @@ class _DetailScaffoldState extends State<_DetailScaffold>
       body: CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
-          _sliverAppBar(w),
+          // ── No blue band on web ─────────────────────────────────────────
+          //
+          // On the phone the hero IS the screen's top: it fills the notch area,
+          // carries the back gesture's target and gives a pushed screen its
+          // own identity. In a desktop pane none of that holds. It became a
+          // 200px slab of saturated colour sitting directly under a top nav
+          // that is already blue, and the page under it is white cards on grey
+          // — so the band read as chrome that had wandered into the content,
+          // not as the header of the thing you opened.
+          //
+          // The same four facts — where you came from, what kind of record
+          // this is, its name, its state — are what [AccountPageTitle] carries
+          // on every other page in this section.
+          if (kIsWeb)
+            SliverToBoxAdapter(child: _webHeader(w))
+          else
+            _sliverAppBar(w),
           SliverToBoxAdapter(
             child: Align(
               alignment: Alignment.topCenter,
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 760),
+                constraints: const BoxConstraints(maxWidth: _kDetailMeasure),
                 child: Padding(
                   padding: EdgeInsets.fromLTRB(
                     w * .04,
@@ -2142,6 +2892,49 @@ class _DetailScaffoldState extends State<_DetailScaffold>
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// The web header: chevron, name, kind and id, then the state pills.
+  ///
+  /// Built inside the SAME 760 box the sections below use, rather than through
+  /// [AccountPageBody], because this screen's body already owns that measure
+  /// and its own padding. Two different measures on one page is exactly the
+  /// misalignment the blue band had.
+  Widget _webHeader(double w) {
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: _kDetailMeasure),
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(w * .04, 24, w * .04, 0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AccountPageTitle(
+                title: widget.heroTitle,
+                subtitle: '${widget.kicker} · ${widget.shortId}',
+                onBack: () => Navigator.pop(context),
+                backLabel: 'Back to My Submissions',
+              ),
+              if (widget.pills.isNotEmpty)
+                Padding(
+                  // Indented to the title's left edge, past the chevron, so
+                  // the header reads as one block rather than as a heading
+                  // with a stray row of pills beneath it.
+                  padding: const EdgeInsets.only(
+                    left: kAccountBackChevron + kAccountBackChevronGap,
+                  ),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: widget.pills,
+                  ),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -2243,7 +3036,12 @@ class _DetailScaffoldState extends State<_DetailScaffold>
               left: 0,
               right: 0,
               child: Padding(
-                padding: EdgeInsets.fromLTRB(w * .04, w * .08, w * .04, w * .05),
+                padding: EdgeInsets.fromLTRB(
+                  w * .04,
+                  w * .08,
+                  w * .04,
+                  w * .05,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
@@ -2289,59 +3087,113 @@ class _DetailScaffoldState extends State<_DetailScaffold>
 }
 
 /// Translucent pill sitting on the blue hero — status / anonymity.
-Widget _heroPill(double w, IconData icon, String label) => Container(
-  padding: EdgeInsets.symmetric(horizontal: w * .028, vertical: w * .014),
-  decoration: BoxDecoration(
-    color: Colors.white.withValues(alpha: 0.15),
-    borderRadius: BorderRadius.circular(w * .05),
-    border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
-  ),
-  child: Row(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      Icon(icon, size: w * .032, color: Colors.white),
-      SizedBox(width: w * .015),
-      Text(
-        label,
-        style: TextStyle(
-          fontSize: w * .028,
-          fontWeight: FontWeight.w700,
-          color: Colors.white,
+///
+/// On web the blue hero is gone (see [_DetailScaffoldState._buildWeb]), so a
+/// white-on-white pill would be invisible. The web pill keeps the mobile one's
+/// uniform treatment — every pill the same weight, whatever it says — just
+/// inverted onto the light card it now sits on.
+/// One detail-view measurement, in whichever system is in play.
+///
+/// The detail screens size everything off `w`, a width clamped to 480. In the
+/// app that is right — it IS roughly the screen. In a browser it is a constant:
+/// the clamp pins it at 480 however much room there is, so every glyph, gap and
+/// caption arrives at phone scale inside an 880px card, next to kit type set at
+/// 13.5. This picks the kit's fixed value there instead.
+///
+/// `kIsWeb` is a compile-time constant, so the app still computes exactly
+/// `w * factor` and the mobile detail screens are unchanged.
+double _dm(double w, double factor, double web) => kIsWeb ? web : w * factor;
+
+/// On web there is no blue band for a white pill to sit on, so it inverts.
+/// Keeps the mobile treatment's one rule — every pill the same weight,
+/// whatever it says — just onto a light ground.
+Widget _heroPill(double w, IconData icon, String label) => kIsWeb
+    ? Container(
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+        decoration: BoxDecoration(
+          color: CitizenUi.subtle,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: CitizenUi.border),
         ),
-      ),
-    ],
-  ),
-);
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 13, color: CitizenUi.textMuted),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: CitizenUi.textMuted,
+              ),
+            ),
+          ],
+        ),
+      )
+    : Container(
+        padding: EdgeInsets.symmetric(horizontal: w * .028, vertical: w * .014),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(w * .05),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: w * .032, color: Colors.white),
+            SizedBox(width: w * .015),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: w * .028,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              ),
+            ),
+          ],
+        ),
+      );
 
 /// Blue section label above each card — mirrors ReportDetailScreen.
-Widget _sectionLabel(double w, String label) => Text(
-  label,
-  style: TextStyle(
-    fontSize: w * .036,
-    fontWeight: FontWeight.w700,
-    color: AppColors.primaryBlue,
-    letterSpacing: 0.2,
-  ),
-);
+///
+/// Grey small-caps on web, for the reason [AccountSectionLabel] documents: a
+/// label names the group below it and should not outweigh it. These two
+/// functions and [_heroPill] are the only presentation the detail sections
+/// share, so branching them converts every section of both detail screens
+/// without touching the sections themselves.
+Widget _sectionLabel(double w, String label) => kIsWeb
+    ? AccountSectionLabel(label)
+    : Text(
+        label,
+        style: TextStyle(
+          fontSize: w * .036,
+          fontWeight: FontWeight.w700,
+          color: AppColors.primaryBlue,
+          letterSpacing: 0.2,
+        ),
+      );
 
 /// The white rounded card every detail section sits in.
-Widget _detailCard(double w, {required Widget child}) => Container(
-  width: double.infinity,
-  padding: EdgeInsets.all(w * .04),
-  decoration: BoxDecoration(
-    color: Colors.white,
-    borderRadius: BorderRadius.circular(w * .04),
-    border: Border.all(color: const Color(0xFFE5E7EB)),
-    boxShadow: [
-      BoxShadow(
-        color: Colors.black.withValues(alpha: 0.05),
-        blurRadius: 10,
-        offset: const Offset(0, 3),
-      ),
-    ],
-  ),
-  child: child,
-);
+Widget _detailCard(double w, {required Widget child}) => kIsWeb
+    ? AccountCard(child: child)
+    : Container(
+        width: double.infinity,
+        padding: EdgeInsets.all(w * .04),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(w * .04),
+          border: Border.all(color: CitizenUi.sharedBorder),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: child,
+      );
 
 /// One real event on the submission timeline.
 class _TimelineEvent {
@@ -2391,8 +3243,8 @@ class _TimelineCard extends StatelessWidget {
           Column(
             children: [
               Container(
-                width: w * .075,
-                height: w * .075,
+                width: _dm(w, .075, 34),
+                height: _dm(w, .075, 34),
                 decoration: BoxDecoration(
                   color: e.done
                       ? e.color.withValues(alpha: 0.12)
@@ -2400,40 +3252,40 @@ class _TimelineCard extends StatelessWidget {
                   shape: BoxShape.circle,
                   border: Border.all(color: tint, width: 1.5),
                 ),
-                child: Icon(e.icon, size: w * .038, color: tint),
+                child: Icon(e.icon, size: _dm(w, .038, 16), color: tint),
               ),
               if (!last)
                 Expanded(
                   child: Container(
                     width: 2,
-                    margin: EdgeInsets.symmetric(vertical: w * .008),
+                    margin: EdgeInsets.symmetric(vertical: _dm(w, .008, 4)),
                     color: const Color(0xFFE5E7EB),
                   ),
                 ),
             ],
           ),
-          SizedBox(width: w * .03),
+          SizedBox(width: _dm(w, .03, 14)),
           Expanded(
             child: Padding(
-              padding: EdgeInsets.only(bottom: last ? 0 : w * .045),
+              padding: EdgeInsets.only(bottom: last ? 0 : _dm(w, .045, 20)),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     e.label,
                     style: TextStyle(
-                      fontSize: w * .033,
+                      fontSize: _dm(w, .033, 14),
                       fontWeight: FontWeight.w700,
                       color: e.done
                           ? const Color(0xFF1F2937)
                           : const Color(0xFF9CA3AF),
                     ),
                   ),
-                  SizedBox(height: w * .006),
+                  SizedBox(height: _dm(w, .006, 3)),
                   Text(
                     e.at == null ? 'Pending' : _sheetDateTime(e.at!),
                     style: TextStyle(
-                      fontSize: w * .028,
+                      fontSize: _dm(w, .028, 12.5),
                       color: const Color(0xFF9CA3AF),
                     ),
                   ),
@@ -2446,7 +3298,6 @@ class _TimelineCard extends StatelessWidget {
     );
   }
 }
-
 
 /// Responsive shimmer placeholder for the attachments grid while media loads.
 class _MediaSkeleton extends StatefulWidget {
@@ -2510,18 +3361,20 @@ Widget _sheetClosedBanner() => Container(
   decoration: BoxDecoration(
     color: const Color(0xFFF3F4F6),
     borderRadius: BorderRadius.circular(12),
-    border: Border.all(color: const Color(0xFFE5E7EB)),
+    border: Border.all(color: CitizenUi.sharedBorder),
   ),
-  child: const Row(children: [
-    Icon(Icons.check_circle_outline_rounded, size: 18, color: _kSheetMuted),
-    SizedBox(width: 8),
-    Expanded(
-      child: Text(
-        'This submission has been closed by the LGU.',
-        style: TextStyle(fontSize: 12.5, height: 1.4, color: _kSheetMuted),
+  child: const Row(
+    children: [
+      Icon(Icons.check_circle_outline_rounded, size: 18, color: _kSheetMuted),
+      SizedBox(width: 8),
+      Expanded(
+        child: Text(
+          'This submission has been closed by the LGU.',
+          style: TextStyle(fontSize: 12.5, height: 1.4, color: _kSheetMuted),
+        ),
       ),
-    ),
-  ]),
+    ],
+  ),
 );
 
 Widget _sheetSectionTitle(String text) => Padding(
@@ -2591,24 +3444,36 @@ class _SheetReplyBlock extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(children: [
-            _ResponderAvatar(photoUrl: responderPhotoUrl, size: 22),
-            const SizedBox(width: 8),
-            const Text('LGU Response',
+          Row(
+            children: [
+              _ResponderAvatar(photoUrl: responderPhotoUrl, size: 22),
+              const SizedBox(width: 8),
+              const Text(
+                'LGU Response',
                 style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.primaryBlue)),
-            if (reviewedAt != null) ...[
-              const Spacer(),
-              Text(_sheetDate(reviewedAt!),
-                  style: const TextStyle(fontSize: 11.5, color: _kSheetHint)),
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.primaryBlue,
+                ),
+              ),
+              if (reviewedAt != null) ...[
+                const Spacer(),
+                Text(
+                  _sheetDate(reviewedAt!),
+                  style: const TextStyle(fontSize: 11.5, color: _kSheetHint),
+                ),
+              ],
             ],
-          ]),
+          ),
           const SizedBox(height: 8),
-          Text(response,
-              style: const TextStyle(
-                  fontSize: 13.5, height: 1.5, color: _kSheetText)),
+          Text(
+            response,
+            style: const TextStyle(
+              fontSize: 13.5,
+              height: 1.5,
+              color: _kSheetText,
+            ),
+          ),
         ],
       ),
     );
@@ -2696,7 +3561,8 @@ class _SuggestionDetailScreenState extends State<_SuggestionDetailScreen> {
           _heroPill(w, Icons.check_circle_outline_rounded, 'Closed')
         else
           _heroPill(w, Icons.schedule_rounded, 'No reply yet'),
-        if (s.isAnonymous) _heroPill(w, Icons.lock_outline_rounded, 'Anonymous'),
+        if (s.isAnonymous)
+          _heroPill(w, Icons.lock_outline_rounded, 'Anonymous'),
       ],
       sections: [
         // ── Timeline of real events ──
@@ -2740,13 +3606,13 @@ class _SuggestionDetailScreenState extends State<_SuggestionDetailScreen> {
                     ? '—'
                     : s.details!,
                 style: TextStyle(
-                  fontSize: w * .033,
+                  fontSize: _dm(w, .033, 13.5),
                   height: 1.55,
                   color: _kSheetText,
                 ),
               ),
               if (hasLocation) ...[
-                SizedBox(height: w * .045),
+                SizedBox(height: _dm(w, .045, 20)),
                 _sheetSectionTitle('LOCATION'),
                 _SheetLocation(
                   barangay: s.barangay,
@@ -2755,7 +3621,7 @@ class _SuggestionDetailScreenState extends State<_SuggestionDetailScreen> {
                   longitude: s.longitude,
                 ),
               ],
-              SizedBox(height: w * .045),
+              SizedBox(height: _dm(w, .045, 20)),
               _sheetSectionTitle('ATTACHMENTS'),
               FutureBuilder<List<_SheetMedia>>(
                 future: _media,
@@ -2812,7 +3678,8 @@ class _FeedbackDetailScreen extends StatelessWidget {
     final aspects = <MapEntry<String, int>>[
       if (f.aspectStaff != null) MapEntry('Staff attitude', f.aspectStaff!),
       if (f.aspectWait != null) MapEntry('Wait time', f.aspectWait!),
-      if (f.aspectClarity != null) MapEntry('Process clarity', f.aspectClarity!),
+      if (f.aspectClarity != null)
+        MapEntry('Process clarity', f.aspectClarity!),
       if (f.aspectFacility != null) MapEntry('Facility', f.aspectFacility!),
     ];
     final media = [
@@ -2830,7 +3697,8 @@ class _FeedbackDetailScreen extends StatelessWidget {
           _heroPill(w, Icons.check_circle_outline_rounded, 'Closed')
         else
           _heroPill(w, Icons.schedule_rounded, 'No reply yet'),
-        if (f.isAnonymous) _heroPill(w, Icons.lock_outline_rounded, 'Anonymous'),
+        if (f.isAnonymous)
+          _heroPill(w, Icons.lock_outline_rounded, 'Anonymous'),
       ],
       sections: [
         // ── Timeline of real events ──
@@ -2872,21 +3740,21 @@ class _FeedbackDetailScreen extends StatelessWidget {
               Text(
                 f.serviceName.isEmpty ? '—' : f.serviceName,
                 style: TextStyle(
-                  fontSize: w * .033,
+                  fontSize: _dm(w, .033, 13.5),
                   height: 1.4,
                   color: _kSheetText,
                 ),
               ),
-              SizedBox(height: w * .045),
+              SizedBox(height: _dm(w, .045, 20)),
               _sheetSectionTitle('OVERALL RATING'),
               Row(
                 children: [
-                  _SheetStars(rating: f.rating, size: w * .05),
-                  SizedBox(width: w * .025),
+                  _SheetStars(rating: f.rating, size: _dm(w, .05, 20)),
+                  SizedBox(width: _dm(w, .025, 10)),
                   Text(
                     _ratingLabels[f.rating.clamp(0, 5)],
                     style: TextStyle(
-                      fontSize: w * .032,
+                      fontSize: _dm(w, .032, 13),
                       fontWeight: FontWeight.w600,
                       color: _kSheetMuted,
                     ),
@@ -2894,32 +3762,35 @@ class _FeedbackDetailScreen extends StatelessWidget {
                 ],
               ),
               if (aspects.isNotEmpty) ...[
-                SizedBox(height: w * .045),
+                SizedBox(height: _dm(w, .045, 20)),
                 _sheetSectionTitle('ASPECT RATINGS'),
                 Container(
                   decoration: BoxDecoration(
                     color: const Color(0xFFF9FAFB),
-                    borderRadius: BorderRadius.circular(w * .03),
+                    borderRadius: BorderRadius.circular(_dm(w, .03, 10)),
                     border: Border.all(color: _kSheetBorder),
                   ),
-                  padding: EdgeInsets.all(w * .01),
+                  padding: EdgeInsets.all(_dm(w, .01, 4)),
                   child: Column(
                     children: [
                       for (final a in aspects)
                         Padding(
-                          padding: EdgeInsets.all(w * .02),
+                          padding: EdgeInsets.all(_dm(w, .02, 8)),
                           child: Row(
                             children: [
                               Expanded(
                                 child: Text(
                                   a.key,
                                   style: TextStyle(
-                                    fontSize: w * .031,
+                                    fontSize: _dm(w, .031, 13),
                                     color: _kSheetMuted,
                                   ),
                                 ),
                               ),
-                              _SheetStars(rating: a.value, size: w * .036),
+                              _SheetStars(
+                                rating: a.value,
+                                size: _dm(w, .036, 15),
+                              ),
                             ],
                           ),
                         ),
@@ -2944,14 +3815,14 @@ class _FeedbackDetailScreen extends StatelessWidget {
                     ? 'No comment provided.'
                     : f.comment!,
                 style: TextStyle(
-                  fontSize: w * .033,
+                  fontSize: _dm(w, .033, 13.5),
                   height: 1.5,
                   color: (f.comment == null || f.comment!.trim().isEmpty)
                       ? _kSheetHint
                       : _kSheetText,
                 ),
               ),
-              SizedBox(height: w * .045),
+              SizedBox(height: _dm(w, .045, 20)),
               _sheetSectionTitle('PHOTOS'),
               if (media.isEmpty)
                 const Text(
@@ -2989,13 +3860,19 @@ class _SheetStars extends StatelessWidget {
     final c = rating <= 1
         ? AppColors.red
         : rating == 2
-            ? AppColors.orange
-            : const Color(0xFFF59E0B);
-    return Row(mainAxisSize: MainAxisSize.min, children: [
-      for (var i = 1; i <= 5; i++)
-        Icon(i <= rating ? Icons.star_rounded : Icons.star_outline_rounded,
-            size: size, color: i <= rating ? c : const Color(0xFFD1D5DB)),
-    ]);
+        ? AppColors.orange
+        : const Color(0xFFF59E0B);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 1; i <= 5; i++)
+          Icon(
+            i <= rating ? Icons.star_rounded : Icons.star_outline_rounded,
+            size: size,
+            color: i <= rating ? c : const Color(0xFFD1D5DB),
+          ),
+      ],
+    );
   }
 }
 
@@ -3004,22 +3881,34 @@ class _SheetLocation extends StatelessWidget {
   final String? address;
   final double? latitude;
   final double? longitude;
-  const _SheetLocation({this.barangay, this.address, this.latitude, this.longitude});
+  const _SheetLocation({
+    this.barangay,
+    this.address,
+    this.latitude,
+    this.longitude,
+  });
 
   @override
   Widget build(BuildContext context) {
     final rows = <Widget>[];
-    void add(IconData icon, String value) => rows.add(Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    void add(IconData icon, String value) => rows.add(
+      Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             Icon(icon, size: 16, color: AppColors.primaryBlue),
             const SizedBox(width: 8),
             Expanded(
-              child: Text(value,
-                  style: const TextStyle(fontSize: 13, color: _kSheetText)),
+              child: Text(
+                value,
+                style: const TextStyle(fontSize: 13, color: _kSheetText),
+              ),
             ),
-          ]),
-        ));
+          ],
+        ),
+      ),
+    );
     if (barangay != null && barangay!.isNotEmpty) {
       add(Icons.location_city_rounded, barangay!);
     }
@@ -3027,8 +3916,10 @@ class _SheetLocation extends StatelessWidget {
       add(Icons.signpost_rounded, address!);
     }
     if (latitude != null && longitude != null) {
-      add(Icons.my_location_rounded,
-          '${latitude!.toStringAsFixed(6)}, ${longitude!.toStringAsFixed(6)}');
+      add(
+        Icons.my_location_rounded,
+        '${latitude!.toStringAsFixed(6)}, ${longitude!.toStringAsFixed(6)}',
+      );
     }
     return Container(
       width: double.infinity,
@@ -3038,7 +3929,10 @@ class _SheetLocation extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: _kSheetBorder),
       ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: rows),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: rows,
+      ),
     );
   }
 }
@@ -3076,18 +3970,27 @@ class _MediaStrip extends StatelessWidget {
                 height: 88,
                 color: const Color(0xFFF3F4F6),
                 child: m.isVideo
-                    ? const Stack(fit: StackFit.expand, children: [
-                        ColoredBox(color: Color(0xFF1F2937)),
-                        Center(
-                          child: Icon(Icons.play_circle_fill_rounded,
-                              color: Colors.white70, size: 32),
-                        ),
-                      ])
-                    : Image.network(m.url,
+                    ? const Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          ColoredBox(color: Color(0xFF1F2937)),
+                          Center(
+                            child: Icon(
+                              Icons.play_circle_fill_rounded,
+                              color: Colors.white70,
+                              size: 32,
+                            ),
+                          ),
+                        ],
+                      )
+                    : Image.network(
+                        m.url,
                         fit: BoxFit.cover,
                         errorBuilder: (_, _, _) => const Icon(
-                            Icons.broken_image_rounded,
-                            color: _kSheetHint)),
+                          Icons.broken_image_rounded,
+                          color: _kSheetHint,
+                        ),
+                      ),
               ),
             ),
           ),
@@ -3105,27 +4008,31 @@ class _SheetImageDialog extends StatelessWidget {
     return Dialog(
       backgroundColor: Colors.transparent,
       insetPadding: EdgeInsets.zero,
-      child: Stack(children: [
-        Center(
-          child: InteractiveViewer(child: Image.network(url, fit: BoxFit.contain)),
-        ),
-        Positioned(
-          top: 40,
-          right: 16,
-          child: GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.5),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.close_rounded, color: Colors.white),
+      child: Stack(
+        children: [
+          Center(
+            child: InteractiveViewer(
+              child: Image.network(url, fit: BoxFit.contain),
             ),
           ),
-        ),
-      ]),
+          Positioned(
+            top: 40,
+            right: 16,
+            child: GestureDetector(
+              onTap: () => Navigator.pop(context),
+              child: Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.5),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.close_rounded, color: Colors.white),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -3146,14 +4053,17 @@ class _SheetVideoDialogState extends State<_SheetVideoDialog> {
   void initState() {
     super.initState();
     _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url));
-    _controller.initialize().then((_) {
-      if (!mounted) return;
-      setState(() => _ready = true);
-      _controller.play();
-    }).catchError((Object e) {
-      debugPrint('Sheet video init error: $e');
-      return null;
-    });
+    _controller
+        .initialize()
+        .then((_) {
+          if (!mounted) return;
+          setState(() => _ready = true);
+          _controller.play();
+        })
+        .catchError((Object e) {
+          debugPrint('Sheet video init error: $e');
+          return null;
+        });
   }
 
   @override
@@ -3167,47 +4077,49 @@ class _SheetVideoDialogState extends State<_SheetVideoDialog> {
     return Dialog(
       backgroundColor: Colors.transparent,
       insetPadding: EdgeInsets.zero,
-      child: Stack(children: [
-        Center(
-          child: _ready
-              ? AspectRatio(
-                  aspectRatio: _controller.value.aspectRatio,
-                  child: VideoPlayer(_controller),
-                )
-              : const CircularProgressIndicator(color: Colors.white),
-        ),
-        if (_ready)
+      child: Stack(
+        children: [
           Center(
+            child: _ready
+                ? AspectRatio(
+                    aspectRatio: _controller.value.aspectRatio,
+                    child: VideoPlayer(_controller),
+                  )
+                : const CircularProgressIndicator(color: Colors.white),
+          ),
+          if (_ready)
+            Center(
+              child: GestureDetector(
+                onTap: () => setState(() {
+                  _controller.value.isPlaying
+                      ? _controller.pause()
+                      : _controller.play();
+                }),
+                child: Container(
+                  color: Colors.transparent,
+                  width: double.infinity,
+                  height: double.infinity,
+                ),
+              ),
+            ),
+          Positioned(
+            top: 40,
+            right: 16,
             child: GestureDetector(
-              onTap: () => setState(() {
-                _controller.value.isPlaying
-                    ? _controller.pause()
-                    : _controller.play();
-              }),
+              onTap: () => Navigator.pop(context),
               child: Container(
-                color: Colors.transparent,
-                width: double.infinity,
-                height: double.infinity,
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.5),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.close_rounded, color: Colors.white),
               ),
             ),
           ),
-        Positioned(
-          top: 40,
-          right: 16,
-          child: GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.5),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.close_rounded, color: Colors.white),
-            ),
-          ),
-        ),
-      ]),
+        ],
+      ),
     );
   }
 }

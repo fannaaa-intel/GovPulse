@@ -12,6 +12,7 @@
 
 import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
+import '../../../core/theme/citizen_ui.dart';
 import 'web_constants.dart'; // kHeroBgBottom, kWebTwoPanelMinWidth
 import 'web_hero_panel.dart'; // WebHeroPanel
 import 'web_glass_card.dart'; // WebGlassSurface, WebGlassCard
@@ -38,7 +39,7 @@ class WebUi {
 
   // Surfaces
   static const Color pageBg = Color(0xFFF8F9FC);
-  static const Color divider = Color(0xFFE5E7EB);
+  static const Color divider = CitizenUi.sharedBorder;
 
   // Outlines (shared with WebOutlinedButton / OTP)
   static const Color outlineRest = Color(0xFFCBD2DE); // visible gray at rest

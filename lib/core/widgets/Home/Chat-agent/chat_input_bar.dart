@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'
     show HardwareKeyboard, KeyDownEvent, LogicalKeyboardKey;
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/theme/citizen_ui.dart';
 
 const _kTextPri = Color(0xFF111827);
 
@@ -30,7 +31,9 @@ class ChatInputBar extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        border: Border(top: BorderSide(color: AppColors.stroke, width: 1)),
+        border: Border(
+          top: BorderSide(color: CitizenUi.sharedStroke, width: 1),
+        ),
       ),
       padding: EdgeInsets.fromLTRB(
         width * 0.04,
@@ -47,7 +50,7 @@ class ChatInputBar extends StatelessWidget {
               decoration: BoxDecoration(
                 color: AppColors.inputBg,
                 borderRadius: BorderRadius.circular(width * 0.055),
-                border: Border.all(color: AppColors.stroke, width: 1),
+                border: Border.all(color: CitizenUi.sharedStroke, width: 1),
               ),
               child: Focus(
                 onKeyEvent: (node, event) {
@@ -61,35 +64,35 @@ class ChatInputBar extends StatelessWidget {
                   return KeyEventResult.ignored;
                 },
                 child: TextField(
-                key: _chatInputFieldKey,
-                controller: controller,
-                focusNode: focusNode,
-                maxLines: 4,
-                minLines: 1,
-                textInputAction: TextInputAction.newline,
-                keyboardType: TextInputType.multiline,
-                textCapitalization: TextCapitalization.sentences,
-                autocorrect: false,
-                enableSuggestions: false,
-                autofillHints: const [],
-                style: TextStyle(
-                  fontSize: width * 0.034,
-                  color: _kTextPri,
-                  height: 1.5,
-                ),
-                decoration: InputDecoration(
-                  hintText: 'Type a message…',
-                  hintStyle: TextStyle(
+                  key: _chatInputFieldKey,
+                  controller: controller,
+                  focusNode: focusNode,
+                  maxLines: 4,
+                  minLines: 1,
+                  textInputAction: TextInputAction.newline,
+                  keyboardType: TextInputType.multiline,
+                  textCapitalization: TextCapitalization.sentences,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  autofillHints: const [],
+                  style: TextStyle(
                     fontSize: width * 0.034,
-                    color: AppColors.hint,
+                    color: _kTextPri,
+                    height: 1.5,
                   ),
-                  border: InputBorder.none,
-                  contentPadding: EdgeInsets.symmetric(
-                    horizontal: width * 0.040,
-                    vertical: width * 0.024,
+                  decoration: InputDecoration(
+                    hintText: 'Type a message…',
+                    hintStyle: TextStyle(
+                      fontSize: width * 0.034,
+                      color: AppColors.hint,
+                    ),
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: width * 0.040,
+                      vertical: width * 0.024,
+                    ),
                   ),
                 ),
-              ),
               ),
             ),
           ),

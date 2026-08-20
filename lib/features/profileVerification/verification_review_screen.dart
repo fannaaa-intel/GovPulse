@@ -1,8 +1,12 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import '../../core/widgets/Home/Account/account_web_kit.dart';
+import '../../core/widgets/app_dialog.dart' show kWebDialogMaxWidth;
 import 'package:flutter/services.dart';
 import '../../core/router/legacy_nav.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/constants/aparri_barangays.dart';
+import '../../core/theme/citizen_ui.dart';
 
 class VerificationReviewScreen extends StatefulWidget {
   final String username;
@@ -38,7 +42,8 @@ class _UpperCaseTextFormatter extends TextInputFormatter {
   }
 }
 
-class _VerificationReviewScreenState extends State<VerificationReviewScreen> {
+class _VerificationReviewScreenState extends State<VerificationReviewScreen>
+    with SingleTickerProviderStateMixin {
   final _idController = TextEditingController();
   final _firstNameController = TextEditingController();
   final _middleNameController = TextEditingController();
@@ -55,9 +60,34 @@ class _VerificationReviewScreenState extends State<VerificationReviewScreen> {
   bool _showErrors = false;
   bool _showingBack = false; // toggle which side is previewed
 
+  // ── Entry animation ─────────────────────────────────────────────────────
+  // Identical to the six other wizard steps: 420ms, fade on easeOut and a
+  // 6%-of-height rise on easeOutCubic, started after the first frame.
+  //
+  // This was the only step without one, which is why its ROUTE slid instead -
+  // the movement had to come from somewhere. With the route now at
+  // Duration.zero like its neighbours, this is what makes arriving here read
+  // as an arrival: the frame appears at once, then the content rises into it.
+  late final AnimationController _entryCtrl;
+  late final Animation<double> _entryFade;
+  late final Animation<Offset> _entrySlide;
+
   @override
   void initState() {
     super.initState();
+
+    _entryCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 420),
+    );
+    _entryFade = CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOut);
+    _entrySlide = Tween<Offset>(
+      begin: const Offset(0, 0.06),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOutCubic));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _entryCtrl.forward();
+    });
 
     // ── Pre-fill from OCR ──────────────────────────────────────
     final d = widget.extractedData ?? {};
@@ -97,6 +127,7 @@ class _VerificationReviewScreenState extends State<VerificationReviewScreen> {
 
   @override
   void dispose() {
+    _entryCtrl.dispose();
     _scrollController.dispose();
     for (final c in [
       _idController,
@@ -185,7 +216,7 @@ class _VerificationReviewScreenState extends State<VerificationReviewScreen> {
     enabledBorder: OutlineInputBorder(
       borderRadius: BorderRadius.zero,
       borderSide: BorderSide(
-        color: error ? AppColors.red : AppColors.stroke,
+        color: error ? AppColors.red : CitizenUi.sharedStroke,
         width: error ? 1.5 : 1.0,
       ),
     ),
@@ -205,7 +236,16 @@ class _VerificationReviewScreenState extends State<VerificationReviewScreen> {
     Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       insetPadding: const EdgeInsets.symmetric(horizontal: 36),
-      child: Padding(
+      // WEB: cap the dialog. `insetPadding` alone only guarantees a MARGIN,
+      // so with nothing else to size it this box grew to the whole window -
+      // one sentence stretched across a monitor above two buttons a mouse-drag
+      // apart. [kWebDialogMaxWidth] is the same 380 every other citizen-web
+      // confirm uses. `double.infinity` off the web is no constraint at all,
+      // so the phone keeps the full-bleed dialog it was designed with.
+      child: Container(
+        constraints: BoxConstraints(
+          maxWidth: kIsWeb ? kWebDialogMaxWidth : double.infinity,
+        ),
         padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -285,7 +325,16 @@ class _VerificationReviewScreenState extends State<VerificationReviewScreen> {
     Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       insetPadding: const EdgeInsets.symmetric(horizontal: 36),
-      child: Padding(
+      // WEB: cap the dialog. `insetPadding` alone only guarantees a MARGIN,
+      // so with nothing else to size it this box grew to the whole window -
+      // one sentence stretched across a monitor above two buttons a mouse-drag
+      // apart. [kWebDialogMaxWidth] is the same 380 every other citizen-web
+      // confirm uses. `double.infinity` off the web is no constraint at all,
+      // so the phone keeps the full-bleed dialog it was designed with.
+      child: Container(
+        constraints: BoxConstraints(
+          maxWidth: kIsWeb ? kWebDialogMaxWidth : double.infinity,
+        ),
         padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -372,6 +421,231 @@ class _VerificationReviewScreenState extends State<VerificationReviewScreen> {
 
   // ── Build ─────────────────────────────────────────────────────────────────
 
+  // ==========================================================================
+  //  WEB
+  //
+  //  Step 2 of 3 - "Additional Information". This screen sits BETWEEN the scan
+  //  and the identity form, which is not the order the file names suggest; see
+  //  [kVerificationSteps].
+  //
+  //  -- The field widgets are the phone's, deliberately --------------------
+  //  [_field], [_dropdown] and [_genderTile] are reused rather than rebuilt on
+  //  the kit's [AccountTextField]. They carry this screen's own validation
+  //  behaviour - the `Required` hint, the red wash, [_hasError] and
+  //  [_hasDropdownError], the upper-casing formatter, the scroll-into-view on
+  //  focus - and rebuilding them on a different field widget would mean porting
+  //  all of that with no way to test the result. What was actually wrong here
+  //  was the FRAME: a 560 column with a logo above it. So the frame is what
+  //  changed.
+  //
+  //  What the width buys is the row grouping below: the three name fields go
+  //  side by side instead of stacking, and so do the four short pairs.
+  // ==========================================================================
+
+  Widget _buildWebScaffold() {
+    return Scaffold(
+      backgroundColor: CitizenUi.pageBg,
+      body: SafeArea(
+        child: AccountPageBody(
+          builder: (context, stack) => FadeTransition(
+            opacity: _entryFade,
+            child: SlideTransition(
+              position: _entrySlide,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  AccountPageTitle(
+                    title: 'Confirm your details',
+                    subtitle:
+                        'Check what we read from your ID and fill in anything '
+                        'that is missing.',
+                    onBack: () => Navigator.pop(context),
+                    backLabel: 'Back to upload your ID',
+                  ),
+                  const AccountStepper(step: 1, labels: kVerificationSteps),
+
+                  const AccountSectionLabel('Your ID'),
+                  AccountCard(child: Center(child: _buildIdPreview())),
+                  const SizedBox(height: kAccountSectionGap),
+
+                  const AccountSectionLabel('Personal information'),
+                  AccountCard(
+                    child: Column(
+                      children: [
+                        _webRow(stack, [
+                          (2, _field(_idController, 'ID Number')),
+                          (
+                            1,
+                            _dropdown(
+                              'Suffix',
+                              _suffix,
+                              const ['Jr.', 'Sr.', 'II', 'III', 'IV'],
+                              (v) => setState(() => _suffix = v),
+                              required: false,
+                            ),
+                          ),
+                        ]),
+                        const SizedBox(height: kAccountGap),
+                        _webRow(stack, [
+                          (1, _field(_firstNameController, 'Firstname')),
+                          (1, _field(_middleNameController, 'Middlename')),
+                          (1, _field(_lastNameController, 'Lastname')),
+                        ]),
+                        const SizedBox(height: kAccountGap),
+                        _webRow(stack, [
+                          (
+                            1,
+                            _genderTile(
+                              'Male',
+                              Icons.male,
+                              selected: _isMale,
+                              onTap: () => setState(() => _isMale = true),
+                            ),
+                          ),
+                          (
+                            1,
+                            _genderTile(
+                              'Female',
+                              Icons.female,
+                              selected: !_isMale,
+                              onTap: () => setState(() => _isMale = false),
+                            ),
+                          ),
+                        ]),
+                        const SizedBox(height: kAccountGap),
+                        _webRow(stack, [
+                          (1, _webBirthdateField()),
+                          (
+                            1,
+                            _dropdown('Status', _status, const [
+                              'Single',
+                              'Married',
+                              'Widowed',
+                              'Separated',
+                            ], (v) => setState(() => _status = v)),
+                          ),
+                        ]),
+                        const SizedBox(height: kAccountGap),
+                        _webRow(stack, [
+                          (1, _field(_birthplaceController, 'Birthplace')),
+                          (
+                            1,
+                            _field(
+                              _contactController,
+                              'Contact Number',
+                              type: TextInputType.phone,
+                            ),
+                          ),
+                        ]),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: kAccountSectionGap),
+
+                  const AccountSectionLabel('Home address'),
+                  AccountCard(
+                    child: _webRow(stack, [
+                      (
+                        1,
+                        _dropdown(
+                          'Barangay',
+                          _barangay,
+                          kAparriBarangays,
+                          (v) => setState(() => _barangay = v),
+                        ),
+                      ),
+                      (1, _field(_streetController, 'Street / House No.')),
+                    ]),
+                  ),
+                  const SizedBox(height: kAccountSectionGap),
+
+                  _webConfirmButton(stack),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// One row of fields, flattened to one per line when [stack].
+  ///
+  /// Every cell is given the same fixed height, because a [DropdownButtonFormField]
+  /// and a [TextField] do not agree on their natural height and the difference
+  /// shows as a stepped baseline across the row. 48 is what the phone's own rows
+  /// already wrap these in, and [_inputDec] carries no `errorText` - the "Required"
+  /// state is a hint INSIDE the field - so nothing is ever clipped by it.
+  Widget _webRow(bool stack, List<(int, Widget)> cells) {
+    if (stack) {
+      return Column(
+        children: [
+          for (var i = 0; i < cells.length; i++) ...[
+            if (i > 0) const SizedBox(height: kAccountGap),
+            SizedBox(height: 48, child: cells[i].$2),
+          ],
+        ],
+      );
+    }
+    return Row(
+      children: [
+        for (var i = 0; i < cells.length; i++) ...[
+          if (i > 0) const SizedBox(width: kAccountGap),
+          Expanded(
+            flex: cells[i].$1,
+            child: SizedBox(height: 48, child: cells[i].$2),
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// The read-only birthdate field with its date picker.
+  ///
+  /// A web-only copy of the block inlined in [_buildForm] rather than an
+  /// extraction of it, so the mobile widget tree is not touched at all.
+  Widget _webBirthdateField() {
+    return TextField(
+      controller: _birthdateController,
+      style: const TextStyle(fontSize: 13),
+      readOnly: true,
+      decoration: _inputDec(
+        'Birthdate',
+        suffix: const Icon(Icons.calendar_month_outlined, size: 18),
+        error: _hasError(_birthdateController),
+      ),
+      onTap: () async {
+        final d = await showDatePicker(
+          context: context,
+          initialDate: DateTime(1990),
+          firstDate: DateTime(1900),
+          lastDate: DateTime.now(),
+        );
+        if (d != null) {
+          setState(() {
+            _birthdateController.text = '${d.month}/${d.day}/${d.year}';
+          });
+        }
+      },
+    );
+  }
+
+  /// Same green as every other step of the wizard on web, and the same
+  /// confirmation overlay the phone shows.
+  Widget _webConfirmButton(bool stack) {
+    final button = ElevatedButton(
+      onPressed: _showConfirmationOverlay,
+      style: accountPrimaryButtonStyle().copyWith(
+        backgroundColor: const WidgetStatePropertyAll(CitizenUi.accentGreen),
+      ),
+      child: const Text('Confirm'),
+    );
+
+    return stack
+        ? SizedBox(width: double.infinity, child: button)
+        : Row(mainAxisAlignment: MainAxisAlignment.end, children: [button]);
+  }
+
   @override
   Widget build(BuildContext context) {
     SystemChrome.setSystemUIOverlayStyle(
@@ -380,6 +654,8 @@ class _VerificationReviewScreenState extends State<VerificationReviewScreen> {
         statusBarIconBrightness: Brightness.dark,
       ),
     );
+
+    if (kIsWeb) return _buildWebScaffold();
 
     final bottomPadding = MediaQuery.of(context).padding.bottom;
 
@@ -395,12 +671,26 @@ class _VerificationReviewScreenState extends State<VerificationReviewScreen> {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 560),
             child: Column(
-          children: [
-            _buildHeader(context),
-            _buildStepper(),
-            Expanded(child: _buildForm()),
-            _buildBottomButton(bottomPadding),
-          ],
+              children: [
+                _buildHeader(context),
+                _buildStepper(),
+                Expanded(
+                  child: FadeTransition(
+                    opacity: _entryFade,
+                    child: SlideTransition(
+                      position: _entrySlide,
+                      child: _buildForm(),
+                    ),
+                  ),
+                ),
+                FadeTransition(
+                  opacity: _entryFade,
+                  child: SlideTransition(
+                    position: _entrySlide,
+                    child: _buildBottomButton(bottomPadding),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -848,7 +1138,7 @@ class _VerificationReviewScreenState extends State<VerificationReviewScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
         color: AppColors.inputBg,
-        border: Border.all(color: AppColors.stroke),
+        border: Border.all(color: CitizenUi.sharedStroke),
       ),
       child: Row(
         children: [

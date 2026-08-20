@@ -108,10 +108,8 @@ class _AdminEventsPageState extends ConsumerState<AdminEventsPage> {
     }).toList();
   }
 
-  Future<void> _openDetail(EventModel e) => showAdminDetail(
-    context,
-    builder: (_) => _EventDetailDialog(event: e),
-  );
+  Future<void> _openDetail(EventModel e) =>
+      showAdminDetail(context, builder: (_) => _EventDetailDialog(event: e));
 
   void _openForm({EventModel? existing}) =>
       showEventForm(context, existing: existing);
@@ -1141,7 +1139,8 @@ class _EventDetailDialogState extends ConsumerState<_EventDetailDialog> {
     switch (e.status) {
       case EventStatus.pending:
         headline = 'This event is awaiting review.';
-        blurb = 'Check the details, then publish it to the community feed or '
+        blurb =
+            'Check the details, then publish it to the community feed or '
             'reject it.';
         break;
       case EventStatus.approved:
@@ -1150,7 +1149,8 @@ class _EventDetailDialogState extends ConsumerState<_EventDetailDialog> {
         break;
       case EventStatus.rejected:
         headline = 'This event was rejected.';
-        blurb = 'It isn\'t visible to the community. You can still edit it and '
+        blurb =
+            'It isn\'t visible to the community. You can still edit it and '
             'publish it again.';
         break;
     }
@@ -1284,7 +1284,8 @@ class _EventDetailDialogState extends ConsumerState<_EventDetailDialog> {
           _IconSection(
             icon: Icons.description_rounded,
             title: 'Description',
-            isLast: (e.whatToExpect ?? '').isEmpty &&
+            isLast:
+                (e.whatToExpect ?? '').isEmpty &&
                 (e.requirements ?? '').isEmpty,
             child: Text(
               (e.description ?? '').trim().isEmpty ? '—' : e.description!,
@@ -1619,7 +1620,10 @@ class _StatusCard extends StatelessWidget {
               Container(
                 width: 7,
                 height: 7,
-                decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
+                decoration: BoxDecoration(
+                  color: accent,
+                  shape: BoxShape.circle,
+                ),
               ),
               const SizedBox(width: 6),
               Text(
@@ -1875,7 +1879,10 @@ class _ActionButton extends StatelessWidget {
           const SizedBox(
             width: 16,
             height: 16,
-            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: Colors.white,
+            ),
           )
         else
           Icon(icon, size: 17),
@@ -1961,17 +1968,34 @@ void showEventForm(BuildContext context, {EventModel? existing}) {
   );
 }
 
-Future<void> _reportEventSave(Future<void> op, BuildContext ctx) async {
+/// Toasts the outcome of a background publish.
+///
+/// Takes the root [OverlayState] rather than a context because the composer
+/// that started the publish is gone by the time this resolves — and a
+/// root-*navigator* context is no good either: the overlay toasts render into
+/// is a descendant of that navigator, so looking up from it finds nothing and
+/// the toast is silently dropped (see [showAppSnackBar]). The overlay itself
+/// lives for the app's lifetime, so it always lands.
+///
+/// The reason is carried into the error toast on purpose: a publish that fails
+/// out of sight — a missing storage bucket, a rejected upload — otherwise looks
+/// exactly like one that worked.
+Future<void> _reportEventSave(Future<void> op, OverlayState overlay) async {
   try {
     await op;
-    if (ctx.mounted) {
-      showAdminSnackBar(ctx, 'Event published.', type: AdminSnackType.success);
-    }
-  } catch (_) {
-    if (ctx.mounted) {
-      showAdminSnackBar(ctx, 'Could not publish the event. Please try again.',
-          type: AdminSnackType.error);
-    }
+    showAdminSnackBar(
+      null,
+      'Event published.',
+      type: AdminSnackType.success,
+      overlay: overlay,
+    );
+  } catch (err) {
+    showAdminSnackBar(
+      null,
+      'Could not publish the event: $err',
+      type: AdminSnackType.error,
+      overlay: overlay,
+    );
   }
 }
 
@@ -2027,7 +2051,9 @@ class _EventFormDialogState extends ConsumerState<_EventFormDialog> {
     // Older events were saved with free-text venues that predate the canonical
     // barangay list — keep whatever is stored so editing never silently blanks
     // or rewrites the location.
-    _barangay = (e?.location.trim().isNotEmpty ?? false) ? e!.location.trim() : null;
+    _barangay = (e?.location.trim().isNotEmpty ?? false)
+        ? e!.location.trim()
+        : null;
     _date = e?.eventDate;
     // Times were free text before this form had a picker, so an unparseable
     // legacy value stays in the field verbatim and only the picker's starting
@@ -2159,7 +2185,10 @@ class _EventFormDialogState extends ConsumerState<_EventFormDialog> {
       try {
         var imageUrl = _imageUrl;
         if (_pickedBytes != null) {
-          imageUrl = await notifier.uploadImage(_pickedBytes!, _pickedExt ?? 'jpg');
+          imageUrl = await notifier.uploadImage(
+            _pickedBytes!,
+            _pickedExt ?? 'jpg',
+          );
         }
         await notifier.edit(widget.existing!.id, {
           'title': _title.text.trim(),
@@ -2170,17 +2199,23 @@ class _EventFormDialogState extends ConsumerState<_EventFormDialog> {
           'category_color': colorHex,
           'is_featured': _featured,
           'image_url': imageUrl,
-          'description':
-              _description.text.trim().isEmpty ? null : _description.text.trim(),
-          'what_to_expect':
-              _expect.text.trim().isEmpty ? null : _expect.text.trim(),
+          'description': _description.text.trim().isEmpty
+              ? null
+              : _description.text.trim(),
+          'what_to_expect': _expect.text.trim().isEmpty
+              ? null
+              : _expect.text.trim(),
           'requirements': _requirements.text.trim().isEmpty
               ? null
               : _requirements.text.trim(),
         });
         if (!mounted) return;
         Navigator.pop(context);
-        showAdminSnackBar(context, 'Event updated.', type: AdminSnackType.success);
+        showAdminSnackBar(
+          context,
+          'Event updated.',
+          type: AdminSnackType.success,
+        );
       } catch (err) {
         if (!mounted) return;
         setState(() {
@@ -2203,17 +2238,21 @@ class _EventFormDialogState extends ConsumerState<_EventFormDialog> {
       categoryColor: colorHex,
       isFeatured: _featured,
       imageUrl: null,
-      description:
-          _description.text.trim().isEmpty ? null : _description.text.trim(),
+      description: _description.text.trim().isEmpty
+          ? null
+          : _description.text.trim(),
       whatToExpect: _expect.text.trim().isEmpty ? null : _expect.text.trim(),
-      requirements:
-          _requirements.text.trim().isEmpty ? null : _requirements.text.trim(),
+      requirements: _requirements.text.trim().isEmpty
+          ? null
+          : _requirements.text.trim(),
       status: EventStatus.approved,
       createdBy: '',
       reviewedBy: null,
       createdAt: DateTime.now(),
     );
-    final rootContext = Navigator.of(context, rootNavigator: true).context;
+    // Captured while this form is still mounted: the publish outlives the
+    // dialog, and the toast has to survive it.
+    final overlay = Overlay.of(context, rootOverlay: true);
 
     unawaited(
       _reportEventSave(
@@ -2232,7 +2271,7 @@ class _EventFormDialogState extends ConsumerState<_EventFormDialog> {
           requirements: _requirements.text.trim(),
           optimistic: temp,
         ),
-        rootContext,
+        overlay,
       ),
     );
     Navigator.pop(context);
@@ -2796,7 +2835,9 @@ class _BarangayPickerSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
       child: DraggableScrollableSheet(
         expand: false,
         initialChildSize: 0.7,
@@ -2897,7 +2938,10 @@ class _BarangayPickerBodyState extends State<_BarangayPickerBody> {
             decoration: InputDecoration(
               isDense: true,
               hintText: 'Search barangay…',
-              hintStyle: const TextStyle(fontSize: 13, color: AdminUi.textMuted),
+              hintStyle: const TextStyle(
+                fontSize: 13,
+                color: AdminUi.textMuted,
+              ),
               prefixIcon: const Icon(
                 Icons.search_rounded,
                 size: 18,
@@ -2989,7 +3033,6 @@ class _ImageHint extends StatelessWidget {
 // ══ Shared bits ═══════════════════════════════════════════════════════════════
 
 const TextStyle _ddStyle = TextStyle(fontSize: 13, color: AdminUi.textPrimary);
-
 
 class _PrimaryButton extends StatelessWidget {
   final IconData icon;

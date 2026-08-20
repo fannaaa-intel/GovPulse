@@ -6,6 +6,7 @@ import 'package:camera/camera.dart';
 import 'package:image/image.dart' as img;
 import '../../core/router/legacy_nav.dart';
 import '../../core/services/id_verification_service.dart';
+import '../../core/widgets/app_dialog.dart' show kWebDialogMaxWidth;
 import '../../core/widgets/app_back_chevron.dart';
 
 class VerificationScanScreen extends StatefulWidget {
@@ -31,6 +32,11 @@ class _VerificationScanScreenState extends State<VerificationScanScreen>
 
   CameraController? _controller;
   Future<void>? _initializeControllerFuture;
+
+  /// WEB only: the camera could not be started, so this screen has nothing
+  /// to show and must offer a way out instead of a spinner. Never set on
+  /// mobile - see [_initCamera].
+  bool _webCameraFailed = false;
 
   bool isFront = true;
   bool _isCapturing = false;
@@ -79,10 +85,43 @@ class _VerificationScanScreenState extends State<VerificationScanScreen>
   }
 
   Future<void> _initCamera() async {
-    final cameras = await availableCameras();
-    final camera = cameras.firstWhere(
-      (cam) => cam.lensDirection == CameraLensDirection.back,
-    );
+    final List<CameraDescription> cameras;
+    try {
+      cameras = await availableCameras();
+    } catch (e) {
+      // WEB: the browser throws here when the user dismisses or blocks the
+      // camera prompt. Mobile RETHROWS, so its behaviour - an unhandled
+      // async error from initState - is exactly what it was.
+      if (!kIsWeb) rethrow;
+      debugPrint('[CAMERA] availableCameras failed: $e');
+      if (mounted) setState(() => _webCameraFailed = true);
+      return;
+    }
+
+    // WEB: there may be no BACK camera at all - a laptop has one webcam and
+    // it faces the user - and `firstWhere` with no `orElse` throws a
+    // StateError, which would land here as a black screen with no camera and
+    // no explanation. A tablet does have a back camera and still gets it;
+    // anything else gets whatever camera exists rather than nothing.
+    //
+    // Deliberately NOT applied to mobile. Every phone this ships to has a
+    // back camera, so on mobile the original expression is kept exactly as
+    // it was, including how it fails.
+    final CameraDescription camera;
+    if (kIsWeb) {
+      if (cameras.isEmpty) {
+        if (mounted) setState(() => _webCameraFailed = true);
+        return;
+      }
+      camera = cameras.firstWhere(
+        (cam) => cam.lensDirection == CameraLensDirection.back,
+        orElse: () => cameras.first,
+      );
+    } else {
+      camera = cameras.firstWhere(
+        (cam) => cam.lensDirection == CameraLensDirection.back,
+      );
+    }
 
     // Try max → veryHigh → high. Some Android devices silently downgrade
     // `max`, so we fall back rather than ending up with .high anyway.
@@ -111,6 +150,15 @@ class _VerificationScanScreenState extends State<VerificationScanScreen>
       } catch (e) {
         debugPrint('[CAMERA] Preset $preset failed: $e — trying next');
       }
+    }
+
+    // WEB: all three presets failing means there is no usable camera here -
+    // blocked by permission, already in use, or unsupported. Without this the
+    // screen sat on a spinner whose only sibling, the back chevron, is inside
+    // the branch that needs a live controller. That was a trap with no exit.
+    if (kIsWeb && working == null) {
+      if (mounted) setState(() => _webCameraFailed = true);
+      return;
     }
 
     _controller = working;
@@ -164,14 +212,126 @@ class _VerificationScanScreenState extends State<VerificationScanScreen>
     }
   }
 
+  // ==========================================================================
+  //  WEB-only states
+  // ==========================================================================
+
+  /// Shown while the browser is still deciding about the camera.
+  ///
+  /// Identical to the phone's spinner except that it carries the chevron, so a
+  /// permission prompt left sitting in the corner of the screen is never a
+  /// one-way door.
+  Widget _buildWebCameraStarting() {
+    return Stack(
+      children: [
+        const Center(child: CircularProgressIndicator()),
+        Positioned(
+          top: MediaQuery.of(context).padding.top + 8,
+          left: 16,
+          child: const AppBackChevron(onDark: true),
+        ),
+      ],
+    );
+  }
+
+  /// Shown when the camera cannot be started at all.
+  ///
+  /// The way out is Back rather than a file picker embedded here: the picker
+  /// lives on the previous screen, which is also where the user chose the camera
+  /// in the first place, so returning there puts them in front of the same two
+  /// options with the other one already spelled out.
+  Widget _buildWebCameraError() {
+    return SafeArea(
+      child: Stack(
+        children: [
+          Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Padding(
+                padding: const EdgeInsets.all(28),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.no_photography_outlined,
+                      size: 44,
+                      color: Colors.white70,
+                    ),
+                    const SizedBox(height: 18),
+                    const Text(
+                      "Can't open the camera",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Your browser blocked it, or this device has no camera '
+                      'available. Go back and choose "Upload a file instead" to '
+                      'continue with a photo from your device.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        height: 1.5,
+                        color: Colors.white70,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.black87,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(vertical: 15),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          textStyle: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        child: const Text('Go back'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 8,
+            left: 16,
+            child: const AppBackChevron(onDark: true),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
 
     return Scaffold(
       backgroundColor: Colors.black,
-      body: _controller == null
-          ? const Center(child: CircularProgressIndicator())
+      // WEB gets two states the phone never needs: a camera that could not
+      // start, and a camera still starting. Both must carry a way out, because
+      // the chevron below lives inside the live-preview Stack. On mobile
+      // `kIsWeb` is a compile-time false, so this reads exactly as
+      // `_controller == null ? spinner : FutureBuilder(...)` did.
+      body: kIsWeb && _webCameraFailed
+          ? _buildWebCameraError()
+          : _controller == null
+          ? (kIsWeb
+                ? _buildWebCameraStarting()
+                : const Center(child: CircularProgressIndicator()))
           : FutureBuilder(
               future: _initializeControllerFuture,
               builder: (context, snapshot) {
@@ -542,18 +702,33 @@ class _VerificationScanScreenState extends State<VerificationScanScreen>
       final animFuture = _scanLineController.forward();
 
       if (mounted) setState(() => _isVerifying = true);
-      final result = await IdVerificationService.verify(
-        imageBytes: fixed,
-        selectedIdType: widget.selectedId,
-        isFront: isFront,
-      );
+      // WEB: no OCR. [IdVerificationService] is built on ML Kit text
+      // recognition and dart:io, neither of which has a web implementation -
+      // the import compiles, but the call throws a MissingPluginException at
+      // runtime, from inside this try block, where it would look to the user
+      // like the shutter simply did nothing.
+      //
+      // A null result means "not checked", NOT "failed": the scan is accepted
+      // and `extractedData` stays empty, so the review screen shows blank
+      // fields for the user to type. That is an already-supported state - it
+      // is exactly what the web file-picker path has always produced, and
+      // what mobile produces whenever a scan reads nothing confidently.
+      final result = kIsWeb
+          ? null
+          : await IdVerificationService.verify(
+              imageBytes: fixed,
+              selectedIdType: widget.selectedId,
+              isFront: isFront,
+            );
       if (mounted) setState(() => _isVerifying = false);
 
       await animFuture;
       if (mounted) setState(() => _showScanLine = false);
 
       // ── Validity check BEFORE any data is merged ──────────────────────
-      if (!result.isValid) {
+      // `result != null` is the web arm only: on mobile the service always
+      // returns a result, so this reads exactly as `!result.isValid` did.
+      if (result != null && !result.isValid) {
         if (!mounted) return;
         await _showInvalidIdDialog(result.errorMessage ?? "Invalid ID");
         if (mounted) {
@@ -568,7 +743,8 @@ class _VerificationScanScreenState extends State<VerificationScanScreen>
       }
 
       // ── Only merge data from a verified scan ──────────────────────────
-      for (final entry in result.extractedData.entries) {
+      for (final entry
+          in (result?.extractedData ?? const <String, String>{}).entries) {
         final existing = _extractedData[entry.key];
         if (existing == null || existing.isEmpty) {
           _extractedData[entry.key] = entry.value;
@@ -629,6 +805,12 @@ class _VerificationScanScreenState extends State<VerificationScanScreen>
               child: Material(
                 color: Colors.transparent,
                 child: Container(
+                  // WEB: a horizontal margin is not a width. Without this the
+                  // rejection notice spanned the browser. Same 380 every other
+                  // citizen-web confirm uses; unconstrained on the phone.
+                  constraints: BoxConstraints(
+                    maxWidth: kIsWeb ? kWebDialogMaxWidth : double.infinity,
+                  ),
                   margin: const EdgeInsets.symmetric(horizontal: 28),
                   padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
                   decoration: BoxDecoration(

@@ -19,6 +19,7 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/widgets.dart';
 import 'web/settings_web_shell.dart';
+import 'citizen_shell_scope.dart';
 
 class ResponsivePageBody extends StatelessWidget {
   final Widget child;
@@ -55,7 +56,13 @@ class ResponsivePageBody extends StatelessWidget {
   Widget build(BuildContext context) {
     final mq = MediaQuery.of(context);
 
-    if (kIsWeb && shellTitle != null && mq.size.width >= shellBreakpoint) {
+    // Not inside the citizen shell: there, the brand panel would be a
+    // decorative hero in the middle of a pane that already has a top nav and a
+    // left rail. See [CitizenShellScope].
+    if (kIsWeb &&
+        shellTitle != null &&
+        mq.size.width >= shellBreakpoint &&
+        !CitizenShellScope.of(context)) {
       return SettingsWebShell(
         title: shellTitle!,
         subtitle: shellSubtitle ?? '',

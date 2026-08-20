@@ -9,6 +9,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/event_status_pill.dart';
 import 'events_screen.dart';
+import '../../../../core/theme/citizen_ui.dart';
 
 class EventDetailScreen extends StatefulWidget {
   final EventItem event;
@@ -112,8 +113,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
       body: ResponsivePageBody(
         maxWidth: 760,
         shellTitle: 'Event Details',
-        shellSubtitle:
-            'View the full details of this community event.',
+        shellSubtitle: 'View the full details of this community event.',
         shellIcon: Icons.event_rounded,
         shellContentWidth: 640,
         child: SafeArea(
@@ -329,7 +329,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                         ),
 
                         SizedBox(height: w * 0.04),
-                        Divider(color: const Color(0xFFE5E7EB), height: 1),
+                        Divider(color: CitizenUi.sharedBorder, height: 1),
                         SizedBox(height: w * 0.04),
 
                         // ── Location ──────────────────────────────────────
@@ -427,7 +427,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                       onPressed: _isSharing ? null : _shareEvent,
                       style: OutlinedButton.styleFrom(
                         side: const BorderSide(
-                          color: Color(0xFFE5E7EB),
+                          color: CitizenUi.sharedBorder,
                           width: 1.5,
                         ),
                         backgroundColor: Colors.white,

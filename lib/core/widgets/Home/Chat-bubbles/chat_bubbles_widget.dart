@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../../../theme/app_colors.dart';
 import 'chat_bubbles_model.dart';
+import '../../../../core/theme/citizen_ui.dart';
 
 // ── Online dot ────────────────────────────────────────────────────────────────
 class ChatOnlineDot extends StatelessWidget {
@@ -46,12 +47,12 @@ class ChatAgentAvatar extends StatelessWidget {
   );
 
   Widget _bot() => Center(
-        child: Icon(
-          Icons.support_agent_rounded,
-          size: size * 0.54,
-          color: AppColors.primaryBlue,
-        ),
-      );
+    child: Icon(
+      Icons.support_agent_rounded,
+      size: size * 0.54,
+      color: AppColors.primaryBlue,
+    ),
+  );
 }
 
 // ── Citizen (self) avatar — floating panel ────────────────────────────────────
@@ -79,8 +80,8 @@ class ChatCitizenAvatar extends StatelessWidget {
   );
 
   Widget _icon() => Center(
-        child: Icon(Icons.person_rounded, size: size * 0.6, color: Colors.white),
-      );
+    child: Icon(Icons.person_rounded, size: size * 0.6, color: Colors.white),
+  );
 }
 
 // ── Unread badge ──────────────────────────────────────────────────────────────
@@ -137,7 +138,7 @@ class ChatCircleIconButton extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.inputBg,
         shape: BoxShape.circle,
-        border: Border.all(color: AppColors.stroke, width: 1),
+        border: Border.all(color: CitizenUi.sharedStroke, width: 1),
       ),
       child: Icon(icon, size: size * 0.53, color: AppColors.hint),
     ),

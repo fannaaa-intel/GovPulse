@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/widgets/responsive_page.dart';
@@ -8,6 +9,7 @@ import '../../../../core/widgets/Home/Chat-agent/chat_input_bar.dart';
 import '../../../../core/widgets/Home/Chat-agent/chat_message.dart';
 import '../../../../core/widgets/Home/Chat-agent/chat_message_bubble.dart';
 import '../../../../core/widgets/Home/Chat-agent/chat_models.dart' as cm;
+import '../../../../core/theme/citizen_ui.dart';
 
 /// Full-screen chat with the LGU agent.
 ///
@@ -94,9 +96,14 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
           .maybeSingle();
       final path = (cd?['profile_photo_path'] as String?)?.trim() ?? '';
       if (path.isEmpty || !mounted) return;
-      setState(() => _myPhotoUrl =
-          client.storage.from('profile-photos').getPublicUrl(path));
-    } catch (_) {/* fall back to the default person icon */}
+      setState(
+        () => _myPhotoUrl = client.storage
+            .from('profile-photos')
+            .getPublicUrl(path),
+      );
+    } catch (_) {
+      /* fall back to the default person icon */
+    }
   }
 
   void _onChatChanged() {
@@ -149,8 +156,7 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
     if (!mounted) return;
     if (draft != null && draft.trim().isNotEmpty) {
       _inputCtrl.text = draft;
-      _inputCtrl.selection =
-          TextSelection.collapsed(offset: draft.length);
+      _inputCtrl.selection = TextSelection.collapsed(offset: draft.length);
       _focusNode.requestFocus();
     }
   }
@@ -218,7 +224,9 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
       width: double.infinity,
       decoration: BoxDecoration(
         color: Colors.white,
-        border: Border(top: BorderSide(color: AppColors.stroke, width: 1)),
+        border: Border(
+          top: BorderSide(color: CitizenUi.sharedStroke, width: 1),
+        ),
       ),
       padding: EdgeInsets.fromLTRB(
         width * 0.04,
@@ -351,7 +359,9 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
       width: double.infinity,
       decoration: BoxDecoration(
         color: Colors.white,
-        border: Border(top: BorderSide(color: AppColors.stroke, width: 1)),
+        border: Border(
+          top: BorderSide(color: CitizenUi.sharedStroke, width: 1),
+        ),
       ),
       padding: EdgeInsets.fromLTRB(
         width * 0.05,
@@ -369,8 +379,11 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
               color: tint.withValues(alpha: 0.10),
               shape: BoxShape.circle,
             ),
-            child: Icon(Icons.support_agent_rounded,
-                color: tint, size: width * 0.062),
+            child: Icon(
+              Icons.support_agent_rounded,
+              color: tint,
+              size: width * 0.062,
+            ),
           ),
           SizedBox(height: width * 0.03),
           Text(
@@ -502,7 +515,9 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
       width: double.infinity,
       decoration: BoxDecoration(
         color: Colors.white,
-        border: Border(top: BorderSide(color: AppColors.stroke, width: 1)),
+        border: Border(
+          top: BorderSide(color: CitizenUi.sharedStroke, width: 1),
+        ),
       ),
       padding: EdgeInsets.fromLTRB(
         width * 0.04,
@@ -522,12 +537,15 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
             decoration: BoxDecoration(
               color: AppColors.inputBg,
               borderRadius: BorderRadius.circular(width * 0.055),
-              border: Border.all(color: AppColors.stroke, width: 1),
+              border: Border.all(color: CitizenUi.sharedStroke, width: 1),
             ),
             child: Row(
               children: [
-                Icon(Icons.lock_outline_rounded,
-                    size: width * 0.044, color: AppColors.hint),
+                Icon(
+                  Icons.lock_outline_rounded,
+                  size: width * 0.044,
+                  color: AppColors.hint,
+                ),
                 SizedBox(width: width * 0.025),
                 Expanded(
                   child: Text(
@@ -579,6 +597,11 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+
+    // The browser always gets the web layout — `kIsWeb` alone, no width test,
+    // for the reason EditProfileScreen spells out.
+    if (kIsWeb) return _buildWebScaffold(width);
+
     return Scaffold(
       backgroundColor: AppColors.inputBg,
       body: ResponsivePageBody(
@@ -601,7 +624,8 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
                 width: width,
                 connected: _svc.isConnectedToStaff,
                 // Real staff name once fetched; department label until then.
-                staffLabel: _svc.connectedStaffName ??
+                staffLabel:
+                    _svc.connectedStaffName ??
                     (_svc.connectedDepartment != null
                         ? '${_svc.connectedDepartment} staff'
                         : null),
@@ -637,12 +661,143 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
     );
   }
 
+  // ═════════════════════════════════════════════════════════════════════════
+  //  WEB
+  //
+  //  Reached only from the `kIsWeb` branch of build(). The mobile layout below
+  //  is untouched; this is a second frame around the SAME conversation, service
+  //  and composer.
+  // ═════════════════════════════════════════════════════════════════════════
+
+  /// Widest the conversation column gets.
+  ///
+  /// Matches the submission detail screens rather than the account pages' 880.
+  /// A chat set across 880 gives bubbles a line length nobody reads a message
+  /// at, and the composer under it grows into a text editor.
+  static const double _kChatWebMeasure = 760;
+
+  Widget _buildWebScaffold(double width) {
+    // No ResponsivePageBody, and so no `shellTitle`: that path is for a
+    // standalone route with a decorative brand panel beside it, and this opens
+    // inside a pane that already has a top nav and a left rail.
+    return Scaffold(
+      backgroundColor: AppColors.inputBg,
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: _kChatWebMeasure),
+            child: Column(
+              children: [
+                _buildWebHeader(),
+                ChatAgentInfoBar(
+                  width: width,
+                  connected: _svc.isConnectedToStaff,
+                  staffLabel:
+                      _svc.connectedStaffName ??
+                      (_svc.connectedDepartment != null
+                          ? '${_svc.connectedDepartment} staff'
+                          : null),
+                  staffPhotoUrl: _svc.connectedStaffPhotoUrl,
+                ),
+                Expanded(child: _buildMessageList(width)),
+                if (_svc.showBackToMenu && _svc == ChatService.I)
+                  _buildBackToMenu(width),
+                if (_svc.showIntentChips && _svc == ChatService.I)
+                  _buildIntentChips(width),
+                if (_svc.showCategoryChips && _svc == ChatService.I)
+                  _buildCategoryChips(width),
+                if (_svc.showRatingBar)
+                  _buildRatingCard(width)
+                else if (_svc.stage == cm.ConversationStage.ended)
+                  _buildEndedComposer(width)
+                else if (_svc.isTerminal)
+                  _buildTerminalCard(width)
+                else
+                  ChatInputBar(
+                    width: width,
+                    controller: _inputCtrl,
+                    focusNode: _focusNode,
+                    onSend: _sendMessage,
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The web header: a way out, and the name of the screen.
+  ///
+  /// ── Why the GovPulse mark is gone ───────────────────────────────────────
+  /// The phone header carries the logo because on a phone this screen IS the
+  /// app — there is no other chrome telling you what you are in. In the shell
+  /// the top nav already shows that mark about 60px above this row, so the
+  /// header was printing it twice, and the second one said nothing the first
+  /// had not.
+  ///
+  /// What it did NOT say was where you are, which on a pushed screen is the
+  /// question worth answering. So the mark gives way to the screen's name, and
+  /// [ChatAgentInfoBar] directly below still identifies who you are talking to.
+  Widget _buildWebHeader() {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: CitizenUi.border)),
+      ),
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
+      child: Row(
+        children: [
+          Semantics(
+            button: true,
+            label: 'Back',
+            child: Material(
+              color: AppColors.inputBg,
+              borderRadius: BorderRadius.circular(CitizenUi.controlRadius),
+              child: InkWell(
+                onTap: () => Navigator.pop(context),
+                borderRadius: BorderRadius.circular(CitizenUi.controlRadius),
+                child: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(
+                      CitizenUi.controlRadius,
+                    ),
+                    border: Border.all(color: CitizenUi.border),
+                  ),
+                  child: const Icon(
+                    Icons.arrow_back_rounded,
+                    size: 18,
+                    color: CitizenUi.textSecondary,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          const Text(
+            'Chat with an Agent',
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              color: CitizenUi.textPrimary,
+              letterSpacing: -0.2,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ── Header ────────────────────────────────────────────────────────────────
   Widget _buildHeader(double width) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        border: Border(bottom: BorderSide(color: AppColors.stroke, width: 1)),
+        border: Border(
+          bottom: BorderSide(color: CitizenUi.sharedStroke, width: 1),
+        ),
       ),
       padding: EdgeInsets.symmetric(
         horizontal: width * 0.04,
@@ -658,7 +813,7 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
               decoration: BoxDecoration(
                 color: AppColors.inputBg,
                 borderRadius: BorderRadius.circular(width * 0.022),
-                border: Border.all(color: AppColors.stroke, width: 1),
+                border: Border.all(color: CitizenUi.sharedStroke, width: 1),
               ),
               child: Icon(
                 Icons.arrow_back_ios_new_rounded,
@@ -743,7 +898,7 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(width * 0.06),
-          border: Border.all(color: AppColors.stroke, width: 1),
+          border: Border.all(color: CitizenUi.sharedStroke, width: 1),
         ),
         child: Text(
           'TODAY',

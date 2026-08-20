@@ -25,6 +25,7 @@ import 'dart:async';
 import '../auth/facebook_username_screen.dart';
 import '../guest/screen/guest.dart';
 import '../../core/widgets/app_dialog.dart';
+import '../../core/theme/citizen_ui.dart';
 
 // Route observer — declare once at app level and pass to MaterialApp's navigatorObservers.
 // If you already have one, just reuse it here instead.
@@ -144,15 +145,9 @@ class _SignupScreenState extends State<SignupScreen>
     // first-frame stutter, which is a separate concern from the blank gap.
     _fadeAnim = kIsWeb
         ? Tween<double>(begin: _kWebFadeFloor, end: 1.0).animate(
-            CurvedAnimation(
-              parent: _entranceController,
-              curve: Curves.easeOut,
-            ),
+            CurvedAnimation(parent: _entranceController, curve: Curves.easeOut),
           )
-        : CurvedAnimation(
-            parent: _entranceController,
-            curve: Curves.easeOut,
-          );
+        : CurvedAnimation(parent: _entranceController, curve: Curves.easeOut);
     _slideAnim = Tween<Offset>(begin: const Offset(0, 0.06), end: Offset.zero)
         .animate(
           CurvedAnimation(
@@ -494,11 +489,7 @@ class _SignupScreenState extends State<SignupScreen>
     try {
       final response = await supabase.functions.invoke(
         'send-email-otp',
-        body: {
-          "email": email,
-          "username": username,
-          "password": password,
-        },
+        body: {"email": email, "username": username, "password": password},
       );
 
       final data = response.data;
@@ -531,17 +522,12 @@ class _SignupScreenState extends State<SignupScreen>
     final Widget content = !kIsWeb
         ? _mobileScaffold(context)
         : (width >= kWebTwoPanelMinWidth
-            ? _webScaffold(context)
-            : _webCompactScaffold(context));
+              ? _webScaffold(context)
+              : _webCompactScaffold(context));
 
     // While Facebook sign-up is in flight, cover the screen with a blocking
     // spinner so the sign-up form never flashes back mid-process.
-    return Stack(
-      children: [
-        content,
-        if (_fbBusy) const FacebookAuthOverlay(),
-      ],
-    );
+    return Stack(children: [content, if (_fbBusy) const FacebookAuthOverlay()]);
   }
 
   // ── Mobile layout ─────────────────────────────────────────────────────────
@@ -799,7 +785,9 @@ class _SignupScreenState extends State<SignupScreen>
 
                       Row(
                         children: [
-                          Expanded(child: Divider(color: AppColors.stroke)),
+                          Expanded(
+                            child: Divider(color: CitizenUi.sharedStroke),
+                          ),
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 8),
                             child: Text(
@@ -810,7 +798,9 @@ class _SignupScreenState extends State<SignupScreen>
                               ),
                             ),
                           ),
-                          Expanded(child: Divider(color: AppColors.stroke)),
+                          Expanded(
+                            child: Divider(color: CitizenUi.sharedStroke),
+                          ),
                         ],
                       ),
 
@@ -1225,7 +1215,9 @@ class _SignupScreenState extends State<SignupScreen>
 
         Row(
           children: [
-            Expanded(child: Divider(color: AppColors.stroke, thickness: 1)),
+            Expanded(
+              child: Divider(color: CitizenUi.sharedStroke, thickness: 1),
+            ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14),
               child: Text(
@@ -1233,7 +1225,9 @@ class _SignupScreenState extends State<SignupScreen>
                 style: TextStyle(fontSize: 12, color: AppColors.grey),
               ),
             ),
-            Expanded(child: Divider(color: AppColors.stroke, thickness: 1)),
+            Expanded(
+              child: Divider(color: CitizenUi.sharedStroke, thickness: 1),
+            ),
           ],
         ),
 

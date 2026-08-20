@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/theme/app_colors.dart';
 import 'chat_message.dart';
 import 'typing_dots.dart';
+import '../../../../core/theme/citizen_ui.dart';
 
 const _kTextPri = Color(0xFF111827);
 
@@ -79,7 +80,7 @@ class ChatMessageBubble extends StatelessWidget {
                     ),
                     border: isUser
                         ? null
-                        : Border.all(color: AppColors.stroke, width: 1),
+                        : Border.all(color: CitizenUi.sharedStroke, width: 1),
                   ),
                   child: Text(
                     message.text,
@@ -124,8 +125,7 @@ class ChatMessageBubble extends StatelessWidget {
                           ),
                         ),
                       ],
-                      if (isUser &&
-                          message.status != MessageStatus.failed) ...[
+                      if (isUser && message.status != MessageStatus.failed) ...[
                         SizedBox(width: width * 0.010),
                         MessageStatusTicks(
                           status: message.status,
@@ -142,8 +142,11 @@ class ChatMessageBubble extends StatelessWidget {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.error_outline_rounded,
-                            size: width * 0.030, color: AppColors.red),
+                        Icon(
+                          Icons.error_outline_rounded,
+                          size: width * 0.030,
+                          color: AppColors.red,
+                        ),
                         SizedBox(width: width * 0.010),
                         Text(
                           'Not sent',
@@ -211,8 +214,8 @@ class _CitizenAvatar extends StatelessWidget {
   }
 
   Widget _fallback(double size) => Center(
-        child: Icon(Icons.person_rounded, size: size * 0.6, color: Colors.white),
-      );
+    child: Icon(Icons.person_rounded, size: size * 0.6, color: Colors.white),
+  );
 }
 
 // ── Failed-send action (Retry / Delete) ──────────────────────────────────────
@@ -229,7 +232,9 @@ class _FailAction extends StatelessWidget {
       borderRadius: BorderRadius.circular(width * 0.01),
       child: Padding(
         padding: EdgeInsets.symmetric(
-            horizontal: width * 0.01, vertical: width * 0.004),
+          horizontal: width * 0.01,
+          vertical: width * 0.004,
+        ),
         child: Text(
           label,
           style: TextStyle(
@@ -270,7 +275,7 @@ class ChatTypingBubble extends StatelessWidget {
                 bottomLeft: Radius.circular(width * 0.006),
                 bottomRight: Radius.circular(width * 0.040),
               ),
-              border: Border.all(color: AppColors.stroke, width: 1),
+              border: Border.all(color: CitizenUi.sharedStroke, width: 1),
             ),
             child: TypingDots(width: width),
           ),
@@ -310,17 +315,17 @@ class _AgentAvatar extends StatelessWidget {
   }
 
   Widget _bot(double width) => Center(
-        child: Image.asset(
-          'assets/images/customer.webp',
-          width: width * 0.042,
-          fit: BoxFit.contain,
-          errorBuilder: (_, _, _) => Icon(
-            Icons.support_agent_rounded,
-            size: width * 0.042,
-            color: AppColors.primaryBlue,
-          ),
-        ),
-      );
+    child: Image.asset(
+      'assets/images/customer.webp',
+      width: width * 0.042,
+      fit: BoxFit.contain,
+      errorBuilder: (_, _, _) => Icon(
+        Icons.support_agent_rounded,
+        size: width * 0.042,
+        color: AppColors.primaryBlue,
+      ),
+    ),
+  );
 }
 
 // ── Message status ticks ──────────────────────────────────────────────────────

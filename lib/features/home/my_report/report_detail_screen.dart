@@ -10,6 +10,8 @@ import '../Quick-action/Report/location_picker_screen.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../../../core/services/chat_service.dart';
 import '../Quick-action/Chat-with-Agent/chat_agent_screen.dart';
+import '../../../core/theme/citizen_ui.dart';
+import '../../../core/widgets/Home/Account/account_web_kit.dart';
 // ─── Timeline step model ──────────────────────────────────────────────────────
 
 enum TimelineStepStatus { completed, active, pending }
@@ -75,12 +77,12 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
   // guessed from the category.
   bool get _isEndorsed =>
       (_report.endorsedToDepartment != null &&
-          _report.endorsedToDepartment!.trim().isNotEmpty);
+      _report.endorsedToDepartment!.trim().isNotEmpty);
 
   String get _forwardedDepartment =>
       _report.endorsedToDepartment?.trim().isNotEmpty == true
-          ? _report.endorsedToDepartment!.trim()
-          : 'External entity';
+      ? _report.endorsedToDepartment!.trim()
+      : 'External entity';
 
   String _departmentFromCategory(String category) {
     switch (category.toLowerCase()) {
@@ -244,8 +246,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
         status: _statusRank >= 3
             ? TimelineStepStatus.completed
             : _statusRank == 2
-                ? TimelineStepStatus.active
-                : TimelineStepStatus.pending,
+            ? TimelineStepStatus.active
+            : TimelineStepStatus.pending,
         icon: Icons.construction_rounded,
       ),
     );
@@ -468,7 +470,13 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
   @override
   Widget build(BuildContext context) {
     final w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
-    final bool wide = kIsWeb && MediaQuery.of(context).size.width >= 900;
+    // `kIsWeb` alone, no width test. The old `>= 900` left a dead zone: a pane
+    // between 760 and 900 wide fell back to the PHONE hero, whose content
+    // starts 19px from the pane's left edge, while the body below it was
+    // already centred at 760. The web header shares that 760 box at every
+    // width, so it needs no guard — and the guard was actively causing the
+    // misalignment it looked like it was preventing.
+    final bool wide = kIsWeb;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF3F4F6),
@@ -694,151 +702,91 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
   }
 
   // ── WEB header: full-bleed blue, content aligned to the 760 content band ────
+  /// The web header: chevron, name, kind and id, then the state pills.
+  ///
+  /// ── Why the blue band is gone here too ──────────────────────────────────
+  /// On the phone the hero is the top of the screen — it fills the status-bar
+  /// area, holds the back target and gives a pushed screen its identity. In a
+  /// desktop pane it is a 200px slab of saturated colour directly under a top
+  /// nav that is already blue, above a page of white cards on grey. It stopped
+  /// reading as this record's header and started reading as chrome.
+  ///
+  /// Everything it carried is still here, in the shape the rest of the account
+  /// section uses: where you came from, what kind of record this is, its name,
+  /// its id, its state. Built inside the same 760 box as the body below, so the
+  /// two provably share a left edge.
   Widget _buildSliverAppBarWeb(double w) {
-    final screenW = MediaQuery.of(context).size.width;
-    final sidePad = ((screenW - 760) / 2).clamp(24.0, double.infinity);
-    return SliverAppBar(
-      expandedHeight: 210,
-      pinned: true,
-      stretch: true,
-      automaticallyImplyLeading: false,
-      backgroundColor: AppColors.primaryBlue,
-      flexibleSpace: FlexibleSpaceBar(
-        background: Stack(
-          fit: StackFit.expand,
-          children: [
-            Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Color(0xFF1565C0),
-                    Color(0xFF0D47A1),
-                    Color(0xFF0A3070),
-                  ],
+    final anonymous = _report.isAnonymous;
+
+    return SliverToBoxAdapter(
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 760),
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(w * .04, 24, w * .04, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                AccountPageTitle(
+                  title: _report.category,
+                  subtitle: 'Report details · RPT-${_report.id}',
+                  onBack: () => Navigator.pop(context),
+                  backLabel: 'Back',
                 ),
-              ),
-            ),
-            Positioned(
-              top: -30,
-              right: -30,
-              child: Container(
-                width: 200,
-                height: 200,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white.withValues(alpha: 0.04),
-                ),
-              ),
-            ),
-            Positioned.fill(
-              child: SafeArea(
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(sidePad, 12, sidePad, 18),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                Padding(
+                  // Indented past the chevron to the title's left edge, so the
+                  // header reads as one block.
+                  padding: const EdgeInsets.only(
+                    left: kAccountBackChevron + kAccountBackChevronGap,
+                  ),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
                     children: [
-                      Row(
-                        children: [
-                          GestureDetector(
-                            onTap: () => Navigator.pop(context),
-                            child: Container(
-                              width: 40,
-                              height: 40,
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: const Icon(
-                                Icons.arrow_back_ios_new_rounded,
-                                size: 18,
-                                color: Colors.white,
-                              ),
-                            ),
+                      // The status pill keeps its colour — it is the one thing
+                      // on this header carrying meaning rather than labelling.
+                      _statusPill(w),
+                      if (anonymous)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 11,
+                            vertical: 6,
                           ),
-                          const Spacer(),
-                          GestureDetector(
-                            onTap: _copyReportId,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 8,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(
-                                    Icons.copy_rounded,
-                                    color: Colors.white,
-                                    size: 14,
-                                  ),
-                                  const SizedBox(width: 5),
-                                  Text(
-                                    'RPT-${_report.id}',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
+                          decoration: BoxDecoration(
+                            color: CitizenUi.subtle,
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(color: CitizenUi.border),
                           ),
-                        ],
-                      ),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            'Report details',
-                            style: TextStyle(
-                              fontSize: w * .032,
-                              color: Colors.white.withValues(alpha: 0.7),
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          SizedBox(height: w * .01),
-                          Text(
-                            _report.category,
-                            style: TextStyle(
-                              fontSize: w * .054,
-                              fontWeight: FontWeight.w800,
-                              color: Colors.white,
-                              letterSpacing: -0.3,
-                              height: 1.2,
-                            ),
-                          ),
-                          SizedBox(height: w * .025),
-                          Row(
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              _statusPill(w),
-                              SizedBox(width: w * .025),
-                              if (_report.isAnonymous)
-                                _pillWidget(
-                                  w,
-                                  icon: Icons.lock_outline_rounded,
-                                  label: 'Anonymous',
-                                  bg: Colors.white.withValues(alpha: 0.15),
-                                  textColor: Colors.white,
+                              Icon(
+                                Icons.lock_outline_rounded,
+                                size: 13,
+                                color: CitizenUi.textMuted,
+                              ),
+                              SizedBox(width: 6),
+                              Text(
+                                'Anonymous',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: CitizenUi.textMuted,
                                 ),
+                              ),
                             ],
                           ),
-                        ],
-                      ),
+                        ),
+                      // The id is in the subtitle now, but copying it was a
+                      // real affordance on the old chip, so it survives.
+                      _WebCopyIdChip(label: 'Copy ID', onTap: _copyReportId),
                     ],
                   ),
                 ),
-              ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -908,7 +856,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(w * .04),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        border: Border.all(color: CitizenUi.sharedBorder),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.05),
@@ -935,8 +883,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Location row
-                if (_report.barangay != null ||
-                    _report.address != null)
+                if (_report.barangay != null || _report.address != null)
                   Row(
                     children: [
                       Icon(
@@ -1307,7 +1254,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(w * .04),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        border: Border.all(color: CitizenUi.sharedBorder),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.04),
@@ -1677,7 +1624,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
                               : const Color(0xFFF9FAFB),
                           border: Border.all(
                             color: isPending
-                                ? const Color(0xFFE5E7EB)
+                                ? CitizenUi.sharedBorder
                                 : dotColor,
                             width: isActive ? 2.0 : 1.5,
                           ),
@@ -1899,7 +1846,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(w * .04),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        border: Border.all(color: CitizenUi.sharedBorder),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.04),
@@ -2261,7 +2208,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
       ),
       decoration: BoxDecoration(
         color: Colors.white,
-        border: const Border(top: BorderSide(color: Color(0xFFE5E7EB))),
+        border: const Border(top: BorderSide(color: CitizenUi.sharedBorder)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.04),
@@ -2275,71 +2222,71 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 760),
           child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Need help with this report?',
-                  style: TextStyle(
-                    fontSize: w * .030,
-                    fontWeight: FontWeight.w600,
-                    color: const Color(0xFF1F2937),
-                  ),
-                ),
-                Text(
-                  'Chat with an agent for follow-up.',
-                  style: TextStyle(
-                    fontSize: w * .026,
-                    color: const Color(0xFF9CA3AF),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          SizedBox(width: w * .03),
-          ElevatedButton.icon(
-            onPressed: _openingChat ? null : _goToChat,
-            icon: _openingChat
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
+            children: [
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Need help with this report?',
+                      style: TextStyle(
+                        fontSize: w * .030,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF1F2937),
+                      ),
                     ),
-                  )
-                : const Icon(
-                    Icons.chat_bubble_outline_rounded,
+                    Text(
+                      'Chat with an agent for follow-up.',
+                      style: TextStyle(
+                        fontSize: w * .026,
+                        color: const Color(0xFF9CA3AF),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(width: w * .03),
+              ElevatedButton.icon(
+                onPressed: _openingChat ? null : _goToChat,
+                icon: _openingChat
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(
+                        Icons.chat_bubble_outline_rounded,
+                        color: Colors.white,
+                        size: 16,
+                      ),
+                label: Text(
+                  _openingChat ? 'Opening…' : 'Chat with agent',
+                  style: const TextStyle(
                     color: Colors.white,
-                    size: 16,
+                    fontWeight: FontWeight.w700,
                   ),
-            label: Text(
-              _openingChat ? 'Opening…' : 'Chat with agent',
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primaryBlue,
+                  disabledBackgroundColor: AppColors.primaryBlue.withValues(
+                    alpha: 0.6,
+                  ),
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: w * .04,
+                    vertical: w * .030,
+                  ),
+                ),
               ),
-            ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primaryBlue,
-              disabledBackgroundColor: AppColors.primaryBlue.withValues(
-                alpha: 0.6,
-              ),
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              padding: EdgeInsets.symmetric(
-                horizontal: w * .04,
-                vertical: w * .030,
-              ),
-            ),
+            ],
           ),
-        ],
-      ),
         ),
       ),
     );
@@ -2533,6 +2480,53 @@ class _MediaViewerScreenState extends State<_MediaViewerScreen> {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// Quiet "Copy ID" pill for the web header, replacing the translucent chip that
+/// used to ride on the blue band.
+class _WebCopyIdChip extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+
+  const _WebCopyIdChip({required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: CitizenUi.subtle,
+      borderRadius: BorderRadius.circular(999),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: CitizenUi.border),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.copy_rounded,
+                size: 13,
+                color: CitizenUi.textMuted,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: CitizenUi.textMuted,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

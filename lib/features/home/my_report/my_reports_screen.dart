@@ -9,6 +9,8 @@ import '../../../../core/widgets/loading/loading_overlay.dart';
 import '../../../core/widgets/web/web_card_grid.dart';
 import '../../../core/providers/user_profile_provider.dart';
 import 'report_card.dart';
+import '../../../core/theme/citizen_ui.dart';
+import '../../../core/widgets/Home/Account/account_web_kit.dart';
 
 // The report row, the ReportItem model and the type scale now live in
 // report_card.dart so the card can be rendered without this screen. Re-exported
@@ -75,6 +77,7 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
   /// detail route the name it still expects.
   String get _username =>
       ref.read(userProfileProvider).valueOrNull?.username ?? '';
+
   /// Opacity the staggered entrance starts from ON WEB, so the first painted
   /// frame already shows content. Mobile still fades from zero. Same value the
   /// auth screens and the feed use — same problem, same floor.
@@ -290,11 +293,11 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
       // Floored on web only; mobile keeps its fade from zero.
       opacity: Tween<double>(begin: kIsWeb ? _kWebFadeFloor : 0.0, end: 1.0)
           .animate(
-        CurvedAnimation(
-          parent: _entryCtrl,
-          curve: Interval(start, end, curve: Curves.easeOut),
-        ),
-      ),
+            CurvedAnimation(
+              parent: _entryCtrl,
+              curve: Interval(start, end, curve: Curves.easeOut),
+            ),
+          ),
       child: SlideTransition(
         position:
             Tween<Offset>(
@@ -316,15 +319,26 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
-    // WEB / large screens: a real multi-column dashboard that fills the width
-    // instead of a stranded 480px phone column. Phones & narrow web fall through
-    // to the original mobile body below, byte-for-byte unchanged.
-    final bool wide = kIsWeb && width >= 900;
+    // ── The browser always gets the web layout ──────────────────────────
+    //
+    // `kIsWeb` alone, no width test, matching every other citizen-web screen.
+    // The old `>= 900` was measured against a MediaQuery the shell has already
+    // overridden to describe the centre column, so a browser narrower than
+    // about 1500 — the rail and the right sidebar take their cut before this
+    // page sees anything — dropped to the PHONE body: a stranded 480px column
+    // with a logo bar, inside a pane that has a nav and a rail of its own.
+    //
+    // The web body handles a narrow pane on its own now; the stat row goes
+    // two-up rather than squeezing four across. See [_buildKpiRow].
+    final bool wide = kIsWeb;
     final double w = wide ? 460.0 : width.clamp(0.0, 480.0);
     return wide
         ? LoadingOverlay.bodyOrSkeleton(
             isLoading: _isLoading,
             layout: SkeletonLayout.myReports,
+            // Same `wide` that chose _buildWebBody, so the skeleton and the body
+            // it stands in for can never disagree.
+            webWide: wide,
             child: _buildWebBody(w),
           )
         : Center(
@@ -362,11 +376,31 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      _buildTopBar(w),
-                      const SizedBox(height: 24),
+                      // ── Not _buildTopBar ───────────────────────────────
+                      //
+                      // That one is the phone's: a full-bleed white slab with
+                      // a drop shadow, carrying the GovPulse mark. On a phone
+                      // the mark belongs there — the screen IS the app, and
+                      // nothing else on it says so. In the shell the top nav
+                      // shows that same mark about 60px higher, so the bar was
+                      // printing it twice.
+                      //
+                      // It also had its own `w * .04` padding INSIDE the page's
+                      // 24, so the slab and everything under it started at two
+                      // different x — the misalignment that made the header
+                      // read as a stray card rather than as this page's title.
+                      const AccountPageTitle(
+                        title: 'My Reports',
+                        subtitle:
+                            'Track the issues you have submitted and '
+                            'where each one has got to.',
+                      ),
                       _animated(1, _buildKpiRow(w)),
                       const SizedBox(height: 28),
-                      _animated(2, _buildReportsHeaderWeb(w, ww, reports.length)),
+                      _animated(
+                        2,
+                        _buildReportsHeaderWeb(w, ww, reports.length),
+                      ),
                       const SizedBox(height: 16),
                       _animated(
                         3,
@@ -409,7 +443,12 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
           runSpacing: 8,
           children: [
             _filterChip(w, 'All', ReportFilter.all, Icons.list_rounded),
-            _filterChip(w, 'Today', ReportFilter.today, Icons.wb_sunny_outlined),
+            _filterChip(
+              w,
+              'Today',
+              ReportFilter.today,
+              Icons.wb_sunny_outlined,
+            ),
             _filterChip(
               w,
               'This Week',
@@ -440,7 +479,7 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        border: Border.all(color: CitizenUi.sharedBorder),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: .04),
@@ -589,75 +628,97 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
 
   Widget _buildKpiRow(double w) {
     final ww = w * 1.18;
+
+    // The four cards, built once. Both layouts below place these SAME widgets
+    // in the same order with the same gap — the phone gets the row it always
+    // had, wrapped in the padding it always had.
+    final cards = <Widget>[
+      _kpiCard(
+        w: w,
+        ww: ww,
+        icon: Icons.assignment_outlined,
+        count: _totalCount,
+        label: 'All',
+        iconBg: const Color(0xFFEEF2FF),
+        iconColor: AppColors.primaryBlue,
+        valueColor: AppColors.primaryBlue,
+        selected: _activeKpi == StatusFilter.all,
+        onTap: () => _selectKpi(StatusFilter.all),
+      ),
+      _kpiCard(
+        w: w,
+        ww: ww,
+        icon: Icons.access_time_rounded,
+        count: _pendingCount,
+        label: 'Pending',
+        iconBg: const Color(0xFFFFF7ED),
+        iconColor: const Color(0xFFD97706),
+        valueColor: const Color(0xFFD97706),
+        selected: _activeKpi == StatusFilter.pending,
+        onTap: () => _selectKpi(StatusFilter.pending),
+      ),
+      _kpiCard(
+        w: w,
+        ww: ww,
+        icon: Icons.check_circle_outline_rounded,
+        count: _resolvedCount,
+        label: 'Resolved',
+        iconBg: const Color(0xFFECFDF5),
+        iconColor: const Color(0xFF059669),
+        valueColor: const Color(0xFF059669),
+        selected: _activeKpi == StatusFilter.resolved,
+        onTap: () => _selectKpi(StatusFilter.resolved),
+      ),
+      _kpiCard(
+        w: w,
+        ww: ww,
+        icon: Icons.cancel_outlined,
+        count: _rejectedCount,
+        label: 'Rejected',
+        iconBg: const Color(0xFFFEF2F2),
+        iconColor: const Color(0xFFDC2626),
+        valueColor: const Color(0xFFDC2626),
+        selected: _activeKpi == StatusFilter.rejected,
+        onTap: () => _selectKpi(StatusFilter.rejected),
+      ),
+    ];
+
     // NOTE: No CrossAxisAlignment.stretch here. All labels are single words now,
     // so the four cards are naturally identical height. Adding `stretch` to a Row
     // inside a vertical SingleChildScrollView gives it unbounded height and throws
     // a layout error (which renders as a blank grey screen in release builds).
+    Widget rowOf(List<Widget> items) => Row(
+      children: [
+        for (var i = 0; i < items.length; i++) ...[
+          if (i > 0) SizedBox(width: w * .03),
+          Expanded(child: items[i]),
+        ],
+      ],
+    );
+
+    if (kIsWeb) {
+      return LayoutBuilder(
+        builder: (context, c) {
+          // Four across needs roughly 140 per card before the count and its
+          // label start colliding. Below that they go two-up, which is the
+          // only arrangement that keeps all four legible — shrinking them
+          // further just makes four unreadable cards instead of two rows of
+          // readable ones.
+          if (c.maxWidth >= 560) return rowOf(cards);
+          return Column(
+            children: [
+              rowOf(cards.sublist(0, 2)),
+              SizedBox(height: w * .03),
+              rowOf(cards.sublist(2)),
+            ],
+          );
+        },
+      );
+    }
+
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: w * .04),
-      child: Row(
-        children: [
-          Expanded(
-            child: _kpiCard(
-              w: w,
-              ww: ww,
-              icon: Icons.assignment_outlined,
-              count: _totalCount,
-              label: 'All',
-              iconBg: const Color(0xFFEEF2FF),
-              iconColor: AppColors.primaryBlue,
-              valueColor: AppColors.primaryBlue,
-              selected: _activeKpi == StatusFilter.all,
-              onTap: () => _selectKpi(StatusFilter.all),
-            ),
-          ),
-          SizedBox(width: w * .03),
-          Expanded(
-            child: _kpiCard(
-              w: w,
-              ww: ww,
-              icon: Icons.access_time_rounded,
-              count: _pendingCount,
-              label: 'Pending',
-              iconBg: const Color(0xFFFFF7ED),
-              iconColor: const Color(0xFFD97706),
-              valueColor: const Color(0xFFD97706),
-              selected: _activeKpi == StatusFilter.pending,
-              onTap: () => _selectKpi(StatusFilter.pending),
-            ),
-          ),
-          SizedBox(width: w * .03),
-          Expanded(
-            child: _kpiCard(
-              w: w,
-              ww: ww,
-              icon: Icons.check_circle_outline_rounded,
-              count: _resolvedCount,
-              label: 'Resolved',
-              iconBg: const Color(0xFFECFDF5),
-              iconColor: const Color(0xFF059669),
-              valueColor: const Color(0xFF059669),
-              selected: _activeKpi == StatusFilter.resolved,
-              onTap: () => _selectKpi(StatusFilter.resolved),
-            ),
-          ),
-          SizedBox(width: w * .03),
-          Expanded(
-            child: _kpiCard(
-              w: w,
-              ww: ww,
-              icon: Icons.cancel_outlined,
-              count: _rejectedCount,
-              label: 'Rejected',
-              iconBg: const Color(0xFFFEF2F2),
-              iconColor: const Color(0xFFDC2626),
-              valueColor: const Color(0xFFDC2626),
-              selected: _activeKpi == StatusFilter.rejected,
-              onTap: () => _selectKpi(StatusFilter.rejected),
-            ),
-          ),
-        ],
-      ),
+      child: rowOf(cards),
     );
   }
 
@@ -683,7 +744,7 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
           color: selected ? iconBg : Colors.white,
           borderRadius: BorderRadius.circular(w * .035),
           border: Border.all(
-            color: selected ? iconColor : const Color(0xFFE5E7EB),
+            color: selected ? iconColor : CitizenUi.sharedBorder,
             width: selected ? 2 : 1,
           ),
           boxShadow: [
@@ -735,7 +796,7 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(w * .04),
-          border: Border.all(color: const Color(0xFFE5E7EB)),
+          border: Border.all(color: CitizenUi.sharedBorder),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: .04),
@@ -805,7 +866,7 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
                 ],
               ),
             ),
-            const Divider(height: 1, color: Color(0xFFE5E7EB)),
+            const Divider(height: 1, color: CitizenUi.sharedBorder),
             // Smoothly animates the card's height when the filtered row count
             // changes, so the container glides instead of snapping/shaking.
             AnimatedSize(
@@ -824,8 +885,10 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
                       itemCount: reports.length,
-                      separatorBuilder: (_, _) =>
-                          const Divider(height: 1, color: Color(0xFFE5E7EB)),
+                      separatorBuilder: (_, _) => const Divider(
+                        height: 1,
+                        color: CitizenUi.sharedBorder,
+                      ),
                       itemBuilder: (context, i) =>
                           _buildAnimatedTile(w, ww, reports[i], i),
                     ),
@@ -872,7 +935,7 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
           color: isActive ? AppColors.primaryBlue : const Color(0xFFF9FAFB),
           borderRadius: BorderRadius.circular(w * .06),
           border: Border.all(
-            color: isActive ? AppColors.primaryBlue : const Color(0xFFE5E7EB),
+            color: isActive ? AppColors.primaryBlue : CitizenUi.sharedBorder,
           ),
         ),
         child: Row(

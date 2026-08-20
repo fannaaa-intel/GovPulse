@@ -12,6 +12,7 @@ import '../../core/services/facebook_signin_service.dart';
 import '../../core/widgets/app_snackbar.dart';
 import '../../core/widgets/auth/facebook_auth_overlay.dart';
 import '../auth/facebook_username_screen.dart';
+import '../../core/theme/citizen_ui.dart';
 
 class LoginScreen extends StatefulWidget {
   final Future<void> Function(String, String) onLoginClick;
@@ -69,15 +70,9 @@ class _LoginScreenState extends State<LoginScreen>
     // first-frame stutter, which is a separate concern from the blank gap.
     _fadeAnim = kIsWeb
         ? Tween<double>(begin: _kWebFadeFloor, end: 1.0).animate(
-            CurvedAnimation(
-              parent: _entranceController,
-              curve: Curves.easeOut,
-            ),
+            CurvedAnimation(parent: _entranceController, curve: Curves.easeOut),
           )
-        : CurvedAnimation(
-            parent: _entranceController,
-            curve: Curves.easeOut,
-          );
+        : CurvedAnimation(parent: _entranceController, curve: Curves.easeOut);
     _slideAnim = Tween<Offset>(begin: const Offset(0, 0.06), end: Offset.zero)
         .animate(
           CurvedAnimation(
@@ -112,17 +107,12 @@ class _LoginScreenState extends State<LoginScreen>
     final Widget content = !kIsWeb
         ? _mobileScaffold(context)
         : (width >= kWebTwoPanelMinWidth
-            ? _webWideScaffold(context)
-            : _webCompactScaffold(context));
+              ? _webWideScaffold(context)
+              : _webCompactScaffold(context));
 
     // While Facebook sign-in is in flight, cover the whole screen with a
     // blocking spinner so the login form never flashes back mid-process.
-    return Stack(
-      children: [
-        content,
-        if (_fbBusy) const FacebookAuthOverlay(),
-      ],
-    );
+    return Stack(children: [content, if (_fbBusy) const FacebookAuthOverlay()]);
   }
 
   // ── Mobile layout — caps + centers on tablets, always scrolls ─────────────
@@ -472,7 +462,9 @@ class _LoginScreenState extends State<LoginScreen>
           const SizedBox(height: 22),
           Row(
             children: [
-              Expanded(child: Divider(color: AppColors.stroke, thickness: 1)),
+              Expanded(
+                child: Divider(color: CitizenUi.sharedStroke, thickness: 1),
+              ),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 14),
                 child: Text(
@@ -480,7 +472,9 @@ class _LoginScreenState extends State<LoginScreen>
                   style: TextStyle(fontSize: 12, color: AppColors.grey),
                 ),
               ),
-              Expanded(child: Divider(color: AppColors.stroke, thickness: 1)),
+              Expanded(
+                child: Divider(color: CitizenUi.sharedStroke, thickness: 1),
+              ),
             ],
           ),
           const SizedBox(height: 18),
@@ -595,7 +589,7 @@ class _LoginScreenState extends State<LoginScreen>
           const SizedBox(height: 20),
           Row(
             children: [
-              Expanded(child: Divider(color: AppColors.stroke)),
+              Expanded(child: Divider(color: CitizenUi.sharedStroke)),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: Text(
@@ -603,7 +597,7 @@ class _LoginScreenState extends State<LoginScreen>
                   style: TextStyle(fontSize: 13, color: AppColors.hint),
                 ),
               ),
-              Expanded(child: Divider(color: AppColors.stroke)),
+              Expanded(child: Divider(color: CitizenUi.sharedStroke)),
             ],
           ),
           const SizedBox(height: 12),

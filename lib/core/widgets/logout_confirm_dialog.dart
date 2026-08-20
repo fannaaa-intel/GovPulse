@@ -1,9 +1,11 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
 import 'app_dialog.dart';
+import '../../core/theme/citizen_ui.dart';
 
 /// A single, clean logout confirmation shared across the citizen app, admin
 /// console and staff console, so the experience is identical everywhere.
@@ -20,82 +22,97 @@ Future<bool> showLogoutConfirmDialog(
     builder: (ctx) => Dialog(
       backgroundColor: Colors.white,
       insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      // Web trims to the shared scale in app_dialog.dart so this and the
+      // verification/success dialogs are one size; the app keeps its own.
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(kIsWeb ? kWebDialogRadius : 20),
+      ),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 380),
+        constraints: const BoxConstraints(maxWidth: kWebDialogMaxWidth),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(24, 26, 24, 20),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                width: 64,
-                height: 64,
+                width: kIsWeb ? kWebDialogIcon : 64,
+                height: kIsWeb ? kWebDialogIcon : 64,
                 decoration: BoxDecoration(
                   color: AppColors.red.withValues(alpha: 0.10),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.logout_rounded,
-                    size: 30, color: AppColors.red),
+                child: Icon(
+                  Icons.logout_rounded,
+                  size: kIsWeb ? kWebDialogGlyph : 30,
+                  color: AppColors.red,
+                ),
               ),
-              const SizedBox(height: 18),
-              const Text(
+              SizedBox(height: kIsWeb ? kWebDialogGapIcon : 18),
+              Text(
                 'Log Out?',
                 style: TextStyle(
-                  fontSize: 21,
+                  fontSize: kIsWeb ? kWebDialogTitle : 21,
                   fontWeight: FontWeight.w700,
                   color: Color(0xFF1F2937),
                 ),
               ),
-              const SizedBox(height: 8),
+              SizedBox(height: kIsWeb ? kWebDialogGapTitle : 8),
               Text(
                 message,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
-                  fontSize: 13.5,
+                  fontSize: kWebDialogBody,
                   height: 1.45,
                   color: Color(0xFF6B7280),
                 ),
               ),
-              const SizedBox(height: 24),
+              SizedBox(height: kIsWeb ? kWebDialogGapActions : 24),
               Row(
                 children: [
                   Expanded(
                     child: OutlinedButton(
                       onPressed: () => Navigator.pop(ctx, false),
                       style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: AppColors.stroke),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        side: const BorderSide(color: CitizenUi.sharedStroke),
+                        padding: EdgeInsets.symmetric(
+                          vertical: kIsWeb ? kWebDialogButtonPadV : 14,
+                        ),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(
+                            kIsWeb ? kWebDialogButtonRadius : 12,
+                          ),
                         ),
                       ),
-                      child: const Text(
+                      child: Text(
                         'Cancel',
                         style: TextStyle(
-                          fontSize: 14.5,
+                          fontSize: kIsWeb ? kWebDialogButtonFont : 14.5,
                           fontWeight: FontWeight.w600,
                           color: Color(0xFF374151),
                         ),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  SizedBox(width: kIsWeb ? kWebDialogButtonGap : 12),
                   Expanded(
                     child: ElevatedButton(
                       onPressed: () => Navigator.pop(ctx, true),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.red,
                         elevation: 0,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        padding: EdgeInsets.symmetric(
+                          vertical: kIsWeb ? kWebDialogButtonPadV : 14,
+                        ),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(
+                            kIsWeb ? kWebDialogButtonRadius : 12,
+                          ),
                         ),
                       ),
-                      child: const Text(
+                      child: Text(
                         'Log Out',
                         style: TextStyle(
-                          fontSize: 14.5,
+                          fontSize: kIsWeb ? kWebDialogButtonFont : 14.5,
                           fontWeight: FontWeight.w700,
                           color: Colors.white,
                         ),

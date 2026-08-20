@@ -1,6 +1,9 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import '../../../../core/widgets/responsive_page.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/theme/citizen_ui.dart';
+import '../../../../core/widgets/Home/Account/account_web_kit.dart';
 
 class PrivacyPolicyScreen extends StatefulWidget {
   const PrivacyPolicyScreen({super.key});
@@ -45,6 +48,10 @@ class _PrivacyPolicyScreenState extends State<PrivacyPolicyScreen>
   // ── Build ──────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
+    // The browser always gets the web layout — `kIsWeb` alone, no width test,
+    // for the reason EditProfileScreen spells out.
+    if (kIsWeb) return _buildWebScaffold();
+
     final w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
     return Scaffold(
       backgroundColor: const Color(0xFFF3F4F6),
@@ -79,153 +86,7 @@ class _PrivacyPolicyScreenState extends State<PrivacyPolicyScreen>
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _buildIntroCard(w),
-                          SizedBox(height: w * 0.05),
-                          _sectionLabel(w, 'INFORMATION WE COLLECT'),
-                          SizedBox(height: w * 0.02),
-                          _buildCard(w, [
-                            _buildBodyTile(
-                              w,
-                              icon: Icons.person_outline_rounded,
-                              color: AppColors.primaryBlue,
-                              title: 'Personal Information',
-                              body:
-                                  'When you register, we collect your full name, email address, phone number, date of birth, and home address to create and verify your citizen account.',
-                            ),
-                            _buildBodyTile(
-                              w,
-                              icon: Icons.badge_outlined,
-                              color: AppColors.primaryBlue,
-                              title: 'Identity Verification Data',
-                              body:
-                                  'To verify your identity, we collect a government-issued ID image and a face scan photo. These are stored securely and used solely for verification purposes.',
-                            ),
-                            _buildBodyTile(
-                              w,
-                              icon: Icons.photo_camera_outlined,
-                              color: AppColors.primaryBlue,
-                              title: 'User-Generated Content',
-                              body:
-                                  'Reports, suggestions, feedback, community posts, and any media you upload (photos, files) are collected and stored as part of your civic activity record.',
-                              showDivider: false,
-                            ),
-                          ]),
-                          SizedBox(height: w * 0.05),
-                          _sectionLabel(w, 'HOW WE USE YOUR INFORMATION'),
-                          SizedBox(height: w * 0.02),
-                          _buildCard(w, [
-                            _buildBodyTile(
-                              w,
-                              icon: Icons.account_balance_outlined,
-                              color: AppColors.green,
-                              title: 'Service Delivery',
-                              body:
-                                  'Your information is used to operate GovPulse, process your civic submissions, facilitate LGU responses, and provide you with relevant notifications and updates.',
-                            ),
-                            _buildBodyTile(
-                              w,
-                              icon: Icons.insights_rounded,
-                              color: AppColors.green,
-                              title: 'Service Improvement',
-                              body:
-                                  'Aggregated and anonymized data may be used to analyze usage patterns, improve application features, and enhance the quality of public services delivered by the LGU.',
-                            ),
-                            _buildBodyTile(
-                              w,
-                              icon: Icons.notifications_none_rounded,
-                              color: AppColors.green,
-                              title: 'Communications',
-                              body:
-                                  'We may use your contact details to send you status updates on your reports or suggestions, important announcements from the LGU, or alerts relevant to your barangay.',
-                              showDivider: false,
-                            ),
-                          ]),
-                          SizedBox(height: w * 0.05),
-                          _sectionLabel(w, 'DATA SHARING & DISCLOSURE'),
-                          SizedBox(height: w * 0.02),
-                          _buildCard(w, [
-                            _buildBodyTile(
-                              w,
-                              icon: Icons.share_outlined,
-                              color: AppColors.orange,
-                              title: 'Within the LGU',
-                              body:
-                                  'Your submissions may be shared with relevant LGU departments and barangay officials solely for the purpose of processing and responding to your civic concerns.',
-                            ),
-                            _buildBodyTile(
-                              w,
-                              icon: Icons.business_outlined,
-                              color: AppColors.orange,
-                              title: 'Third-Party Services',
-                              body:
-                                  'We use trusted third-party providers (such as cloud infrastructure and identity verification services) who process data strictly on our behalf and under confidentiality agreements.',
-                            ),
-                            _buildBodyTile(
-                              w,
-                              icon: Icons.gavel_rounded,
-                              color: AppColors.orange,
-                              title: 'Legal Requirements',
-                              body:
-                                  'We may disclose your information if required by Philippine law, court order, or other governmental authority, or where necessary to protect the rights and safety of others.',
-                              showDivider: false,
-                            ),
-                          ]),
-                          SizedBox(height: w * 0.05),
-                          _sectionLabel(w, 'DATA RETENTION & SECURITY'),
-                          SizedBox(height: w * 0.02),
-                          _buildCard(w, [
-                            _buildBodyTile(
-                              w,
-                              icon: Icons.lock_outline_rounded,
-                              color: AppColors.primaryBlue,
-                              title: 'Security Measures',
-                              body:
-                                  'We implement industry-standard security measures including encrypted storage, row-level access controls, and secure transmission protocols to protect your personal data.',
-                            ),
-                            _buildBodyTile(
-                              w,
-                              icon: Icons.history_rounded,
-                              color: AppColors.primaryBlue,
-                              title: 'Retention Period',
-                              body:
-                                  'Your account data is retained for as long as your account remains active. Upon account deletion, personal data is removed within 30 days, except where retention is required by law.',
-                              showDivider: false,
-                            ),
-                          ]),
-                          SizedBox(height: w * 0.05),
-                          _sectionLabel(w, 'YOUR RIGHTS'),
-                          SizedBox(height: w * 0.02),
-                          _buildCard(w, [
-                            _buildBodyTile(
-                              w,
-                              icon: Icons.visibility_outlined,
-                              color: AppColors.green,
-                              title: 'Right to Access',
-                              body:
-                                  'Under the Data Privacy Act of 2012, you have the right to request access to the personal data we hold about you at any time through the Contact Support page.',
-                            ),
-                            _buildBodyTile(
-                              w,
-                              icon: Icons.edit_outlined,
-                              color: AppColors.green,
-                              title: 'Right to Correction',
-                              body:
-                                  'You may update your personal information directly through the Edit Profile screen. For data that cannot be self-corrected, contact support to request an amendment.',
-                            ),
-                            _buildBodyTile(
-                              w,
-                              icon: Icons.delete_outline_rounded,
-                              color: AppColors.red,
-                              title: 'Right to Erasure',
-                              body:
-                                  'You may request deletion of your account and associated personal data by contacting the LGU. Note that certain records tied to official civic submissions may be retained as required by law.',
-                              showDivider: false,
-                            ),
-                          ]),
-                          SizedBox(height: w * 0.05),
-                          _buildEffectiveNote(w),
-                        ],
+                        children: [..._sections(w)],
                       ),
                     ),
                   ),
@@ -239,6 +100,207 @@ class _PrivacyPolicyScreenState extends State<PrivacyPolicyScreen>
   }
 
   // ── Header — identical to ContactSupportScreen / TermsOfServiceScreen ───────
+  /// The page's content, in order — the one copy of it, rendered by both
+  /// layouts.
+  ///
+  /// Extracted verbatim out of build(): the mobile tree below still passes it
+  /// the same `w` and spreads it into the same Column, so nothing about the app
+  /// layout changed. Keeping it in one place is what lets the web branch exist
+  /// without a second transcription of several thousand words of policy text
+  /// for the two to drift apart.
+  List<Widget> _sections(double w) => [
+    // Mobile only. On web this card's job — saying what the page is, at the
+    // top of the scroll — is [AccountPageTitle]'s, and the web scaffold puts
+    // one there. Rendering both would state it twice, the second time as a
+    // 200px slab above the content it is describing.
+    if (!kIsWeb) ...[_buildIntroCard(w), _gapBetweenSections(w)],
+    _sectionLabel(w, 'INFORMATION WE COLLECT'),
+    _gapAfterLabel(w),
+    _buildCard(w, [
+      _buildBodyTile(
+        w,
+        icon: Icons.person_outline_rounded,
+        color: AppColors.primaryBlue,
+        title: 'Personal Information',
+        body:
+            'When you register, we collect your full name, email address, phone number, date of birth, and home address to create and verify your citizen account.',
+      ),
+      _buildBodyTile(
+        w,
+        icon: Icons.badge_outlined,
+        color: AppColors.primaryBlue,
+        title: 'Identity Verification Data',
+        body:
+            'To verify your identity, we collect a government-issued ID image and a face scan photo. These are stored securely and used solely for verification purposes.',
+      ),
+      _buildBodyTile(
+        w,
+        icon: Icons.photo_camera_outlined,
+        color: AppColors.primaryBlue,
+        title: 'User-Generated Content',
+        body:
+            'Reports, suggestions, feedback, community posts, and any media you upload (photos, files) are collected and stored as part of your civic activity record.',
+        showDivider: false,
+      ),
+    ]),
+    _gapBetweenSections(w),
+    _sectionLabel(w, 'HOW WE USE YOUR INFORMATION'),
+    _gapAfterLabel(w),
+    _buildCard(w, [
+      _buildBodyTile(
+        w,
+        icon: Icons.account_balance_outlined,
+        color: AppColors.green,
+        title: 'Service Delivery',
+        body:
+            'Your information is used to operate GovPulse, process your civic submissions, facilitate LGU responses, and provide you with relevant notifications and updates.',
+      ),
+      _buildBodyTile(
+        w,
+        icon: Icons.insights_rounded,
+        color: AppColors.green,
+        title: 'Service Improvement',
+        body:
+            'Aggregated and anonymized data may be used to analyze usage patterns, improve application features, and enhance the quality of public services delivered by the LGU.',
+      ),
+      _buildBodyTile(
+        w,
+        icon: Icons.notifications_none_rounded,
+        color: AppColors.green,
+        title: 'Communications',
+        body:
+            'We may use your contact details to send you status updates on your reports or suggestions, important announcements from the LGU, or alerts relevant to your barangay.',
+        showDivider: false,
+      ),
+    ]),
+    _gapBetweenSections(w),
+    _sectionLabel(w, 'DATA SHARING & DISCLOSURE'),
+    _gapAfterLabel(w),
+    _buildCard(w, [
+      _buildBodyTile(
+        w,
+        icon: Icons.share_outlined,
+        color: AppColors.orange,
+        title: 'Within the LGU',
+        body:
+            'Your submissions may be shared with relevant LGU departments and barangay officials solely for the purpose of processing and responding to your civic concerns.',
+      ),
+      _buildBodyTile(
+        w,
+        icon: Icons.business_outlined,
+        color: AppColors.orange,
+        title: 'Third-Party Services',
+        body:
+            'We use trusted third-party providers (such as cloud infrastructure and identity verification services) who process data strictly on our behalf and under confidentiality agreements.',
+      ),
+      _buildBodyTile(
+        w,
+        icon: Icons.gavel_rounded,
+        color: AppColors.orange,
+        title: 'Legal Requirements',
+        body:
+            'We may disclose your information if required by Philippine law, court order, or other governmental authority, or where necessary to protect the rights and safety of others.',
+        showDivider: false,
+      ),
+    ]),
+    _gapBetweenSections(w),
+    _sectionLabel(w, 'DATA RETENTION & SECURITY'),
+    _gapAfterLabel(w),
+    _buildCard(w, [
+      _buildBodyTile(
+        w,
+        icon: Icons.lock_outline_rounded,
+        color: AppColors.primaryBlue,
+        title: 'Security Measures',
+        body:
+            'We implement industry-standard security measures including encrypted storage, row-level access controls, and secure transmission protocols to protect your personal data.',
+      ),
+      _buildBodyTile(
+        w,
+        icon: Icons.history_rounded,
+        color: AppColors.primaryBlue,
+        title: 'Retention Period',
+        body:
+            'Your account data is retained for as long as your account remains active. Upon account deletion, personal data is removed within 30 days, except where retention is required by law.',
+        showDivider: false,
+      ),
+    ]),
+    _gapBetweenSections(w),
+    _sectionLabel(w, 'YOUR RIGHTS'),
+    _gapAfterLabel(w),
+    _buildCard(w, [
+      _buildBodyTile(
+        w,
+        icon: Icons.visibility_outlined,
+        color: AppColors.green,
+        title: 'Right to Access',
+        body:
+            'Under the Data Privacy Act of 2012, you have the right to request access to the personal data we hold about you at any time through the Contact Support page.',
+      ),
+      _buildBodyTile(
+        w,
+        icon: Icons.edit_outlined,
+        color: AppColors.green,
+        title: 'Right to Correction',
+        body:
+            'You may update your personal information directly through the Edit Profile screen. For data that cannot be self-corrected, contact support to request an amendment.',
+      ),
+      _buildBodyTile(
+        w,
+        icon: Icons.delete_outline_rounded,
+        color: AppColors.red,
+        title: 'Right to Erasure',
+        body:
+            'You may request deletion of your account and associated personal data by contacting the LGU. Note that certain records tied to official civic submissions may be retained as required by law.',
+        showDivider: false,
+      ),
+    ]),
+    _gapBetweenSections(w),
+    _buildEffectiveNote(w),
+  ];
+
+  // ═════════════════════════════════════════════════════════════════════════
+  //  WEB
+  //
+  //  Reached only from the `kIsWeb` branch of build(). The mobile layout is
+  //  untouched; the helpers above render both, branching internally.
+  // ═════════════════════════════════════════════════════════════════════════
+
+  Widget _buildWebScaffold() {
+    // No ResponsivePageBody, so no `shellTitle` and no SettingsWebShell brand
+    // panel — wrong inside a pane that already has a top nav and a left rail.
+    // Nothing here is fetched, so there is no loading state to draw either.
+    return Scaffold(
+      backgroundColor: CitizenUi.pageBg,
+      body: SafeArea(
+        child: AccountPageBody(
+          builder: (context, stack) => Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // The hero card is replaced by the page title, not merely hidden:
+              // it sat at the top of the scroll saying what the page was, which
+              // is the job [AccountPageTitle] does on every other account page.
+              // Keeping both would state it twice, once as a 200px slab.
+              AccountPageTitle(
+                // Pushed by `pushLegacy` from Settings, which writes no URL — so
+                // the rail still reads Settings and the browser's Back button
+                // leaves the account area rather than closing this page. Without
+                // a door here there is no way out at all.
+                onBack: () => Navigator.pop(context),
+                backLabel: 'Back to Settings',
+                title: 'Privacy Policy',
+                subtitle:
+                    'How GovPulse collects, uses and protects your personal '
+                    'information.',
+              ),
+              ..._sections(480),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildHeader(double w) {
     return Container(
       width: double.infinity,
@@ -263,7 +325,7 @@ class _PrivacyPolicyScreenState extends State<PrivacyPolicyScreen>
               decoration: BoxDecoration(
                 color: const Color(0xFFF3F4F6),
                 borderRadius: BorderRadius.circular(w * 0.025),
-                border: Border.all(color: AppColors.stroke),
+                border: Border.all(color: CitizenUi.sharedStroke),
               ),
               child: Icon(
                 Icons.arrow_back_ios_rounded,
@@ -295,7 +357,7 @@ class _PrivacyPolicyScreenState extends State<PrivacyPolicyScreen>
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(w * 0.04),
-        border: Border.all(color: AppColors.stroke),
+        border: Border.all(color: CitizenUi.sharedStroke),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.05),
@@ -345,7 +407,14 @@ class _PrivacyPolicyScreenState extends State<PrivacyPolicyScreen>
   }
 
   // ── Section label ──────────────────────────────────────────────────────────
+  /// On web this becomes [AccountSectionLabel] — quiet grey small-caps rather
+  /// than blue and bold, for the reason that widget documents: a label names
+  /// the group below it and should be lighter than the content it names.
+  ///
+  /// It carries its own 10px bottom padding, which is why [_gapAfterLabel]
+  /// contributes nothing on web.
   Widget _sectionLabel(double w, String text) {
+    if (kIsWeb) return AccountSectionLabel(text);
     return Padding(
       padding: EdgeInsets.only(left: w * 0.01),
       child: Text(
@@ -360,13 +429,37 @@ class _PrivacyPolicyScreenState extends State<PrivacyPolicyScreen>
     );
   }
 
+  /// Space between a section label and the card under it.
+  ///
+  /// Zero on web because [AccountSectionLabel] already carries it. On mobile
+  /// `kIsWeb` is a compile-time false, so this is exactly the `w * 0.02` that
+  /// was written inline here before.
+  Widget _gapAfterLabel(double w) => SizedBox(height: kIsWeb ? 0 : w * 0.02);
+
+  /// Space between one section and the next. `w` is clamped to 480, so the
+  /// mobile value is 24 — which is [kAccountSectionGap] exactly; the branch is
+  /// here so the web page keeps following the constant if either ever moves.
+  Widget _gapBetweenSections(double w) =>
+      SizedBox(height: kIsWeb ? kAccountSectionGap : w * 0.05);
+
   // ── White rounded section container ────────────────────────────────────────
   Widget _buildCard(double w, List<Widget> children) {
+    // Padding zero: the tiles inside draw their own insets and their own
+    // hairlines, exactly as [AccountListSection] does for rows.
+    if (kIsWeb) {
+      return AccountCard(
+        padding: EdgeInsets.zero,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: children,
+        ),
+      );
+    }
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(w * 0.035),
-        border: Border.all(color: AppColors.stroke),
+        border: Border.all(color: CitizenUi.sharedStroke),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.04),
@@ -388,6 +481,26 @@ class _PrivacyPolicyScreenState extends State<PrivacyPolicyScreen>
     required String body,
     bool showDivider = true,
   }) {
+    // The `color` argument is dropped on web on purpose. Every heading on these
+    // pages arrived with its own pastel tile, and fourteen of them down a
+    // policy page is decoration competing with the prose. [AccountProseBlock]
+    // draws one muted glyph instead, and caps the paragraph at a readable
+    // measure — an 880px card would otherwise set a 130-character line.
+    if (kIsWeb) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          AccountProseBlock(icon: icon, title: title, body: body),
+          if (showDivider)
+            const Divider(
+              height: 1,
+              thickness: 1,
+              indent: 56,
+              color: CitizenUi.border,
+            ),
+        ],
+      );
+    }
     return Column(
       children: [
         Padding(
@@ -442,7 +555,7 @@ class _PrivacyPolicyScreenState extends State<PrivacyPolicyScreen>
         if (showDivider)
           Padding(
             padding: EdgeInsets.only(left: w * 0.175),
-            child: const Divider(height: 1, color: AppColors.stroke),
+            child: const Divider(height: 1, color: CitizenUi.sharedStroke),
           ),
       ],
     );
@@ -450,6 +563,19 @@ class _PrivacyPolicyScreenState extends State<PrivacyPolicyScreen>
 
   // ── Effective date note ────────────────────────────────────────────────────
   Widget _buildEffectiveNote(double w) {
+    if (kIsWeb) {
+      // `stack` only changes how a TRAILING widget is placed, and this notice
+      // has none, so the value is immaterial here.
+      return AccountNotice(
+        stack: false,
+        icon: Icons.info_outline_rounded,
+        title: 'Effective June 2025',
+        message:
+            'This policy is governed by the Philippine Data Privacy Act of '
+            '2012 (RA 10173). For privacy concerns, contact the LGU of '
+            'Aparri through the Contact Support page.',
+      );
+    }
     return Container(
       width: double.infinity,
       padding: EdgeInsets.all(w * 0.04),

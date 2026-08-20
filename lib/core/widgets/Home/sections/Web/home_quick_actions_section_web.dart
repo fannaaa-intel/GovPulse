@@ -4,14 +4,48 @@ import 'package:flutter/material.dart';
 import 'package:govpulse/core/widgets/Home/sections/Web/home_community_section_web.dart'
     show WebGlassPanel;
 
+import '../../../../theme/citizen_ui.dart';
+
 class HomeQuickActionsSectionWeb extends StatelessWidget {
   final ValueChanged<String> onActionTap;
   final double? height;
+
+  /// Renders the section with NO card around it — no white fill, no border, no
+  /// shadow — so the heading and the rows sit straight on the page background,
+  /// exactly as the citizen shell's left-rail ACCOUNT and NAVIGATE sections do.
+  /// Also switches to a roomier row size ([_kFlatSizing]).
+  ///
+  /// Defaults to FALSE, and that default is load-bearing: this widget is also
+  /// mounted by the legacy HomePage (`_buildWebBody`), which despite its name
+  /// runs on NATIVE TABLETS — `resolveNavBand` only returns `NavBand.phone` for
+  /// `!kIsWeb && shortestSide < 600`, so any iPad-sized device falls through to
+  /// the web body. Restyling this widget unconditionally would therefore change
+  /// the installed mobile app. Only the citizen web shell passes true; both
+  /// HomePage call sites keep the card and are byte-identical.
+  final bool flat;
+
   const HomeQuickActionsSectionWeb({
     super.key,
     required this.onActionTap,
     this.height,
+    this.flat = false,
   });
+
+  /// Row metrics for [flat]. Fixed rather than width-derived on purpose: the
+  /// shell's right rail hands this section about 312px, which lands in the
+  /// LayoutBuilder's *narrowest* tier below — 36px icons, 12px titles, 9px
+  /// padding — and that tier is why the rail rows read as cramped. Icons are
+  /// not shrunk here; the extra room goes to padding, the gap and the type.
+  static const _TileSizing _kFlatSizing = _TileSizing(
+    boxSize: 44,
+    imgSize: 23,
+    titleFs: 14,
+    subFs: 12,
+    hPad: 12,
+    vPad: 16,
+    gap: 14,
+    maxSubLines: 2,
+  );
 
   static const List<_ActionDef> _actions = [
     _ActionDef(
@@ -75,7 +109,52 @@ class HomeQuickActionsSectionWeb extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final panel = WebGlassPanel(
+    final section = flat ? _flat() : _carded();
+    if (height != null) {
+      return SizedBox(height: height, child: section);
+    }
+    return section;
+  }
+
+  /// The rail treatment: a left-rail-style heading over bare rows, no card.
+  ///
+  /// The gradient accent bar, the 16px title, the "What would you like to do
+  /// today?" subtitle and the divider are all deliberately absent — the left
+  /// rail's sections are a small uppercase label and then rows, and this has to
+  /// read as one of them. Row separators go too, for the same reason.
+  Widget _flat() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Mirrors _railHeading in citizen_shell.dart, value for value.
+        const Padding(
+          padding: EdgeInsets.only(left: 6, bottom: 6),
+          child: Text(
+            'QUICK ACTIONS',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: .8,
+              color: CitizenUi.textFaint,
+            ),
+          ),
+        ),
+        for (int i = 0; i < _actions.length; i++) ...[
+          if (i > 0) const SizedBox(height: 6),
+          _ActionTile(
+            def: _actions[i],
+            onTap: () => onActionTap(_actions[i].key),
+            sizing: _kFlatSizing,
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// The original card treatment, unchanged. This is what both HomePage call
+  /// sites get, so the native-tablet rendering is untouched.
+  Widget _carded() {
+    return WebGlassPanel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -196,11 +275,6 @@ class HomeQuickActionsSectionWeb extends StatelessWidget {
         ],
       ),
     );
-
-    if (height != null) {
-      return SizedBox(height: height, child: panel);
-    }
-    return panel;
   }
 }
 

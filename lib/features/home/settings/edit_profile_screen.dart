@@ -6,6 +6,8 @@ import '../../../core/widgets/responsive_page.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/citizen_ui.dart';
+import '../../../core/widgets/Home/Account/account_web_kit.dart';
 import '../../../core/constants/aparri_barangays.dart';
 import '../../../core/widgets/loading/loading_overlay.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -296,6 +298,30 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
         type: AppSnackType.success,
       );
       ref.read(userProfileProvider.notifier).refresh();
+
+      // ── Web STAYS on the page; the app still pops ────────────────────────
+      //
+      // Popping is right on a phone: Edit Profile is a whole screen you pushed,
+      // and finishing means going back to the one you came from.
+      //
+      // On web it was two bad things at once. The page is a pane in a shell, so
+      // popping dumped you on Settings — a destination you did not ask for —
+      // and because `_saving` stays true through a pop that never completes for
+      // an unmounting route, the last thing you saw was the whole form greyed
+      // out under a spinner while the address bar had already moved on.
+      //
+      // Staying puts the outcome where the action was: the snackbar confirms
+      // it, the fields keep what you typed, and the 30-day lock that the save
+      // just started is visible immediately rather than on your next visit.
+      if (kIsWeb) {
+        setState(() {
+          _saving = false;
+          // The row now carries this timestamp, so the banner and the disabled
+          // fields must agree with the database without a refetch.
+          _lastProfileUpdatedAt = DateTime.now();
+        });
+        return;
+      }
       Navigator.pop(context, true);
     } catch (e) {
       setState(() {
@@ -309,21 +335,72 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
   @override
   Widget build(BuildContext context) {
     final rawWidth = MediaQuery.of(context).size.width;
-    final bool wide = kIsWeb && rawWidth >= 900;
+
+    // ── The browser always gets the web layout. There is no width test ───────
+    //
+    // `kIsWeb` alone, and that is the whole rule: the MOBILE APP never takes
+    // this branch, and a browser always does.
+    //
+    // It was `kIsWeb && rawWidth >= 900`, then `>= 600`, and both were wrong in
+    // the same way — they handed narrow BROWSERS the phone layout. That layout
+    // is built for the app: proportional type, three stat tiles, a back chevron
+    // for a screen you pushed. In a browser none of that holds. The chevron in
+    // particular is answering a question nobody asked, because the shell's own
+    // chrome — the drawer at this width, the rail above it — already says where
+    // you are and how to leave.
+    //
+    // The web layout does not need the rescue anyway: it collapses to one field
+    // per row below [_kWebStackBelow], so it handles 400px perfectly well, and
+    // it does it with real inputs rather than a 480px column stranded in the
+    // middle of the page.
+    //
+    // [width] is still computed for the handful of mobile builders the web
+    // layout borrows (the not-verified state), and is otherwise unused there —
+    // the web layout measures itself with a LayoutBuilder.
+    final bool wide = kIsWeb;
     final double width = wide ? 460.0 : rawWidth.clamp(0.0, 480.0);
 
     if (wide) {
-      return LoadingOverlay(
-        isLoading: _saving,
-        child: Scaffold(
-          backgroundColor: const Color(0xFFF3F4F6),
-          body: SafeArea(
-            child: LoadingOverlay.bodyOrSkeleton(
-              isLoading: _loading,
-              layout: SkeletonLayout.editProfile,
-              child: _buildEditProfileWebBody(width),
-            ),
-          ),
+      // ── No LoadingOverlay here, deliberately ──────────────────────────────
+      //
+      // The mobile branch below still wraps in one, and on a phone that is
+      // right: the screen IS the task, so blocking all of it while the task
+      // runs is honest.
+      //
+      // On web the page is a pane inside a shell that stays interactive around
+      // it, and a full-page scrim over a form you already filled in reads as a
+      // fault rather than as progress — the barrier greys your own answers back
+      // at you and hides the thing you just pressed. The busy state belongs in
+      // the control that started it, so Save carries the spinner and the fields
+      // disable themselves; see [_buildWebActions].
+      //
+      // The initial LOAD still gets the skeleton. That is a different state:
+      // there is no content to obscure yet.
+      return Scaffold(
+        backgroundColor: CitizenUi.pageBg,
+        body: SafeArea(
+          // Not SkeletonLayout.editProfile. That one draws the MOBILE screen —
+          // a centred avatar over stacked bars — and since the web layout
+          // stopped being the mobile layout it has been promising a shape that
+          // never arrives, so the page visibly rearranged itself on load.
+          //
+          // [AccountPageSkeleton] is built from the same [AccountPageBody] and
+          // [AccountCard] this page is, and its `sections` argument mirrors the
+          // AccountFieldSection calls below one for one: Account is one row of
+          // two, Personal one row of three, Contact and Address one row each.
+          child: _loading
+              ? const AccountPageSkeleton(
+                  banner: true,
+                  sections: [
+                    [2],
+                    [3],
+                    [1],
+                    [1],
+                    [1],
+                  ],
+                  actions: true,
+                )
+              : _buildEditProfileWebBody(width),
         ),
       );
     }
@@ -390,7 +467,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
               decoration: BoxDecoration(
                 color: const Color(0xFFF3F4F6),
                 borderRadius: BorderRadius.circular(width * 0.025),
-                border: Border.all(color: AppColors.stroke),
+                border: Border.all(color: CitizenUi.sharedStroke),
               ),
               child: Icon(
                 Icons.arrow_back_ios_rounded,
@@ -424,7 +501,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(width * 0.04),
-            border: Border.all(color: AppColors.stroke),
+            border: Border.all(color: CitizenUi.sharedStroke),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.05),
@@ -704,7 +781,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
             child: OutlinedButton(
               onPressed: _saving ? null : () => Navigator.pop(context),
               style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: AppColors.stroke),
+                side: const BorderSide(color: CitizenUi.sharedStroke),
                 padding: EdgeInsets.symmetric(vertical: width * 0.04),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(width * 0.03),
@@ -725,52 +802,449 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
     );
   }
 
-  // ── WEB: two-column form (profile summary | fields) ────────────────────────
-  Widget _buildFormWeb(double width) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(width: 360, child: _buildProfileSummary(360)),
-        const SizedBox(width: 28),
-        Expanded(child: _buildFormFields(width)),
-      ],
-    );
-  }
+  // ══════════════════════════════════════════════════════════════════════════
+  //  WEB LAYOUT
+  //
+  //  Reached only from the `wide` branch of build(), which is `kIsWeb`. The
+  //  mobile builders above are untouched and still serve the app.
+  //
+  //  ── Why it is not the mobile form in a wider box ──────────────────────────
+  //  It was, and that was the bug. The mobile builders size EVERYTHING off the
+  //  page width — `width * 0.055` type, `width * 0.04` padding — which is a
+  //  sound way to scale one column across phone sizes and a nonsensical one on
+  //  a desktop page, where the width is 1600 and the text should not be 88pt.
+  //  The rows it produces also read as a settings LIST: an icon in a rounded
+  //  square, a caption, a value, no border. Nothing about them says "type
+  //  here", which on a screen whose entire purpose is typing is the problem.
+  //
+  //  ── The layout lives in the kit, not here ────────────────────────────────
+  //  Page width, the title block, the shape of a card and a field, where the
+  //  buttons go and when to stop being two columns all come from
+  //  account_web_kit.dart, which the other four ACCOUNT pages build from too.
+  //  What stays in this file is what is genuinely Edit Profile's: which fields
+  //  exist, what validates them, the identity banner and the 30-day lock.
+  //
+  //  All of it shares STATE with the mobile path — same controllers, same
+  //  validators, same [_save], same lock — so there is one source of truth for
+  //  what a profile is and two ways of drawing it.
+  // ══════════════════════════════════════════════════════════════════════════
 
   Widget _buildEditProfileWebBody(double width) {
-    return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1040),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 16, 24, 48),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _buildHeader(width),
-                const SizedBox(height: 20),
-                FadeTransition(
-                  opacity: _fadeAnim,
-                  child: SlideTransition(
-                    position: _slideAnim,
-                    child: _isVerified
-                        ? _buildFormWeb(width)
-                        : Center(
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 600),
-                              child: _buildNotVerifiedState(width),
-                            ),
-                          ),
+    return AccountPageBody(
+      builder: (context, stack) => FadeTransition(
+        opacity: _fadeAnim,
+        child: SlideTransition(
+          position: _slideAnim,
+          child: _isVerified
+              ? _buildWebForm(stack: stack)
+              : Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 600),
+                    child: _buildNotVerifiedState(480),
                   ),
                 ),
-              ],
-            ),
-          ),
         ),
       ),
     );
   }
+
+  Widget _buildWebForm({required bool stack}) {
+    return Form(
+      key: _formKey,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const AccountPageTitle(
+            title: 'Edit Profile',
+            subtitle:
+                'Keep your details current so the barangay can reach you '
+                'about your reports.',
+          ),
+          _buildWebIdentityBanner(stack: stack),
+          if (_isLocked) ...[
+            const SizedBox(height: 16),
+            _buildWebLockNotice(stack: stack),
+          ],
+          const SizedBox(height: 28),
+
+          AccountFieldSection(
+            title: 'Account',
+            stack: stack,
+            rows: [
+              [
+                AccountReadonlyField(
+                  label: 'Email',
+                  value:
+                      Supabase.instance.client.auth.currentUser?.email ?? '—',
+                ),
+                AccountReadonlyField(label: 'Username', value: widget.username),
+              ],
+            ],
+          ),
+          const SizedBox(height: kAccountSectionGap),
+
+          AccountFieldSection(
+            title: 'Personal information',
+            stack: stack,
+            rows: [
+              [
+                _webField(
+                  ctrl: _firstNameCtrl,
+                  label: 'First name',
+                  hint: 'Enter first name',
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? 'Required' : null,
+                ),
+                _webField(
+                  ctrl: _middleNameCtrl,
+                  label: 'Middle name',
+                  hint: 'Optional',
+                ),
+                _webField(
+                  ctrl: _lastNameCtrl,
+                  label: 'Last name',
+                  hint: 'Enter last name',
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? 'Required' : null,
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: kAccountSectionGap),
+
+          AccountFieldSection(
+            title: 'Contact',
+            stack: stack,
+            rows: [
+              [
+                _webField(
+                  ctrl: _contactCtrl,
+                  label: 'Mobile number',
+                  hint: 'e.g. 09XXXXXXXXX',
+                  keyboardType: TextInputType.phone,
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) return 'Required';
+                    if (!RegExp(r'^(09|\+639)\d{9}$').hasMatch(v.trim())) {
+                      return 'Enter a valid PH mobile number';
+                    }
+                    return null;
+                  },
+                ),
+                // Holds the second column open so a lone phone number keeps a
+                // sensible input width instead of stretching across the page.
+                const SizedBox.shrink(),
+              ],
+            ],
+          ),
+          const SizedBox(height: kAccountSectionGap),
+
+          AccountFieldSection(
+            title: 'Address',
+            stack: stack,
+            rows: [
+              [_buildWebBarangayField(), const SizedBox.shrink()],
+              [
+                _webField(
+                  ctrl: _streetCtrl,
+                  label: 'Street / Zone',
+                  hint: 'Enter street or zone',
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? 'Required' : null,
+                ),
+                const SizedBox.shrink(),
+              ],
+            ],
+          ),
+
+          if (_errorMessage != null) ...[
+            const SizedBox(height: 20),
+            AccountErrorStrip(_errorMessage!),
+          ],
+
+          const SizedBox(height: 28),
+          AccountActions(
+            stack: stack,
+            busy: _saving,
+            primaryLabel: _isLocked ? 'Profile Locked' : 'Save Changes',
+            onPrimary: (_saving || _isLocked) ? null : _save,
+            secondaryLabel: 'Cancel',
+            onSecondary: _saving ? null : () => Navigator.pop(context),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// [AccountTextField] with this screen's two standing rules applied: nothing
+  /// is editable while locked or while a save is in flight, and every keystroke
+  /// rebuilds so the identity banner can show the name as it is typed.
+  Widget _webField({
+    required TextEditingController ctrl,
+    required String label,
+    required String hint,
+    String? Function(String?)? validator,
+    TextInputType? keyboardType,
+  }) {
+    return AccountTextField(
+      controller: ctrl,
+      label: label,
+      hint: hint,
+      enabled: !_isLocked && !_saving,
+      validator: validator,
+      keyboardType: keyboardType,
+      // Only the two name fields feed the banner, but the cost of an empty
+      // setState on the others is a rebuild of one form.
+      onChanged: (_) => setState(() {}),
+    );
+  }
+
+  /// A real select, not the mobile bottom-sheet picker.
+  ///
+  /// The sheet exists because a phone has no room for 41 options; a desktop
+  /// dropdown does, and it keeps the field looking and behaving like the inputs
+  /// on either side of it. [_barangayCtrl] stays mirrored either way, because
+  /// that is what [_save] reads.
+  ///
+  /// ── initialValue is read ONCE, and that is fine here ─────────────────────
+  /// [FormField.didUpdateWidget] does not re-read `initialValue`, so a value
+  /// that arrived after this field mounted would never show. It cannot: while
+  /// `_loading` is true `LoadingOverlay.bodyOrSkeleton` returns the SKELETON
+  /// INSTEAD OF this subtree — not alongside it — so the form first mounts
+  /// after [_loadData] has filled [_barangayCtrl].
+  ///
+  /// If that ever becomes a Stack of both, this field silently goes blank for
+  /// everyone with a saved barangay. Drive it from `value:` at that point
+  /// rather than debugging it here.
+  Widget _buildWebBarangayField() {
+    final enabled = !_isLocked && !_saving;
+    final current = _barangayCtrl.text.trim();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const AccountFieldLabel('Barangay'),
+        DropdownButtonFormField<String>(
+          initialValue: kAparriBarangays.contains(current) ? current : null,
+          isExpanded: true,
+          validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+          decoration: accountInputDecoration(
+            hint: 'Select your barangay',
+            enabled: enabled,
+          ),
+          hint: const Text(
+            'Select your barangay',
+            style: TextStyle(fontSize: 14, color: CitizenUi.textFaint),
+          ),
+          style: accountFieldTextStyle(),
+          items: [
+            for (final b in kAparriBarangays)
+              DropdownMenuItem<String>(value: b, child: Text(b)),
+          ],
+          onChanged: enabled
+              ? (v) {
+                  if (v == null) return;
+                  setState(() {
+                    _barangayCtrl.text = v;
+                    _barangay = v;
+                  });
+                }
+              : null,
+        ),
+      ],
+    );
+  }
+
+  /// The 30-day lock, as a one-line notice.
+  ///
+  /// The mobile banner ([_buildLockBanner]) is proportional: a gradient card
+  /// with a 12%-of-width icon chip, a headline, a sentence, a date row and a
+  /// progress bar. On a 480px phone that is reasonable ceremony for a state
+  /// that blocks the whole screen. Given a 1120px page it became a ~180px slab
+  /// of amber above the form — the loudest thing on a page about the form.
+  ///
+  /// The progress bar did not survive the move: it reads 0% for most of the
+  /// month, and a bar that barely travels measures nothing. The pill states the
+  /// number outright, which is all anyone wanted from the bar.
+  ///
+  /// Amber, not red — this is a rule working as intended, not a failure.
+  Widget _buildWebLockNotice({required bool stack}) {
+    final unlockDate = _lastProfileUpdatedAt?.add(const Duration(days: 30));
+    final dateStr = unlockDate != null
+        ? '${unlockDate.month}/${unlockDate.day}/${unlockDate.year}'
+        : null;
+
+    return AccountNotice(
+      stack: stack,
+      tone: AccountNoticeTone.warning,
+      icon: Icons.lock_clock_rounded,
+      title: 'Profile editing is locked',
+      message: dateStr == null
+          ? 'You can edit again in 30 days.'
+          : 'You can edit again on $dateStr.',
+      trailing: AccountNoticePill(
+        label: '$_daysRemaining ${_daysRemaining == 1 ? 'day' : 'days'} left',
+      ),
+    );
+  }
+
+  // ── Identity banner ───────────────────────────────────────────────────────
+  //
+  // The mobile avatar card turned on its side. As a column it left a tall empty
+  // gutter beside a form twice its height; across the top it introduces the
+  // person, states their standing, and gets out of the way.
+
+  Widget _buildWebIdentityBanner({required bool stack}) {
+    final fullName =
+        '${_firstNameCtrl.text.trim()} ${_lastNameCtrl.text.trim()}'.trim();
+    final displayName = fullName.isNotEmpty ? fullName : widget.username;
+
+    final name = Text(
+      displayName,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      textAlign: stack ? TextAlign.center : TextAlign.start,
+      style: const TextStyle(
+        fontSize: 21,
+        fontWeight: FontWeight.w700,
+        color: CitizenUi.textPrimary,
+        letterSpacing: -0.3,
+      ),
+    );
+
+    // `Wrap` rather than a second breakpoint — the pill and the stats break
+    // onto their own lines only when they actually must.
+    final standing = Wrap(
+      alignment: stack ? WrapAlignment.center : WrapAlignment.start,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 12,
+      runSpacing: 8,
+      children: [
+        if (_isVerified) _buildWebVerifiedPill(),
+        Text(
+          _webIdentityMeta(),
+          textAlign: stack ? TextAlign.center : TextAlign.start,
+          style: const TextStyle(
+            fontSize: 13,
+            color: CitizenUi.textMuted,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+
+    final busy = _isLocked || _saving;
+    final photoButton = OutlinedButton.icon(
+      onPressed: busy ? null : _pickPhoto,
+      icon: Icon(
+        _isLocked ? Icons.lock_outline_rounded : Icons.photo_camera_outlined,
+        size: 17,
+      ),
+      label: Text(_isLocked ? 'Locked' : 'Change photo'),
+      style: accountSecondaryButtonStyle().copyWith(
+        foregroundColor: WidgetStatePropertyAll(CitizenUi.accent),
+        padding: const WidgetStatePropertyAll(
+          EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        ),
+        textStyle: const WidgetStatePropertyAll(
+          TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
+        ),
+      ),
+    );
+
+    return AccountCard(
+      raised: true,
+      padding: EdgeInsets.all(stack ? 18 : 22),
+      // Narrow: the banner becomes a centred stack — avatar, name, standing,
+      // then a full-width button. Beside each other at this width the name
+      // would ellipsise and the button would still be clipped.
+      child: stack
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(child: _buildWebAvatar()),
+                const SizedBox(height: 14),
+                name,
+                const SizedBox(height: 10),
+                standing,
+                const SizedBox(height: 16),
+                photoButton,
+              ],
+            )
+          : Row(
+              children: [
+                _buildWebAvatar(),
+                const SizedBox(width: 20),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [name, const SizedBox(height: 8), standing],
+                  ),
+                ),
+                const SizedBox(width: 16),
+                photoButton,
+              ],
+            ),
+    );
+  }
+
+  /// The stats line, as prose rather than three bordered tiles.
+  ///
+  /// The tiles were the mobile card's way of filling a narrow column. Beside a
+  /// name on a wide banner they are three boxes competing with the one thing
+  /// the banner is for, so the same three facts run as a single quiet line.
+  String _webIdentityMeta() {
+    final parts = <String>[
+      '$_reportCount ${_reportCount == 1 ? 'report' : 'reports'}',
+      if (_memberSince != null && _memberSince!.isNotEmpty)
+        'Member since $_memberSince',
+      if (_barangay != null && _barangay!.isNotEmpty) _barangay!,
+    ];
+    return parts.join('  ·  ');
+  }
+
+  Widget _buildWebAvatar() {
+    const size = 88.0;
+    final busy = _isLocked || _saving;
+    return GestureDetector(
+      onTap: busy ? null : _pickPhoto,
+      child: MouseRegion(
+        cursor: busy ? SystemMouseCursors.basic : SystemMouseCursors.click,
+        child: Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: CitizenUi.border, width: 2),
+          ),
+          child: ClipOval(child: _buildAvatarImage(size)),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWebVerifiedPill() => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+    decoration: BoxDecoration(
+      color: const Color(0xFFDCFCE7),
+      borderRadius: BorderRadius.circular(999),
+      border: Border.all(color: const Color(0xFF86EFAC)),
+    ),
+    child: const Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.verified_rounded, size: 14, color: Color(0xFF16A34A)),
+        SizedBox(width: 5),
+        Text(
+          'Verified Citizen',
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: CitizenUi.success,
+          ),
+        ),
+      ],
+    ),
+  );
 
   // ── Avatar card ───────────────────────────────────────────────────────────
   Widget _buildAvatarCard(double width) {
@@ -789,7 +1263,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(width * 0.04),
-        border: Border.all(color: AppColors.stroke),
+        border: Border.all(color: CitizenUi.sharedStroke),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.05),
@@ -809,7 +1283,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
                   height: width * 0.28,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    border: Border.all(color: AppColors.stroke, width: 2),
+                    border: Border.all(color: CitizenUi.sharedStroke, width: 2),
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black.withValues(alpha: 0.08),
@@ -818,7 +1292,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
                       ),
                     ],
                   ),
-                  child: ClipOval(child: _buildAvatarImage(width)),
+                  child: ClipOval(child: _buildAvatarImage(width * 0.28)),
                 ),
                 Positioned(
                   bottom: 0,
@@ -921,7 +1395,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
               decoration: BoxDecoration(
                 color: const Color(0xFFF9FAFB),
                 borderRadius: BorderRadius.circular(width * 0.03),
-                border: Border.all(color: const Color(0xFFE5E7EB)),
+                border: Border.all(color: CitizenUi.sharedBorder),
               ),
               child: IntrinsicHeight(
                 child: Row(
@@ -935,7 +1409,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
                       label: 'Reports',
                     ),
                     VerticalDivider(
-                      color: const Color(0xFFE5E7EB),
+                      color: CitizenUi.sharedBorder,
                       thickness: 1,
                       width: width * 0.01,
                     ),
@@ -947,7 +1421,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
                       label: 'Member Since',
                     ),
                     VerticalDivider(
-                      color: const Color(0xFFE5E7EB),
+                      color: CitizenUi.sharedBorder,
                       thickness: 1,
                       width: width * 0.01,
                     ),
@@ -1051,8 +1525,13 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
   }
 
   // ── Avatar image ──────────────────────────────────────────────────────────
-  Widget _buildAvatarImage(double width) {
-    final size = width * 0.28;
+  /// [size] is the rendered diameter in logical pixels, NOT the page width.
+  ///
+  /// It used to derive one from the other (`width * 0.28`), which is fine while
+  /// every caller scales with the page. The web layout does not — its avatar is
+  /// a fixed 88 — so the caller passes the size it actually wants and the
+  /// mobile call site passes what it always computed.
+  Widget _buildAvatarImage(double size) {
     if (_pickedBytes != null) {
       return Image.memory(
         _pickedBytes!,
@@ -1273,7 +1752,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
                 decoration: BoxDecoration(
                   color: const Color(0xFFF3F4F6),
                   borderRadius: BorderRadius.circular(width * 0.022),
-                  border: Border.all(color: AppColors.stroke, width: 1.2),
+                  border: Border.all(color: CitizenUi.sharedStroke, width: 1.2),
                 ),
                 padding: EdgeInsets.all(width * 0.018),
                 child: icon == '@'
@@ -1353,7 +1832,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(width * 0.035),
-        border: Border.all(color: AppColors.stroke),
+        border: Border.all(color: CitizenUi.sharedStroke),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.04),
@@ -1770,6 +2249,6 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
 
   Widget _divider(double width) => Padding(
     padding: EdgeInsets.only(left: width * 0.165),
-    child: const Divider(height: 1, color: AppColors.stroke),
+    child: const Divider(height: 1, color: CitizenUi.sharedStroke),
   );
 }

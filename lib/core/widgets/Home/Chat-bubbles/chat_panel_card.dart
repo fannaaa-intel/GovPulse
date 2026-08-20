@@ -8,6 +8,7 @@ import 'chat_bubbles_model.dart';
 import 'chat_bubbles_widget.dart';
 import '../Chat-agent/chat_models.dart' as cm;
 import '../Chat-agent/chat_models.dart' show ConversationStage;
+import '../../../../core/theme/citizen_ui.dart';
 
 const _kTextPri = Color(0xFF111827);
 
@@ -103,9 +104,14 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
           .maybeSingle();
       final path = (cd?['profile_photo_path'] as String?)?.trim() ?? '';
       if (path.isEmpty || !mounted) return;
-      setState(() => _myPhotoUrl =
-          client.storage.from('profile-photos').getPublicUrl(path));
-    } catch (_) {/* default icon */}
+      setState(
+        () => _myPhotoUrl = client.storage
+            .from('profile-photos')
+            .getPublicUrl(path),
+      );
+    } catch (_) {
+      /* default icon */
+    }
   }
 
   @override
@@ -189,7 +195,7 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: widget.borderRadius,
-            border: Border.all(color: AppColors.stroke, width: 1),
+            border: Border.all(color: CitizenUi.sharedStroke, width: 1),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.14),
@@ -484,8 +490,8 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
     final dept = ChatService.I.connectedDepartment;
     final title = connected
         ? ((staffName?.trim().isNotEmpty ?? false)
-            ? staffName!.trim()
-            : (dept != null ? '$dept staff' : 'LGU Staff'))
+              ? staffName!.trim()
+              : (dept != null ? '$dept staff' : 'LGU Staff'))
         : 'LGU Aparri Agent';
 
     return Padding(
@@ -567,8 +573,9 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
             Padding(
               padding: const EdgeInsets.only(right: 7),
               child: ChatAgentAvatar(
-                photoUrl:
-                    msg.fromStaff ? ChatService.I.connectedStaffPhotoUrl : null,
+                photoUrl: msg.fromStaff
+                    ? ChatService.I.connectedStaffPhotoUrl
+                    : null,
               ),
             ),
           Flexible(
@@ -593,7 +600,7 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
                     ),
                     border: isUser
                         ? null
-                        : Border.all(color: AppColors.stroke, width: 1),
+                        : Border.all(color: CitizenUi.sharedStroke, width: 1),
                   ),
                   child: Text(
                     msg.text,
@@ -651,7 +658,7 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
                 bottomLeft: Radius.circular(3),
                 bottomRight: Radius.circular(15),
               ),
-              border: Border.all(color: AppColors.stroke, width: 1),
+              border: Border.all(color: CitizenUi.sharedStroke, width: 1),
             ),
             child: const ChatTypingDots(),
           ),
@@ -757,7 +764,7 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
               decoration: BoxDecoration(
                 color: AppColors.inputBg,
                 borderRadius: BorderRadius.circular(22),
-                border: Border.all(color: AppColors.stroke, width: 1),
+                border: Border.all(color: CitizenUi.sharedStroke, width: 1),
               ),
               child: Focus(
                 onKeyEvent: (node, event) {
@@ -771,34 +778,34 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
                   return KeyEventResult.ignored;
                 },
                 child: TextField(
-                key: _textFieldKey,
-                controller: _textCtrl,
-                focusNode: _focusNode,
+                  key: _textFieldKey,
+                  controller: _textCtrl,
+                  focusNode: _focusNode,
 
-                maxLines: 3,
-                minLines: 1,
-                // Enter sends (button also works); Shift+Enter = newline.
-                textInputAction: TextInputAction.newline,
-                keyboardType: TextInputType.multiline,
-                textCapitalization: TextCapitalization.sentences,
-                autocorrect: false,
-                enableSuggestions: false,
-                autofillHints: const [],
-                style: const TextStyle(
-                  fontSize: 13.5,
-                  color: _kTextPri,
-                  height: 1.4,
-                ),
-                decoration: InputDecoration(
-                  hintText: isTyping ? 'Agent is typing…' : 'Type a message…',
-                  hintStyle: TextStyle(fontSize: 13.5, color: AppColors.hint),
-                  border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 11,
+                  maxLines: 3,
+                  minLines: 1,
+                  // Enter sends (button also works); Shift+Enter = newline.
+                  textInputAction: TextInputAction.newline,
+                  keyboardType: TextInputType.multiline,
+                  textCapitalization: TextCapitalization.sentences,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  autofillHints: const [],
+                  style: const TextStyle(
+                    fontSize: 13.5,
+                    color: _kTextPri,
+                    height: 1.4,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: isTyping ? 'Agent is typing…' : 'Type a message…',
+                    hintStyle: TextStyle(fontSize: 13.5, color: AppColors.hint),
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 11,
+                    ),
                   ),
                 ),
-              ),
               ),
             ),
           ),

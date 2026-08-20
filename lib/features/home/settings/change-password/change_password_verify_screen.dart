@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import '../../../../core/widgets/responsive_page.dart';
 import 'package:http/http.dart' as http;
@@ -8,6 +9,8 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/widgets/mobile_form_shell.dart';
 import 'change_password_new_screen.dart';
+import '../../../../core/theme/citizen_ui.dart';
+import '../../../../core/widgets/Home/Account/account_web_kit.dart';
 
 class ChangePasswordVerifyScreen extends StatefulWidget {
   final String email;
@@ -21,7 +24,8 @@ class _ChangePasswordVerifyScreenState extends State<ChangePasswordVerifyScreen>
     with TickerProviderStateMixin {
   static const String _baseUrl =
       'https://vxvflhjbafqwehuxnmeq.supabase.co/functions/v1';
-  static const String _apiKey = 'sb_publishable_ZBDaQPQdFyC5kOHGbce9Ig_zdtIi6Mo';
+  static const String _apiKey =
+      'sb_publishable_ZBDaQPQdFyC5kOHGbce9Ig_zdtIi6Mo';
 
   final List<TextEditingController> _controllers = List.generate(
     6,
@@ -253,6 +257,17 @@ class _ChangePasswordVerifyScreenState extends State<ChangePasswordVerifyScreen>
 
   @override
   Widget build(BuildContext context) {
+    // ── WEB ────────────────────────────────────────────────────────────────
+    // See the note on step 1: browser always, app never, no header and so no
+    // back chevron. "Back" here is an explicit secondary action that moves one
+    // step inside the flow rather than out of it.
+    if (kIsWeb) {
+      return Scaffold(
+        backgroundColor: CitizenUi.pageBg,
+        body: SafeArea(child: _buildWebBody()),
+      );
+    }
+
     final w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
     return Scaffold(
       backgroundColor: Colors.white,
@@ -326,7 +341,7 @@ class _ChangePasswordVerifyScreenState extends State<ChangePasswordVerifyScreen>
                             SizedBox(height: w * 0.08),
                             _buildVerifyButton(w),
                             SizedBox(height: w * 0.06),
-                            Divider(color: AppColors.stroke),
+                            Divider(color: CitizenUi.sharedStroke),
                             SizedBox(height: w * 0.04),
                             _buildResendLink(w),
                             SizedBox(height: w * 0.05),
@@ -341,6 +356,191 @@ class _ChangePasswordVerifyScreenState extends State<ChangePasswordVerifyScreen>
           ),
         ),
       ),
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  WEB LAYOUT — step 2 of 3
+  // ══════════════════════════════════════════════════════════════════════════
+
+  Widget _buildWebBody() {
+    return AccountPageBody(
+      builder: (context, stack) => FadeTransition(
+        opacity: _fadeAnim,
+        child: SlideTransition(
+          position: _slideAnim,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const AccountPageTitle(
+                title: 'Change Password',
+                subtitle:
+                    'Confirm your email, enter the code we send you, then '
+                    'choose a new password.',
+              ),
+              const AccountStepper(step: 1, labels: kChangePasswordSteps),
+              AccountListSection(
+                title: 'Verification code',
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(18, 18, 18, 20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Enter the 6-digit code sent to ${widget.email}.',
+                          style: const TextStyle(
+                            fontSize: 13.5,
+                            height: 1.4,
+                            color: CitizenUi.textMuted,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        _buildWebOtpBoxes(),
+                        const SizedBox(height: 14),
+                        _buildWebResend(),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 28),
+              AccountActions(
+                stack: stack,
+                busy: _isVerifying,
+                primaryLabel: 'Verify code',
+                onPrimary: (_code.length == 6 && !_isVerifying)
+                    ? _verifyOtp
+                    : null,
+                secondaryLabel: 'Back',
+                onSecondary: _isVerifying ? null : () => Navigator.pop(context),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The six code boxes, left-aligned at their natural size.
+  ///
+  /// Not stretched across the card: a code field is a control with a KNOWN
+  /// length, and six boxes 130px wide each would read as six separate text
+  /// inputs rather than as one code. They shrink below their preferred 46 only
+  /// when the card is too narrow to seat them, which is why this measures
+  /// rather than hard-coding a width.
+  Widget _buildWebOtpBoxes() {
+    const preferred = 46.0;
+    const gap = 10.0;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final box = ((constraints.maxWidth - gap * 5) / 6).clamp(
+          34.0,
+          preferred,
+        );
+
+        return AnimatedBuilder(
+          animation: _shakeAnim,
+          builder: (_, child) => Transform.translate(
+            offset: Offset(_shakeAnim.value, 0),
+            child: child,
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.start,
+            children: List.generate(6, (i) {
+              return Padding(
+                padding: EdgeInsets.only(right: i == 5 ? 0 : gap),
+                child: SizedBox(
+                  width: box,
+                  child: TextField(
+                    controller: _controllers[i],
+                    focusNode: _focusNodes[i],
+                    keyboardType: TextInputType.number,
+                    textAlign: TextAlign.center,
+                    maxLength: 1,
+                    autofocus: i == 0,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: CitizenUi.textPrimary,
+                    ),
+                    decoration: accountInputDecoration(hint: '').copyWith(
+                      counterText: '',
+                      contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(
+                          CitizenUi.controlRadius,
+                        ),
+                        borderSide: BorderSide(
+                          color: _showError
+                              ? CitizenUi.danger
+                              : CitizenUi.border,
+                        ),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(
+                          CitizenUi.controlRadius,
+                        ),
+                        borderSide: BorderSide(
+                          color: _showError
+                              ? CitizenUi.danger
+                              : CitizenUi.accent,
+                          width: 1.6,
+                        ),
+                      ),
+                      fillColor: _showError
+                          ? CitizenUi.danger.withValues(alpha: 0.04)
+                          : CitizenUi.surface,
+                    ),
+                    onChanged: (val) {
+                      if (val.isNotEmpty && i < 5) {
+                        _focusNodes[i + 1].requestFocus();
+                      } else if (val.isEmpty && i > 0) {
+                        _focusNodes[i - 1].requestFocus();
+                      }
+                      setState(() {});
+                    },
+                  ),
+                ),
+              );
+            }),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildWebResend() {
+    if (_resendStatus.isNotEmpty) {
+      return Text(
+        _resendStatus,
+        style: TextStyle(
+          fontSize: 12.5,
+          fontWeight: FontWeight.w600,
+          color: _resendStatus == 'Sent successfully'
+              ? CitizenUi.success
+              : CitizenUi.danger,
+        ),
+      );
+    }
+    if (_secondsLeft > 0) {
+      return Text(
+        'You can request a new code in '
+        '00:${_secondsLeft.toString().padLeft(2, '0')}.',
+        style: const TextStyle(fontSize: 12.5, color: CitizenUi.textMuted),
+      );
+    }
+    return TextButton(
+      onPressed: _isResending ? null : _resendOtp,
+      style: TextButton.styleFrom(
+        padding: EdgeInsets.zero,
+        minimumSize: Size.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        foregroundColor: CitizenUi.accent,
+        textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+      ),
+      child: Text(_isResending ? 'Sending…' : 'Resend code'),
     );
   }
 
@@ -368,7 +568,7 @@ class _ChangePasswordVerifyScreenState extends State<ChangePasswordVerifyScreen>
               decoration: BoxDecoration(
                 color: const Color(0xFFF3F4F6),
                 borderRadius: BorderRadius.circular(w * 0.025),
-                border: Border.all(color: AppColors.stroke),
+                border: Border.all(color: CitizenUi.sharedStroke),
               ),
               child: Icon(
                 Icons.arrow_back_ios_rounded,
@@ -461,7 +661,7 @@ class _ChangePasswordVerifyScreenState extends State<ChangePasswordVerifyScreen>
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide(
-                    color: _showError ? AppColors.red : AppColors.stroke,
+                    color: _showError ? AppColors.red : CitizenUi.sharedStroke,
                     width: 1.2,
                   ),
                 ),

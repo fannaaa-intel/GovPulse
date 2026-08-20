@@ -3,6 +3,9 @@ import 'dart:io';
 import '../../core/network/network_wrapper.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import '../../core/widgets/Home/Account/account_web_kit.dart'
+    show kVerificationCameraMaxWidth;
+import '../../core/widgets/app_dialog.dart' show kWebDialogMaxWidth;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -95,6 +98,20 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
   bool _cameraReady = false;
   bool _isCapturing = false;
 
+  // ── WEB camera path ─────────────────────────────────────────────────────
+  // On a phone or tablet browser the camera IS the natural way to take a
+  // selfie, so web gets a live preview and a shutter. What it does not get is
+  // detection: the oval never fills, nothing says "Hold Steady", and no frame
+  // is auto-captured, because all of that is ML Kit and ML Kit has no web
+  // implementation. The oval is a FRAMING GUIDE here, not a detector, and the
+  // copy is written so it never claims otherwise.
+  //
+  // Nothing is lost against the file-picker path this replaces: that had no
+  // automated check either, and every submission is reviewed by a person.
+  bool _webUsesCamera = false;
+  bool _webCamStarted = false;
+  bool _webCamFailed = false;
+
   // ── Captured still frame ──────────────────────────────────────────────────
   Uint8List? _capturedImageBytes;
 
@@ -146,6 +163,85 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
       _scanState = _ScanState.waitingForFace;
     } else {
       _initCamera();
+    }
+  }
+
+  /// Picks the web capture method once, the first time a [MediaQuery] exists.
+  ///
+  /// Not [initState]: MediaQuery cannot be read there. Not [build] either -
+  /// starting a camera is a side effect and build must stay pure.
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!kIsWeb || _webCamStarted) return;
+    _webCamStarted = true;
+    _webUsesCamera =
+        MediaQuery.of(context).size.width <= kVerificationCameraMaxWidth;
+    if (_webUsesCamera) _initWebCamera();
+  }
+
+  /// Starts a plain preview — no image stream, no detector, no timers.
+  ///
+  /// Prefers the FRONT camera: this is a selfie. Failure is a state rather
+  /// than an exception, because the footer has to be able to offer the file
+  /// picker instead of leaving the user looking at an empty oval.
+  Future<void> _initWebCamera() async {
+    try {
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) throw 'no cameras';
+      final cam = cameras.firstWhere(
+        (c) => c.lensDirection == CameraLensDirection.front,
+        orElse: () => cameras.first,
+      );
+      final controller = CameraController(
+        cam,
+        ResolutionPreset.high,
+        enableAudio: false,
+        imageFormatGroup: ImageFormatGroup.jpeg,
+      );
+      await controller.initialize();
+      if (!mounted) {
+        await controller.dispose();
+        return;
+      }
+      setState(() {
+        _cameraController = controller;
+        _cameraReady = true;
+        _scanState = _ScanState.waitingForFace;
+      });
+    } catch (e) {
+      debugPrint('[FACE/WEB] camera unavailable: $e');
+      if (!mounted) return;
+      setState(() {
+        _webUsesCamera = false;
+        _webCamFailed = true;
+      });
+    }
+  }
+
+  /// The web shutter. Manual, because nothing here is watching for a face.
+  Future<void> _webCapture() async {
+    final controller = _cameraController;
+    if (controller == null || _isCapturing) return;
+    setState(() => _isCapturing = true);
+    try {
+      final shot = await controller.takePicture();
+      final bytes = await shot.readAsBytes();
+      if (!mounted) return;
+      setState(() {
+        _capturedImageBytes = bytes;
+        _uploadError = null;
+        _scanState = _ScanState.done;
+      });
+    } catch (e) {
+      debugPrint('[FACE/WEB] capture failed: $e');
+      if (!mounted) return;
+      setState(
+        () => _uploadError =
+            "Couldn't take that photo. Try again, or upload a file instead.",
+      );
+    } finally {
+      if (mounted) setState(() => _isCapturing = false);
     }
   }
 
@@ -302,15 +398,16 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
   }
 
   Future<void> _retry() async {
-    // WEB: "Retry" means pick a different selfie — there is no detection loop
-    // to restart and no timers or progress controller in play.
+    // WEB: no detection loop to restart, and no timers or progress controller
+    // in play. With a live preview "Retry" just drops the still and lets the
+    // camera show through again; with the file picker it reopens the picker.
     if (kIsWeb) {
       setState(() {
         _capturedImageBytes = null;
         _uploadError = null;
         _scanState = _ScanState.waitingForFace;
       });
-      await _pickSelfieForWeb();
+      if (!_webUsesCamera) await _pickSelfieForWeb();
       return;
     }
 
@@ -573,9 +670,11 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
   }
 
   String get _statusText {
-    // Web never scans, so the camera-oriented wording would be nonsense there.
+    // Web never DETECTS, so the progress wording would be a lie either way -
+    // there is no "Get Closer" because nothing is measuring how close you are.
     if (kIsWeb) {
-      return _scanState == _ScanState.done ? "Selfie Added" : "Add a Selfie";
+      if (_scanState == _ScanState.done) return "Selfie Added";
+      return _webUsesCamera ? "Position Your Face" : "Add a Selfie";
     }
     switch (_scanState) {
       case _ScanState.initializing:
@@ -840,7 +939,7 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
                   SizedBox(
                     width:
                         MediaQuery.of(context).size.width.clamp(0.0, 480.0) *
-                            0.09,
+                        0.09,
                   ),
                 ],
               ),
@@ -853,16 +952,27 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
 
   Widget _buildScanningFooter() {
     // WEB: nothing is scanning, so there are no dots to animate — the footer is
-    // the call to action that opens the file picker.
+    // the call to action, which is a shutter when there is a live preview and
+    // a file picker otherwise.
     if (kIsWeb) {
       return Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text(
-            "Upload a clear photo of your face.\n"
-            "Our team will check it against your ID.",
+          Text(
+            _webUsesCamera
+                ? "Centre your face in the oval, then take the photo.\n"
+                      "Our team will check it against your ID."
+                : _webCamFailed
+                ? "We couldn't open your camera.\n"
+                      "Upload a clear photo of your face instead."
+                : "Upload a clear photo of your face.\n"
+                      "Our team will check it against your ID.",
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 13, color: AppColors.hint, height: 1.5),
+            style: const TextStyle(
+              fontSize: 13,
+              color: AppColors.hint,
+              height: 1.5,
+            ),
           ),
           if (_uploadError != null) ...[
             const SizedBox(height: 8),
@@ -883,11 +993,33 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: _kFaceButtonMaxWidth),
             child: _AnimatedButton(
-              label: "Choose a selfie",
+              label: _webUsesCamera
+                  ? (_isCapturing ? "Taking photo…" : "Take photo")
+                  : "Choose a selfie",
               color: AppColors.primaryBlue,
-              onPressed: _pickSelfieForWeb,
+              onPressed: _webUsesCamera
+                  ? (_cameraReady && !_isCapturing ? _webCapture : () {})
+                  : _pickSelfieForWeb,
             ),
           ),
+          // Whichever method the window chose, the other one stays one tap
+          // away. The width test is a guess about hardware — a narrow desktop
+          // window has no usable camera, a tablet can have it blocked — so it
+          // decides the DEFAULT and never the only way through.
+          if (_webUsesCamera) ...[
+            const SizedBox(height: 6),
+            TextButton(
+              onPressed: _pickSelfieForWeb,
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.hint,
+                textStyle: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              child: const Text('Upload a file instead'),
+            ),
+          ],
         ],
       );
     }
@@ -1026,6 +1158,12 @@ class _SuccessDialogState extends State<_SuccessDialog> {
     child: Material(
       color: Colors.transparent,
       child: Container(
+        // WEB: capped for the same reason as every other dialog in this
+        // wizard - a margin bounds the gap at the edges, not the box itself,
+        // so the success card grew to the width of the monitor.
+        constraints: BoxConstraints(
+          maxWidth: kIsWeb ? kWebDialogMaxWidth : double.infinity,
+        ),
         margin: const EdgeInsets.symmetric(horizontal: 32),
         padding: const EdgeInsets.fromLTRB(24, 32, 24, 28),
         decoration: BoxDecoration(

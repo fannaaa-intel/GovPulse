@@ -3,6 +3,7 @@ import '../../../theme/app_colors.dart';
 import '../../../moderation/profanity_filter.dart';
 import 'news_feed_helpers.dart';
 import 'image_grid.dart';
+import '../../../../core/theme/citizen_ui.dart';
 
 /// The post a comment thread belongs to, drawn at the top of the WIDE-SCREEN
 /// comments dialog.
@@ -110,7 +111,7 @@ class _CommentPostRecapState extends State<CommentPostRecap> {
             ],
           ),
         ),
-        Container(height: 1, color: const Color(0xFFE5E7EB)),
+        Container(height: 1, color: CitizenUi.sharedBorder),
         SizedBox(height: width * 0.02),
       ],
     );

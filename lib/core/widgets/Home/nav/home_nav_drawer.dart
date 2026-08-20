@@ -3,6 +3,7 @@ import '../../../theme/app_colors.dart';
 import '../home_enums.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../modal/verification_required_dialog.dart';
+import '../../../../core/theme/citizen_ui.dart';
 
 class HomeNavDrawer extends StatelessWidget {
   final int currentIndex;
@@ -136,7 +137,7 @@ class HomeNavDrawer extends StatelessWidget {
                 ],
               ),
             ),
-            const Divider(height: 1, color: Color(0xFFE5E7EB)),
+            const Divider(height: 1, color: CitizenUi.sharedBorder),
             const SizedBox(height: 8),
             // ── Items ──
             // ── Items ──
@@ -171,7 +172,7 @@ class HomeNavDrawer extends StatelessWidget {
               ),
             ),
             // ── Sign out — pinned to the bottom ──
-            const Divider(height: 1, color: Color(0xFFE5E7EB)),
+            const Divider(height: 1, color: CitizenUi.sharedBorder),
             Material(
               color: Colors.transparent,
               child: InkWell(

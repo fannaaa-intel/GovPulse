@@ -65,6 +65,12 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^6.0.0
   flutter_launcher_icons: ^0.13.1
+  # Test-only. `image_picker` does NOT re-export ImagePickerPlatform, so a test
+  # that needs to stand in for the gallery — attaching a real file so the
+  # submit guards can be driven end to end — has to reach the interface
+  # directly. Declared rather than relied on transitively for the same reason
+  # `barcode` is declared above: it breaks the moment image_picker drops it.
+  image_picker_platform_interface: ^2.11.1
    
 
 flutter:

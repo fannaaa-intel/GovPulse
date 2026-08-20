@@ -9,6 +9,7 @@ import 'package:geolocator/geolocator.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/widgets/app_dialog.dart';
+import '../../../../core/theme/citizen_ui.dart';
 
 // ── Aparri bounding box (expanded to cover all 42 official barangays) ─────
 const double _aparriMinLat = 18.2750;
@@ -140,11 +141,26 @@ class LocationPickerScreen extends StatefulWidget {
   final String? initialBarangay;
   final bool readOnly;
 
+  /// Where a confirmed pick goes.
+  ///
+  /// **null (the default)** — the picker is a pushed route: Confirm pops it and
+  /// returns the result map to whoever awaited the push. That is what mobile,
+  /// the standalone report route, the suggestion form and the report detail all
+  /// do, and none of them pass this.
+  ///
+  /// **Non-null** — the picker is hosted INLINE (the citizen web split panel).
+  /// Confirm hands the SAME `{barangay, useCurrentLocation, latLng}` map to this
+  /// callback instead of popping, and the build drops the PopScope, the Scaffold
+  /// and the in-page header because the host already supplies them. Nothing
+  /// about how a location is chosen changes between the two.
+  final void Function(Map<String, dynamic> result)? onConfirm;
+
   const LocationPickerScreen({
     super.key,
     this.initialPosition,
     this.initialBarangay,
     this.readOnly = false,
+    this.onConfirm,
   });
 
   @override
@@ -201,11 +217,63 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
     super.dispose();
   }
 
+  /// True when this picker is hosted INSIDE a panel rather than pushed as a
+  /// route — see [LocationPickerScreen.onConfirm].
+  ///
+  /// The one flag every web-only difference hangs off, so the pushed picker
+  /// (mobile, the standalone route, the report detail) keeps the widget tree it
+  /// has always had: a contained barangay menu instead of the material
+  /// dropdown's viewport-tall overlay, no Confirm button, and a pick that saves
+  /// the moment it is made.
+  bool get _inline => widget.onConfirm != null;
+
+  /// Re-seed from the host when the host's location changed underneath us —
+  /// the report form's own GPS auto-fetch resolving a barangay while step 2 is
+  /// already built, for instance.
+  ///
+  /// Inline only, and it deliberately ignores the ECHO of a pick this picker
+  /// itself just delivered (the host writes it back into `initialBarangay`
+  /// within the same frame): re-seeding on that would be a no-op at best and,
+  /// on a GPS pick, would knock the toggle back off.
+  @override
+  void didUpdateWidget(covariant LocationPickerScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_inline) return;
+    if (widget.initialBarangay == oldWidget.initialBarangay &&
+        widget.initialPosition == oldWidget.initialPosition) {
+      return;
+    }
+    if (widget.initialBarangay == _selectedBarangay &&
+        widget.initialPosition == _markerPosition) {
+      return;
+    }
+    setState(() {
+      _selectedBarangay = widget.initialBarangay;
+      _markerPosition =
+          barangayCoords[widget.initialBarangay] ?? widget.initialPosition;
+    });
+  }
+
   /// Closes the screen (optionally returning [result]). The OpenStreetMap view
   /// is a plain Flutter widget, so it fades out with the route on its own — no
   /// snapshot or platform-view handling needed.
   void _close([Map<String, dynamic>? result]) {
     Navigator.pop(context, result);
+  }
+
+  /// Delivers a confirmed [result] to whichever host is running this picker.
+  ///
+  /// The single place the two hosts diverge. Everything upstream of it — the GPS
+  /// fetch, the barangay list, `_canConfirm`, the two branches of [_confirm] —
+  /// is identical either way, so an inline pick and a pushed pick cannot
+  /// disagree about what was chosen.
+  void _deliver(Map<String, dynamic> result) {
+    final inline = widget.onConfirm;
+    if (inline != null) {
+      inline(result);
+      return;
+    }
+    _close(result);
   }
 
   /// Display-only map — rendered with flutter_map + OpenStreetMap tiles, which
@@ -215,7 +283,20 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
   /// via the GPS toggle / barangay dropdown, so the map is non-interactive.
   Widget _mapArea(double width) {
     final center = _markerPosition ?? _aparriCenter;
-    final double h = widget.readOnly ? width * 1.10 : width * 0.62;
+    // `width` here is the 480px MOBILE scale, not the panel's: on a phone the
+    // map is 480 × 0.62 ≈ 298 tall under a 480-wide column, which is a squarish
+    // window onto the town. Inline it is stretched across a ~620px panel, so
+    // the same 298 is a tall band of mostly-empty coastline — and it is the
+    // single biggest contributor to how tall the fixed frame has to be. 220
+    // keeps a clearly readable locator at panel width and hands ~78px back to
+    // every OTHER step, which is where the emptiness was showing.
+    //
+    // Display-only either way: nothing is chosen by touching the map.
+    final double h = widget.readOnly
+        ? width * 1.10
+        : _inline
+        ? 220
+        : width * 0.62;
     final llCenter = ll.LatLng(center.latitude, center.longitude);
 
     return ClipRRect(
@@ -429,6 +510,9 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
           _useCurrentLocation = true; // ← only set true on actual success
           _isLoadingGPS = false;
         });
+        // Inline: a resolved position is a pick, and there is no Confirm to
+        // press. Same commit as choosing from the list.
+        if (_inline) _confirm();
       }
     } catch (e) {
       debugPrint('Unexpected GPS error: $e');
@@ -457,14 +541,14 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
     if (_useCurrentLocation) {
       final barangay =
           _selectedBarangay ?? findNearestBarangay(_markerPosition!);
-      _close({
+      _deliver({
         'barangay': barangay,
         'useCurrentLocation': true,
         'latLng': _markerPosition,
       });
     } else {
       final coords = barangayCoords[_selectedBarangay] ?? _aparriCenter;
-      _close({
+      _deliver({
         'barangay': _selectedBarangay,
         'useCurrentLocation': false,
         'latLng': coords,
@@ -478,6 +562,19 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
       context: context,
       builder: (ctx) => Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        // Without a cap a [Dialog] is as wide as its content will go, and this
+        // one's content is a paragraph — so in the web panel it drew as a band
+        // right across the browser window, with Cancel and Open Settings at
+        // opposite ends of it. 400 is the same card width the media picker and
+        // the discard confirmation use, so all three read as one kind of
+        // pop-up.
+        //
+        // Inline only. A phone's dialog is already narrower than 400 so the cap
+        // could not bind there anyway — but the pushed picker is the mobile
+        // path, and it is left with the exact widget it had.
+        constraints: _inline
+            ? const BoxConstraints(maxWidth: 400, minWidth: 280)
+            : null,
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
@@ -577,6 +674,19 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
 
     final keyboardPad = MediaQuery.of(context).viewInsets.bottom;
 
+    // Hosted inline (the citizen web split panel): the host owns the bounds,
+    // the scrolling and the way out, so the page chrome is dropped. No
+    // PopScope either — there is no route here to intercept a pop for.
+    if (widget.onConfirm != null) {
+      return FadeTransition(
+        opacity: _fadeAnim,
+        child: SlideTransition(
+          position: _slideAnim,
+          child: _pickerContent(width),
+        ),
+      );
+    }
+
     return PopScope(
       // Intercept the system back so the map is snapshotted and fades out with
       // the route, matching the header back button.
@@ -611,387 +721,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
                           width * 0.045,
                           bottomPad + keyboardPad + width * 0.02,
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // ── Title + subtitle ─────────────────────────────────────
-                            Text(
-                              widget.readOnly
-                                  ? 'Pinned Location'
-                                  : 'Edit Location',
-                              style: TextStyle(
-                                fontSize: width * 0.044,
-                                fontWeight: FontWeight.w700,
-                                color: const Color(0xFF1F2937),
-                              ),
-                            ),
-                            SizedBox(height: width * 0.008),
-                            Text(
-                              widget.readOnly
-                                  ? 'Showing the exact location of the reported issue.'
-                                  : 'Toggle GPS or select a barangay from the list.',
-                              style: TextStyle(
-                                fontSize: width * 0.030,
-                                color: const Color(0xFF9CA3AF),
-                              ),
-                            ),
-                            SizedBox(height: width * 0.03),
-
-                            // ── Map inside a rounded container ───────────────────────
-                            _mapArea(width),
-
-                            if (!widget.readOnly) ...[
-                              SizedBox(height: width * 0.04),
-
-                              // ── Unified form card ────────────────────────────────────
-                              Container(
-                                width: double.infinity,
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(
-                                    width * 0.04,
-                                  ),
-                                  border: Border.all(
-                                    color: const Color(0xFFE5E7EB),
-                                  ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withValues(
-                                        alpha: 0.04,
-                                      ),
-                                      blurRadius: 8,
-                                      offset: const Offset(0, 2),
-                                    ),
-                                  ],
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    // ── Toggle row ─────────────────────────────────────
-                                    Padding(
-                                      padding: EdgeInsets.all(width * 0.04),
-                                      child: Row(
-                                        children: [
-                                          Container(
-                                            width: width * 0.105,
-                                            height: width * 0.105,
-                                            decoration: BoxDecoration(
-                                              color: AppColors.primaryBlue
-                                                  .withValues(alpha: 0.08),
-                                              borderRadius:
-                                                  BorderRadius.circular(
-                                                    width * 0.03,
-                                                  ),
-                                            ),
-                                            child: Icon(
-                                              Icons.my_location_rounded,
-                                              size: width * 0.05,
-                                              color: AppColors.primaryBlue,
-                                            ),
-                                          ),
-                                          SizedBox(width: width * 0.03),
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  'Use my current location',
-                                                  style: TextStyle(
-                                                    fontSize: width * 0.034,
-                                                    fontWeight: FontWeight.w600,
-                                                    color: const Color(
-                                                      0xFF1F2937,
-                                                    ),
-                                                  ),
-                                                ),
-                                                SizedBox(height: width * 0.005),
-                                                Text(
-                                                  'Detects your GPS position',
-                                                  style: TextStyle(
-                                                    fontSize: width * 0.027,
-                                                    color: const Color(
-                                                      0xFF9CA3AF,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                          if (_isLoadingGPS)
-                                            Padding(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 8,
-                                                  ),
-                                              child: SizedBox(
-                                                width: 22,
-                                                height: 22,
-                                                child:
-                                                    CircularProgressIndicator(
-                                                      strokeWidth: 2.5,
-                                                      color:
-                                                          AppColors.primaryBlue,
-                                                    ),
-                                              ),
-                                            )
-                                          else
-                                            Switch(
-                                              value: _useCurrentLocation,
-                                              onChanged: (v) async {
-                                                if (!v) {
-                                                  // Turning OFF — reset immediately
-                                                  setState(() {
-                                                    _useCurrentLocation = false;
-                                                    _markerPosition =
-                                                        _selectedBarangay !=
-                                                            null
-                                                        ? barangayCoords[_selectedBarangay]
-                                                        : null;
-                                                  });
-                                                } else {
-                                                  // Turning ON — let GPS fetch decide if it succeeds
-                                                  await _fetchCurrentLocation();
-                                                }
-                                              },
-                                              activeTrackColor:
-                                                  AppColors.primaryBlue,
-                                              activeThumbColor: Colors.white,
-                                              inactiveThumbColor: Colors.white,
-                                              inactiveTrackColor: const Color(
-                                                0xFFD1D5DB,
-                                              ),
-                                            ),
-                                        ],
-                                      ),
-                                    ),
-
-                                    const Divider(
-                                      height: 1,
-                                      color: Color(0xFFE5E7EB),
-                                    ),
-
-                                    // ── Barangay section ───────────────────────────────
-                                    Padding(
-                                      padding: EdgeInsets.all(width * 0.04),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Row(
-                                            children: [
-                                              Icon(
-                                                Icons.location_on_rounded,
-                                                size: width * 0.038,
-                                                color: AppColors.primaryBlue,
-                                              ),
-                                              SizedBox(width: width * 0.015),
-                                              Text(
-                                                'Barangay',
-                                                style: TextStyle(
-                                                  fontSize: width * 0.032,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: AppColors.primaryBlue,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          SizedBox(height: width * 0.025),
-
-                                          // Dropdown
-                                          AnimatedOpacity(
-                                            opacity: _useCurrentLocation
-                                                ? 0.45
-                                                : 1.0,
-                                            duration: const Duration(
-                                              milliseconds: 200,
-                                            ),
-                                            child: IgnorePointer(
-                                              ignoring: _useCurrentLocation,
-                                              child: Container(
-                                                width: double.infinity,
-                                                padding: EdgeInsets.symmetric(
-                                                  horizontal: width * 0.04,
-                                                  vertical: width * 0.005,
-                                                ),
-                                                decoration: BoxDecoration(
-                                                  color: const Color(
-                                                    0xFFF9FAFB,
-                                                  ),
-                                                  border: Border.all(
-                                                    color: const Color(
-                                                      0xFFE5E7EB,
-                                                    ),
-                                                  ),
-                                                  borderRadius:
-                                                      BorderRadius.circular(
-                                                        width * 0.025,
-                                                      ),
-                                                ),
-                                                child: DropdownButton<String>(
-                                                  value: _selectedBarangay,
-                                                  isExpanded: true,
-                                                  underline: const SizedBox(),
-                                                  icon: Icon(
-                                                    Icons
-                                                        .keyboard_arrow_down_rounded,
-                                                    color:
-                                                        AppColors.primaryBlue,
-                                                    size: width * 0.06,
-                                                  ),
-                                                  hint: Text(
-                                                    _useCurrentLocation
-                                                        ? 'Using current location'
-                                                        : 'Select barangay',
-                                                    style: TextStyle(
-                                                      fontSize: width * 0.034,
-                                                      color: const Color(
-                                                        0xFF9CA3AF,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                  style: TextStyle(
-                                                    fontSize: width * 0.034,
-                                                    color: const Color(
-                                                      0xFF1F2937,
-                                                    ),
-                                                  ),
-                                                  items: _barangayList
-                                                      .map(
-                                                        (b) => DropdownMenuItem(
-                                                          value: b,
-                                                          child: Text(b),
-                                                        ),
-                                                      )
-                                                      .toList(),
-                                                  onChanged: (val) {
-                                                    if (val == null) return;
-                                                    final coords =
-                                                        barangayCoords[val];
-                                                    setState(() {
-                                                      _selectedBarangay = val;
-                                                      _markerPosition = coords;
-                                                    });
-                                                  },
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-
-                                          // Confirmation chip — manual selection
-                                          if (_selectedBarangay != null &&
-                                              !_useCurrentLocation) ...[
-                                            SizedBox(height: width * 0.025),
-                                            Row(
-                                              children: [
-                                                Container(
-                                                  padding: const EdgeInsets.all(
-                                                    3,
-                                                  ),
-                                                  decoration: BoxDecoration(
-                                                    color: AppColors.primaryBlue
-                                                        .withValues(
-                                                          alpha: 0.12,
-                                                        ),
-                                                    shape: BoxShape.circle,
-                                                  ),
-                                                  child: Icon(
-                                                    Icons.check_rounded,
-                                                    size: width * 0.032,
-                                                    color:
-                                                        AppColors.primaryBlue,
-                                                  ),
-                                                ),
-                                                SizedBox(width: width * 0.02),
-                                                Expanded(
-                                                  child: Text(
-                                                    '$_selectedBarangay selected',
-                                                    style: TextStyle(
-                                                      fontSize: width * 0.029,
-                                                      color:
-                                                          AppColors.primaryBlue,
-                                                      fontWeight:
-                                                          FontWeight.w500,
-                                                    ),
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ],
-
-                                          // Confirmation chip — GPS placed
-                                          if (_selectedBarangay != null &&
-                                              _useCurrentLocation) ...[
-                                            SizedBox(height: width * 0.025),
-                                            Row(
-                                              children: [
-                                                Icon(
-                                                  Icons.my_location_rounded,
-                                                  size: width * 0.038,
-                                                  color: AppColors.primaryBlue,
-                                                ),
-                                                SizedBox(width: width * 0.02),
-                                                Expanded(
-                                                  child: Text(
-                                                    'GPS placed in $_selectedBarangay',
-                                                    style: TextStyle(
-                                                      fontSize: width * 0.029,
-                                                      color:
-                                                          AppColors.primaryBlue,
-                                                      fontWeight:
-                                                          FontWeight.w500,
-                                                    ),
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ],
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-
-                              SizedBox(height: width * 0.04),
-
-                              // ── Confirm button ────────────────────────────────────────
-                              SizedBox(
-                                width: double.infinity,
-                                child: ElevatedButton(
-                                  onPressed: _canConfirm ? _confirm : null,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: AppColors.primaryBlue,
-                                    disabledBackgroundColor: const Color(
-                                      0xFFD1D5DB,
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(
-                                        width * 0.03,
-                                      ),
-                                    ),
-                                    padding: EdgeInsets.symmetric(
-                                      vertical: width * 0.042,
-                                    ),
-                                    elevation: 2,
-                                  ),
-                                  child: Text(
-                                    'Confirm Address',
-                                    style: TextStyle(
-                                      fontSize: width * 0.04,
-                                      fontWeight: FontWeight.w700,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
+                        child: _pickerContent(width),
                       ),
                     ),
                   ),
@@ -1002,6 +732,494 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
         ),
       ),
     );
+  }
+
+  /// The picker's actual content — title, map, GPS toggle, barangay list and
+  /// the Confirm button — with no page chrome around it.
+  ///
+  /// Extracted so the citizen web panel can host it INLINE while the pushed
+  /// route keeps rendering it under its own header inside a Scaffold. Same
+  /// seam, and the same reasoning, as the quick-action forms' `embedded` flag:
+  /// one body, two hosts, no forked picker logic.
+  Widget _pickerContent(double width) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ── Title + subtitle ─────────────────────────────────────
+        //
+        // Dropped inline: the panel's own instruction block sits directly
+        // above this and already says "Step 2 — Where is it? … Pick a barangay
+        // manually if the detected spot is off", so "Edit Location / Toggle
+        // GPS or select a barangay from the list" is the same sentence twice,
+        // one line apart. Same reasoning the category step used when it
+        // dropped its "1. Select Issue Category" heading — and the ~57px it
+        // frees is what lets the whole step fit inside the panel's fixed
+        // height without scrolling. The pushed route keeps both: there the
+        // title is the only thing naming the screen.
+        if (!_inline) ...[
+          Text(
+            widget.readOnly ? 'Pinned Location' : 'Edit Location',
+            style: TextStyle(
+              fontSize: width * 0.044,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF1F2937),
+            ),
+          ),
+          SizedBox(height: width * 0.008),
+          Text(
+            widget.readOnly
+                ? 'Showing the exact location of the reported issue.'
+                : 'Toggle GPS or select a barangay from the list.',
+            style: TextStyle(
+              fontSize: width * 0.030,
+              color: const Color(0xFF9CA3AF),
+            ),
+          ),
+          SizedBox(height: width * 0.03),
+        ],
+
+        // ── Map inside a rounded container ───────────────────────
+        _mapArea(width),
+
+        if (!widget.readOnly) ...[
+          SizedBox(height: width * 0.04),
+
+          // ── Unified form card ────────────────────────────────────
+          Container(
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(width * 0.04),
+              border: Border.all(color: CitizenUi.sharedBorder),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ── Toggle row ─────────────────────────────────────
+                Padding(
+                  padding: EdgeInsets.all(width * 0.04),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: width * 0.105,
+                        height: width * 0.105,
+                        decoration: BoxDecoration(
+                          color: AppColors.primaryBlue.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(width * 0.03),
+                        ),
+                        child: Icon(
+                          Icons.my_location_rounded,
+                          size: width * 0.05,
+                          color: AppColors.primaryBlue,
+                        ),
+                      ),
+                      SizedBox(width: width * 0.03),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Use my current location',
+                              style: TextStyle(
+                                fontSize: width * 0.034,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFF1F2937),
+                              ),
+                            ),
+                            SizedBox(height: width * 0.005),
+                            Text(
+                              'Detects your GPS position',
+                              style: TextStyle(
+                                fontSize: width * 0.027,
+                                color: const Color(0xFF9CA3AF),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (_isLoadingGPS)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.5,
+                              color: AppColors.primaryBlue,
+                            ),
+                          ),
+                        )
+                      else
+                        Switch(
+                          value: _useCurrentLocation,
+                          onChanged: (v) async {
+                            if (!v) {
+                              // Turning OFF — reset immediately
+                              setState(() {
+                                _useCurrentLocation = false;
+                                _markerPosition = _selectedBarangay != null
+                                    ? barangayCoords[_selectedBarangay]
+                                    : null;
+                              });
+                              // Inline: falling back to the listed barangay is
+                              // itself a pick. Nothing is delivered when there
+                              // is no barangay to fall back to — the host keeps
+                              // what it had, since this picker has no way to
+                              // say "unset" and inventing one here would be a
+                              // second protocol between the two hosts.
+                              if (_inline && _selectedBarangay != null) {
+                                _confirm();
+                              }
+                            } else {
+                              // Turning ON — let GPS fetch decide if it succeeds
+                              await _fetchCurrentLocation();
+                            }
+                          },
+                          activeTrackColor: AppColors.primaryBlue,
+                          activeThumbColor: Colors.white,
+                          inactiveThumbColor: Colors.white,
+                          inactiveTrackColor: const Color(0xFFD1D5DB),
+                        ),
+                    ],
+                  ),
+                ),
+
+                const Divider(height: 1, color: CitizenUi.sharedBorder),
+
+                // ── Barangay section ───────────────────────────────
+                Padding(
+                  padding: EdgeInsets.all(width * 0.04),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.location_on_rounded,
+                            size: width * 0.038,
+                            color: AppColors.primaryBlue,
+                          ),
+                          SizedBox(width: width * 0.015),
+                          Text(
+                            'Barangay',
+                            style: TextStyle(
+                              fontSize: width * 0.032,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.primaryBlue,
+                            ),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: width * 0.025),
+
+                      // Dropdown
+                      AnimatedOpacity(
+                        opacity: _useCurrentLocation ? 0.45 : 1.0,
+                        duration: const Duration(milliseconds: 200),
+                        child: IgnorePointer(
+                          ignoring: _useCurrentLocation,
+                          child: _inline
+                              ? _inlineBarangayField(width)
+                              : Container(
+                                  width: double.infinity,
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal: width * 0.04,
+                                    vertical: width * 0.005,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF9FAFB),
+                                    border: Border.all(
+                                      color: CitizenUi.sharedBorder,
+                                    ),
+                                    borderRadius: BorderRadius.circular(
+                                      width * 0.025,
+                                    ),
+                                  ),
+                                  child: DropdownButton<String>(
+                                    value: _selectedBarangay,
+                                    isExpanded: true,
+                                    underline: const SizedBox(),
+                                    icon: Icon(
+                                      Icons.keyboard_arrow_down_rounded,
+                                      color: AppColors.primaryBlue,
+                                      size: width * 0.06,
+                                    ),
+                                    hint: Text(
+                                      _useCurrentLocation
+                                          ? 'Using current location'
+                                          : 'Select barangay',
+                                      style: TextStyle(
+                                        fontSize: width * 0.034,
+                                        color: const Color(0xFF9CA3AF),
+                                      ),
+                                    ),
+                                    style: TextStyle(
+                                      fontSize: width * 0.034,
+                                      color: const Color(0xFF1F2937),
+                                    ),
+                                    items: _barangayList
+                                        .map(
+                                          (b) => DropdownMenuItem(
+                                            value: b,
+                                            child: Text(b),
+                                          ),
+                                        )
+                                        .toList(),
+                                    onChanged: (val) {
+                                      if (val == null) return;
+                                      final coords = barangayCoords[val];
+                                      setState(() {
+                                        _selectedBarangay = val;
+                                        _markerPosition = coords;
+                                      });
+                                    },
+                                  ),
+                                ),
+                        ),
+                      ),
+
+                      // Confirmation chip — manual selection
+                      if (_selectedBarangay != null &&
+                          !_useCurrentLocation) ...[
+                        SizedBox(height: width * 0.025),
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(3),
+                              decoration: BoxDecoration(
+                                color: AppColors.primaryBlue.withValues(
+                                  alpha: 0.12,
+                                ),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                Icons.check_rounded,
+                                size: width * 0.032,
+                                color: AppColors.primaryBlue,
+                              ),
+                            ),
+                            SizedBox(width: width * 0.02),
+                            Expanded(
+                              child: Text(
+                                '$_selectedBarangay selected',
+                                style: TextStyle(
+                                  fontSize: width * 0.029,
+                                  color: AppColors.primaryBlue,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+
+                      // Confirmation chip — GPS placed
+                      if (_selectedBarangay != null && _useCurrentLocation) ...[
+                        SizedBox(height: width * 0.025),
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.my_location_rounded,
+                              size: width * 0.038,
+                              color: AppColors.primaryBlue,
+                            ),
+                            SizedBox(width: width * 0.02),
+                            Expanded(
+                              child: Text(
+                                'GPS placed in $_selectedBarangay',
+                                style: TextStyle(
+                                  fontSize: width * 0.029,
+                                  color: AppColors.primaryBlue,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // ── Confirm button ────────────────────────────────────────
+          //
+          // Pushed only. Inline there is nothing left for it to do: a pick
+          // saves itself the moment it is made (see [_pickBarangay] and the
+          // GPS success path), the host's own Continue is the way forward, and
+          // a second confirming button under a panel that has already accepted
+          // the answer just asks the citizen to agree with themselves.
+          if (!_inline) ...[
+            SizedBox(height: width * 0.04),
+
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _canConfirm ? _confirm : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primaryBlue,
+                  disabledBackgroundColor: const Color(0xFFD1D5DB),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(width * 0.03),
+                  ),
+                  padding: EdgeInsets.symmetric(vertical: width * 0.042),
+                  elevation: 2,
+                ),
+                child: Text(
+                  'Confirm Address',
+                  style: TextStyle(
+                    fontSize: width * 0.04,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ],
+    );
+  }
+
+  /// The barangay field for the INLINE host: a contained combobox that opens a
+  /// bounded list directly under itself.
+  ///
+  /// ── Why not [DropdownButton] ─────────────────────────────────────────────
+  /// The material dropdown lays its menu out around the selected item and, with
+  /// 40 barangays and no height cap, grows until it is taller than the browser
+  /// window — which is exactly what it did here: a white sheet of barangay names
+  /// covering the page from top to bottom, with the panel it belongs to nowhere
+  /// in sight. [MenuAnchor] anchors under the field instead and takes a real
+  /// height cap, so the list opens as a dropdown inside the panel.
+  ///
+  /// The DATA and the effect of a pick are unchanged — same [_barangayList],
+  /// same [barangayCoords] lookup, same fields written.
+  Widget _inlineBarangayField(double width) {
+    return LayoutBuilder(
+      builder: (context, c) {
+        // The menu is drawn to the field's own width, so it reads as the field
+        // opening rather than as a panel that happens to be nearby.
+        final menuW = c.maxWidth;
+        return MenuAnchor(
+          alignmentOffset: const Offset(0, 4),
+          // Without this the panel is laid out with an UNBOUNDED width and
+          // sizes to its longest barangay name, so `minimumSize` below only
+          // pads empty space around a menu a quarter of the field's width.
+          // False is what makes the list actually take the field's width.
+          crossAxisUnconstrained: false,
+          style: MenuStyle(
+            backgroundColor: const WidgetStatePropertyAll(Colors.white),
+            surfaceTintColor: const WidgetStatePropertyAll(Colors.white),
+            padding: const WidgetStatePropertyAll(
+              EdgeInsets.symmetric(vertical: 6),
+            ),
+            // Bounded on BOTH axes: the cap on the height is what keeps a
+            // 40-item list a dropdown instead of a takeover.
+            maximumSize: WidgetStatePropertyAll(Size(menuW, 260)),
+            minimumSize: WidgetStatePropertyAll(Size(menuW, 0)),
+            shape: WidgetStatePropertyAll(
+              RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: const BorderSide(color: CitizenUi.sharedBorder),
+              ),
+            ),
+          ),
+          menuChildren: [
+            for (final b in _barangayList)
+              MenuItemButton(
+                onPressed: () => _pickBarangay(b),
+                leadingIcon: Icon(
+                  b == _selectedBarangay
+                      ? Icons.radio_button_checked_rounded
+                      : Icons.radio_button_unchecked_rounded,
+                  size: 17,
+                  color: b == _selectedBarangay
+                      ? AppColors.primaryBlue
+                      : const Color(0xFFD1D5DB),
+                ),
+                child: Text(
+                  b,
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: b == _selectedBarangay
+                        ? FontWeight.w700
+                        : FontWeight.w500,
+                    color: b == _selectedBarangay
+                        ? AppColors.primaryBlue
+                        : const Color(0xFF1F2937),
+                  ),
+                ),
+              ),
+          ],
+          builder: (context, controller, _) => InkWell(
+            borderRadius: BorderRadius.circular(10),
+            onTap: () =>
+                controller.isOpen ? controller.close() : controller.open(),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF9FAFB),
+                border: Border.all(color: CitizenUi.sharedBorder),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _selectedBarangay ??
+                          (_useCurrentLocation
+                              ? 'Using current location'
+                              : 'Select barangay'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: _selectedBarangay == null
+                            ? FontWeight.w500
+                            : FontWeight.w600,
+                        color: _selectedBarangay == null
+                            ? const Color(0xFF9CA3AF)
+                            : const Color(0xFF1F2937),
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    color: AppColors.primaryBlue,
+                    size: 22,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// A barangay chosen from the inline list — recorded, then SAVED.
+  ///
+  /// Inline there is no Confirm button to press afterwards, so the pick is the
+  /// commit. It goes out through the same [_confirm] the pushed picker's button
+  /// calls, so the host receives byte-identical result maps either way.
+  void _pickBarangay(String b) {
+    setState(() {
+      _selectedBarangay = b;
+      _markerPosition = barangayCoords[b];
+    });
+    _confirm();
   }
 
   // ── Header ─────────────────────────────────────────────────────────────────

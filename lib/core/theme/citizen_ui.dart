@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import 'app_colors.dart';
@@ -60,11 +61,56 @@ class CitizenUi {
   static const Color subtle = Color(0xFFF9FAFB); // ×16
 
   // ── Borders ────────────────────────────────────────────────────────────────
+  //
+  // ── Retuned to match AdminUi and StaffUi ─────────────────────────────────
+  // These were #E5E7EB and #D1D5DB — the literals inherited from the mobile
+  // screens, where a hairline separates two rows INSIDE a white card and has
+  // very little work to do. On the web surface the same hairline is the edge of
+  // a white card sitting on [pageBg], and #E5E7EB is only about fourteen steps
+  // darker than that background: on a real monitor the card had no visible
+  // edge at all, which is what made every bordered field read as plain text.
+  //
+  // Both consoles had already solved this — AdminUi.border and StaffUi.border
+  // are #CBD3DF, and their cards read cleanly — so citizen web was the one
+  // surface out of step with the other two. These now match them exactly,
+  // which is also why they are not some third new value.
+  //
+  // Mobile is unaffected by construction: nothing in the app imports this file
+  // (see the class doc), and the shared quick-action screens reach for these
+  // tokens only from their `splitPanel` web paths.
+
   /// Default hairline: card edges, the top-nav underline, list dividers.
-  static const Color border = Color(0xFFE5E7EB); // ×116
+  static const Color border = Color(0xFFCBD3DF);
 
   /// A step stronger, for hover, focus and inset controls.
-  static const Color borderStrong = Color(0xFFD1D5DB); // ×42
+  static const Color borderStrong = Color(0xFFB6C0CE);
+
+  // ── Hairlines for widgets that render on BOTH surfaces ────────────────────
+  //
+  // [border] above is safe to retune because only web widgets import this file.
+  // Most of the citizen surface is not like that: the feed post card, the top
+  // nav, My Reports, the loading skeletons and the quick-action screens are ONE
+  // widget each, drawn by the mobile app and by the web shell alike. They had
+  // their hairline hardcoded, and darkening it in place would have redesigned
+  // the mobile app as a side effect of fixing the web one.
+  //
+  // So the choice is made per-SURFACE rather than per-widget. `kIsWeb` is a
+  // compile-time constant, which is what makes this work at all: these stay
+  // `const`, so every existing `const BoxDecoration` keeps its constness and
+  // the branch is folded away at build time rather than tested at runtime.
+  //
+  // The mobile arm of each is the literal that site already used — not an
+  // approximation of it — so the app renders byte-for-byte what it rendered
+  // before. That is the whole point of there being two of these rather than
+  // one: #E5E7EB and AppColors.stroke are two units apart and nobody could see
+  // the difference, but "provably unchanged" is worth more than one fewer
+  // token.
+
+  /// Hairline for a shared widget whose literal was `#E5E7EB`.
+  static const Color sharedBorder = kIsWeb ? border : Color(0xFFE5E7EB);
+
+  /// Hairline for a shared widget that reached for [AppColors.stroke].
+  static const Color sharedStroke = kIsWeb ? border : AppColors.stroke;
 
   // ── Text ───────────────────────────────────────────────────────────────────
   /// Headings and primary body copy.
