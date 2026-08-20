@@ -117,6 +117,51 @@ class AuthService {
       throw 'Something went wrong. Please try again later.';
     }
 
+    // ── Device-clock gate ────────────────────────────────────────────────────
+    //
+    // A session minted a fraction of a second ago cannot really have expired,
+    // so `isExpired` here can only mean this DEVICE'S CLOCK is running ahead of
+    // the token's `exp` — gotrue derives the expiry from the JWT and compares it
+    // against `DateTime.now()`, with a 30s margin.
+    //
+    // That is not a cosmetic problem, it is unusable: supabase-dart refreshes
+    // the token before ANY request whose session reads as expired, so every
+    // query mints a new token that also reads as expired, and the app spends
+    // roughly one refresh per query until GoTrue's limiter answers 429. A 429 is
+    // not a retryable fetch error, so gotrue drops the session and emits
+    // signedOut — the web guard then bounces the user to /login seconds after
+    // they signed in, with nothing on screen to explain why.
+    //
+    // The loop's amplifiers are gone (see AuthRestoration.begin and main's
+    // _initServices), but the underlying condition still makes the session
+    // unusable, and only the user can fix it. So say so plainly, with the
+    // measured error, and refuse the sign-in rather than handing back a session
+    // that will die on its own.
+    //
+    // `expiresAt` is the JWT's `exp` and `expiresIn` the lifetime GoTrue issued
+    // it with, so their difference is the moment the SERVER issued the token —
+    // and the gap to local now is the skew itself, not an estimate.
+    final fresh = _client.auth.currentSession;
+    if (fresh != null && fresh.isExpired) {
+      final expiresAt = fresh.expiresAt;
+      final expiresIn = fresh.expiresIn;
+      String offBy = '';
+      if (expiresAt != null && expiresIn != null) {
+        final issuedAt = DateTime.fromMillisecondsSinceEpoch(
+          (expiresAt - expiresIn) * 1000,
+        );
+        final skew = DateTime.now().difference(issuedAt);
+        if (skew.inMinutes.abs() >= 1) {
+          offBy = skew.isNegative
+              ? ' It is about ${-skew.inMinutes} minutes behind.'
+              : ' It is about ${skew.inMinutes} minutes ahead.';
+        }
+      }
+      await _client.auth.signOut();
+      throw "Your device's date and time are wrong, so your sign-in expires "
+          "immediately.$offBy Turn on automatic date and time, then try again.";
+    }
+
     // Step 3 — block deactivated accounts. The admin console can soft-deactivate
     // an account (profiles.is_deactivated); the credentials still work, so
     // without this check the sign-in above succeeds and the user gets a live

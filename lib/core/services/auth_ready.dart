@@ -223,9 +223,11 @@ class AuthRestoration extends ChangeNotifier {
       // sticky-true once anything has resolved it.
       //
       // Gated on the uid rather than fired on every event: see [_roleUid].
+      var identityChanged = false;
       if (kIsWeb) {
         final uid = data.session?.user.id;
         if (uid != _roleUid) {
+          identityChanged = true;
           _roleUid = uid;
           _roleId = null;
           _roleKnown = false;
@@ -240,7 +242,29 @@ class AuthRestoration extends ChangeNotifier {
       // load, because Supabase emits a restoration event for a persisted
       // session too. Signing out arrives here as well, which is what clears a
       // stale role before the next account signs in.
-      if (kIsWeb) _refreshRole();
+      //
+      // ── Why this is gated on the identity, not fired on every event ───────
+      // It used to run unconditionally, and that closed a FEEDBACK LOOP that
+      // ended in the user being signed out a few seconds after logging in.
+      //
+      //   tokenRefreshed  →  this listener  →  _refreshRole()'s user_roles
+      //   query  →  supabase-dart's AuthHttpClient calls _getAccessToken(),
+      //   which refreshes the token whenever `currentSession.isExpired`  →
+      //   tokenRefreshed  →  …
+      //
+      // Each turn costs one round trip, so the pair ran roughly every 150ms
+      // until GoTrue's refresh limiter answered 429. A 429 is not a retryable
+      // fetch error, so gotrue drops the session and emits signedOut — and the
+      // guard, seeing no session, sends a user who had just signed in straight
+      // back to /login.
+      //
+      // `isExpired` is the loop's ignition and it is true whenever the DEVICE
+      // CLOCK runs ahead of the token's `exp` (see the clock check in
+      // AuthService.login), but a clock nobody controls must not be able to
+      // spend a session. Only a change of identity can invalidate a role — the
+      // same rule the hold above already follows — so a token refresh no longer
+      // issues a query, and the loop has no second turn.
+      if (kIsWeb && identityChanged) _refreshRole();
     });
 
     // Web only, and the whole block is compiled out elsewhere because [kIsWeb]

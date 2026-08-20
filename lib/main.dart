@@ -120,8 +120,27 @@ Future<void> _initServices() async {
   } catch (_) {}
 
   final restored = Supabase.instance.client.auth.currentUser;
+
+  /// The account these services are currently wired to, or null when none.
+  ///
+  /// The listener below fires on EVERY auth event, and `tokenRefreshed` is an
+  /// auth event — so without this the whole block re-ran on every refresh, and
+  /// each re-run issues queries (the chat rebind, the push registration, the
+  /// notification channel's first load). Those queries go through
+  /// supabase-dart's AuthHttpClient, which refreshes the token whenever
+  /// `currentSession.isExpired`, which emits another `tokenRefreshed` — a loop
+  /// that only ends when GoTrue's refresh limiter returns 429 and gotrue drops
+  /// the session, signing the user out seconds after they signed in. See the
+  /// matching gate in `AuthRestoration.begin`, which closed the other half of
+  /// the same loop.
+  ///
+  /// None of this work describes a TOKEN; it describes an ACCOUNT. So it runs
+  /// once per account and a refresh is correctly a no-op.
+  String? wiredUid;
+
   try {
     if (restored != null) {
+      wiredUid = restored.id;
       await ChatService.onUserAuthenticated(restored.id);
       await PushService.I.registerForUser(); // ← PUSH
       NotificationService.startRealtime(); // ← live bell badge
@@ -133,10 +152,13 @@ Future<void> _initServices() async {
   Supabase.instance.client.auth.onAuthStateChange.listen((data) {
     final user = data.session?.user;
     if (user != null) {
+      if (user.id == wiredUid) return; // a token refresh, not a new account
+      wiredUid = user.id;
       ChatService.onUserAuthenticated(user.id);
       PushService.I.registerForUser(); // ← PUSH
       NotificationService.startRealtime(); // ← live bell badge
     } else if (data.event == AuthChangeEvent.signedOut) {
+      wiredUid = null;
       ChatService.onUserSignedOut();
       NotificationService.stopRealtime();
     }
