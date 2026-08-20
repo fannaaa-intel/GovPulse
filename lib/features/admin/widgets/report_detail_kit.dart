@@ -212,32 +212,48 @@ class DetailKvRow extends StatelessWidget {
   final Widget? trailing;
   const DetailKvRow({super.key, required this.label, this.value, this.trailing});
 
+  /// Height of one status pill — label 11px in 4px of vertical padding.
+  static const double _pillLine = 21;
+
   @override
   Widget build(BuildContext context) {
+    final labelText = Text(
+      '$label: ',
+      style: const TextStyle(
+        fontSize: 12.5,
+        fontWeight: FontWeight.w700,
+        color: AdminUi.textPrimary,
+      ),
+    );
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            '$label: ',
-            style: const TextStyle(
-              fontSize: 12.5,
-              fontWeight: FontWeight.w700,
-              color: AdminUi.textPrimary,
+          // A pill stands taller than the label beside it, so tops flush left
+          // the label riding above the pill's own text. Give the label the
+          // pill's line height and centre it in that — trailing content that
+          // wraps still grows downward from the same first line.
+          if (trailing == null)
+            labelText
+          else
+            SizedBox(
+              height: _pillLine,
+              child: Center(widthFactor: 1, child: labelText),
             ),
-          ),
           Expanded(
-            child:
-                trailing ??
-                Text(
-                  value ?? '—',
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    height: 1.35,
-                    color: AdminUi.textSecondary,
-                  ),
-                ),
+            child: trailing == null
+                ? Text(
+                    value ?? '—',
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      height: 1.35,
+                      color: AdminUi.textSecondary,
+                    ),
+                  )
+                // Loosens the Expanded's tight width so a pill keeps its own
+                // width instead of stretching across the pane.
+                : Align(alignment: Alignment.centerLeft, child: trailing!),
           ),
         ],
       ),
