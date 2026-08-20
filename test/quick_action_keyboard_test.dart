@@ -49,7 +49,10 @@ Widget panel() => QaSplitPanel(
 
 /// Mounts the panel STACKED — narrower than [kQaSplitCollapseBelow] — inside a
 /// [QaKeyboardScope], the way the host provides it.
-Future<void> pumpStacked(WidgetTester tester, {required double keyboard}) async {
+Future<void> pumpStacked(
+  WidgetTester tester, {
+  required double keyboard,
+}) async {
   await tester.pumpWidget(
     MaterialApp(
       home: Center(
@@ -59,10 +62,7 @@ Future<void> pumpStacked(WidgetTester tester, {required double keyboard}) async 
           // Dialog applies the inset itself, which is why it is subtracted
           // here and only carried as a flag into the panel.
           height: kPanel - keyboard,
-          child: QaKeyboardScope(
-            keyboardUp: keyboard > 0,
-            child: panel(),
-          ),
+          child: QaKeyboardScope(keyboardUp: keyboard > 0, child: panel()),
         ),
       ),
     ),
@@ -121,8 +121,7 @@ void main() {
                   width: 400,
                   height: kPanel - 240,
                   child: QaKeyboardScope(
-                    keyboardUp:
-                        MediaQuery.viewInsetsOf(outer).bottom > 0,
+                    keyboardUp: MediaQuery.viewInsetsOf(outer).bottom > 0,
                     child: panel(),
                   ),
                 ),
@@ -193,22 +192,64 @@ void main() {
       expect(heightOf(tester, 'actions'), kActions);
     });
 
-    testWidgets('the zone collapses over time rather than between frames', (
+    testWidgets('the body height never reverses while the keyboard rises', (
       tester,
     ) async {
-      await pumpStacked(tester, keyboard: 0);
+      // ── The "small quake" ────────────────────────────────────────────────
+      // Animating the collapse while the keyboard rose put two animations on
+      // the same dimension on different clocks. Measured, the body went
+      // 296 -> 238 -> 293 -> 240: down 58, back UP 55, then down 53 again.
+      // Monotonic or not is the whole property; the exact numbers are not.
+      Future<void> frame(double k) => tester.pumpWidget(
+        MaterialApp(
+          home: Center(
+            child: SizedBox(
+              width: 400,
+              height: kPanel - k,
+              child: QaKeyboardScope(keyboardUp: k > 0, child: panel()),
+            ),
+          ),
+        ),
+      );
 
-      // Re-mount with the keyboard up but do NOT settle: partway through, the
-      // body must be between its two resting sizes. A hard swap would already
-      // be at its final height on the first frame, which is the jump that
-      // reads as a glitch beside the rising keyboard.
+      await frame(0);
+      await tester.pumpAndSettle();
+
+      final heights = <double>[heightOf(tester, 'body')];
+      for (var t = 16; t <= 300; t += 16) {
+        await frame((280 * (t / 250)).clamp(0.0, 280.0));
+        await tester.pump(const Duration(milliseconds: 16));
+        heights.add(heightOf(tester, 'body'));
+      }
+
+      // Every step after the first must be <= the one before it. The first
+      // step is the zone leaving, which is meant to be immediate.
+      for (var i = 2; i < heights.length; i++) {
+        expect(
+          heights[i],
+          lessThanOrEqualTo(heights[i - 1] + 0.5),
+          reason:
+              'body grew from ${heights[i - 1]} to ${heights[i]} at sample $i '
+              '- the collapse is racing the keyboard again',
+        );
+      }
+    });
+
+    testWidgets('the return is eased rather than snapping back', (
+      tester,
+    ) async {
+      await pumpStacked(tester, keyboard: 240);
+      final open = heightOf(tester, 'body');
+
+      // Keyboard gone. The panel is already back to full height, so nothing is
+      // racing this one — it is the direction worth easing.
       await tester.pumpWidget(
         MaterialApp(
           home: Center(
             child: SizedBox(
               width: 400,
-              height: kPanel - 240,
-              child: QaKeyboardScope(keyboardUp: true, child: panel()),
+              height: kPanel,
+              child: QaKeyboardScope(keyboardUp: false, child: panel()),
             ),
           ),
         ),
@@ -216,10 +257,12 @@ void main() {
       await tester.pump(const Duration(milliseconds: 80));
 
       final midway = heightOf(tester, 'body');
-      expect(midway, lessThan(kPanel - 240));
+      expect(midway, lessThan(kPanel));
+      expect(midway, greaterThan(kPanel - kQaGap - kActions));
+      expect(midway, isNot(open));
 
       await tester.pumpAndSettle();
-      expect(heightOf(tester, 'body'), kPanel - 240);
+      expect(heightOf(tester, 'body'), kPanel - kQaGap - kActions);
     });
   });
 }

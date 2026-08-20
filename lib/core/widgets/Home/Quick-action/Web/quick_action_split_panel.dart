@@ -230,13 +230,35 @@ class QaSplitPanel extends StatelessWidget {
                 // working area grows into the space they leave — one continuous
                 // movement, and the reverse on the way back.
                 //
-                // easeInOutCubic, not easeOut: this plays in BOTH directions and
-                // an ease-out curve leaves the return springing away from rest.
-                // 260ms is a touch slower than a soft keyboard's own rise, which
-                // keeps our movement reading as the follower of the two rather
-                // than a second thing happening at the same time.
+                // ── Instant OUT, animated BACK ────────────────────────────
+                //
+                // Animating the collapse while the keyboard rises put two
+                // animations on the same dimension, on different clocks, and
+                // the body height went down 58px, back UP 55, then down 53
+                // again — measured, and felt as a shake. The Scaffold shrinks
+                // the panel at the keyboard's speed; a 260ms collapse frees the
+                // zone's height on its own, so early in the rise the panel
+                // outruns the collapse and later the collapse overtakes it.
+                //
+                // On the way OUT there must therefore be exactly one moving
+                // part, and it has to be the keyboard's: the zone goes at once,
+                // leaving the Scaffold's resize as the only thing animating,
+                // which is monotonic.
+                //
+                // On the way BACK there is nothing to race — `keyboardUp` only
+                // clears once the inset reaches zero, so the keyboard has
+                // already finished — and an instant return would snap 224px in
+                // one frame. That is the direction worth easing.
                 AnimatedSize(
-                  duration: const Duration(milliseconds: 260),
+                  //
+                  // Not `Duration.zero`: AnimatedSize completes a zero-duration
+                  // controller synchronously inside its own performLayout and
+                  // asserts "RenderAnimatedSize was mutated in its own
+                  // performLayout". A single millisecond finishes on the next
+                  // frame instead — instant to the eye, legal to the framework.
+                  duration: keyboardUp
+                      ? const Duration(milliseconds: 1)
+                      : const Duration(milliseconds: 260),
                   curve: Curves.easeInOutCubic,
                   alignment: Alignment.topCenter,
                   child: keyboardUp
