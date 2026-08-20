@@ -11,6 +11,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:android_intent_plus/android_intent.dart';
 import 'package:android_intent_plus/flag.dart';
 import '../../../../core/network/network_wrapper.dart';
+import '../../../../core/services/phone_dialer.dart';
 
 import '../../../core/widgets/Home/nav/responsive_nav_scaffold.dart';
 import 'dart:io';
@@ -331,13 +332,21 @@ class _EmergencyScreenState extends State<EmergencyBody>
       return;
     }
     // A phone browser CAN dial, but `dart:io` does not exist on web, so the
-    // Platform checks below are unreachable there. `tel:` through url_launcher
-    // is what a mobile browser understands.
+    // Platform checks below are unreachable there.
+    //
+    // ── Nothing may be awaited before the dial ──────────────────────────────
+    // This used to read `if (await canLaunchUrl(uri)) await launchUrl(uri)`,
+    // and that await is what broke every call on iOS and iPadOS. Safari lets a
+    // page navigate to an external scheme only while it is still inside the
+    // user gesture that asked, and an await hands control back to the event
+    // loop first — by the time `launchUrl` ran, the permission was gone and
+    // Safari dropped the dial without a word. Chrome is lenient about the same
+    // sequence, which is why Android web looked fine.
+    //
+    // The await bought nothing anyway: `canLaunchUrl` on web only checks that
+    // `tel` appears in a hard-coded set of schemes. It always does.
     if (kIsWeb) {
-      final uri = Uri(scheme: 'tel', path: number);
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      }
+      dialFromBrowser(number);
       return;
     }
     if (Platform.isAndroid) {
@@ -400,22 +409,29 @@ class _EmergencyScreenState extends State<EmergencyBody>
   /// iOS. It does NOT catch tablets: iPadOS Safari requests desktop sites by
   /// default and reports macOS, so an iPad looked exactly like an iMac.
   ///
-  /// So the window's own width is the second signal. Anything under
-  /// [_kDialableBelow] is a handheld or a tablet, and those dial. Measured off
-  /// [View], not `MediaQuery` — inside the shell MediaQuery has been overridden
-  /// to describe the centre column, which is a fact about our layout rather
-  /// than about the device in someone's hand.
+  /// The touch screen is the second signal, and it is the one that actually
+  /// settles the iPad. `navigator.maxTouchPoints` is 5 there and 0 on a Mac,
+  /// which no amount of window measuring can tell apart — an iPad Pro held
+  /// upright is 1024 px wide and every iPad in landscape is wider still, so
+  /// width alone hid the dialer from exactly the tablets that can dial.
   ///
-  /// The remaining false positive is a desktop user who narrowed their window:
-  /// they get a dial affordance that does nothing. That is the safe direction —
-  /// the number is printed beside it either way, and the copy button never
-  /// leaves — where the old behaviour failed in the dangerous one.
+  /// Width stays as the third signal, for a phone browser that somehow reports
+  /// neither. Measured off [View], not `MediaQuery` — inside the shell
+  /// MediaQuery has been overridden to describe the centre column, which is a
+  /// fact about our layout rather than about the device in someone's hand.
+  ///
+  /// The remaining false positives are a desktop user who narrowed their
+  /// window and a touch-screen laptop: they get a dial affordance that may do
+  /// nothing. That is the safe direction — the number is printed beside it
+  /// either way, and the copy button never leaves — where the old behaviour
+  /// failed in the dangerous one.
   static bool canPlaceCalls(BuildContext context) {
     if (!kIsWeb) return true;
     if (defaultTargetPlatform == TargetPlatform.android ||
         defaultTargetPlatform == TargetPlatform.iOS) {
       return true;
     }
+    if (browserReportsTouchDevice()) return true;
     final view = View.of(context);
     return view.physicalSize.width / view.devicePixelRatio < _kDialableBelow;
   }
@@ -453,12 +469,12 @@ class _EmergencyScreenState extends State<EmergencyBody>
         category: cat,
         formatNumber: _fmt,
         networkColor: _netColor,
+        // Dial first, close second. The other order used to wait 250 ms for
+        // the modal's exit animation before calling, and on Safari that timer
+        // outlived the tap's permission to open the dialer — see `_call`.
         onCall: (number) {
+          _call(number);
           Navigator.pop(ctx);
-          Future.delayed(
-            const Duration(milliseconds: 250),
-            () => _call(number),
-          );
         },
         onCopy: (number) {
           Navigator.pop(ctx);
@@ -1145,6 +1161,11 @@ class _Slider911 extends StatefulWidget {
 class _Slider911State extends State<_Slider911>
     with SingleTickerProviderStateMixin {
   double _thumbOffset = 0.0;
+
+  /// The thumb has been dragged past [_threshold] and the call goes out the
+  /// moment the finger lifts. Distinct from [_triggered], which means it
+  /// already has.
+  bool _armed = false;
   bool _triggered = false;
   double _trackWidth = 0.0;
 
@@ -1181,33 +1202,66 @@ class _Slider911State extends State<_Slider911>
     _snapCtrl.reset();
   }
 
+  /// Tracks the thumb and arms the call. It does NOT place it.
+  ///
+  /// It used to. Reaching 90 % fired a 300 ms timer that then dialled, and
+  /// that is the whole reason this slider did nothing on iOS and iPadOS.
+  /// Safari lets a page open the dialer only from inside a genuine user
+  /// gesture, and a drag fails that test twice over: a timer has left the
+  /// gesture behind by the time it runs, and `pointermove` is not one of the
+  /// events Safari counts as a gesture in the first place. Chrome asks neither
+  /// question, so Android web dialled and iOS silently did not.
+  ///
+  /// The call now goes out from [_onDragEnd] — the pointer-up, which every
+  /// browser agrees is a gesture.
   void _onDragUpdate(DragUpdateDetails d) {
     if (_triggered || _maxOffset <= 0) return;
     final next = (_thumbOffset + d.delta.dx).clamp(0.0, _maxOffset);
     setState(() => _thumbOffset = next);
-    if (_progress >= _threshold) {
-      _triggered = true;
-      HapticFeedback.heavyImpact();
-      setState(() => _thumbOffset = _maxOffset);
-      Future.delayed(const Duration(milliseconds: 300), () {
-        if (mounted) widget.onTriggered();
-      });
-      Future.delayed(const Duration(milliseconds: 900), () {
-        if (mounted) {
-          setState(() {
-            _triggered = false;
-            _thumbOffset = 0.0;
-          });
-        }
-      });
-    }
+
+    final armed = _progress >= _threshold;
+    if (armed == _armed) return;
+    if (armed) HapticFeedback.heavyImpact();
+    setState(() => _armed = armed);
   }
 
   void _onDragEnd(DragEndDetails d) {
     if (_triggered) return;
-    final startVal = _thumbOffset;
+    if (!_armed) {
+      _snapBack();
+      return;
+    }
+
+    // Synchronous, and first: `widget.onTriggered` reaches `_call`, which on
+    // web must navigate to `tel:` while this pointer-up is still on the stack.
+    // Anything awaited or delayed ahead of it costs Safari users the call.
+    setState(() {
+      _triggered = true;
+      _thumbOffset = _maxOffset;
+    });
+    widget.onTriggered();
+
+    Future.delayed(const Duration(milliseconds: 900), () {
+      if (!mounted) return;
+      setState(() {
+        _triggered = false;
+        _armed = false;
+        _thumbOffset = 0.0;
+      });
+    });
+  }
+
+  /// Safari cancels drags fairly readily — an interrupted one used to leave the
+  /// thumb stranded mid-track, which reads as a slider that has jammed.
+  void _onDragCancel() {
+    if (_triggered) return;
+    _snapBack();
+  }
+
+  void _snapBack() {
+    _armed = false;
     _snapAnim = Tween<double>(
-      begin: startVal,
+      begin: _thumbOffset,
       end: 0.0,
     ).animate(CurvedAnimation(parent: _snapCtrl, curve: Curves.elasticOut));
     _snapAnim.addListener(() {
@@ -1220,14 +1274,19 @@ class _Slider911State extends State<_Slider911>
 
   @override
   Widget build(BuildContext context) {
-    final bool done = _triggered;
+    // Armed reads the same as fired, deliberately: the thumb goes green and
+    // shows the check the instant the slide is far enough, so the release that
+    // actually dials is something the citizen can see coming.
+    final bool done = _triggered || _armed;
     return LayoutBuilder(
       builder: (_, constraints) {
         _trackWidth = constraints.maxWidth;
         return GestureDetector(
+          behavior: HitTestBehavior.opaque,
           onHorizontalDragStart: _onDragStart,
           onHorizontalDragUpdate: _onDragUpdate,
           onHorizontalDragEnd: _onDragEnd,
+          onHorizontalDragCancel: _onDragCancel,
           child: Container(
             height: 66,
             decoration: BoxDecoration(

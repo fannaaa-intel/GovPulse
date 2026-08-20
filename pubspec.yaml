@@ -59,6 +59,10 @@ dependencies:
   # breaks the moment `pdf` drops it.
   barcode: ^2.2.9
   go_router: ^17.4.0
+  # Already resolved transitively; declared directly because the emergency
+  # screen dials `tel:` on web through a synthesised anchor click rather than
+  # url_launcher's `window.open`, which Safari's popup blocker eats.
+  web: ^1.1.0
 
 dev_dependencies:
   flutter_test:
