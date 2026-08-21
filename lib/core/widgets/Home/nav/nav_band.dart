@@ -97,13 +97,31 @@ const double kShellThreeColumnMin = 1280;
 /// Width at/above which the left rail shows labels rather than icons only.
 /// Between this and [kShellThreeColumnMin] the rail keeps its labels but the
 /// right sidebar is dropped.
-const double kShellRailLabelsMin = 1024;
+///
+/// 920, not the 1024 it began as. At 1024 the whole 900–1024 band fell through
+/// to the drawer, which left a window around 1000px showing a 680 feed column
+/// stranded in grey with both sides empty and no navigation on screen at all —
+/// while Facebook, at that same width, is showing its left sidebar beside the
+/// feed. The band is wide enough for the real thing: 920 − 288 leaves 632 for
+/// the centre, and the feed column narrows into it rather than overflowing.
+///
+/// 920 rather than lower because that is the MEASURED point where the top nav
+/// is clean — brand + links + bell + chip overflow at exactly 900 — and in rail
+/// mode there is no hamburger to pay for (the 960 figure quoted in
+/// citizen_shell is the with-hamburger case, which is the drawer's problem, not
+/// this one).
+///
+/// This does NOT resurrect the icon-only rail, which is what the band was
+/// dropped for in the first place: it gets the LABELLED rail, so nothing here
+/// is ~11 bare icons in three unlabelled clusters.
+const double kShellRailLabelsMin = 920;
 
 /// The shell arrangement for [size].
 ///
 ///   • width >= 1280        → three columns
-///   • 1024 ..< 1280        → drop the right sidebar
-///   •  900 ..< 1024        → left rail becomes icon-only
+///   •  920 ..< 1280        → drop the right sidebar
+///   •  900 ..<  920        → [ShellLayout.railIcons], which nothing renders:
+///                            the shell folds it into the drawer
 ///   • below 900, or phone  → [ShellLayout.drawer] (no shell at all)
 ///
 /// Delegates its lower bound to [resolveNavBand] instead of re-testing the

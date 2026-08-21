@@ -61,7 +61,7 @@ class RailVerifyCard extends StatelessWidget {
 
   /// The mockup is a landscape card: status pill on top, then headline and body
   /// beside the artwork, then a rule, a footnote and (unverified only) the
-  /// button. The rail is a fixed 288 — `_kRailLabelledWidth`, and the drawer
+  /// button. The rail is a fixed 288 — `kCitizenRailWidth`, and the drawer
   /// below 1024 is the same 288 — which is far too narrow to hang the artwork
   /// down the full height of the card the way the mockup does.
   ///

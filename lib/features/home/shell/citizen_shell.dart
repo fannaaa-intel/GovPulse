@@ -71,7 +71,7 @@ import 'citizen_shell_router.dart';
 // ════════════════════════════════════════════════════════════════════════════
 
 /// Left rail width, in logical pixels, when it shows labels.
-const double _kRailLabelledWidth = 288;
+const double kCitizenRailWidth = 288;
 
 // There is deliberately no icon-only rail width any more. The 900–1024 band
 // used to collapse the rail to icons, but with NAVIGATE, ACCOUNT and QUICK
@@ -806,7 +806,7 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
     bool inDrawer = false,
   }) {
     return SizedBox(
-      width: _kRailLabelledWidth,
+      width: kCitizenRailWidth,
       // Scrolls because the rail carries up to three sections — ~760px of
       // content, which overflows any window shorter than ~820, and a 1366x768
       // laptop leaves about 708. Under the Row's loose vertical constraints a
@@ -1050,7 +1050,7 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
 
   Widget _shellDrawer(UserProfile? profile) {
     return Drawer(
-      width: _kRailLabelledWidth,
+      width: kCitizenRailWidth,
       backgroundColor: CitizenUi.pageBg,
       child: SafeArea(
         // No scroll view here — [_leftRail] owns its own, and nesting two in
