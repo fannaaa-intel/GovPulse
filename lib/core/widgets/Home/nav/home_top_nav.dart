@@ -1,6 +1,28 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'dart:async';
 import '../../../../core/theme/citizen_ui.dart';
+
+/// Draw the bell and the profile chip as BARE controls — no grey circle behind
+/// the bell, no grey pill behind the chip — and let the control itself carry
+/// the hover instead.
+///
+/// A filled shape behind an icon reads as a button whether or not the pointer
+/// is anywhere near it, so at rest the nav showed two grey blobs; and on hover
+/// what lit up was the blob, not the bell. Flat, the bell is the affordance,
+/// and hovering tints and lifts the BELL.
+///
+/// Guarded on [kIsWeb] because this nav is not web-only: [resolveNavBand]
+/// returns `topNav` for any viewport at least 900 wide that is not a handset,
+/// so a native tablet in landscape renders this same bar — and that is the
+/// mobile app, which is not in scope here. Native keeps the filled chrome
+/// exactly as it draws it today, and a touch device has no hover to show
+/// anyway.
+const bool _flatTopNavChrome = kIsWeb;
+
+/// Tint for a hovered / open control in the top nav.
+const Color _kNavActive = Color(0xFF1A4DB8);
+const Color _kNavIconRest = Color(0xFF4B5563);
 
 /// One destination in the top nav: the label, and the index handed back to
 /// `onTap`. Public so a caller with a different set of destinations can supply
@@ -31,6 +53,11 @@ class HomeTopNav extends StatefulWidget {
   /// The shell overrides it because dropping NewsFeed shifts Settings down.
   final int settingsIndex;
 
+  /// Override [_flatTopNavChrome]. Defaults to it, which is what production
+  /// uses; a widget test passes it to reach the flat branch, since `kIsWeb` is
+  /// a compile-time false under the VM and the branch is otherwise unreachable.
+  final bool? flatChrome;
+
   /// Collapses the user chip to its avatar — no name, no chevron, tighter
   /// padding. The chip's DROPDOWN still shows the full name; only the closed
   /// button shrinks.
@@ -60,6 +87,7 @@ class HomeTopNav extends StatefulWidget {
     this.items,
     this.settingsIndex = 4,
     this.avatarOnlyChip = false,
+    this.flatChrome,
   });
 
   /// The standalone destination set. Unchanged.
@@ -92,6 +120,7 @@ class _HomeTopNavState extends State<HomeTopNav> {
 
   @override
   Widget build(BuildContext context) {
+    final bool flat = widget.flatChrome ?? _flatTopNavChrome;
     return Container(
       height: 60,
       padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -140,6 +169,7 @@ class _HomeTopNavState extends State<HomeTopNav> {
                 count: widget.notificationCount,
                 onTap: widget.onNotificationTap,
                 onEnter: _onNavZoneEntered,
+                flat: flat,
               ),
               const SizedBox(width: 10),
               _UserChip(
@@ -151,6 +181,7 @@ class _HomeTopNavState extends State<HomeTopNav> {
                 onLogoutTap: widget.onLogoutTap,
                 onRegisterClose: _registerCloseUserChip,
                 avatarOnly: widget.avatarOnlyChip,
+                flat: flat,
               ),
             ],
           ),
@@ -270,10 +301,14 @@ class _NotifBell extends StatefulWidget {
   final int count;
   final VoidCallback onTap;
   final VoidCallback onEnter;
+
+  /// Bare control rather than a grey circle — see [_flatTopNavChrome].
+  final bool flat;
   const _NotifBell({
     required this.count,
     required this.onTap,
     required this.onEnter,
+    required this.flat,
   });
 
   @override
@@ -295,14 +330,18 @@ class _NotifBellState extends State<_NotifBell> {
       child: GestureDetector(
         onTap: widget.onTap,
         child: Container(
+          // The 44x44 box stays whatever the chrome looks like — it is the hit
+          // target, and a bare icon is a 24px one. Only the PAINT goes away.
           width: 44,
           height: 44,
           decoration: BoxDecoration(
-            color: _hover ? const Color(0xFFEFF6FF) : const Color(0xFFF3F4F6),
+            color: widget.flat
+                ? Colors.transparent
+                : (_hover ? const Color(0xFFEFF6FF) : const Color(0xFFF3F4F6)),
             shape: BoxShape.circle,
             border: Border.all(
-              color: _hover
-                  ? const Color(0xFF1A4DB8).withOpacity(0.20)
+              color: !widget.flat && _hover
+                  ? _kNavActive.withValues(alpha: 0.20)
                   : Colors.transparent,
               width: 1,
             ),
@@ -311,12 +350,18 @@ class _NotifBellState extends State<_NotifBell> {
             clipBehavior: Clip.none,
             alignment: Alignment.center,
             children: [
-              Icon(
-                Icons.notifications_rounded,
-                size: 24,
-                color: _hover
-                    ? const Color(0xFF1A4DB8)
-                    : const Color(0xFF4B5563),
+              // Flat: the bell is the whole affordance, so it has to move.
+              // Colour alone is a weak signal on a 24px glyph with nothing
+              // around it, hence the slight lift as well.
+              AnimatedScale(
+                scale: widget.flat && _hover ? 1.12 : 1.0,
+                duration: const Duration(milliseconds: 120),
+                curve: Curves.easeOut,
+                child: Icon(
+                  Icons.notifications_rounded,
+                  size: 24,
+                  color: _hover ? _kNavActive : _kNavIconRest,
+                ),
               ),
               if (widget.count > 0)
                 Positioned(
@@ -367,6 +412,9 @@ class _UserChip extends StatefulWidget {
   /// it still shows the full name. See [HomeTopNav.avatarOnlyChip].
   final bool avatarOnly;
 
+  /// Bare control rather than a grey pill — see [_flatTopNavChrome].
+  final bool flat;
+
   const _UserChip({
     this.username,
     this.fullName,
@@ -376,6 +424,7 @@ class _UserChip extends StatefulWidget {
     required this.onLogoutTap,
     required this.onRegisterClose,
     this.avatarOnly = false,
+    required this.flat,
   });
 
   @override
@@ -386,6 +435,17 @@ class _UserChipState extends State<_UserChip>
     with SingleTickerProviderStateMixin {
   bool _isOpen = false;
   bool _closing = false;
+
+  /// Whether the pointer is over the chip itself.
+  ///
+  /// Tracked separately from [_isOpen] even though hovering the chip opens the
+  /// menu, because the two genuinely come apart: tapping while open closes the
+  /// menu with the pointer still sitting on the chip, and until this existed
+  /// the chip then painted its RESTING state under a stationary cursor — no
+  /// `onEnter` fires again without movement, so it stayed wrong until the user
+  /// moved off and back. Invisible while a grey pill was the only feedback;
+  /// very visible once the content itself is what lights up.
+  bool _hover = false;
   OverlayEntry? _overlay;
   Timer? _closeTimer;
 
@@ -608,12 +668,22 @@ class _UserChipState extends State<_UserChip>
   Widget build(BuildContext context) {
     final displayName = widget.fullName ?? widget.username ?? 'User';
 
+    // Hovered OR open. Only meaningful flat: with the pill gone this is what
+    // decides whether the chip looks touched at all.
+    final bool active = widget.flat && (_hover || _isOpen);
+
     return CompositedTransformTarget(
       link: _layerLink,
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
-        onEnter: (_) => _zoneEnter(),
-        onExit: (_) => _zoneExit(),
+        onEnter: (_) {
+          setState(() => _hover = true);
+          _zoneEnter();
+        },
+        onExit: (_) {
+          setState(() => _hover = false);
+          _zoneExit();
+        },
         child: GestureDetector(
           onTap: _onTap,
           child: Container(
@@ -621,14 +691,18 @@ class _UserChipState extends State<_UserChip>
                 ? const EdgeInsets.all(4)
                 : const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              color: _isOpen
-                  ? const Color(0xFFEFF6FF)
-                  : const Color(0xFFF9FAFB),
+              color: widget.flat
+                  ? Colors.transparent
+                  : (_isOpen
+                        ? const Color(0xFFEFF6FF)
+                        : const Color(0xFFF9FAFB)),
               borderRadius: BorderRadius.circular(999),
               border: Border.all(
-                color: _isOpen
-                    ? const Color(0xFF1A4DB8).withOpacity(0.20)
-                    : const Color(0xFFE5E7EB),
+                color: widget.flat
+                    ? Colors.transparent
+                    : (_isOpen
+                          ? _kNavActive.withValues(alpha: 0.20)
+                          : const Color(0xFFE5E7EB)),
                 width: 1,
               ),
             ),
@@ -654,10 +728,11 @@ class _UserChipState extends State<_UserChip>
                   const SizedBox(width: 8),
                   Text(
                     displayName,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFF1F2937),
+                      // Flat, the NAME is the affordance the pill used to be.
+                      color: active ? _kNavActive : const Color(0xFF1F2937),
                     ),
                   ),
                   const SizedBox(width: 4),
@@ -665,10 +740,10 @@ class _UserChipState extends State<_UserChip>
                     turns: _isOpen ? 0.5 : 0,
                     duration: const Duration(milliseconds: 200),
                     curve: Curves.easeOutCubic,
-                    child: const Icon(
+                    child: Icon(
                       Icons.keyboard_arrow_down_rounded,
                       size: 16,
-                      color: Color(0xFF6B7280),
+                      color: active ? _kNavActive : const Color(0xFF6B7280),
                     ),
                   ),
                 ],
