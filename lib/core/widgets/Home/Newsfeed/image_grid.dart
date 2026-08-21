@@ -7,11 +7,14 @@ Widget buildImageGrid(
   int imageCount, {
   List<String> imageUrls = const [],
   ValueChanged<int>? onImageTap,
+  double? cornerRadius,
 }) {
   if (imageCount <= 0) return const SizedBox.shrink();
   final extraCount = imageCount - 4;
   final gap = width * 0.015;
-  final radius = width * 0.025;
+  // Overridable so a full-bleed post slab can square the media off against the
+  // screen edge; every other caller keeps the rounded default.
+  final radius = cornerRadius ?? width * 0.025;
 
   Widget tappable(Widget child, int index) => GestureDetector(
     behavior: HitTestBehavior.opaque,

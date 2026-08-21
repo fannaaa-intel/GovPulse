@@ -27,6 +27,15 @@ import '../../../../core/theme/citizen_ui.dart';
 /// How many comments (top-level + replies, flattened) preview under a post.
 const int kPostCardPreviewComments = 3;
 
+/// Below this column width the post slab runs edge to edge — no side margin, no
+/// rounded corners, no side border — the way Facebook's mobile feed does, and
+/// the media inside it is full-bleed against the screen edge.
+///
+/// Above it the feed column is wider than the card's readable measure, so a
+/// full-bleed slab would just be a white band floating in grey; those widths
+/// keep the bordered, rounded card.
+const double kPostCardFullBleedBelow = 640;
+
 class NewsfeedPostCard extends StatelessWidget {
   /// The layout base width. Every dimension in the card is a fraction of this,
   /// which is why it is threaded through rather than read from MediaQuery — the
@@ -63,6 +72,11 @@ class NewsfeedPostCard extends StatelessWidget {
   /// composer at a specific author, as tapping "Reply" on a preview row does.
   final void Function({String? initialReplyTo}) onOpenComments;
 
+  /// Render as a full-bleed slab instead of a floating card — see
+  /// [kPostCardFullBleedBelow]. The feed decides this from the width of the
+  /// column it is laying the card into, not from the viewport.
+  final bool edgeToEdge;
+
   const NewsfeedPostCard({
     super.key,
     required this.width,
@@ -76,6 +90,7 @@ class NewsfeedPostCard extends StatelessWidget {
     required this.onToggleLike,
     required this.onToggleCommentLike,
     required this.onOpenComments,
+    this.edgeToEdge = false,
   });
 
   /// Guests see other citizens as "Citizen" with no avatar, matching how the
@@ -116,63 +131,97 @@ class NewsfeedPostCard extends StatelessWidget {
     }
     final previewComments = allActivity.take(kPostCardPreviewComments).toList();
 
+    final double gutter = width * 0.035;
+
+    // Full bleed keeps the SAME gutter on the text rows and simply stops
+    // applying it to the media, so the only thing that changes shape is the
+    // slab and the photos in it — every type size, weight and rhythm inside the
+    // card is untouched.
+    Widget inGutter(Widget child) => edgeToEdge
+        ? Padding(
+            padding: EdgeInsets.symmetric(horizontal: gutter),
+            child: child,
+          )
+        : child;
+
     return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(width * 0.035),
-        border: Border.all(color: CitizenUi.sharedBorder),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: .04),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+      decoration: edgeToEdge
+          // No side border and no shadow: against the screen edge there is no
+          // side left to draw, and a drop shadow on a band that spans the
+          // viewport reads as a seam rather than a lifted card. The two
+          // hairlines plus the grey gap between posts do all the separating.
+          ? const BoxDecoration(
+              color: Colors.white,
+              border: Border(
+                top: BorderSide(color: CitizenUi.sharedBorder),
+                bottom: BorderSide(color: CitizenUi.sharedBorder),
+              ),
+            )
+          : BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(width * 0.035),
+              border: Border.all(color: CitizenUi.sharedBorder),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: .04),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
       child: Padding(
-        padding: EdgeInsets.all(width * 0.035),
+        padding: edgeToEdge
+            ? EdgeInsets.symmetric(vertical: gutter)
+            : EdgeInsets.all(gutter),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (post['pinned'] == true) ...[
-              Row(
-                children: [
-                  Icon(
-                    Icons.push_pin_rounded,
-                    size: width * 0.035,
-                    color: const Color(0xFF0D47A1),
-                  ),
-                  SizedBox(width: width * 0.012),
-                  Text(
-                    'Pinned',
-                    style: TextStyle(
-                      fontSize: width * 0.03,
-                      fontWeight: FontWeight.w700,
+              inGutter(
+                Row(
+                  children: [
+                    Icon(
+                      Icons.push_pin_rounded,
+                      size: width * 0.035,
                       color: const Color(0xFF0D47A1),
                     ),
-                  ),
-                ],
+                    SizedBox(width: width * 0.012),
+                    Text(
+                      'Pinned',
+                      style: TextStyle(
+                        fontSize: width * 0.03,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF0D47A1),
+                      ),
+                    ),
+                  ],
+                ),
               ),
               SizedBox(height: width * 0.02),
             ],
-            _buildPostHeader(),
+            inGutter(_buildPostHeader()),
             SizedBox(height: width * 0.03),
-            Text(
-              ProfanityFilter.maskForDisplay(post['title'] as String),
-              style: TextStyle(
-                fontSize: width * 0.045,
-                fontWeight: FontWeight.w800,
-                color: const Color(0xFF1F2937),
-                height: 1.25,
+            inGutter(
+              Text(
+                ProfanityFilter.maskForDisplay(post['title'] as String),
+                style: TextStyle(
+                  fontSize: width * 0.045,
+                  fontWeight: FontWeight.w800,
+                  color: const Color(0xFF1F2937),
+                  height: 1.25,
+                ),
               ),
             ),
             SizedBox(height: width * 0.012),
-            _buildPostBody(post['body'] as String),
+            inGutter(_buildPostBody(post['body'] as String)),
             SizedBox(height: width * 0.025),
             buildImageGrid(
               width,
               post['imageCount'] as int,
               imageUrls: post['imageUrls'] as List<String>? ?? [],
+              // Squared off when the media touches the screen edge; rounded
+              // corners only make sense inside a rounded card.
+              cornerRadius: edgeToEdge ? 0 : null,
               onImageTap: (index) => openImageViewer(
                 context,
                 post['imageCount'] as int,
@@ -190,76 +239,89 @@ class NewsfeedPostCard extends StatelessWidget {
               ),
             ),
             SizedBox(height: width * 0.03),
-            _buildPostFooter(
-              post['likes'] as String,
-              commentCount.toString(),
-              () => onOpenComments(),
-              liked: isLiked,
-              commented: isCommented,
-              onLikeTap: onToggleLike,
-            ),
-            if (commentCount > 0) ...[
-              Padding(
-                padding: EdgeInsets.symmetric(vertical: width * 0.025),
-                child: Container(height: 1, color: CitizenUi.sharedBorder),
+            inGutter(
+              _buildPostFooter(
+                post['likes'] as String,
+                commentCount.toString(),
+                () => onOpenComments(),
+                liked: isLiked,
+                commented: isCommented,
+                onLikeTap: onToggleLike,
               ),
-              ...previewComments.map((rawComment) {
-                final comment = _maskCommentForGuest(rawComment);
-                final isReply = comment['parentId'] != null;
-                if (isReply) {
-                  return buildReplyItem(
-                    context,
-                    width,
-                    comment,
-                    likedComments: likedComments,
-                    onToggleLike: onToggleCommentLike,
-                    onReply: () => onOpenComments(
-                      initialReplyTo: comment['author'] as String,
+            ),
+            // One gutter for the whole comment block rather than one per row,
+            // so the divider keeps lining up with the rows under it.
+            if (commentCount > 0)
+              inGutter(
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: EdgeInsets.symmetric(vertical: width * 0.025),
+                      child: Container(
+                        height: 1,
+                        color: CitizenUi.sharedBorder,
+                      ),
                     ),
-                  );
-                }
-                return buildCommentItem(
-                  context,
-                  width,
-                  comment,
-                  likedComments: likedComments,
-                  onToggleLike: onToggleCommentLike,
-                  onReply: () => onOpenComments(
-                    initialReplyTo: comment['author'] as String,
-                  ),
-                  showReplies: false,
-                  expandedReplies: const {},
-                  onToggleExpandReplies: (_) {},
-                  onReplyToReply: (_, _) {},
-                );
-              }),
-              if (commentCount > kPostCardPreviewComments)
-                Padding(
-                  padding: EdgeInsets.only(top: width * 0.015),
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => onOpenComments(),
-                    child: Row(
-                      children: [
-                        Text(
-                          'View all $commentCount comments',
-                          style: TextStyle(
-                            fontSize: width * 0.034,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.primaryBlue,
+                    ...previewComments.map((rawComment) {
+                      final comment = _maskCommentForGuest(rawComment);
+                      final isReply = comment['parentId'] != null;
+                      if (isReply) {
+                        return buildReplyItem(
+                          context,
+                          width,
+                          comment,
+                          likedComments: likedComments,
+                          onToggleLike: onToggleCommentLike,
+                          onReply: () => onOpenComments(
+                            initialReplyTo: comment['author'] as String,
+                          ),
+                        );
+                      }
+                      return buildCommentItem(
+                        context,
+                        width,
+                        comment,
+                        likedComments: likedComments,
+                        onToggleLike: onToggleCommentLike,
+                        onReply: () => onOpenComments(
+                          initialReplyTo: comment['author'] as String,
+                        ),
+                        showReplies: false,
+                        expandedReplies: const {},
+                        onToggleExpandReplies: (_) {},
+                        onReplyToReply: (_, _) {},
+                      );
+                    }),
+                    if (commentCount > kPostCardPreviewComments)
+                      Padding(
+                        padding: EdgeInsets.only(top: width * 0.015),
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () => onOpenComments(),
+                          child: Row(
+                            children: [
+                              Text(
+                                'View all $commentCount comments',
+                                style: TextStyle(
+                                  fontSize: width * 0.034,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.primaryBlue,
+                                ),
+                              ),
+                              SizedBox(width: width * 0.008),
+                              Icon(
+                                Icons.arrow_forward_ios_rounded,
+                                size: width * 0.030,
+                                color: AppColors.primaryBlue,
+                              ),
+                            ],
                           ),
                         ),
-                        SizedBox(width: width * 0.008),
-                        Icon(
-                          Icons.arrow_forward_ios_rounded,
-                          size: width * 0.030,
-                          color: AppColors.primaryBlue,
-                        ),
-                      ],
-                    ),
-                  ),
+                      ),
+                  ],
                 ),
-            ],
+              ),
           ],
         ),
       ),

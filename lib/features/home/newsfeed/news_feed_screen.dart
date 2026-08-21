@@ -26,6 +26,7 @@ import '../shell/citizen_shell.dart' show CitizenShell;
 import '../../../core/widgets/loading/loading_overlay.dart';
 import '../../../core/widgets/app_snackbar.dart';
 import '../../../core/widgets/Home/nav/responsive_nav_scaffold.dart';
+import '../../../core/theme/mobile_metrics.dart';
 
 enum PostFilter {
   latest('Latest', null),
@@ -376,13 +377,19 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
 
   /// Draws the deep-link flash as a ring around a post card. The card owns its
   /// own surface, so the accent goes outside it rather than replacing it.
-  Widget _highlightWrap(String postId, double width, Widget card) =>
-      highlightRing(
-        highlighted: isHighlighted(postId),
-        radius: width * 0.05,
-        accent: AppColors.primaryBlue,
-        child: card,
-      );
+  Widget _highlightWrap(
+    String postId,
+    double width,
+    Widget card, {
+    double? radius,
+  }) => highlightRing(
+    highlighted: isHighlighted(postId),
+    // A rounded ring around a slab that runs to the screen edge would leave
+    // four bright corner arcs floating in the gutter, so full-bleed passes 0.
+    radius: radius ?? width * 0.05,
+    accent: AppColors.primaryBlue,
+    child: card,
+  );
 
   Future<void> _loadMyInteractions() async {
     final userId = _supabase.auth.currentUser?.id;
@@ -716,7 +723,7 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
   // ══════════════════════════════════════════════════════════════════════════
 
   void _openFilterSheet() {
-    final width = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+    final width = uiScaleWidth(context);
 
     if (kIsWeb &&
         MediaQuery.of(context).size.width >= kCommentsDialogBreakpoint) {
@@ -925,7 +932,13 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
     // so the viewport-based `wide` test would be wrong in both directions. In
     // the shell the web layout is always the right one.
     final bool wide = widget.embedded || (kIsWeb && rawWidth >= 900);
-    final double width = wide ? 480.0 : rawWidth.clamp(0.0, 480.0);
+    final double width = wide ? 480.0 : uiScaleWidth(context);
+    // Facebook's mobile treatment: the post slab spans the viewport instead of
+    // floating as a card with a side margin. Only worth doing when the feed
+    // column actually REACHES both edges — it is capped at 480 below, so on a
+    // wider viewport (tablet, a roomy phone browser) the column is centred and
+    // a full-bleed slab would just be a white band stranded in grey.
+    final bool fullBleed = rawWidth <= 480;
     final provider = CommunityPostsProvider.instance;
     final visiblePosts = _filteredPosts;
 
@@ -962,15 +975,33 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
                               },
                               child: ListView.separated(
                                 physics: const BouncingScrollPhysics(),
-                                padding: EdgeInsets.fromLTRB(
-                                  width * 0.04,
-                                  width * 0.035,
-                                  width * 0.04,
-                                  width * 0.04,
-                                ),
+                                padding: fullBleed
+                                    // No side gutter. The top gap stays, just
+                                    // tighter: the slab and the bar above it
+                                    // are both white and full width, so with
+                                    // no grey between them they read as one
+                                    // continuous sheet.
+                                    ? EdgeInsets.fromLTRB(
+                                        0,
+                                        width * 0.02,
+                                        0,
+                                        width * 0.04,
+                                      )
+                                    : EdgeInsets.fromLTRB(
+                                        width * 0.04,
+                                        width * 0.035,
+                                        width * 0.04,
+                                        width * 0.04,
+                                      ),
                                 itemCount: visiblePosts.length,
-                                separatorBuilder: (_, _) =>
-                                    SizedBox(height: width * 0.035),
+                                separatorBuilder: (_, _) => SizedBox(
+                                  // Tighter between full-bleed slabs: the grey
+                                  // strip IS the separator, so it wants to read
+                                  // as a seam, not as space around a card.
+                                  height: fullBleed
+                                      ? width * 0.02
+                                      : width * 0.035,
+                                ),
                                 itemBuilder: (_, i) {
                                   final post = visiblePosts[i];
                                   final pid = post['id'] as String;
@@ -981,7 +1012,12 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
                                       _highlightWrap(
                                         pid,
                                         width,
-                                        _buildPostCard(width, post),
+                                        _buildPostCard(
+                                          width,
+                                          post,
+                                          edgeToEdge: fullBleed,
+                                        ),
+                                        radius: fullBleed ? 0 : null,
                                       ),
                                     ),
                                   );
@@ -1002,46 +1038,78 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
     CommunityPostsProvider provider,
     List<Map<String, dynamic>> visiblePosts,
   ) {
-    final feed = Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _buildWebFeedHeader(),
-        if (provider.error != null)
-          _buildErrorState(w, provider)
-        else if (visiblePosts.isEmpty)
-          _animated(1, _buildWebEmptyState())
-        else
-          for (int i = 0; i < visiblePosts.length; i++) ...[
-            KeyedSubtree(
-              key: highlightKey(visiblePosts[i]['id'] as String),
-              child: _animated(
-                i + 1,
-                _highlightWrap(
-                  visiblePosts[i]['id'] as String,
-                  w,
-                  _buildPostCard(w, visiblePosts[i]),
+    // [fullBleed] is the phone-browser treatment: the slabs span the column
+    // and only the heading keeps a gutter, so the page reads like Facebook's
+    // mobile feed rather than a stack of cards in a narrow tray.
+    Widget buildFeed({required bool fullBleed}) {
+      Widget gutter(Widget child) => fullBleed
+          ? Padding(
+              padding: const EdgeInsets.symmetric(horizontal: _kWebFeedGutter),
+              child: child,
+            )
+          : child;
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          gutter(_buildWebFeedHeader()),
+          if (provider.error != null)
+            gutter(_buildErrorState(w, provider))
+          else if (visiblePosts.isEmpty)
+            gutter(_animated(1, _buildWebEmptyState()))
+          else
+            for (int i = 0; i < visiblePosts.length; i++) ...[
+              KeyedSubtree(
+                key: highlightKey(visiblePosts[i]['id'] as String),
+                child: _animated(
+                  i + 1,
+                  _highlightWrap(
+                    visiblePosts[i]['id'] as String,
+                    w,
+                    _buildPostCard(w, visiblePosts[i], edgeToEdge: fullBleed),
+                    radius: fullBleed ? 0 : null,
+                  ),
                 ),
               ),
-            ),
-            if (i < visiblePosts.length - 1) const SizedBox(height: 16),
-          ],
-      ],
-    );
+              if (i < visiblePosts.length - 1)
+                SizedBox(height: fullBleed ? 8 : 16),
+            ],
+        ],
+      );
+    }
 
     if (widget.embedded) {
       // Centre column of the shell: the feed alone, flexing to the column and
-      // capped at a readable measure.
-      return SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(20, 20, 20, 48),
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 640),
-            child: feed,
-          ),
-        ),
+      // capped at a readable measure — except on a phone-width column, where
+      // the slabs take the whole width and the scroll view drops its gutter.
+      return LayoutBuilder(
+        builder: (context, c) {
+          // The column's own width, not the viewport's: this is one of up to
+          // three columns, and the viewport says nothing about how much room
+          // the feed actually got.
+          final bool fullBleed = c.maxWidth < kPostCardFullBleedBelow;
+          return SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            padding: EdgeInsets.fromLTRB(
+              fullBleed ? 0 : _kWebFeedGutter,
+              _kWebFeedGutter,
+              fullBleed ? 0 : _kWebFeedGutter,
+              48,
+            ),
+            child: fullBleed
+                ? buildFeed(fullBleed: true)
+                : Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 640),
+                      child: buildFeed(fullBleed: false),
+                    ),
+                  ),
+          );
+        },
       );
     }
+
+    final feed = buildFeed(fullBleed: false);
 
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
@@ -1183,6 +1251,10 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
   //  Mobile is untouched: [_buildTopBar] still renders exactly as it did, and
   //  the mobile arm still calls it.
   // ══════════════════════════════════════════════════════════════════════════
+
+  /// The web feed's page gutter. On a full-bleed column it survives only on the
+  /// heading — the slabs below it run the whole width.
+  static const double _kWebFeedGutter = 20;
 
   /// Below this the heading and the filter stop sharing a line comfortably on a
   /// phone browser, so the type steps down rather than the two colliding.
@@ -1341,12 +1413,22 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Community Updates',
-                style: TextStyle(
-                  fontSize: width * 0.052,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.primaryBlue,
+              // Flexible so the heading yields to the filter control rather
+              // than pushing it off the edge. At width * 0.052 this is the
+              // largest type on the feed, and the filter chip beside it grows
+              // with the selected filter's name — nothing in the Row could
+              // give, so a long filter label plus a large system font size ran
+              // the pair past the gutter.
+              Flexible(
+                child: Text(
+                  'Community Updates',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: width * 0.052,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.primaryBlue,
+                  ),
                 ),
               ),
               GestureDetector(
@@ -1550,10 +1632,15 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
 
   /// On the guest feed, comment authors are anonymised the same way post
   /// authors are: "Citizen" + default avatar, with any @mention masked too.
-  Widget _buildPostCard(double width, Map<String, dynamic> post) {
+  Widget _buildPostCard(
+    double width,
+    Map<String, dynamic> post, {
+    bool edgeToEdge = false,
+  }) {
     final postId = post['id'] as String;
     return NewsfeedPostCard(
       width: width,
+      edgeToEdge: edgeToEdge,
       post: post,
       isGuest: widget.isGuest,
       isLiked: _likedPosts.contains(postId),
