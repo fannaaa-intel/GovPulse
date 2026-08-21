@@ -58,24 +58,25 @@ const int kPostCardPreviewComments = 3;
 /// spare: tablet, laptop, desktop.
 const double kFeedMetrics = 440.0;
 
-/// How much wider than its type base a feed column may be.
+/// The widest a feed post is allowed to get: Facebook's own feed column.
 ///
-/// The measure — characters per line — is what actually has to stay constant,
-/// and that is a RATIO of the type size, not a pixel width. Holding the column
-/// to a multiple of [kFeedMetrics] is what makes the two move together: change
-/// the base and the column follows, instead of the line quietly getting longer
-/// or shorter every time the type is retuned. 1.2 is what 400/480 already was,
-/// kept so the retune to 440 does not also change the measure.
-const double kFeedMeasureRatio = 1.2;
-
-/// The widest a feed column is allowed to get — its readable MEASURE.
+/// Measured off Facebook at a 1919px window — its post card runs 613..1291, so
+/// 678, i.e. the 680 the design is built on. That is the reference this feed is
+/// matched to, and with [kFeedMetrics] at 440 the two now agree where it counts
+/// most: our body text lands on 14.96px against Facebook's 15px.
 ///
-/// Past it a line of body text stops being comfortable to read: at the phone
-/// type scale the 640px column this replaced ran to ~100 characters a line,
-/// which is a wide-screen defect even though nothing overflows. Capping the
-/// column is what keeps the browser showing the app's LAYOUT and not just its
-/// type sizes.
-const double kFeedColumnMax = kFeedMetrics * kFeedMeasureRatio;
+/// Two things do NOT match, and cannot be made to from here. Our author name
+/// (16.7 vs 15) and header avatar (46 vs 40) are a shade heavier, because those
+/// are `width * k` ratios shared with the phone app — moving them would move
+/// MOBILE, so the base is the only dial available and 440 is the value that
+/// puts the body on Facebook's number.
+///
+/// ── On the measure ────────────────────────────────────────────────────────
+/// 680 at 15px body is ~43 characters-per-em of line, wider than the ~33 a
+/// narrower column gave. That is deliberate now rather than accidental: it is
+/// the measure Facebook itself runs, and matching Facebook is the point. The
+/// test that pins it says so, so a future reader does not "fix" it back.
+const double kFeedColumnMax = 680.0;
 
 /// Below this column width the post slab runs edge to edge — no side margin, no
 /// rounded corners, no side border — the way Facebook's mobile feed does, and
@@ -85,13 +86,14 @@ const double kFeedColumnMax = kFeedMetrics * kFeedMeasureRatio;
 /// full-bleed slab would just be a white band floating in grey; those widths
 /// keep the bordered, rounded card.
 ///
-/// It is [kFeedColumnMax] itself, and must stay that way: the two are the two
-/// halves of one decision. Were the threshold the LARGER of the pair, the band
-/// between them would full-bleed a slab wider than the measure and the content
-/// would visibly SHRINK as the window grew past it. Locked together, the feed
-/// runs edge to edge right up to the measure and is a centred card above it,
-/// which is the same shape the phone body has (full bleed to its own cap).
-const double kPostCardFullBleedBelow = kFeedColumnMax;
+/// The phone's own cap, and it must never exceed [kFeedColumnMax]. That is the
+/// whole invariant: while the threshold is the smaller of the pair, content
+/// grows monotonically with the window — full-bleed slab up to 480, then a card
+/// that widens to 680 and stops. Were the threshold the LARGER, the band
+/// between them would full-bleed a slab wider than the column and the content
+/// would visibly SHRINK as the window grew past it, which is exactly the wart
+/// that appeared when the column was briefly the narrower number.
+const double kPostCardFullBleedBelow = kUiScaleMaxWidth;
 
 /// The feed's sizing base for [context]: phone proportions, never inflated.
 ///

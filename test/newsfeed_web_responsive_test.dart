@@ -29,7 +29,13 @@ const double _pagePadding = 24 * 2;
 
 /// The fixed widths the layout used before, kept as the regression's shape.
 const double _oldFeedWidth = 600;
-const double _oldColumnCap = 640;
+
+/// Facebook's feed geometry, measured off a screenshot at a 1919px window: the
+/// post card runs 613..1291, its body text is 15px, its card padding 12px.
+/// This feed is matched to it, so these are the reference the tests check.
+const double _facebookColumn = 678;
+const double _facebookBodySize = 15;
+const double _facebookGutter = 12;
 
 const _feedKeyValue = Key('feed');
 const _railKeyValue = Key('rail');
@@ -104,12 +110,13 @@ void main() {
     testWidgets('every window from 900 up is clean, with or without the rail', (
       tester,
     ) async {
-      // The contract is "fits or is dropped", NOT "always shows the rail":
-      // 900px leaves 852 of content and the pair needs 860, so the narrowest
-      // few windows legitimately show the feed alone. What must hold at every
-      // width is that nothing overflows and the rail is present exactly when
-      // there is room for it.
-      for (final viewport in <double>[900, 907, 908, 940, 1024, 1440, 1920]) {
+      // The contract is "fits or is dropped", NOT "always shows the rail".
+      // Now that the column is Facebook's 680, the pair needs 1012 of content,
+      // so everything up to a 1059px window legitimately shows the feed alone —
+      // including a 1024 laptop. What must hold at every width is that nothing
+      // overflows and the rail is present exactly when there is room for it.
+      // 1059/1060 straddle that edge on purpose.
+      for (final viewport in <double>[900, 1024, 1059, 1060, 1280, 1920]) {
         await _pumpLayout(tester, viewport);
         expect(
           tester.takeException(),
@@ -166,11 +173,12 @@ void main() {
   });
 
   group('the measure', () {
-    test('the column is a fixed multiple of the type base', () {
-      // Not a pixel constant: the two move together, so retuning the base
-      // cannot quietly lengthen or shorten the line. See kFeedMeasureRatio.
-      expect(kFeedColumnMax, kFeedMetrics * kFeedMeasureRatio);
-      expect(kFeedColumnMax, lessThan(_oldColumnCap));
+    test('the column is the Facebook feed column', () {
+      // Measured off Facebook at a 1919px window: its post card runs 613..1291.
+      // closeTo, not equality: 678 is what a screenshot measures, 680 is the
+      // value the design is built on. A few pixels of ruler error is not a
+      // reason to encode 678 into the app.
+      expect(kFeedColumnMax, closeTo(_facebookColumn, 4));
       expect(
         kFeedMetrics,
         lessThan(kUiScaleMaxWidth),
@@ -178,25 +186,35 @@ void main() {
       );
     });
 
-    test('full bleed and the measure are the same edge', () {
-      // If these ever diverge, the band between them full-bleeds a slab wider
-      // than the measure and the content SHRINKS as the window grows past it.
-      expect(kPostCardFullBleedBelow, kFeedColumnMax);
+    test('content only ever grows with the window', () {
+      // The invariant, and the reason these two are not free to move apart:
+      // while full bleed ends at or before the column cap, the content widens
+      // monotonically — slab to 480, then a card out to 680. If the threshold
+      // were the LARGER, the band between them would full-bleed something
+      // wider than the column and content would SHRINK as the window grew.
+      expect(kPostCardFullBleedBelow, lessThanOrEqualTo(kFeedColumnMax));
     });
 
-    test('body text stays in a readable measure at the phone type scale', () {
-      // The point of the cap, in the unit that matters: characters per line.
-      // ~30em is comfortable; the 640 column this replaced was ~45em.
+    test('body text lands on the Facebook size and measure', () {
       const bodySize = kFeedMetrics * 0.034;
       const gutter = kFeedMetrics * 0.035 * 2;
-      final ems = (kFeedColumnMax - gutter) / bodySize;
-      expect(ems, lessThan(36), reason: 'line runs long: ${ems.round()}em');
 
-      final oldEms = (_oldColumnCap - gutter) / bodySize;
+      // The one number that matters most, and it is a match, not an
+      // approximation: Facebook sets post body text at 15px.
+      expect(bodySize, closeTo(_facebookBodySize, 0.1));
+
+      // The resulting line length is WIDE — ~43em — and that is intentional,
+      // because it is Facebook's. Asserted as a band around Facebook's own
+      // measure rather than against a typographic ideal, so that nobody later
+      // "fixes" the column back down and quietly un-matches the reference.
+      final ems = (kFeedColumnMax - gutter) / bodySize;
+      final fbEms = (_facebookColumn - _facebookGutter * 2) / _facebookBodySize;
       expect(
-        oldEms,
-        greaterThan(ems),
-        reason: 'sanity: the old column was the wider of the two',
+        ems,
+        closeTo(fbEms, 3),
+        reason:
+            'measure drifted from Facebook: ${ems.round()}em '
+            'vs ${fbEms.round()}em',
       );
     });
   });
