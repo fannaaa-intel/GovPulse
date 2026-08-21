@@ -30,6 +30,17 @@ import '../../../theme/mobile_metrics.dart';
 /// How many comments (top-level + replies, flattened) preview under a post.
 const int kPostCardPreviewComments = 3;
 
+/// The widest a feed column is allowed to get — its readable MEASURE.
+///
+/// The same [kUiScaleMaxWidth] the phone body already caps itself at, and for
+/// the same reason: past it a line of body text stops being comfortable to
+/// read. It matters more on the web now that [kFeedMetrics] sizes the type off
+/// a phone base — type that small in a 640px column runs to ~100 characters a
+/// line, which is a wide-screen defect even though nothing overflows. Capping
+/// the column is what keeps the browser showing the app's LAYOUT and not just
+/// its type sizes.
+const double kFeedColumnMax = kUiScaleMaxWidth;
+
 /// Below this column width the post slab runs edge to edge — no side margin, no
 /// rounded corners, no side border — the way Facebook's mobile feed does, and
 /// the media inside it is full-bleed against the screen edge.
@@ -37,7 +48,14 @@ const int kPostCardPreviewComments = 3;
 /// Above it the feed column is wider than the card's readable measure, so a
 /// full-bleed slab would just be a white band floating in grey; those widths
 /// keep the bordered, rounded card.
-const double kPostCardFullBleedBelow = 640;
+///
+/// It is [kFeedColumnMax] itself, and must stay that way: the two are the two
+/// halves of one decision. Were the threshold the LARGER of the pair, the band
+/// between them would full-bleed a slab wider than the measure and the content
+/// would visibly SHRINK as the window grew past it. Locked together, the feed
+/// runs edge to edge right up to the measure and is a centred card above it —
+/// which is also exactly the rule the phone body uses (`rawWidth <= 480`).
+const double kPostCardFullBleedBelow = kFeedColumnMax;
 
 /// The base the citizen feed proportions every `width * 0.0xx` against on WEB.
 ///

@@ -20,6 +20,7 @@ import '../../../core/providers/community_posts_provider.dart';
 import '../../../core/providers/user_profile_provider.dart';
 import '../../../core/widgets/Home/Newsfeed/news_feed_helpers.dart';
 import '../../../core/widgets/Home/Newsfeed/comments_sheet.dart';
+import '../../../core/widgets/Home/Newsfeed/feed_rail_layout.dart';
 import '../../../core/widgets/Home/Newsfeed/newsfeed_post_card.dart';
 import '../../../core/widgets/Home/Newsfeed/feed_empty_state.dart';
 import '../shell/citizen_shell.dart' show CitizenShell;
@@ -1101,7 +1102,13 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
                 ? buildFeed(fullBleed: true)
                 : Center(
                     child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 640),
+                      // The readable measure, not the column: past it the feed
+                      // is centred rather than stretched. Same constant the
+                      // full-bleed test above uses, so the slab runs edge to
+                      // edge right up to it and becomes a card beyond it.
+                      constraints: const BoxConstraints(
+                        maxWidth: kFeedColumnMax,
+                      ),
                       child: buildFeed(fullBleed: false),
                     ),
                   ),
@@ -1119,16 +1126,10 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
           constraints: const BoxConstraints(maxWidth: 1080),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(24, 24, 24, 56),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                SizedBox(width: 600, child: feed),
-                const SizedBox(width: 32),
-                // Info rail
-                SizedBox(width: 300, child: _buildNewsFeedRail()),
-              ],
-            ),
+            // Was a bare Row of fixed boxes — see [kFeedRailBelow] for what
+            // that cost between 900 and 979px. The rail is now dropped when the
+            // window cannot hold it rather than overflowing the page.
+            child: FeedRailLayout(feed: feed, rail: _buildNewsFeedRail()),
           ),
         ),
       ),
