@@ -21,6 +21,7 @@ import '../home/screen/notification_popup.dart';
 // CitizenTab.home.path — the shell's Home location, for the web arm of the
 // success handler. Web-only in effect; the import itself is inert off web.
 import '../home/shell/citizen_shell_router.dart' show CitizenTab;
+import '../../core/theme/mobile_metrics.dart';
 
 /// Width at which this screen's action buttons stop stretching on web.
 ///
@@ -949,11 +950,7 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
                   // Mirrors the chevron's width so the logo stays optically
                   // centred. Tracks the chip's own sizing rule rather than the
                   // 38 that matched the old circle.
-                  SizedBox(
-                    width:
-                        MediaQuery.of(context).size.width.clamp(0.0, 480.0) *
-                        0.09,
-                  ),
+                  SizedBox(width: uiScaleWidth(context) * 0.09),
                 ],
               ),
             ),

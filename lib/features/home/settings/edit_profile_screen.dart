@@ -14,6 +14,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../../../core/widgets/app_snackbar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/providers/user_profile_provider.dart';
+import '../../../core/theme/mobile_metrics.dart';
 
 class EditProfileScreen extends ConsumerStatefulWidget {
   final String username;
@@ -334,8 +335,6 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
   // ── Build ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final rawWidth = MediaQuery.of(context).size.width;
-
     // ── The browser always gets the web layout. There is no width test ───────
     //
     // `kIsWeb` alone, and that is the whole rule: the MOBILE APP never takes
@@ -358,7 +357,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
     // layout borrows (the not-verified state), and is otherwise unused there —
     // the web layout measures itself with a LayoutBuilder.
     final bool wide = kIsWeb;
-    final double width = wide ? 460.0 : rawWidth.clamp(0.0, 480.0);
+    final double width = wide ? 460.0 : uiScaleWidth(context);
 
     if (wide) {
       // ── No LoadingOverlay here, deliberately ──────────────────────────────

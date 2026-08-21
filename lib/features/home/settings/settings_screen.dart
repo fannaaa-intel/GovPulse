@@ -17,6 +17,7 @@ import '../../Resets/set_password_screen.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../../../core/theme/citizen_ui.dart';
 import '../../../core/widgets/Home/Account/account_web_kit.dart';
+import '../../../core/theme/mobile_metrics.dart';
 
 /// Standalone Settings page — the route the mobile app and the live web routes
 /// open. Owns the nav chrome; the content is [SettingsBody].
@@ -349,7 +350,7 @@ class _SettingScreenState extends ConsumerState<SettingsBody>
 
   // ── Delete account ────────────────────────────────────────────────────────
   Future<void> _confirmDeleteAccount() async {
-    final width = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+    final width = uiScaleWidth(context);
 
     await showAppDialog(
       context: context,
@@ -396,7 +397,6 @@ class _SettingScreenState extends ConsumerState<SettingsBody>
   // ── Build ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final rawWidth = MediaQuery.of(context).size.width;
 
     // ── The browser always gets the web layout. There is no width test ───────
     //
@@ -416,7 +416,7 @@ class _SettingScreenState extends ConsumerState<SettingsBody>
     // collapses to one column — which is the whole reason a width test was
     // never needed here.
     final bool wide = kIsWeb;
-    final double width = wide ? 460.0 : rawWidth.clamp(0.0, 480.0);
+    final double width = wide ? 460.0 : uiScaleWidth(context);
 
     // ── Read from provider ────────────────────────────────────────────────
     final profileAsync = ref.watch(userProfileProvider);

@@ -397,7 +397,6 @@ class ResponsiveNavScaffold extends ConsumerWidget {
           backgroundColor: backgroundColor,
           body: body,
           bottomNavigationBar: AppBottomNav(
-            width: width,
             currentIndex: currentIndex,
             username: username,
             isVerified: effIsVerified,

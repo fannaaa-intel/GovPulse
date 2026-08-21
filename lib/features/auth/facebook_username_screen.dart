@@ -8,6 +8,7 @@ import '../../core/widgets/mobile_form_shell.dart';
 import '../../core/widgets/web/web.dart';
 import '../../core/services/auth_service.dart';
 import '../../core/theme/citizen_ui.dart';
+import '../../core/theme/mobile_metrics.dart';
 
 /// Shown right after a successful Facebook sign-in.
 /// The user picks a username before entering the app.
@@ -187,7 +188,7 @@ class _FacebookUsernameScreenState extends State<FacebookUsernameScreen>
 
                       Image.asset(
                         'assets/images/applogocrop.webp',
-                        width: (MediaQuery.of(context).size.width * 0.30)
+                        width: (uiScaleWidth(context) * 0.30)
                             .clamp(0.0, 150.0)
                             .toDouble(),
                       ),

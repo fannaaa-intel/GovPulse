@@ -9,6 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/widgets/web/web.dart';
 import '../../../core/widgets/mobile_form_shell.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/mobile_metrics.dart';
 
 class ResetPasswordEmailVerifyScreen extends StatefulWidget {
   final String email;
@@ -276,7 +277,7 @@ class _ResetPasswordEmailVerifyScreenState
                     children: [
                       Image.asset(
                         "assets/images/applogocrop.webp",
-                        width: (MediaQuery.of(context).size.width * 0.42)
+                        width: (uiScaleWidth(context) * 0.42)
                             .clamp(0.0, 180.0)
                             .toDouble(),
                       ),

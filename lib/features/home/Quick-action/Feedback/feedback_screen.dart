@@ -15,6 +15,7 @@ import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/services/gps_stamp_service.dart';
 import '../../../../core/widgets/reveal_loading.dart';
 import '../../../../core/widgets/app_dialog.dart';
+import '../../../../core/theme/mobile_metrics.dart';
 
 /// Standalone Send Feedback page — the full-screen route the mobile app and the
 /// live web route open. Chrome only; the form itself is [FeedbackForm].
@@ -365,7 +366,7 @@ class _FeedbackScreenState extends State<FeedbackForm>
         );
       },
       pageBuilder: (ctx, anim, secondAnim) {
-        final width = MediaQuery.of(ctx).size.width.clamp(0.0, 480.0);
+        final width = uiScaleWidth(ctx);
         return Center(
           child: Material(
             color: Colors.transparent,
@@ -1090,7 +1091,7 @@ class _FeedbackScreenState extends State<FeedbackForm>
   // ── BUILD ─────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final width = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+    final width = uiScaleWidth(context);
 
     // The citizen web shell's two-column panel. Checked FIRST because it is the
     // most specific host; the two branches below are untouched.

@@ -27,6 +27,19 @@ double _dw(double width, double factor, double web) =>
 /// The cap actually applied, which differs by platform.
 double get _dialogCap => kIsWeb ? kWebDialogMaxWidth : _kMaxDialogWidth;
 
+/// The width every proportional dimension in these dialogs is measured against.
+///
+/// Native: the device's SHORTEST side. The viewport width is a property of how
+/// the phone is being held, and these dialogs are built entirely out of
+/// multiples of it — a 320dp handset turned sideways reported 568dp and
+/// inflated the icon, the type and the padding by 37% onto a screen that was
+/// now only 320dp tall. See core/theme/mobile_metrics.dart.
+///
+/// Web: the viewport width, unchanged — the caller caps it separately.
+double _scaleBase(BuildContext context) => kIsWeb
+    ? MediaQuery.of(context).size.width
+    : MediaQuery.sizeOf(context).shortestSide;
+
 Future<bool> showVerificationRequiredDialog(
   BuildContext context, {
   String message =
@@ -37,7 +50,7 @@ Future<bool> showVerificationRequiredDialog(
   // Cap the effective width so relative sizing stays phone-scaled and the
   // dialog doesn't stretch too wide on web/desktop (mirrors app_snackbar.dart).
   final maxDialogWidth = _dialogCap;
-  final width = math.min(MediaQuery.of(context).size.width, maxDialogWidth);
+  final width = math.min(_scaleBase(context), maxDialogWidth);
 
   // ── If caller knows the status, use it directly ───────────────────────────
   if (isVerified != null) {
@@ -226,17 +239,17 @@ Future<void> showSuccessDialog(
   Color? iconColor,
   Color? iconBgColor,
 }) async {
-  final mqWidth = MediaQuery.of(context).size.width;
-
   // Every dimension below is a multiple of `width` — icon, gaps, font sizes,
-  // button padding. That is fine on a phone, where the viewport is narrow and
-  // tall, but on web the dialog scales with viewport WIDTH while remaining
-  // bounded by viewport HEIGHT, so a wide browser overflows (and gets worse the
-  // wider it goes). Cap the scale factor on web exactly as the sibling
-  // showVerificationRequiredDialog already does.
+  // button padding. That is fine on a phone held upright, where the viewport is
+  // narrow and tall, but the moment the viewport is wider than it is tall the
+  // dialog scales with WIDTH while staying bounded by HEIGHT, and overflows.
   //
-  // Native keeps the raw viewport width, so phone rendering is untouched.
-  final width = kIsWeb ? math.min(mqWidth, kWebDialogMaxWidth) : mqWidth;
+  // A wide browser is one way to get there; rotating the handset is the other,
+  // which is why the native arm measures the shortest side rather than the raw
+  // viewport (see [_scaleBase]). Portrait phone rendering is unchanged.
+  final width = kIsWeb
+      ? math.min(_scaleBase(context), kWebDialogMaxWidth)
+      : _scaleBase(context);
 
   await showGeneralDialog(
     context: context,

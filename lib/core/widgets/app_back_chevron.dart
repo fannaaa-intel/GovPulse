@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
+import '../theme/mobile_metrics.dart';
 
 /// The app's back chevron: a rounded-square chip with a light fill, a hairline
 /// border and a blue `arrow_back_ios_rounded`.
@@ -45,8 +46,7 @@ class AppBackChevron extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final w =
-        width ?? MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+    final w = width ?? uiScaleWidth(context);
     final size = w * 0.09;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,

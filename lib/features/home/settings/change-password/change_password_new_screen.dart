@@ -11,6 +11,7 @@ import '../../../../core/widgets/mobile_form_shell.dart';
 import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/theme/citizen_ui.dart';
 import '../../../../core/widgets/Home/Account/account_web_kit.dart';
+import '../../../../core/theme/mobile_metrics.dart';
 
 class ChangePasswordNewScreen extends StatefulWidget {
   final String accessToken;
@@ -203,7 +204,7 @@ class _ChangePasswordNewScreenState extends State<ChangePasswordNewScreen>
       );
     }
 
-    final w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+    final w = uiScaleWidth(context);
     return Scaffold(
       backgroundColor: Colors.white,
       resizeToAvoidBottomInset: true,

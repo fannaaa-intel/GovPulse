@@ -10,6 +10,7 @@ import '../../../core/widgets/mobile_form_shell.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_snackbar.dart';
 import '../../../core/theme/citizen_ui.dart';
+import '../../../core/theme/mobile_metrics.dart';
 
 class VerificationScreen extends StatefulWidget {
   final String email;
@@ -374,7 +375,7 @@ class VerificationScreenState extends State<VerificationScreen>
   //  MOBILE — logic untouched, MobileFormShell + logo clamp applied
   // ══════════════════════════════════════════════════════════════════════════
   Widget _mobileScaffold(BuildContext context) {
-    final w = MediaQuery.of(context).size.width;
+    final w = uiScaleWidth(context);
     final canResend = secondsLeft == 0;
 
     return DoubleBackExit(

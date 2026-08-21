@@ -7,6 +7,7 @@ import '../../../core/utils/password_validator.dart';
 import '../../../core/widgets/indicators/password_strength_bar.dart';
 import '../../../core/network/network_wrapper.dart';
 import '../../core/theme/citizen_ui.dart';
+import '../../core/theme/mobile_metrics.dart';
 
 class SetPasswordScreen extends StatefulWidget {
   const SetPasswordScreen({super.key});
@@ -146,7 +147,7 @@ class _SetPasswordScreenState extends State<SetPasswordScreen>
 
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+    final w = uiScaleWidth(context);
     return NetworkWrapper(
       child: Scaffold(
         backgroundColor: const Color(0xFFF3F4F6),

@@ -7,6 +7,7 @@ import '../../core/theme/app_colors.dart';
 import '../onboarding/otp_loading_screen.dart';
 import '../../core/widgets/web/web.dart';
 import '../../core/widgets/mobile_form_shell.dart';
+import '../../core/theme/mobile_metrics.dart';
 
 class ResetPasswordEmailScreen extends StatefulWidget {
   final VoidCallback onLogin;
@@ -163,7 +164,7 @@ class _ResetPasswordEmailScreenState extends State<ResetPasswordEmailScreen>
   //           Logo clamped so it doesn't balloon on tablets
   // ══════════════════════════════════════════════════════════════════════════
   Widget _mobileScaffold(BuildContext context) {
-    final w = MediaQuery.of(context).size.width;
+    final w = uiScaleWidth(context);
 
     return Scaffold(
       backgroundColor: Colors.white,

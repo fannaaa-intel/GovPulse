@@ -14,6 +14,7 @@ import '../../my_report/my_reports_screen.dart' show ReportItem;
 import '../../../../core/widgets/app_dialog.dart';
 import '../../../../core/theme/citizen_ui.dart';
 import '../../../../core/widgets/Home/Account/account_web_kit.dart';
+import '../../../../core/theme/mobile_metrics.dart';
 // ── Private config classes ────────────────────────────────────────────────────
 
 class _CatCfg {
@@ -822,7 +823,7 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
     // borrowing any of that.
     if (kIsWeb) return _buildWebScaffold();
 
-    final w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+    final w = uiScaleWidth(context);
     return Scaffold(
       backgroundColor: const Color(0xFFF3F4F6),
       body: ResponsivePageBody(
@@ -2839,7 +2840,7 @@ class _DetailScaffoldState extends State<_DetailScaffold>
   @override
   Widget build(BuildContext context) {
     final mq = MediaQuery.of(context);
-    final w = mq.size.width.clamp(0.0, 480.0);
+    final w = uiScaleWidthOf(mq.size);
     // There's no bottom bar here, so the last card would otherwise sit under the
     // system navigation. Add the real inset — that's 0 on gesture nav and the
     // bar height on 3-button nav — plus breathing room.
@@ -3544,7 +3545,7 @@ class _SuggestionDetailScreenState extends State<_SuggestionDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final s = widget.s;
-    final w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+    final w = uiScaleWidth(context);
     final hasLocation =
         (s.barangay != null && s.barangay!.isNotEmpty) ||
         (s.address != null && s.address!.isNotEmpty) ||
@@ -3674,7 +3675,7 @@ class _FeedbackDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+    final w = uiScaleWidth(context);
     final aspects = <MapEntry<String, int>>[
       if (f.aspectStaff != null) MapEntry('Staff attitude', f.aspectStaff!),
       if (f.aspectWait != null) MapEntry('Wait time', f.aspectWait!),

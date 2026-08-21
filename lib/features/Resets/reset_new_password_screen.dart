@@ -10,6 +10,7 @@ import '../../features/Resets/password_successfully_changed.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/widgets/web/web.dart';
 import '../../core/widgets/mobile_form_shell.dart';
+import '../../core/theme/mobile_metrics.dart';
 
 class ResetNewPasswordScreen extends StatefulWidget {
   final String accessToken;
@@ -238,7 +239,7 @@ class _ResetNewPasswordScreenState extends State<ResetNewPasswordScreen>
   //  MOBILE — untouched
   // ══════════════════════════════════════════════════════════════════════════
   Widget _mobileScaffold(BuildContext context) {
-    final w = MediaQuery.of(context).size.width;
+    final w = uiScaleWidth(context);
     final password = passwordController.text;
 
     return PopScope(

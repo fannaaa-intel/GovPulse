@@ -1,19 +1,50 @@
 import 'package:flutter/material.dart';
 
+import '../../../theme/mobile_metrics.dart';
+
 class HomeBottomNav extends StatelessWidget {
-  final double width;
   final int currentIndex;
   final ValueChanged<int> onTap;
 
   const HomeBottomNav({
     super.key,
-    required this.width,
     required this.currentIndex,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    // Measured here rather than taken from the caller, and measured on the
+    // SHORTEST side (see mobile_metrics.dart). The bar used to be handed the
+    // raw viewport width, which meant rotating a 430x932 handset inflated it
+    // from 56dp tall to 124dp — a quarter of the landscape screen — with 61px
+    // icons and 26pt labels. Deriving it internally is also what stops a
+    // future caller from reintroducing that by passing `size.width` again.
+    // ── Android system navigation ─────────────────────────────────────────
+    //
+    // targetSdk is 36, so the window is edge-to-edge whether it asks to be or
+    // not — Android 15 removed the opt-out. That means this bar is drawn
+    // UNDERNEATH the system navigation, and `viewPadding` is the only thing
+    // that says how much of it is covered.
+    //
+    // Material's BottomNavigationBar already handles the VERTICAL case: it
+    // adds `viewPadding.bottom` itself, so the buttons sit above a 48dp
+    // 3-button bar and the white fill runs down behind a 24dp gesture handle
+    // rather than leaving a strip of page showing through. That part was
+    // right and is left alone.
+    //
+    // What it does not handle is LANDSCAPE, where a phone moves the 3-button
+    // bar to a SIDE — `viewPadding.right` (or `.left`, if the device was
+    // rotated the other way) becomes ~48 and `.bottom` becomes 0. The bar was
+    // laid out across the full width regardless, so Settings ended 8dp past
+    // the usable edge with its tap target half-swallowed by the system bar.
+    //
+    // The padding goes INSIDE the Container, not around it, on purpose: the
+    // items move inboard while the white fill and its shadow still span the
+    // whole width, so the strip behind the system bar stays app-coloured
+    // instead of showing the page scrolling past underneath.
+    final viewPad = MediaQuery.viewPaddingOf(context);
+    final width = uiScaleWidth(context);
     final iconSize = width * 0.065;
     const activeColor = Color(0xFF60A5FA);
     const inactiveColor = Color(0xFF9CA3AF);
@@ -43,38 +74,50 @@ class HomeBottomNav extends StatelessWidget {
           ),
         ],
       ),
-      child: BottomNavigationBar(
-        type: BottomNavigationBarType.fixed,
-        backgroundColor: Colors.white,
-        elevation: 0,
-        currentIndex: currentIndex,
-        selectedItemColor: activeColor,
-        unselectedItemColor: inactiveColor,
-        selectedFontSize: width * 0.028,
-        unselectedFontSize: width * 0.028,
-        onTap: onTap,
-        items: [
-          BottomNavigationBarItem(
-            icon: buildIcon('assets/images/home.webp', currentIndex == 0),
-            label: 'Home',
-          ),
-          BottomNavigationBarItem(
-            icon: buildIcon('assets/images/my_reports.webp', currentIndex == 1),
-            label: 'My Reports',
-          ),
-          BottomNavigationBarItem(
-            icon: buildIcon('assets/images/news_feed.webp', currentIndex == 2),
-            label: 'NewsFeed',
-          ),
-          BottomNavigationBarItem(
-            icon: buildIcon('assets/images/emergency.webp', currentIndex == 3),
-            label: 'Emergency',
-          ),
-          BottomNavigationBarItem(
-            icon: buildIcon('assets/images/settings.webp', currentIndex == 4),
-            label: 'Settings',
-          ),
-        ],
+      child: Padding(
+        padding: EdgeInsets.only(left: viewPad.left, right: viewPad.right),
+        child: BottomNavigationBar(
+          type: BottomNavigationBarType.fixed,
+          backgroundColor: Colors.white,
+          elevation: 0,
+          currentIndex: currentIndex,
+          selectedItemColor: activeColor,
+          unselectedItemColor: inactiveColor,
+          selectedFontSize: width * 0.028,
+          unselectedFontSize: width * 0.028,
+          onTap: onTap,
+          items: [
+            BottomNavigationBarItem(
+              icon: buildIcon('assets/images/home.webp', currentIndex == 0),
+              label: 'Home',
+            ),
+            BottomNavigationBarItem(
+              icon: buildIcon(
+                'assets/images/my_reports.webp',
+                currentIndex == 1,
+              ),
+              label: 'My Reports',
+            ),
+            BottomNavigationBarItem(
+              icon: buildIcon(
+                'assets/images/news_feed.webp',
+                currentIndex == 2,
+              ),
+              label: 'NewsFeed',
+            ),
+            BottomNavigationBarItem(
+              icon: buildIcon(
+                'assets/images/emergency.webp',
+                currentIndex == 3,
+              ),
+              label: 'Emergency',
+            ),
+            BottomNavigationBarItem(
+              icon: buildIcon('assets/images/settings.webp', currentIndex == 4),
+              label: 'Settings',
+            ),
+          ],
+        ),
       ),
     );
   }

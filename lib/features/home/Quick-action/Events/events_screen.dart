@@ -13,6 +13,7 @@ import '../../shell/citizen_shell_dialogs.dart'
     show kSplitDialogFullscreenBelow;
 import '../../../../core/widgets/Home/Quick-action/Web/quick_action_split_panel.dart';
 import '../../../../core/theme/citizen_ui.dart';
+import '../../../../core/theme/mobile_metrics.dart';
 
 class EventItem {
   final String id;
@@ -340,7 +341,7 @@ class _EventsScreenState extends State<EventsScreen>
 
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+    final w = uiScaleWidth(context);
 
     // The citizen web shell's two-column panel. Checked FIRST because it is the
     // most specific host; the branch below is untouched.

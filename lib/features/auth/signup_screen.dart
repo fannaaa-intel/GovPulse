@@ -26,6 +26,7 @@ import '../auth/facebook_username_screen.dart';
 import '../guest/screen/guest.dart';
 import '../../core/widgets/app_dialog.dart';
 import '../../core/theme/citizen_ui.dart';
+import '../../core/theme/mobile_metrics.dart';
 
 // Route observer — declare once at app level and pass to MaterialApp's navigatorObservers.
 // If you already have one, just reuse it here instead.
@@ -552,7 +553,7 @@ class _SignupScreenState extends State<SignupScreen>
 
                       Image.asset(
                         "assets/images/applogocrop.webp",
-                        width: (MediaQuery.of(context).size.width * 0.30)
+                        width: (uiScaleWidth(context) * 0.30)
                             .clamp(0.0, 150.0)
                             .toDouble(),
                       ),

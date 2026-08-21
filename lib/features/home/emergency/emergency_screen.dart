@@ -15,6 +15,7 @@ import '../../../../core/services/phone_dialer.dart';
 
 import '../../../core/widgets/Home/nav/responsive_nav_scaffold.dart';
 import 'dart:io';
+import '../../../core/theme/mobile_metrics.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Palette
@@ -487,13 +488,12 @@ class _EmergencyScreenState extends State<EmergencyBody>
   // ─────────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final rawWidth = MediaQuery.of(context).size.width;
     // ── The browser always gets the web layout ──────────────────────────
     //
-    // `kIsWeb` alone, matching every other citizen-web screen. `rawWidth` is
-    // the centre column's, not the window's — the shell overrides MediaQuery
-    // before this page sees it — so `>= 900` failed on a perfectly wide
-    // monitor and dropped this page to the 480px phone body.
+    // `kIsWeb` alone, matching every other citizen-web screen. The width this
+    // page reads is the centre column's, not the window's — the shell
+    // overrides MediaQuery before the page sees it — so `>= 900` failed on a
+    // perfectly wide monitor and dropped this page to the 480px phone body.
     final bool wide = kIsWeb;
     // ── 380, not 460 ────────────────────────────────────────────────────────
     //
@@ -504,7 +504,7 @@ class _EmergencyScreenState extends State<EmergencyBody>
     // it. Pulling the one number down takes the hero, the cards, the labels and
     // the disclaimer with it in step, which is the only way they stay in
     // proportion to each other.
-    final double w = wide ? 380.0 : rawWidth.clamp(0.0, 480.0);
+    final double w = wide ? 380.0 : uiScaleWidth(context);
     return wide
         ? _buildEmergencyWebBody(w)
         : Center(
@@ -997,13 +997,21 @@ class _EmergencyScreenState extends State<EmergencyBody>
           ),
         ),
         SizedBox(width: w * .025),
-        Text(
-          text,
-          style: TextStyle(
-            fontSize: w * .044,
-            fontWeight: FontWeight.w800,
-            color: _C.text2,
-            letterSpacing: -.3,
+        // Flexible: the label sits next to a fixed 4dp rule with nothing else
+        // in the Row to absorb a long one, and these headings are the strings
+        // most likely to grow — they are section names, and this screen's are
+        // the ones a Tagalog build lengthens most.
+        Flexible(
+          child: Text(
+            text,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: w * .044,
+              fontWeight: FontWeight.w800,
+              color: _C.text2,
+              letterSpacing: -.3,
+            ),
           ),
         ),
       ],
@@ -1325,31 +1333,42 @@ class _Slider911State extends State<_Slider911>
                     opacity: done
                         ? 0.0
                         : (1.0 - (_progress * 2.2)).clamp(0.0, 1.0),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.keyboard_double_arrow_right_rounded,
-                          size: 20,
-                          color: Colors.white.withValues(alpha: .55),
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          'Slide to Call 911',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white.withValues(alpha: .95),
-                            letterSpacing: .4,
+                    // Scaled down rather than ellipsised, and never clipped.
+                    // This is the label on the 911 control, so the two ways a
+                    // Row normally copes are both wrong here: "Slide to Ca…"
+                    // does not tell someone in an emergency what to do, and a
+                    // striped overflow bar across the slider is worse. The
+                    // sizes inside are fixed, so at a default font on a
+                    // 320dp handset this shrinks nothing — it only engages
+                    // where the alternative was damage.
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.keyboard_double_arrow_right_rounded,
+                            size: 20,
+                            color: Colors.white.withValues(alpha: .55),
                           ),
-                        ),
-                        const SizedBox(width: 6),
-                        Icon(
-                          Icons.keyboard_double_arrow_right_rounded,
-                          size: 20,
-                          color: Colors.white.withValues(alpha: .30),
-                        ),
-                      ],
+                          const SizedBox(width: 6),
+                          Text(
+                            'Slide to Call 911',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white.withValues(alpha: .95),
+                              letterSpacing: .4,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Icon(
+                            Icons.keyboard_double_arrow_right_rounded,
+                            size: 20,
+                            color: Colors.white.withValues(alpha: .30),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -1438,8 +1457,7 @@ class _CatCardState extends State<_CatCard>
 
   @override
   Widget build(BuildContext context) {
-    final w =
-        widget.scale ?? MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+    final w = widget.scale ?? uiScaleWidth(context);
     final cat = widget.cat;
     final box = widget.iconBoxSize; // uniform for all cards
 
@@ -1597,8 +1615,7 @@ class _CatCardWideState extends State<_CatCardWide>
 
   @override
   Widget build(BuildContext context) {
-    final w =
-        widget.scale ?? MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+    final w = widget.scale ?? uiScaleWidth(context);
     final cat = widget.cat;
     final box = widget.iconBoxSize;
 
@@ -1705,9 +1722,7 @@ class _CategoryModal extends StatelessWidget {
   Widget build(BuildContext context) {
     // Same reasoning as the page behind it: on web this clamp always resolved
     // to its 480 ceiling, so the sheet drew at the biggest phone size there is.
-    final w = kIsWeb
-        ? 380.0
-        : MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+    final w = kIsWeb ? 380.0 : uiScaleWidth(context);
     final cat = category;
     final box = w * .14;
 
@@ -1904,8 +1919,7 @@ class _HotlineRowState extends State<_HotlineRow>
     // 480 ceiling on any browser, so these rows were drawing at the largest
     // phone size inside a sheet that had already come down to 380 — which is
     // most of why three hotlines filled 400px of it.
-    final w =
-        widget.scale ?? MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+    final w = widget.scale ?? uiScaleWidth(context);
     final h = widget.hotline;
     final col = widget.accentColor;
 

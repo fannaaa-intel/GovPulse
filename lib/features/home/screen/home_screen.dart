@@ -19,6 +19,7 @@ import '../Quick-action/Suggestion/suggestion_screen.dart';
 import '../Quick-action/Feedback/feedback_screen.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 
+import '../../../core/theme/mobile_metrics.dart';
 import '../../../core/widgets/Home/nav/nav_band.dart';
 import '../../../core/widgets/Home/nav/home_bottom_nav.dart';
 import '../../../core/widgets/Home/nav/home_top_nav.dart';
@@ -578,7 +579,11 @@ class _HomePageState extends ConsumerState<HomePage>
           child: useMobile
               ? SafeArea(
                   child: _buildMobileBody(
-                    width,
+                    // The MOBILE body is measured on the shortest side, not on
+                    // the viewport width — rotating a handset must not resize
+                    // its type. See mobile_metrics.dart. The web body below
+                    // keeps the real width: there the viewport IS the layout.
+                    uiScaleWidthOf(size),
                     height,
                     verifStatus,
                     facePhotoUrl,
@@ -601,11 +606,7 @@ class _HomePageState extends ConsumerState<HomePage>
                 ),
         ),
         bottomNavigationBar: useMobile
-            ? HomeBottomNav(
-                width: width,
-                currentIndex: _navIndex,
-                onTap: _handleNavTap,
-              )
+            ? HomeBottomNav(currentIndex: _navIndex, onTap: _handleNavTap)
             : null,
       ),
     );

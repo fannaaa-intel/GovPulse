@@ -3,6 +3,7 @@ import '../../../theme/app_colors.dart';
 import '../../loading/loading_overlay.dart';
 import '../home_enums.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import '../../../theme/mobile_metrics.dart';
 
 // ── Main card widget ──────────────────────────────────────────────────────────
 class HomeProfileCard extends StatelessWidget {
@@ -188,8 +189,7 @@ class HomeProfileCard extends StatelessWidget {
     // card is laid out inside a 480 column either way, so an unclamped fallback
     // would only mis-proportion it — noticeably so on a landscape phone, where
     // raw width is roughly double.
-    final width =
-        this.width ?? MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+    final width = this.width ?? uiScaleWidth(context);
     final badge = _statusBadge;
     final isVerified = verifStatus == VerifStatus.verified;
 
@@ -589,12 +589,23 @@ class _VerifiedStripShimmerState extends State<_VerifiedStripShimmer>
                 color: const Color(0xFF15803D),
               ),
               SizedBox(width: w * 0.020),
-              Text(
-                'You\'re a verified Aparri citizen',
-                style: TextStyle(
-                  fontSize: w * 0.032,
-                  fontWeight: FontWeight.w600,
-                  color: const Color(0xFF15803D),
+              // Flexible, not bare: this label is the widest thing in the card
+              // and the Row gave it no way to yield. At 320dp with the font
+              // size at Android's Largest it clears the strip by about 5px in
+              // English, and the Tagalog rendering of the same sentence is
+              // longer than that margin — so the layout was one setting or one
+              // translation away from a striped overflow on the home screen.
+              Flexible(
+                child: Text(
+                  'You\'re a verified Aparri citizen',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: w * 0.032,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF15803D),
+                  ),
                 ),
               ),
             ],

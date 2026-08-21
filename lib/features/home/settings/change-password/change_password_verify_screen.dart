@@ -11,6 +11,7 @@ import '../../../../core/widgets/mobile_form_shell.dart';
 import 'change_password_new_screen.dart';
 import '../../../../core/theme/citizen_ui.dart';
 import '../../../../core/widgets/Home/Account/account_web_kit.dart';
+import '../../../../core/theme/mobile_metrics.dart';
 
 class ChangePasswordVerifyScreen extends StatefulWidget {
   final String email;
@@ -268,7 +269,7 @@ class _ChangePasswordVerifyScreenState extends State<ChangePasswordVerifyScreen>
       );
     }
 
-    final w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+    final w = uiScaleWidth(context);
     return Scaffold(
       backgroundColor: Colors.white,
       resizeToAvoidBottomInset: true,

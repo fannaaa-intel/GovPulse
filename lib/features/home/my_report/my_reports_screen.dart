@@ -11,6 +11,7 @@ import '../../../core/providers/user_profile_provider.dart';
 import 'report_card.dart';
 import '../../../core/theme/citizen_ui.dart';
 import '../../../core/widgets/Home/Account/account_web_kit.dart';
+import '../../../core/theme/mobile_metrics.dart';
 
 // The report row, the ReportItem model and the type scale now live in
 // report_card.dart so the card can be rendered without this screen. Re-exported
@@ -318,7 +319,6 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
 
   @override
   Widget build(BuildContext context) {
-    final width = MediaQuery.of(context).size.width;
     // ── The browser always gets the web layout ──────────────────────────
     //
     // `kIsWeb` alone, no width test, matching every other citizen-web screen.
@@ -331,7 +331,7 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
     // The web body handles a narrow pane on its own now; the stat row goes
     // two-up rather than squeezing four across. See [_buildKpiRow].
     final bool wide = kIsWeb;
-    final double w = wide ? 460.0 : width.clamp(0.0, 480.0);
+    final double w = wide ? 460.0 : uiScaleWidth(context);
     return wide
         ? LoadingOverlay.bodyOrSkeleton(
             isLoading: _isLoading,
@@ -496,51 +496,68 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
   Widget _buildBody(double w) {
     // ── Error ──
     if (_error != null) {
-      return Center(
-        child: Padding(
-          padding: EdgeInsets.all(w * .08),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.cloud_off_rounded,
-                size: w * .18,
-                color: _T.textDisabled,
-              ),
-              SizedBox(height: w * .04),
-              Text(
-                'Failed to load reports',
-                style: _T.title(w, color: _T.textSecondary),
-              ),
-              SizedBox(height: w * .02),
-              Text(
-                _error!,
-                textAlign: TextAlign.center,
-                style: _T.body(w, color: _T.textTertiary),
-              ),
-              SizedBox(height: w * .05),
-              ElevatedButton.icon(
-                onPressed: _fetchReports,
-                icon: const Icon(Icons.refresh_rounded, color: Colors.white),
-                label: const Text(
-                  'Retry',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                  ),
+      // Scrollable, unlike the Center it used to be. The happy path below has
+      // always scrolled; this branch did not, and it is the branch that has to
+      // survive the least room. Turned sideways a phone leaves ~114dp of body
+      // here, and the icon, the two lines and the Retry button want 168 — so
+      // the retry the citizen is being asked to tap was under a striped
+      // overflow bar, off-screen, with no way to reach it. Nothing moves in
+      // portrait: the Center still centres whenever the content fits.
+      return LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Center(
+              child: Padding(
+                padding: EdgeInsets.all(w * .08),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.cloud_off_rounded,
+                      size: w * .18,
+                      color: _T.textDisabled,
+                    ),
+                    SizedBox(height: w * .04),
+                    Text(
+                      'Failed to load reports',
+                      style: _T.title(w, color: _T.textSecondary),
+                    ),
+                    SizedBox(height: w * .02),
+                    Text(
+                      _error!,
+                      textAlign: TextAlign.center,
+                      style: _T.body(w, color: _T.textTertiary),
+                    ),
+                    SizedBox(height: w * .05),
+                    ElevatedButton.icon(
+                      onPressed: _fetchReports,
+                      icon: const Icon(
+                        Icons.refresh_rounded,
+                        color: Colors.white,
+                      ),
+                      label: const Text(
+                        'Retry',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primaryBlue,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        padding: EdgeInsets.symmetric(
+                          horizontal: w * .06,
+                          vertical: w * .035,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primaryBlue,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  padding: EdgeInsets.symmetric(
-                    horizontal: w * .06,
-                    vertical: w * .035,
-                  ),
-                ),
               ),
-            ],
+            ),
           ),
         ),
       );

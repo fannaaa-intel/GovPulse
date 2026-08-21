@@ -4,6 +4,7 @@ import '../../core/router/legacy_nav.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/web/web.dart';
 import '../../core/widgets/mobile_form_shell.dart';
+import '../../core/theme/mobile_metrics.dart';
 
 class PasswordChangeSuccess extends StatefulWidget {
   const PasswordChangeSuccess({super.key});
@@ -67,7 +68,7 @@ class _PasswordChangeSuccessState extends State<PasswordChangeSuccess>
   //  MOBILE — untouched
   // ══════════════════════════════════════════════════════════════════════════
   Widget _mobileScaffold(BuildContext context) {
-    final w = MediaQuery.of(context).size.width;
+    final w = uiScaleWidth(context);
 
     return Scaffold(
       backgroundColor: Colors.white,

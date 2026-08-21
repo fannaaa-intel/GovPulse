@@ -11,6 +11,7 @@ import '../../app_snackbar.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../app_dialog.dart';
 import '../../../../core/theme/citizen_ui.dart';
+import '../../../theme/mobile_metrics.dart';
 
 /// The width this sheet's `width * 0.xx` sizing is proportioned against.
 ///
@@ -53,9 +54,8 @@ const double kThreadMetrics = 400.0;
 ///
 /// Mobile is untouched — `kIsWeb` is a compile-time false there, so the app
 /// compiles to exactly the expression that was here before.
-double _sizingWidth(BuildContext context) => kIsWeb
-    ? kThreadMetrics
-    : MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+double _sizingWidth(BuildContext context) =>
+    kIsWeb ? kThreadMetrics : uiScaleWidth(context);
 
 /// Opens [post]'s comment thread in the presentation that matches the viewport:
 /// a centred dialog on wide screens, the phone bottom sheet below that.

@@ -4,6 +4,7 @@ import '../../../../core/widgets/responsive_page.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/citizen_ui.dart';
 import '../../../../core/widgets/Home/Account/account_web_kit.dart';
+import '../../../../core/theme/mobile_metrics.dart';
 
 class AboutGovPulseScreen extends StatefulWidget {
   const AboutGovPulseScreen({super.key});
@@ -56,7 +57,7 @@ class _AboutGovPulseScreenState extends State<AboutGovPulseScreen>
     // for the reason EditProfileScreen spells out.
     if (kIsWeb) return _buildWebScaffold();
 
-    final w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+    final w = uiScaleWidth(context);
     return Scaffold(
       backgroundColor: const Color(0xFFF3F4F6),
       body: ResponsivePageBody(

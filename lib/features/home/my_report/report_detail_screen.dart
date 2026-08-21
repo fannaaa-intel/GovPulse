@@ -12,6 +12,7 @@ import '../../../../core/services/chat_service.dart';
 import '../Quick-action/Chat-with-Agent/chat_agent_screen.dart';
 import '../../../core/theme/citizen_ui.dart';
 import '../../../core/widgets/Home/Account/account_web_kit.dart';
+import '../../../core/theme/mobile_metrics.dart';
 // ─── Timeline step model ──────────────────────────────────────────────────────
 
 enum TimelineStepStatus { completed, active, pending }
@@ -469,7 +470,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
 
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+    final w = uiScaleWidth(context);
     // `kIsWeb` alone, no width test. The old `>= 900` left a dead zone: a pane
     // between 760 and 900 wide fell back to the PHONE hero, whose content
     // starts 19px from the pane's left edge, while the body below it was
@@ -553,17 +554,17 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
         child: Padding(
           padding: const EdgeInsets.all(8),
           child: Container(
-            width: MediaQuery.of(context).size.width.clamp(0.0, 480.0) * 0.09,
-            height: MediaQuery.of(context).size.width.clamp(0.0, 480.0) * 0.09,
+            width: uiScaleWidth(context) * 0.09,
+            height: uiScaleWidth(context) * 0.09,
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(
-                MediaQuery.of(context).size.width.clamp(0.0, 480.0) * 0.025,
+                uiScaleWidth(context) * 0.025,
               ),
             ),
             child: Icon(
               Icons.arrow_back_ios_new_rounded,
-              size: MediaQuery.of(context).size.width.clamp(0.0, 480.0) * 0.045,
+              size: uiScaleWidth(context) * 0.045,
               color: Colors.white,
             ),
           ),

@@ -13,6 +13,7 @@ import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/widgets/app_dialog.dart';
 import '../../../../core/theme/citizen_ui.dart';
 import '../../../../core/widgets/Home/Account/account_web_kit.dart';
+import '../../../../core/theme/mobile_metrics.dart';
 
 // ── Aparri bounding box (expanded to cover all 42 official barangays) ─────
 const double _aparriMinLat = 18.2750;
@@ -678,7 +679,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
   // ── Build ──────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final width = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+    final width = uiScaleWidth(context);
     final bottomPad = MediaQuery.of(context).padding.bottom;
 
     final keyboardPad = MediaQuery.of(context).viewInsets.bottom;

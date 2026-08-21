@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
 import 'app_back_chevron.dart';
+import '../theme/mobile_metrics.dart';
 
 /// The app's pinned screen header: a white bar carrying [AppBackChevron] and a
 /// blue title, with a soft shadow separating it from the page beneath.
@@ -40,7 +41,7 @@ class AppScreenHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final w = width ?? MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+    final w = width ?? uiScaleWidth(context);
     return Container(
       width: double.infinity,
       padding: EdgeInsets.fromLTRB(w * 0.04, w * 0.04, w * 0.04, w * 0.035),

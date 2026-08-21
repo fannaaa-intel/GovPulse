@@ -9,6 +9,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/web/web.dart';
 import '../../../core/widgets/mobile_form_shell.dart';
 import '../../../core/theme/citizen_ui.dart';
+import '../../../core/theme/mobile_metrics.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  Guests get the bare feed, NOT the citizen shell. That is a product decision,
@@ -267,7 +268,7 @@ class _GuestScreenState extends State<GuestScreen>
 
   // ── Mobile layout ─────────────────────────────────────────────────────────
   Widget _mobileScaffold(BuildContext context) {
-    final w = MediaQuery.of(context).size.width;
+    final w = uiScaleWidth(context);
 
     return Scaffold(
       backgroundColor: Colors.white,

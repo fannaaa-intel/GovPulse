@@ -10,6 +10,7 @@ import '../../../../core/widgets/Home/Chat-agent/chat_message.dart';
 import '../../../../core/widgets/Home/Chat-agent/chat_message_bubble.dart';
 import '../../../../core/widgets/Home/Chat-agent/chat_models.dart' as cm;
 import '../../../../core/theme/citizen_ui.dart';
+import '../../../../core/theme/mobile_metrics.dart';
 
 /// Full-screen chat with the LGU agent.
 ///
@@ -596,7 +597,7 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
   // ── Build ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final width = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+    final width = uiScaleWidth(context);
 
     // The browser always gets the web layout — `kIsWeb` alone, no width test,
     // for the reason EditProfileScreen spells out.

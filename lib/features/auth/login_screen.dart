@@ -13,6 +13,7 @@ import '../../core/widgets/app_snackbar.dart';
 import '../../core/widgets/auth/facebook_auth_overlay.dart';
 import '../auth/facebook_username_screen.dart';
 import '../../core/theme/citizen_ui.dart';
+import '../../core/theme/mobile_metrics.dart';
 
 class LoginScreen extends StatefulWidget {
   final Future<void> Function(String, String) onLoginClick;
@@ -233,7 +234,7 @@ class _LoginScreenState extends State<LoginScreen>
       children: [
         Image.asset(
           "assets/images/applogocrop.webp",
-          width: MediaQuery.of(context).size.width * 0.30,
+          width: uiScaleWidth(context) * 0.30,
         ),
         const SizedBox(height: 32),
         Text(

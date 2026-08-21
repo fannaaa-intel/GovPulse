@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../citizen_shell_scope.dart';
 import '../../../core/theme/citizen_ui.dart';
+import '../../theme/mobile_metrics.dart';
 
 enum SkeletonLayout {
   none,
@@ -1009,7 +1010,7 @@ class _HomeSkeletonScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width;
+    final double w = uiScaleWidth(context);
     final h = MediaQuery.of(context).size.height;
 
     return SafeArea(
@@ -1173,7 +1174,7 @@ class _SettingsSkeletonScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width;
+    final double w = uiScaleWidth(context);
     const sectionRows = [3, 1, 2, 3];
 
     return SafeArea(
@@ -1364,7 +1365,7 @@ class _EditProfileSkeletonScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width;
+    final double w = uiScaleWidth(context);
 
     return SafeArea(
       child: Column(
@@ -1595,7 +1596,7 @@ class _MyReportsSkeletonScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width;
+    final double w = uiScaleWidth(context);
 
     return SafeArea(
       // top: false because the real app bar + page title already consumed
@@ -1712,7 +1713,7 @@ class _NewsFeedSkeletonScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width;
+    final double w = uiScaleWidth(context);
 
     return SafeArea(
       child: Column(
@@ -1925,7 +1926,7 @@ class EventsSkeletonScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final double w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+    final double w = uiScaleWidth(context);
 
     return SafeArea(
       child: Column(
@@ -1961,7 +1962,7 @@ class EventsSectionsSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final double w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+    final double w = uiScaleWidth(context);
     final double cardW = w * 0.42;
     final double cardH = cardW * 1.42;
     final double imageH = cardW * 0.62;
@@ -2131,7 +2132,7 @@ class EventsBodySkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final double w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+    final double w = uiScaleWidth(context);
 
     return SingleChildScrollView(
       physics: const NeverScrollableScrollPhysics(),
@@ -2192,7 +2193,7 @@ class _ChangePasswordSkeletonScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width;
+    final double w = uiScaleWidth(context);
     final size = (w * 0.28).clamp(80.0, 140.0);
 
     return SafeArea(
@@ -2264,7 +2265,7 @@ class MySubmissionsBodySkeleton extends StatelessWidget {
   Widget build(BuildContext context) {
     // Clamp to 480 like MySubmissionsScreen so the skeleton stays proportional
     // on landscape / tablet viewports instead of stretching.
-    final double w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+    final double w = uiScaleWidth(context);
 
     Widget card() => Container(
       margin: EdgeInsets.only(bottom: w * 0.03),

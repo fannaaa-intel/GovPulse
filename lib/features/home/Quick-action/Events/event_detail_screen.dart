@@ -10,6 +10,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/event_status_pill.dart';
 import 'events_screen.dart';
 import '../../../../core/theme/citizen_ui.dart';
+import '../../../../core/theme/mobile_metrics.dart';
 
 class EventDetailScreen extends StatefulWidget {
   final EventItem event;
@@ -106,7 +107,7 @@ class _EventDetailScreenState extends State<EventDetailScreen>
 
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width.clamp(0.0, 480.0);
+    final w = uiScaleWidth(context);
 
     return Scaffold(
       backgroundColor: Colors.white,
