@@ -4,6 +4,25 @@ import '../../../moderation/profanity_filter.dart';
 import 'news_feed_helpers.dart';
 import 'comment_options_sheet.dart';
 
+/// Fixed sizing base for a comment row — the bubble, the avatar, the meta line.
+///
+/// The ADMIN console's panel is drawn in absolute pixels — 34px avatars, 13px
+/// names, 11px meta — and is the reference for all three surfaces. Every metric
+/// in [buildCommentItem] / [buildReplyItem] is a `width * k` fraction, so
+/// feeding them one constant reproduces those pixel sizes exactly and, more
+/// importantly, keeps them identical on a 360dp phone, a tablet and a 1440px
+/// desktop dialog. Scaling this off the viewport is what made the same thread
+/// render at three different sizes across citizen / staff / admin.
+///
+/// Responsiveness lives in the SHELL (dialog vs bottom sheet, chosen by
+/// `kCommentsDialogBreakpoint`) and in the Expanded/Flexible layout — not in
+/// the type scale.
+///
+/// Lives here rather than in `comments_sheet.dart` because the sheet is no
+/// longer the only surface that draws these rows: the feed card previews the
+/// first few comments under every post and must size them the same way.
+const double kThreadMetrics = 400.0;
+
 Widget commentAction(
   double width, {
   required String label,

@@ -10,7 +10,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/deeplink_highlight.dart';
 import '../../../core/widgets/Home/Newsfeed/image_grid.dart';
 import '../../../core/widgets/Home/Newsfeed/comment_post_recap.dart';
-import '../../../core/widgets/Home/Newsfeed/comments_sheet.dart'
+import '../../../core/widgets/Home/Newsfeed/comment_item.dart'
     show kThreadMetrics;
 import '../../../core/widgets/Home/Newsfeed/news_feed_helpers.dart';
 import '../../../core/widgets/modal/media_picker_sheet.dart';

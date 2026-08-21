@@ -36,6 +36,30 @@ const int kPostCardPreviewComments = 3;
 /// keep the bordered, rounded card.
 const double kPostCardFullBleedBelow = 640;
 
+/// The base the preview comment rows under a post are proportioned against,
+/// for a card whose own layout base is [width].
+///
+/// A comment is the same object everywhere, so it should be the same size
+/// everywhere — and on the WEB it was not. The card's base is 480 in the citizen
+/// shell (and on any browser at all, since the phone body caps at 480 too),
+/// while the thread those rows open into is pinned to [kThreadMetrics] = 400.
+/// Feeding the rows the card width therefore drew every preview comment ~20%
+/// larger than the identical row in the comments sheet, and larger again than
+/// the phone app draws it — the post and its comments competing for weight
+/// instead of the comments reading as a quiet footnote under the post.
+///
+/// So web takes the thread's fixed base: one comment size across the feed
+/// preview, the sheet, and the tablet / desktop dialog, with no viewport in the
+/// arithmetic. Only the POST chrome above still scales with the card.
+///
+/// Mobile is untouched — [web] defaults to `kIsWeb`, a compile-time false there,
+/// so the app compiles to exactly the `width` this passed before. The parameter
+/// exists because that compile-time constant is also what makes the web branch
+/// unreachable from a VM test; passing it explicitly is how both branches get
+/// exercised without a browser test runner.
+double commentMetricsFor(double width, {bool web = kIsWeb}) =>
+    web ? kThreadMetrics : width;
+
 class NewsfeedPostCard extends StatelessWidget {
   /// The layout base width. Every dimension in the card is a fraction of this,
   /// which is why it is threaded through rather than read from MediaQuery — the
@@ -77,6 +101,12 @@ class NewsfeedPostCard extends StatelessWidget {
   /// column it is laying the card into, not from the viewport.
   final bool edgeToEdge;
 
+  /// Override the base the preview comment rows are sized against. Defaults to
+  /// [commentMetricsFor] applied to [width], which is what production uses;
+  /// tests pass it to reach the web branch from the VM, where `kIsWeb` is a
+  /// compile-time false and the platform rule is therefore unreachable.
+  final double? commentMetrics;
+
   const NewsfeedPostCard({
     super.key,
     required this.width,
@@ -91,6 +121,7 @@ class NewsfeedPostCard extends StatelessWidget {
     required this.onToggleCommentLike,
     required this.onOpenComments,
     this.edgeToEdge = false,
+    this.commentMetrics,
   });
 
   /// Guests see other citizens as "Citizen" with no avatar, matching how the
@@ -130,6 +161,10 @@ class NewsfeedPostCard extends StatelessWidget {
       allActivity.addAll(replies.cast<Map<String, dynamic>>());
     }
     final previewComments = allActivity.take(kPostCardPreviewComments).toList();
+
+    // Sizing base for the comment block only — see [commentMetricsFor]. The
+    // post above it keeps scaling with the card.
+    final double cw = commentMetrics ?? commentMetricsFor(width);
 
     final double gutter = width * 0.035;
 
@@ -257,7 +292,7 @@ class NewsfeedPostCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Padding(
-                      padding: EdgeInsets.symmetric(vertical: width * 0.025),
+                      padding: EdgeInsets.symmetric(vertical: cw * 0.025),
                       child: Container(
                         height: 1,
                         color: CitizenUi.sharedBorder,
@@ -269,7 +304,7 @@ class NewsfeedPostCard extends StatelessWidget {
                       if (isReply) {
                         return buildReplyItem(
                           context,
-                          width,
+                          cw,
                           comment,
                           likedComments: likedComments,
                           onToggleLike: onToggleCommentLike,
@@ -280,7 +315,7 @@ class NewsfeedPostCard extends StatelessWidget {
                       }
                       return buildCommentItem(
                         context,
-                        width,
+                        cw,
                         comment,
                         likedComments: likedComments,
                         onToggleLike: onToggleCommentLike,
@@ -295,7 +330,7 @@ class NewsfeedPostCard extends StatelessWidget {
                     }),
                     if (commentCount > kPostCardPreviewComments)
                       Padding(
-                        padding: EdgeInsets.only(top: width * 0.015),
+                        padding: EdgeInsets.only(top: cw * 0.015),
                         child: GestureDetector(
                           behavior: HitTestBehavior.opaque,
                           onTap: () => onOpenComments(),
@@ -304,15 +339,15 @@ class NewsfeedPostCard extends StatelessWidget {
                               Text(
                                 'View all $commentCount comments',
                                 style: TextStyle(
-                                  fontSize: width * 0.034,
+                                  fontSize: cw * 0.034,
                                   fontWeight: FontWeight.w700,
                                   color: AppColors.primaryBlue,
                                 ),
                               ),
-                              SizedBox(width: width * 0.008),
+                              SizedBox(width: cw * 0.008),
                               Icon(
                                 Icons.arrow_forward_ios_rounded,
-                                size: width * 0.030,
+                                size: cw * 0.030,
                                 color: AppColors.primaryBlue,
                               ),
                             ],

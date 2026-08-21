@@ -13,27 +13,15 @@ import '../../app_dialog.dart';
 import '../../../../core/theme/citizen_ui.dart';
 import '../../../theme/mobile_metrics.dart';
 
-/// The width this sheet's `width * 0.xx` sizing is proportioned against.
-///
-/// Clamped to the same 480 the rest of the citizen app uses. These sheets are
-/// full-bleed, so on a landscape phone the raw viewport width (~844) would
-/// scale every icon, radius and pad to roughly double — against a screen that
-/// is only ~390dp tall. The sheet still spans the display; only its proportions
-/// stop chasing the display's width.
-/// Fixed sizing base for the comment thread itself.
-///
-/// The ADMIN console's panel is drawn in absolute pixels — 34px avatars, 13px
-/// names, 11px meta — and is the reference for all three surfaces. Every metric
-/// in here and in [buildCommentItem] is a `width * k` fraction, so feeding them
-/// one constant reproduces those pixel sizes exactly and, more importantly,
-/// keeps them identical on a 360dp phone, a tablet and a 1440px desktop dialog.
-/// Scaling this off the viewport is what made the same thread render at three
-/// different sizes across citizen / staff / admin.
-///
-/// Responsiveness lives in the SHELL (dialog vs bottom sheet, chosen by
-/// [kCommentsDialogBreakpoint]) and in the Expanded/Flexible layout — not in
-/// the type scale.
-const double kThreadMetrics = 400.0;
+// The width this file's `width * 0.xx` sizing is proportioned against is a
+// FIXED base, not the viewport: these sheets are full-bleed, so on a landscape
+// phone the raw viewport width (~844) would scale every icon, radius and pad to
+// roughly double — against a screen that is only ~390dp tall. The sheet still
+// spans the display; only its proportions stop chasing the display's width.
+//
+// That base is `kThreadMetrics`, which now lives beside the rows it sizes in
+// comment_item.dart, so the feed card's inline comment preview can size itself
+// the same way without importing this sheet.
 
 /// Sizing base for the two modal sheets that ACT on the thread — edit a
 /// comment, confirm a delete — as opposed to the thread itself, which uses
