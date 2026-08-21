@@ -927,12 +927,13 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
     final rawWidth = MediaQuery.of(context).size.width;
     // WEB / large screens: feed column + info rail that fills the width, instead
     // of a stranded 480px phone column. Phones & narrow web keep the original
-    // body (design width capped at 480), byte-for-byte unchanged.
+    // body. Note this chooses the LAYOUT only — the sizing base below is
+    // [feedMetrics] on both arms, so a post is the same size either way.
     // Embedded, the shell hands this body a column narrower than the viewport,
     // so the viewport-based `wide` test would be wrong in both directions. In
     // the shell the web layout is always the right one.
     final bool wide = widget.embedded || (kIsWeb && rawWidth >= 900);
-    final double width = wide ? 480.0 : uiScaleWidth(context);
+    final double width = feedMetrics(context);
     // Facebook's mobile treatment: the post slab spans the viewport instead of
     // floating as a card with a side margin. Only worth doing when the feed
     // column actually REACHES both edges — it is capped at 480 below, so on a

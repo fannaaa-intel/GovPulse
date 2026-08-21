@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
@@ -7,6 +9,7 @@ import 'comment_item.dart';
 import 'image_grid.dart';
 import 'news_feed_helpers.dart';
 import '../../../../core/theme/citizen_ui.dart';
+import '../../../theme/mobile_metrics.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  A single community post, as it appears in the feed.
@@ -36,21 +39,62 @@ const int kPostCardPreviewComments = 3;
 /// keep the bordered, rounded card.
 const double kPostCardFullBleedBelow = 640;
 
+/// The base the citizen feed proportions every `width * 0.0xx` against on WEB.
+///
+/// [kUiScaleMaxWidth] caps the phone scale at 480, which is right for a handset
+/// held in the hand and wrong for a browser. The web feed used to pin itself to
+/// that ceiling — the literal `480.0` this replaced — so a post drew at the
+/// largest phone size that exists no matter the window: on a phone browser the
+/// viewport is ~411, and every avatar, name, timestamp, title and body ran ~17%
+/// bigger than the same post in the app; on a desktop the card sits in a 600px
+/// column and got bigger still relative to nothing at all.
+///
+/// A post is not a bigger object on a bigger screen. Pinning web to a phone-
+/// sized base is what makes the browser render the app's proportions instead of
+/// an inflated copy of them — the column may be wider, the type does not follow.
+///
+/// 400 rather than 480 because that is the base the comment thread already uses
+/// ([kThreadMetrics]); one phone base for the whole web feed, so the post and
+/// the comments under it cannot disagree about how big the browser is.
+const double kFeedMetrics = 400.0;
+
+/// The feed's sizing base for [context]: phone proportions, never inflated.
+///
+/// Mobile returns [uiScaleWidth] unchanged — `kIsWeb` is a compile-time false
+/// there, so the app compiles to exactly the expression it used before.
+///
+/// Web takes the SMALLER of the phone scale and [kFeedMetrics], so a browser
+/// narrower than 400 stays exactly as proportional as the app is at that width,
+/// and everything above it — a roomy phone browser, a tablet, a 1440px
+/// desktop — settles on the one phone base instead of chasing the window.
+///
+/// [web] is a test seam, as on [commentMetricsFor]: `kIsWeb` is a compile-time
+/// constant, so under the VM the web branch is not merely false but absent.
+double feedMetrics(BuildContext context, {bool web = kIsWeb}) {
+  final double phone = uiScaleWidth(context);
+  return web ? math.min(phone, kFeedMetrics) : phone;
+}
+
 /// The base the preview comment rows under a post are proportioned against,
 /// for a card whose own layout base is [width].
 ///
 /// A comment is the same object everywhere, so it should be the same size
-/// everywhere — and on the WEB it was not. The card's base is 480 in the citizen
-/// shell (and on any browser at all, since the phone body caps at 480 too),
-/// while the thread those rows open into is pinned to [kThreadMetrics] = 400.
-/// Feeding the rows the card width therefore drew every preview comment ~20%
-/// larger than the identical row in the comments sheet, and larger again than
-/// the phone app draws it — the post and its comments competing for weight
-/// instead of the comments reading as a quiet footnote under the post.
+/// everywhere — and on the WEB it was not. The card's base was 480 in the
+/// citizen shell, while the thread those rows open into is pinned to
+/// [kThreadMetrics] = 400, so every preview comment drew ~20% larger than the
+/// identical row in the comments sheet and larger again than the phone app
+/// draws it: the post and its comments competing for weight instead of the
+/// comments reading as a quiet footnote under the post.
 ///
 /// So web takes the thread's fixed base: one comment size across the feed
 /// preview, the sheet, and the tablet / desktop dialog, with no viewport in the
-/// arithmetic. Only the POST chrome above still scales with the card.
+/// arithmetic.
+///
+/// [kFeedMetrics] has since brought the card's own base to the same 400, which
+/// makes this a no-op in today's feed. It stays because it is the rule, not the
+/// arithmetic, that matters: a comment is sized by the thread it belongs to, so
+/// the post's base can move again — or another surface can render this card at
+/// its own scale — without the comments quietly following it.
 ///
 /// Mobile is untouched — [web] defaults to `kIsWeb`, a compile-time false there,
 /// so the app compiles to exactly the `width` this passed before. The parameter
@@ -61,9 +105,13 @@ double commentMetricsFor(double width, {bool web = kIsWeb}) =>
     web ? kThreadMetrics : width;
 
 class NewsfeedPostCard extends StatelessWidget {
-  /// The layout base width. Every dimension in the card is a fraction of this,
-  /// which is why it is threaded through rather than read from MediaQuery — the
-  /// web feed renders the card in a fixed 600px column, not at viewport width.
+  /// The metrics base. Every dimension in the card is a fraction of this, which
+  /// is why it is threaded through rather than read from MediaQuery: it is NOT
+  /// the width the card is laid out at. The web feed renders the card in a fixed
+  /// 600px column while passing the phone base from [feedMetrics], and the card
+  /// fills whatever room it is given either way — only its proportions come from
+  /// here. (The image grid is `Expanded`/`AspectRatio` for exactly that reason:
+  /// it tracks the real column, not this number.)
   final double width;
 
   /// The post row as the provider shaped it (already identity-resolved:
