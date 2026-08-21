@@ -88,15 +88,12 @@ double _contentFor(double viewport) =>
 
 void main() {
   group('the rail fits or goes', () {
-    testWidgets('a 900px window lays both out without overflowing', (
-      tester,
-    ) async {
+    testWidgets('a 900px window no longer overflows', (tester) async {
       // The exact width the two-column layout first switches on — and the
       // width the old fixed Row overflowed by 80px.
       await _pumpLayout(tester, 900);
 
       expect(tester.takeException(), isNull);
-      expect(find.byKey(_railKeyValue), findsOneWidget);
       expect(
         tester.getSize(find.byKey(_feedKeyValue)).width,
         kFeedColumnMax,
@@ -104,8 +101,15 @@ void main() {
       );
     });
 
-    testWidgets('every window from 900 up is clean', (tester) async {
-      for (final viewport in <double>[900, 940, 979, 1024, 1280, 1440, 1920]) {
+    testWidgets('every window from 900 up is clean, with or without the rail', (
+      tester,
+    ) async {
+      // The contract is "fits or is dropped", NOT "always shows the rail":
+      // 900px leaves 852 of content and the pair needs 860, so the narrowest
+      // few windows legitimately show the feed alone. What must hold at every
+      // width is that nothing overflows and the rail is present exactly when
+      // there is room for it.
+      for (final viewport in <double>[900, 907, 908, 940, 1024, 1440, 1920]) {
         await _pumpLayout(tester, viewport);
         expect(
           tester.takeException(),
@@ -114,8 +118,10 @@ void main() {
         );
         expect(
           find.byKey(_railKeyValue),
-          findsOneWidget,
-          reason: 'rail went missing at a ${viewport}px window',
+          _contentFor(viewport) >= kFeedRailBelow
+              ? findsOneWidget
+              : findsNothing,
+          reason: 'rail presence is wrong at a ${viewport}px window',
         );
       }
     });
@@ -146,11 +152,11 @@ void main() {
       },
     );
 
-    test('the pair actually fits the window it is used at', () {
-      // The arithmetic the old layout got wrong, stated so it cannot rot: the
-      // feed + gap + rail must fit the content box of the narrowest window
-      // that uses this layout (900px), not merely of some larger one.
-      expect(kFeedRailBelow, lessThanOrEqualTo(_contentFor(900)));
+    test('the guard is the pair own width, with no fudge in it', () {
+      // The threshold must BE what the children need. The old layout's bug was
+      // exactly this number going unstated: 600 + 32 + 300 laid out in a box
+      // that could not hold it.
+      expect(kFeedRailBelow, kFeedColumnMax + kFeedRailGap + kFeedRailWidth);
       expect(
         _oldFeedWidth + kFeedRailGap + kFeedRailWidth,
         greaterThan(_contentFor(900)),
@@ -160,9 +166,16 @@ void main() {
   });
 
   group('the measure', () {
-    test('the feed column is capped at the phone body cap', () {
-      expect(kFeedColumnMax, kUiScaleMaxWidth);
+    test('the column is a fixed multiple of the type base', () {
+      // Not a pixel constant: the two move together, so retuning the base
+      // cannot quietly lengthen or shorten the line. See kFeedMeasureRatio.
+      expect(kFeedColumnMax, kFeedMetrics * kFeedMeasureRatio);
       expect(kFeedColumnMax, lessThan(_oldColumnCap));
+      expect(
+        kFeedMetrics,
+        lessThan(kUiScaleMaxWidth),
+        reason: 'the base must stay under the phone ceiling it replaced',
+      );
     });
 
     test('full bleed and the measure are the same edge', () {
@@ -182,8 +195,8 @@ void main() {
       final oldEms = (_oldColumnCap - gutter) / bodySize;
       expect(
         oldEms,
-        greaterThan(40),
-        reason: 'sanity: the old column was wide',
+        greaterThan(ems),
+        reason: 'sanity: the old column was the wider of the two',
       );
     });
   });

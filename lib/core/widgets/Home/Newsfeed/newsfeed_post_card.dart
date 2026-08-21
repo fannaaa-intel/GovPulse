@@ -30,33 +30,6 @@ import '../../../theme/mobile_metrics.dart';
 /// How many comments (top-level + replies, flattened) preview under a post.
 const int kPostCardPreviewComments = 3;
 
-/// The widest a feed column is allowed to get — its readable MEASURE.
-///
-/// The same [kUiScaleMaxWidth] the phone body already caps itself at, and for
-/// the same reason: past it a line of body text stops being comfortable to
-/// read. It matters more on the web now that [kFeedMetrics] sizes the type off
-/// a phone base — type that small in a 640px column runs to ~100 characters a
-/// line, which is a wide-screen defect even though nothing overflows. Capping
-/// the column is what keeps the browser showing the app's LAYOUT and not just
-/// its type sizes.
-const double kFeedColumnMax = kUiScaleMaxWidth;
-
-/// Below this column width the post slab runs edge to edge — no side margin, no
-/// rounded corners, no side border — the way Facebook's mobile feed does, and
-/// the media inside it is full-bleed against the screen edge.
-///
-/// Above it the feed column is wider than the card's readable measure, so a
-/// full-bleed slab would just be a white band floating in grey; those widths
-/// keep the bordered, rounded card.
-///
-/// It is [kFeedColumnMax] itself, and must stay that way: the two are the two
-/// halves of one decision. Were the threshold the LARGER of the pair, the band
-/// between them would full-bleed a slab wider than the measure and the content
-/// would visibly SHRINK as the window grew past it. Locked together, the feed
-/// runs edge to edge right up to the measure and is a centred card above it —
-/// which is also exactly the rule the phone body uses (`rawWidth <= 480`).
-const double kPostCardFullBleedBelow = kFeedColumnMax;
-
 /// The base the citizen feed proportions every `width * 0.0xx` against on WEB.
 ///
 /// [kUiScaleMaxWidth] caps the phone scale at 480, which is right for a handset
@@ -71,10 +44,54 @@ const double kPostCardFullBleedBelow = kFeedColumnMax;
 /// sized base is what makes the browser render the app's proportions instead of
 /// an inflated copy of them — the column may be wider, the type does not follow.
 ///
-/// 400 rather than 480 because that is the base the comment thread already uses
-/// ([kThreadMetrics]); one phone base for the whole web feed, so the post and
-/// the comments under it cannot disagree about how big the browser is.
-const double kFeedMetrics = 400.0;
+/// ── Why 440 and not 480, nor 400 ──────────────────────────────────────────
+/// 480 is the CEILING of the phone scale, and drawing every browser at the
+/// largest phone size that exists is the defect above. 400 was the first answer
+/// and went one step too far the other way: it is below every real phone
+/// viewport, so a desktop rendered a post SMALLER than a handset does, which is
+/// its own kind of wrong once there is a whole window of room around it.
+///
+/// 440 sits between them, near the middle of the phones the app actually runs
+/// on. Because [feedMetrics] takes the smaller of this and the real phone
+/// scale, it changes nothing on a phone browser — a ~411 viewport still renders
+/// at 411, exactly as the app does — and lifts only the widths that had room to
+/// spare: tablet, laptop, desktop.
+const double kFeedMetrics = 440.0;
+
+/// How much wider than its type base a feed column may be.
+///
+/// The measure — characters per line — is what actually has to stay constant,
+/// and that is a RATIO of the type size, not a pixel width. Holding the column
+/// to a multiple of [kFeedMetrics] is what makes the two move together: change
+/// the base and the column follows, instead of the line quietly getting longer
+/// or shorter every time the type is retuned. 1.2 is what 400/480 already was,
+/// kept so the retune to 440 does not also change the measure.
+const double kFeedMeasureRatio = 1.2;
+
+/// The widest a feed column is allowed to get — its readable MEASURE.
+///
+/// Past it a line of body text stops being comfortable to read: at the phone
+/// type scale the 640px column this replaced ran to ~100 characters a line,
+/// which is a wide-screen defect even though nothing overflows. Capping the
+/// column is what keeps the browser showing the app's LAYOUT and not just its
+/// type sizes.
+const double kFeedColumnMax = kFeedMetrics * kFeedMeasureRatio;
+
+/// Below this column width the post slab runs edge to edge — no side margin, no
+/// rounded corners, no side border — the way Facebook's mobile feed does, and
+/// the media inside it is full-bleed against the screen edge.
+///
+/// Above it the feed column is wider than the card's readable measure, so a
+/// full-bleed slab would just be a white band floating in grey; those widths
+/// keep the bordered, rounded card.
+///
+/// It is [kFeedColumnMax] itself, and must stay that way: the two are the two
+/// halves of one decision. Were the threshold the LARGER of the pair, the band
+/// between them would full-bleed a slab wider than the measure and the content
+/// would visibly SHRINK as the window grew past it. Locked together, the feed
+/// runs edge to edge right up to the measure and is a centred card above it,
+/// which is the same shape the phone body has (full bleed to its own cap).
+const double kPostCardFullBleedBelow = kFeedColumnMax;
 
 /// The feed's sizing base for [context]: phone proportions, never inflated.
 ///
@@ -108,11 +125,13 @@ double feedMetrics(BuildContext context, {bool web = kIsWeb}) {
 /// preview, the sheet, and the tablet / desktop dialog, with no viewport in the
 /// arithmetic.
 ///
-/// [kFeedMetrics] has since brought the card's own base to the same 400, which
-/// makes this a no-op in today's feed. It stays because it is the rule, not the
-/// arithmetic, that matters: a comment is sized by the thread it belongs to, so
-/// the post's base can move again — or another surface can render this card at
-/// its own scale — without the comments quietly following it.
+/// This is the rule, not an arithmetic coincidence: a comment is sized by the
+/// THREAD it belongs to, so the post's base can move — as it did when
+/// [kFeedMetrics] was retuned to 440 — without the comments following it. That
+/// retune is exactly what the rule is for. The post gained a little presence on
+/// the widths that had room for it; the comments under it stayed where the
+/// sheet and the phone app draw them, which is what keeps them reading as a
+/// footnote rather than as a second post.
 ///
 /// Mobile is untouched — [web] defaults to `kIsWeb`, a compile-time false there,
 /// so the app compiles to exactly the `width` this passed before. The parameter
