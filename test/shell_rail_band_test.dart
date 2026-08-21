@@ -73,14 +73,24 @@ void main() {
     double contentAt(double window) =>
         window - kCitizenRailWidth - _feedGutter * 2;
 
-    test('the narrowest rail window still leaves a usable feed column', () {
-      final content = contentAt(kShellRailLabelsMin);
+    test('the narrowest rail windows run the feed edge to edge', () {
+      // The centre column, which is what the feed measures itself against —
+      // the gutter is inside it and only exists in card mode.
+      double columnAt(double window) => window - kCitizenRailWidth;
 
-      // Not the full 680 — the feed narrows into what it is given, which is
-      // correct. What matters is that it stays well clear of the width at which
-      // the card goes full-bleed, or the layout would flip shape here.
-      expect(content, greaterThan(kPostCardFullBleedBelow));
-      expect(content, greaterThan(kFeedMetrics));
+      // At the floor the column cannot hold the full measure, so the post fills
+      // it rather than sitting as a card that cannot reach its own width. That
+      // is the same rule a 600px window gets, applied to a column instead of a
+      // screen — and it does mean the slab meets the rail with no grey between
+      // them across this band, which is deliberate, not an oversight.
+      expect(columnAt(kShellRailLabelsMin), lessThan(kPostCardFullBleedBelow));
+
+      // Still a real column, not a sliver.
+      expect(columnAt(kShellRailLabelsMin), greaterThan(kFeedMetrics));
+
+      // The band is narrow: by ~970 the column holds the measure and the card
+      // is back. Pinned so nobody widens it by accident.
+      expect(columnAt(970), greaterThanOrEqualTo(kPostCardFullBleedBelow));
     });
 
     test('a ~1000px window is within a few px of the full Facebook column', () {

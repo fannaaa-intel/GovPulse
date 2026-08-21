@@ -186,6 +186,27 @@ void main() {
       );
     });
 
+    test('a 600px-class window gets the phone treatment', () {
+      // 600, and the ~606 a half-screen browser actually reports, are small
+      // screens: the post runs edge to edge there rather than sitting as a card
+      // that cannot reach its own measure anyway.
+      for (final column in <double>[411, 500, 600, 606, 668]) {
+        expect(
+          column < kPostCardFullBleedBelow,
+          isTrue,
+          reason: 'a $column column should be full bleed',
+        );
+      }
+      // ...and the widths that CAN hold the full column still get the card.
+      for (final column in <double>[720, 900, 1004, 1220]) {
+        expect(
+          column < kPostCardFullBleedBelow,
+          isFalse,
+          reason: 'a $column column should be a centred card',
+        );
+      }
+    });
+
     test('content only ever grows with the window', () {
       // The invariant, and the reason these two are not free to move apart:
       // while full bleed ends at or before the column cap, the content widens

@@ -198,6 +198,18 @@ void main() {
         _greyPill,
         reason: 'the native chip lost its pill',
       );
+
+      // Same WIDGETS, not merely the same pixels. The flat path adds a lift to
+      // the bell; native must not carry an inert copy of it, or "no mobile
+      // change" quietly becomes "no visible mobile change".
+      expect(
+        find.ancestor(
+          of: find.byIcon(Icons.notifications_rounded),
+          matching: find.byType(AnimatedScale),
+        ),
+        findsNothing,
+        reason: 'the flat-only lift leaked into the native tree',
+      );
     });
   });
 }

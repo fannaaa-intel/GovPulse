@@ -86,14 +86,21 @@ const double kFeedColumnMax = 680.0;
 /// full-bleed slab would just be a white band floating in grey; those widths
 /// keep the bordered, rounded card.
 ///
-/// The phone's own cap, and it must never exceed [kFeedColumnMax]. That is the
-/// whole invariant: while the threshold is the smaller of the pair, content
-/// grows monotonically with the window — full-bleed slab up to 480, then a card
-/// that widens to 680 and stops. Were the threshold the LARGER, the band
-/// between them would full-bleed a slab wider than the column and the content
-/// would visibly SHRINK as the window grew past it, which is exactly the wart
-/// that appeared when the column was briefly the narrower number.
-const double kPostCardFullBleedBelow = kUiScaleMaxWidth;
+/// [kFeedColumnMax] itself: the slab runs edge to edge right up to the measure,
+/// and is a centred card only above it.
+///
+/// At the phone cap (480) this left the whole 480–680 band — a 600px window,
+/// a half-screen browser, a small laptop — drawing a card that could not reach
+/// its own measure anyway, so it sat in the column with a thin grey margin
+/// either side and read as cramped rather than as a card. Those widths are
+/// small screens, and small screens get the phone treatment.
+///
+/// It must never EXCEED [kFeedColumnMax]. Equal is the top of the range: past
+/// that the band between them would full-bleed a slab wider than the column is
+/// ever allowed to be. (The ~40px step where the gutter appears is inherent to
+/// any full-bleed boundary — the slab is the column, the card is the column
+/// minus its gutters — and exists wherever this line is drawn.)
+const double kPostCardFullBleedBelow = kFeedColumnMax;
 
 /// The feed's sizing base for [context]: phone proportions, never inflated.
 ///

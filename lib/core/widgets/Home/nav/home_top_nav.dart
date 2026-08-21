@@ -318,6 +318,30 @@ class _NotifBell extends StatefulWidget {
 class _NotifBellState extends State<_NotifBell> {
   bool _hover = false;
 
+  /// The glyph, and — flat only — the lift that makes the hover read.
+  ///
+  /// The [AnimatedScale] is added rather than left in place with a scale of
+  /// 1.0, so the NATIVE widget tree is exactly the tree it was before any of
+  /// this: a tablet in landscape renders this bar, and "no mobile change"
+  /// should mean the same widgets, not merely the same pixels.
+  Widget _bell() {
+    final icon = Icon(
+      Icons.notifications_rounded,
+      size: 24,
+      color: _hover ? _kNavActive : _kNavIconRest,
+    );
+    if (!widget.flat) return icon;
+
+    // Flat: the bell is the whole affordance, so it has to move. Colour alone
+    // is a weak signal on a 24px glyph with nothing around it.
+    return AnimatedScale(
+      scale: _hover ? 1.12 : 1.0,
+      duration: const Duration(milliseconds: 120),
+      curve: Curves.easeOut,
+      child: icon,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return MouseRegion(
@@ -350,19 +374,7 @@ class _NotifBellState extends State<_NotifBell> {
             clipBehavior: Clip.none,
             alignment: Alignment.center,
             children: [
-              // Flat: the bell is the whole affordance, so it has to move.
-              // Colour alone is a weak signal on a 24px glyph with nothing
-              // around it, hence the slight lift as well.
-              AnimatedScale(
-                scale: widget.flat && _hover ? 1.12 : 1.0,
-                duration: const Duration(milliseconds: 120),
-                curve: Curves.easeOut,
-                child: Icon(
-                  Icons.notifications_rounded,
-                  size: 24,
-                  color: _hover ? _kNavActive : _kNavIconRest,
-                ),
-              ),
+              _bell(),
               if (widget.count > 0)
                 Positioned(
                   top: 6,
@@ -670,18 +682,23 @@ class _UserChipState extends State<_UserChip>
 
     // Hovered OR open. Only meaningful flat: with the pill gone this is what
     // decides whether the chip looks touched at all.
+    // `_isOpen` is still gated: it is true on native too (the menu opens the
+    // same way there), and off the flat path the pill is what shows that.
     final bool active = widget.flat && (_hover || _isOpen);
 
     return CompositedTransformTarget(
       link: _layerLink,
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
+        // The setState is flat-only for the same reason the AnimatedScale is:
+        // [_hover] feeds nothing but [active], which is already false off the
+        // flat path, so on native this would be a rebuild that changes nothing.
         onEnter: (_) {
-          setState(() => _hover = true);
+          if (widget.flat) setState(() => _hover = true);
           _zoneEnter();
         },
         onExit: (_) {
-          setState(() => _hover = false);
+          if (widget.flat) setState(() => _hover = false);
           _zoneExit();
         },
         child: GestureDetector(
