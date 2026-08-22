@@ -85,12 +85,14 @@ declare
   w_dupe      numeric := public.moderation_setting('spam_weight_dupe', 3);
   w_flagged   numeric := public.moderation_setting('spam_weight_flagged', 2);
 begin
+  -- Guard: this reads every user's content, so admins only.
   if not exists (
     select 1 from public.user_roles
     where user_roles.user_id = auth.uid() and role_id = 1
   ) then
     raise exception 'admin only';
   end if;
+
   return query
   with since as (
     select now() - make_interval(hours => greatest(window_hours, 1)) as t
