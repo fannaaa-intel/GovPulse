@@ -274,10 +274,18 @@ class _ContactSupportScreenState extends State<ContactSupportScreen>
               color: AppColors.primaryBlue.withValues(alpha: 0.10),
               shape: BoxShape.circle,
             ),
-            child: Icon(
-              Icons.support_agent_rounded,
-              size: w * 0.085,
-              color: AppColors.primaryBlue,
+            // Padding keeps the artwork on the same optical size the 0.085
+            // Icon had, so the circle never looks crowded on narrow phones.
+            padding: EdgeInsets.all(w * 0.037),
+            child: Image.asset(
+              'assets/images/helpdesk.webp',
+              fit: BoxFit.contain,
+              filterQuality: FilterQuality.medium,
+              errorBuilder: (_, _, _) => Icon(
+                Icons.support_agent_rounded,
+                size: w * 0.085,
+                color: AppColors.primaryBlue,
+              ),
             ),
           ),
           SizedBox(height: w * 0.035),

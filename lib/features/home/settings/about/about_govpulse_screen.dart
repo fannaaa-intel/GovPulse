@@ -336,12 +336,14 @@ class _AboutGovPulseScreenState extends State<AboutGovPulseScreen>
       ),
       child: Column(
         children: [
-          // App logo
+          // App logo. The asset is already a circular white brand badge, so the
+          // container fills white rather than blue-tinted — a tint would only
+          // show through the transparent corners the ClipOval cuts away anyway.
           Container(
-            width: w * 0.22,
-            height: w * 0.22,
+            width: w * 0.24,
+            height: w * 0.24,
             decoration: BoxDecoration(
-              color: AppColors.primaryBlue.withValues(alpha: 0.08),
+              color: Colors.white,
               shape: BoxShape.circle,
               border: Border.all(
                 color: AppColors.primaryBlue.withValues(alpha: 0.15),
@@ -350,8 +352,13 @@ class _AboutGovPulseScreenState extends State<AboutGovPulseScreen>
             ),
             child: ClipOval(
               child: Image.asset(
-                'assets/images/newslogo.webp',
-                fit: BoxFit.contain,
+                'assets/images/bilognaLogo.webp',
+                fit: BoxFit.cover,
+                // The source is 3464x3464; without a decode cap it would hold
+                // ~48 MB of ARGB for a badge that never renders above ~110 dp.
+                cacheWidth: 512,
+                cacheHeight: 512,
+                filterQuality: FilterQuality.medium,
                 errorBuilder: (_, _, _) => Icon(
                   Icons.account_balance_rounded,
                   size: w * 0.10,

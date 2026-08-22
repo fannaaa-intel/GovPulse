@@ -344,10 +344,18 @@ class _TermsOfServiceScreenState extends State<TermsOfServiceScreen>
               color: AppColors.primaryBlue.withValues(alpha: 0.10),
               shape: BoxShape.circle,
             ),
-            child: Icon(
-              Icons.description_outlined,
-              size: w * 0.085,
-              color: AppColors.primaryBlue,
+            // Padding keeps the artwork on the same optical size the 0.085
+            // Icon had, so the circle never looks crowded on narrow phones.
+            padding: EdgeInsets.all(w * 0.037),
+            child: Image.asset(
+              'assets/images/terms-and-conditions.webp',
+              fit: BoxFit.contain,
+              filterQuality: FilterQuality.medium,
+              errorBuilder: (_, _, _) => Icon(
+                Icons.description_outlined,
+                size: w * 0.085,
+                color: AppColors.primaryBlue,
+              ),
             ),
           ),
           SizedBox(height: w * 0.035),
