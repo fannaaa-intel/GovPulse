@@ -39,8 +39,30 @@
 --
 -- Idempotent (create or replace). Run in the Supabase SQL editor
 -- (db push is blocked on Docker; see supabase/README.md).
+--
+-- ⚠ RUN §0 FIRST. This replaces the WHOLE function body, and that body was
+-- reconstructed from legacy/spam_detection.sql — the only copy in this repo.
+-- supabase/legacy/README.md's central warning is that those files "revert
+-- whatever ran after them": if admin_spam_watch has been patched live since,
+-- applying this silently throws that patch away. It could not be verified from
+-- here (no arbitrary-SQL path: the Management API token is unreachable and
+-- db dump/push need Docker, which is not installed). §0 makes you look.
 -- ============================================================
 
+-- ── §0  PRE-FLIGHT — confirm the live body is the one this migration edits ───
+-- Run this ALONE, first, and read the output ([[sql-editor-last-result-only]]:
+-- the editor keeps only the last result set, so it must be its own statement).
+--
+--   select prosrc from pg_proc
+--    where proname = 'admin_spam_watch' and pronamespace = 'public'::regnamespace;
+--
+-- EXPECT the body below, differing ONLY in that duplicate_items reads:
+--     (count(*) - count(distinct norm))::int as duplicate_items
+-- If it differs anywhere else, STOP — the live function has moved on from
+-- legacy/spam_detection.sql. Port the `filter (where norm <> '')` change onto
+-- the live body by hand instead of applying §1 as written.
+
+-- ── §1  The function ─────────────────────────────────────────────────────────
 create or replace function public.admin_spam_watch(window_hours int default 24)
 returns table (
   user_id         text,
