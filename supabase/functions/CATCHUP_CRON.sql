@@ -94,9 +94,11 @@ select cron.schedule(
       'Content-Type', 'application/json',
       'Authorization', 'Bearer ' || coalesce(
         (select decrypted_secret from vault.decrypted_secrets
-         where name = 'moderate_content_sr_key' limit 1),
+         where name = 'moderate_content_sr_key'
+           and left(decrypted_secret, 3) = 'eyJ' limit 1),
         (select decrypted_secret from vault.decrypted_secrets
-         where name = 'classify_feedback_sr_key' limit 1)
+         where name = 'classify_feedback_sr_key'
+           and left(decrypted_secret, 3) = 'eyJ' limit 1)
       )
     ),
     body := '{"table":"community_comments","mode":"batch","limit":50}'::jsonb
@@ -107,9 +109,11 @@ select cron.schedule(
       'Content-Type', 'application/json',
       'Authorization', 'Bearer ' || coalesce(
         (select decrypted_secret from vault.decrypted_secrets
-         where name = 'moderate_content_sr_key' limit 1),
+         where name = 'moderate_content_sr_key'
+           and left(decrypted_secret, 3) = 'eyJ' limit 1),
         (select decrypted_secret from vault.decrypted_secrets
-         where name = 'classify_feedback_sr_key' limit 1)
+         where name = 'classify_feedback_sr_key'
+           and left(decrypted_secret, 3) = 'eyJ' limit 1)
       )
     ),
     body := '{"table":"community_posts","mode":"batch","limit":50}'::jsonb
@@ -117,5 +121,41 @@ select cron.schedule(
   $$
 );
 
--- Verify all three are scheduled:
---   select jobname, schedule, active from cron.job order by jobname;
+-- ── Verify ───────────────────────────────────────────────────────────────────
+-- 1. All three scheduled:
+--      select jobname, schedule, active from cron.job order by jobname;
+--
+-- 2. And ACTUALLY WORKING. `active = true` above proves only that the cron
+--    COMMAND succeeds — and queueing an http_post always succeeds, whatever
+--    comes back. pg_net keeps the real answer, so look there:
+--
+--      select status_code, count(*) as calls, max(created) as latest
+--        from net._http_response
+--       group by status_code order by calls desc;
+--
+--    Any 401 means a job has been firing into a wall. Identify which by the
+--    minute: */15 slots (00/15/30/45) are the classify sweeps, 7-59/15 slots
+--    (07/22/37/52) are the moderation sweep. Then read the bodies:
+--
+--      select status_code, created, left(content, 160)
+--        from net._http_response order by created desc limit 20;
+--
+--    UNAUTHORIZED_INVALID_JWT_FORMAT means the Vault secret is not a JWT.
+--    Check its shape without revealing it:
+--
+--      select name, left(decrypted_secret, 3) as prefix,
+--             length(decrypted_secret) as len
+--        from vault.decrypted_secrets;
+--
+--    prefix 'PAS' / len 32 is the literal PASTE_YOUR_SERVICE_ROLE_KEY_HERE
+--    placeholder. That is exactly what moderate_content_sr_key held when this
+--    was found on 2026-08-22, so the moderation sweep had never once run. The
+--    coalesce fallback above did not help: it only fires when the secret is
+--    NULL, and a present-but-garbage secret is not NULL. Hence the 'eyJ' test
+--    now on both arms — validity, not mere existence. Repair with:
+--
+--      select vault.update_secret(
+--        (select id from vault.secrets where name = 'moderate_content_sr_key'),
+--        (select decrypted_secret from vault.decrypted_secrets
+--          where name = 'classify_feedback_sr_key'),
+--        'moderate_content_sr_key');
