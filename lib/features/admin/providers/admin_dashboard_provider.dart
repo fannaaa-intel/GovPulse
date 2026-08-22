@@ -315,10 +315,19 @@ class NlpInsights {
   /// The card shows if there's either feedback (sentiment) or reports (urgency).
   bool get hasData => analyzed > 0 || reportsAnalyzed > 0;
 
-  /// True once the AI model labelled at least one feedback or report (so the
-  /// card shows the "Hybrid AI" badge; when AI is unavailable everything falls
-  /// back to on-device and this reads false).
+  /// True once the AI model labelled at least one feedback or report (when AI
+  /// is unavailable everything falls back to on-device and this reads false).
   bool get usesAi => aiClassified > 0 || reportsAiClassified > 0;
+
+  /// True when EVERY analysed row carried a model label — nothing fell back to
+  /// the on-device rule. The badge then reads "AI" rather than "Hybrid AI":
+  /// "hybrid" is a real, meaningful state (some rows model-labelled, some not,
+  /// e.g. mid-backfill or after a rate-limit window), and showing it at full
+  /// coverage made a perfectly healthy AI pipeline look half-broken.
+  bool get fullyAi =>
+      usesAi &&
+      aiClassified == analyzed &&
+      reportsAiClassified == reportsAnalyzed;
 
   double _fShare(int n) => analyzed == 0 ? 0 : n / analyzed;
   double get positiveShare => _fShare(positive);
@@ -563,16 +572,24 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
 
   /// Fire-and-forget one recommend-actions run when the cached AI insight is
   /// stale (older than the newest submission, mirroring _nlp's freshness
-  /// guard) or missing. Only when feedback exists — the AI outlook is
-  /// feedback-centric and fabricates metrics on empty data. Best-effort: any
-  /// failure is swallowed and the daily cron remains the backstop.
+  /// guard) or missing. Best-effort: any failure is swallowed and the daily
+  /// cron remains the backstop.
+  ///
+  /// Gated on *any* citizen signal, not on feedback specifically. Gating on
+  /// feedback alone meant an LGU with reports and suggestions but no ratings
+  /// yet — the normal state of a fresh deployment — never kicked the function
+  /// at all, so the outlook sat on the on-device fallback permanently even
+  /// with a working GROQ_API_KEY. The fabricated-metric risk that motivated
+  /// that gate is handled where it belongs: _nlp's rating-claim filter.
   void _maybeRegenerateOutlook(
     List<Map<String, dynamic>> feedbackRows,
     List<Map<String, dynamic>> reportRows,
     List<Map<String, dynamic>> suggestionRows,
     Map<String, dynamic>? aiInsight,
   ) {
-    if (feedbackRows.isEmpty) return;
+    if (feedbackRows.isEmpty && reportRows.isEmpty && suggestionRows.isEmpty) {
+      return;
+    }
 
     final generatedAt = _parseTs(aiInsight?['generated_at']);
     DateTime? newest;
@@ -1141,14 +1158,17 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
     // Predictive-outlook focus: prefer AI recommendations (recommend-actions
     // Edge Function) when present; otherwise compute them on-device (hybrid).
     //
-    // GUARD: the AI outlook (summary + focus) is feedback-centric — the
-    // recommend-actions function can fabricate rating metrics (e.g. "3.43 avg",
-    // "Wait time 2.57★") when there is little or no real feedback to summarise.
-    // Only trust it once actual feedback has been analyzed; otherwise fall back
-    // to the on-device focus, which surfaces ONLY real, report-backed signals
-    // (e.g. outstanding high-urgency reports) and never invents ratings.
+    // GUARD: the AI outlook (summary + focus) can fabricate rating metrics
+    // (e.g. "3.43 avg", "Wait time 2.57★") when there is little or no real
+    // feedback to summarise. That used to be handled by refusing the AI
+    // outlook outright unless feedback existed — which threw away the
+    // report- and suggestion-backed items too, so an LGU with reports but no
+    // ratings yet showed "On-device" forever however healthy the AI was.
+    // Instead, take the AI outlook whenever ANY signal was analyzed and drop
+    // only the individual items that claim a rating we have no feedback to
+    // back (_claimsRating). Same protection, applied per item.
     //
-    // FRESHNESS: `hasFeedbackSignal` only proves feedback exists *now* — not
+    // FRESHNESS: `hasSignal` only proves submissions exist *now* — not
     // that the AI ever saw it. `_selectAiInsight` returns the newest cached row
     // whatever its age, so a row generated before the latest submissions
     // contradicts the panel it sits under ("no feedback to gauge service
@@ -1158,7 +1178,7 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
     // Compared row-timestamp to row-timestamp (never to local `now`), so this
     // holds regardless of device clock skew or timezone; `_parseTs` normalises
     // both sides identically.
-    final hasFeedbackSignal = analyzed > 0;
+    final hasSignal = analyzed > 0 || reportsAnalyzed > 0;
     final aiGeneratedAt = _parseTs(aiInsight?['generated_at']);
     DateTime? newestSubmission;
     for (final r in [...feedbackRows, ...reportRows, ...suggestionRows]) {
@@ -1171,9 +1191,19 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
     final aiIsFresh = aiGeneratedAt != null &&
         (newestSubmission == null || !aiGeneratedAt.isBefore(newestSubmission));
 
-    final aiFocus = _parseAiFocus(aiInsight);
-    final aiSummary = (aiInsight?['summary'] as String?)?.trim();
-    final useAiOutlook = hasFeedbackSignal &&
+    // With no feedback analyzed there is no rating anywhere in the data, so a
+    // focus item quoting one was invented. Drop those items; keep the rest.
+    final parsedFocus = _parseAiFocus(aiInsight);
+    final aiFocus = analyzed > 0
+        ? parsedFocus
+        : parsedFocus.where((f) => !_claimsRating(f)).toList();
+    final rawSummary = (aiInsight?['summary'] as String?)?.trim();
+    // The summary is one blob — it can't be filtered item-by-item, so an
+    // invented rating in it disqualifies the whole sentence.
+    final aiSummary = (analyzed == 0 && _mentionsRating(rawSummary))
+        ? null
+        : rawSummary;
+    final useAiOutlook = hasSignal &&
         aiIsFresh &&
         (aiFocus.isNotEmpty || (aiSummary?.isNotEmpty ?? false));
     final focus = useAiOutlook
@@ -1279,6 +1309,27 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
       outlookUsesAi: useAiOutlook,
     );
   }
+
+  /// Any 1–5 star/rating claim in AI-written copy — "2.6★", "3.4/5",
+  /// "avg 4.1", "rated 2.0". Deliberately loose: this only ever runs when NO
+  /// feedback was analyzed, so there is no legitimate rating for it to catch,
+  /// and a false positive costs one focus line while a miss puts an invented
+  /// number in front of an admin.
+  static final RegExp _ratingClaim = RegExp(
+    r'\d(?:\.\d+)?\s*(?:\u2605|\u2606|/\s*5\b|stars?\b|out of 5\b)'
+    r'|\b(?:avg|average|mean|rating|rated|score)\b',
+    caseSensitive: false,
+  );
+
+  static bool _mentionsRating(String? text) =>
+      text != null && text.isNotEmpty && _ratingClaim.hasMatch(text);
+
+  /// True when a focus item quotes a rating anywhere an admin would read it.
+  static bool _claimsRating(OutlookFocus f) =>
+      _mentionsRating(f.metric) ||
+      _mentionsRating(f.scope) ||
+      _mentionsRating(f.title) ||
+      _mentionsRating(f.suggestion);
 
   /// Parses the `focus` jsonb from the AI insight row into [OutlookFocus]es.
   /// Tolerant: anything malformed is skipped, so a bad row never breaks the UI.

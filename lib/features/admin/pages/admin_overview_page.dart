@@ -1692,6 +1692,15 @@ class _AiHeaderCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final usesAi = nlp?.usesAi ?? false;
+    // Three states, not two. "Hybrid AI" is for genuinely mixed provenance
+    // (some rows model-labelled, some on the on-device rule); at full coverage
+    // it read as a degraded pipeline when nothing was degraded.
+    final fullyAi = nlp?.fullyAi ?? false;
+    final label = fullyAi
+        ? 'AI'
+        : usesAi
+            ? 'Hybrid AI'
+            : 'On-device NLP';
     return _Card(
       padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
       child: Row(
@@ -1754,7 +1763,7 @@ class _AiHeaderCard extends StatelessWidget {
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            usesAi ? 'Hybrid AI' : 'On-device NLP',
+                            label,
                             style: const TextStyle(
                               fontSize: 10.5,
                               fontWeight: FontWeight.w700,

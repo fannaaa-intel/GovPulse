@@ -48,12 +48,15 @@ Map<String, dynamic> _suggestion(String category, {String? other}) => {
       'created_at': _now.subtract(const Duration(hours: 2)).toIso8601String(),
     };
 
-Map<String, dynamic> _report(DateTime createdAt) => {
+Map<String, dynamic> _report(DateTime createdAt, {String? aiUrgency}) => {
       'id': 'rp-${createdAt.microsecondsSinceEpoch}',
       'category': 'road',
       'remarks': 'Test',
       'barangay': 'Macanaya (Pescaria)',
       'created_at': createdAt.toIso8601String(),
+      // Absent = the classify-report function hasn't reached this row, so the
+      // provider falls back to its on-device keyword rule.
+      'ai_urgency': ?aiUrgency,
     };
 
 Map<String, dynamic> _insight(DateTime generatedAt) => {
@@ -123,16 +126,118 @@ void main() {
       expect(nlp.outlookUsesAi, isFalse);
     });
 
-    test('a fresh insight is still ignored when there is no feedback', () {
-      // Pre-existing guard: the AI outlook is feedback-centric and invents
-      // rating metrics when there is nothing to summarise.
+    test('a report-backed insight is used even with no feedback at all', () {
+      // Regression: the guard here used to refuse the whole AI outlook unless
+      // feedback existed, so an LGU with reports but no ratings yet showed
+      // "On-device" forever however healthy the AI pipeline was.
       final nlp = _run(
         feedback: const [],
         reports: [_report(_now.subtract(const Duration(days: 1)))],
         insight: _insight(_now),
       );
 
-      expect(nlp.outlookUsesAi, isFalse);
+      expect(nlp.outlookUsesAi, isTrue);
+      expect(nlp.focus.single.title, 'Road Reports');
+    });
+
+    test('a summary claiming a rating is dropped when no feedback backs it',
+        () {
+      // The fixture summary says "No overall average ..." — with zero
+      // feedback there is no average anywhere in the data, so the sentence
+      // cannot be shown above a panel that says otherwise.
+      final nlp = _run(
+        feedback: const [],
+        reports: [_report(_now.subtract(const Duration(days: 1)))],
+        insight: _insight(_now),
+      );
+
+      expect(nlp.aiSummary, isNull);
+    });
+
+    test('a focus item inventing a star rating is dropped, the rest kept', () {
+      final insight = _insight(_now);
+      insight['focus'] = [
+        {
+          'title': 'Wait time',
+          'metric': '2.57★',
+          'suggestion': 'Add a second counter at peak hours',
+          'severity': 'high',
+        },
+        {
+          'title': 'Road Reports',
+          'metric': '2 reports',
+          'suggestion': 'Assign a team to inspect the reported road issues',
+          'severity': 'medium',
+        },
+      ];
+
+      final nlp = _run(
+        feedback: const [],
+        reports: [_report(_now.subtract(const Duration(days: 1)))],
+        insight: insight,
+      );
+
+      expect(nlp.focus.map((f) => f.title), ['Road Reports'],
+          reason: 'a rating with no feedback behind it was invented');
+    });
+
+    test('a real rating survives once feedback backs it', () {
+      final insight = _insight(_now);
+      insight['summary'] = 'Wait time is the weakest dimension.';
+      insight['focus'] = [
+        {
+          'title': 'Wait time',
+          'metric': '2.5★',
+          'suggestion': 'Add a second counter at peak hours',
+          'severity': 'high',
+        },
+      ];
+
+      final nlp = _run(
+        feedback: [_feedback(3, _now.subtract(const Duration(days: 1)))],
+        insight: insight,
+      );
+
+      expect(nlp.focus.single.title, 'Wait time');
+      expect(nlp.aiSummary, isNotNull);
+    });
+  });
+
+  group('provenance badge', () {
+    test('every analysed row model-labelled reads as fully AI', () {
+      final nlp = _run(
+        feedback: const [],
+        reports: [
+          _report(_now.subtract(const Duration(days: 1)), aiUrgency: 'low'),
+        ],
+      );
+
+      expect(nlp.usesAi, isTrue);
+      expect(nlp.fullyAi, isTrue,
+          reason: 'nothing fell back to the on-device rule');
+    });
+
+    test('a mix of model- and rule-labelled rows reads as hybrid', () {
+      final nlp = _run(
+        feedback: const [],
+        reports: [
+          _report(_now.subtract(const Duration(days: 1)), aiUrgency: 'low'),
+          _report(_now.subtract(const Duration(days: 2))),
+        ],
+      );
+
+      expect(nlp.usesAi, isTrue);
+      expect(nlp.fullyAi, isFalse);
+    });
+
+    test('no model label anywhere is neither AI nor hybrid', () {
+      final nlp = _run(
+        feedback: const [],
+        reports: [_report(_now.subtract(const Duration(days: 1)))],
+      );
+
+      expect(nlp.usesAi, isFalse);
+      expect(nlp.fullyAi, isFalse);
     });
   });
 
