@@ -58,6 +58,16 @@ class ProfanityFilter {
     'passion', 'grass', 'glass', 'bass', 'mass', 'massage', 'assassin',
     'assume', 'assumption', 'analysis', 'analyst', 'shitake', 'cockpit',
     'scunthorpe', 'dickens', 'canal',
+    // Collapsing 'nigger' yields 'niger', which prefixes the country and the
+    // demonym. Listing these also drops 'niger' from [_condensedRoots], so the
+    // boundary-less condensed scan can't reach them either.
+    //
+    // Bare 'niger' is deliberately NOT here: after collapsing it is the slur,
+    // character for character, so allowlisting it would un-flag the word this
+    // whole fix exists to catch. The country's own name is the casualty — the
+    // right way round for an Aparri LGU feed, and 'nigeria'/'nigerian' cover
+    // every realistic mention of it.
+    'nigeria', 'nigerian',
     // Filipino / Ilocano safe words that resemble a root
     'puto', 'putol', 'putok', 'puti', 'putin', 'reputasyon',
     'diputado', 'tagana', 'tanggap', 'tanggapan', 'tanghali', 'tanging',
@@ -102,11 +112,36 @@ class ProfanityFilter {
     return out.toString();
   }
 
+  /// The lexicons as the matcher actually sees them: put through [_normalize],
+  /// exactly like the tokens they are compared against. Collapsing can merge
+  /// two entries into one ('ukinnam' + 'ukinam' → 'ukinam'); the Set absorbs
+  /// that. Deriving these instead of hand-maintaining them is the whole fix —
+  /// a new root with a doubled letter now just works.
+  static final Set<String> _normRoots = {
+    for (final r in _roots) _normalize(r),
+  };
+
+  static final Set<String> _normAllow = {
+    for (final a in _allow) _normalize(a),
+  };
+
+  /// Roots safe to hunt for inside the fully condensed string (see [analyze]).
+  /// That scan has no word boundaries and never consults the allowlist, so a
+  /// root that merely STARTS an innocent word would fire on it with nothing to
+  /// stop it. Collapsing makes that a live risk: 'nigger' → 'niger', which
+  /// prefixes 'nigeria'. Excluding any root that prefixes an allowlisted word
+  /// keeps that self-maintaining — allowlisting a word also retires the root
+  /// that would have swallowed it.
+  static final Set<String> _condensedRoots = {
+    for (final r in _normRoots)
+      if (r.length >= 5 && !_normAllow.any((a) => a.startsWith(r))) r,
+  };
+
   /// Does a normalized token match a root? Long roots (>= 6) match anywhere in
   /// the token (they're unambiguous); short roots must sit at a word boundary
   /// (equal / prefix / suffix) so "reputation" ⊅ "puta" and "chicago" ⊅ "gago".
   static bool _matchesRoot(String token) {
-    for (final r in _roots) {
+    for (final r in _normRoots) {
       final hit = r.length >= 6
           ? token.contains(r)
           : (token == r || token.startsWith(r) || token.endsWith(r));
@@ -117,7 +152,7 @@ class ProfanityFilter {
 
   static bool _tokenIsProfane(String normalizedToken) {
     if (normalizedToken.length < 3) return false;
-    if (_allow.contains(normalizedToken)) return false;
+    if (_normAllow.contains(normalizedToken)) return false;
     return _matchesRoot(normalizedToken);
   }
 
@@ -150,7 +185,7 @@ class ProfanityFilter {
         continue;
       }
       flushRun();
-      if (n.length < 3 || _allow.contains(n)) continue;
+      if (n.length < 3 || _normAllow.contains(n)) continue;
       if (_matchesRoot(n)) matches.add(n);
     }
     flushRun();
@@ -158,8 +193,8 @@ class ProfanityFilter {
     // Multi-char split evasion ("puta ngina"): scan the fully condensed text for
     // longer roots only — short roots would over-match once gaps are gone.
     final condensed = condensedBuf.toString();
-    for (final r in _roots) {
-      if (r.length >= 5 && condensed.contains(r)) matches.add(r);
+    for (final r in _condensedRoots) {
+      if (condensed.contains(r)) matches.add(r);
     }
 
     return ProfanityResult(matches.isNotEmpty, matches.toList());
