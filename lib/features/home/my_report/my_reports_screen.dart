@@ -92,6 +92,43 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
   /// floor; only the first build of a branch is exposed.
   static const double _kWebFadeFloor = 0.35;
 
+  /// Widest the web page's content band ever gets, gutters included.
+  static const double _kWebMaxBand = 1160.0;
+
+  /// Content band at or below which the web page renders the MOBILE app's
+  /// arrangement instead of the desktop one.
+  ///
+  /// 620 is where the desktop layout stops paying for itself, measured rather
+  /// than guessed. The five date chips need ~600px to sit on one `Wrap` line at
+  /// the desktop type size, so below that they start stacking — three rows deep
+  /// by the time the pane is phone width, which is the "filters eat the screen"
+  /// this was raised for. The card grid gives up at almost the same place:
+  /// `targetColumnWidth: 520` means one column below ~1090, so from 620 down
+  /// the grid is already a single stack of cards and the mobile card's
+  /// hairline-separated rows say the same thing in far less height.
+  ///
+  /// It is deliberately NOT a viewport test. The shell hands this body its
+  /// centre column, so a 1000px browser with the rail out can arrive here with
+  /// ~620 of usable width — that page should read as compact even though the
+  /// window is not.
+  static const double _kWebCompactPane = 620.0;
+
+  /// The phone width that would have produced a content column of [pane].
+  ///
+  /// The mobile body sizes every dimension off the viewport (`w * .0xx`) and
+  /// then lays the stat row out inside a `w * .04` gutter on each side, so a
+  /// phone of width `x` gives its cards `x * .92` to share. Inverting that is
+  /// what makes the web cards land at the size the handset shows rather than at
+  /// a desktop size scaled down.
+  ///
+  /// Clamped at both ends. The 460 ceiling is the width the desktop layout
+  /// already sizes itself off, so a roomy pane can never scale the cards UP
+  /// past what desktop shows — between ~423px of content and the compact
+  /// breakpoint this returns exactly the old fixed 460 and nothing moves. The
+  /// 320 floor is the narrowest phone the app supports.
+  static double _compactBase(double pane) =>
+      (pane / .92).clamp(320.0, 460.0);
+
   late final AnimationController _entryCtrl;
 
   ReportFilter _activeFilter = ReportFilter.all;
@@ -328,8 +365,11 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
     // page sees anything — dropped to the PHONE body: a stranded 480px column
     // with a logo bar, inside a pane that has a nav and a rail of its own.
     //
-    // The web body handles a narrow pane on its own now; the stat row goes
-    // two-up rather than squeezing four across. See [_buildKpiRow].
+    // The web body handles a narrow pane on its own now: below
+    // [_kWebCompactPane] it mirrors the MOBILE app's layout rather than
+    // squeezing the desktop one — the stat row stays four across but is sized
+    // off the real pane, and the date filters go back to one scrolling row
+    // inside the Report History card. See [_buildKpiRow] and [_buildWebBody].
     final bool wide = kIsWeb;
     final double w = wide ? 460.0 : uiScaleWidth(context);
     return wide
@@ -361,16 +401,58 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
   }
 
   // ── WEB body: header banner + KPI row + report card grid ───────────────────
+  //
+  // Two arrangements, one page. Above [_kWebCompactPane] this is the desktop
+  // layout it has always been: a wide stat row, the date filters wrapped under
+  // a "Report History" heading, and the reports in a multi-column card grid.
+  //
+  // At or below it — a phone browser, and a tablet in portrait — the page
+  // renders the MOBILE app's arrangement instead, because at that width the
+  // desktop one spends the screen on chrome: five filter chips in a `Wrap`
+  // become three stacked rows, and every report card pays for its own border,
+  // shadow and 16px of gap. See [_kWebCompactPane].
   Widget _buildWebBody(double w) {
-    final ww = w * 1.18;
+    return LayoutBuilder(
+      builder: (context, outer) {
+        // Measured against the CONTENT BAND, not the viewport: the pane handed
+        // to this body is already the shell's centre column, and the page's own
+        // gutter comes off it before the stat row or the chips see anything.
+        final double band = outer.maxWidth > _kWebMaxBand
+            ? _kWebMaxBand
+            : outer.maxWidth;
+        final bool compact = band <= _kWebCompactPane;
+        final double gutter = compact ? 16.0 : 24.0;
+        // On the compact path everything is sized off the phone width that
+        // would have produced this content column, so the page inherits the
+        // mobile app's proportions rather than a desktop measure shrunk down.
+        final double base = compact
+            ? _compactBase(band - gutter * 2)
+            : w;
+        return _buildWebColumn(w, base, compact: compact, gutter: gutter);
+      },
+    );
+  }
+
+  Widget _buildWebColumn(
+    double w,
+    double base, {
+    required bool compact,
+    required double gutter,
+  }) {
+    final ww = base * 1.18;
     final reports = _filteredReports;
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1160),
+          constraints: const BoxConstraints(maxWidth: _kWebMaxBand),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 24, 24, 56),
+            padding: EdgeInsets.fromLTRB(
+              gutter,
+              compact ? 16 : 24,
+              gutter,
+              compact ? 32 : 56,
+            ),
             child: _error != null
                 ? _buildBody(w)
                 : Column(
@@ -395,25 +477,37 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
                             'Track the issues you have submitted and '
                             'where each one has got to.',
                       ),
-                      _animated(1, _buildKpiRow(w)),
-                      const SizedBox(height: 28),
-                      _animated(
-                        2,
-                        _buildReportsHeaderWeb(w, ww, reports.length),
-                      ),
-                      const SizedBox(height: 16),
-                      _animated(
-                        3,
-                        reports.isEmpty
-                            ? _buildEmptyState(w)
-                            : WebCardGrid(
-                                targetColumnWidth: 520,
-                                children: [
-                                  for (final r in reports)
-                                    _reportGridCard(w, ww, r),
-                                ],
-                              ),
-                      ),
+                      _animated(1, _buildKpiRow(base)),
+                      SizedBox(height: compact ? 18 : 28),
+                      // ── Compact reuses the phone's section verbatim ──────
+                      //
+                      // Not a web copy of it: [_buildReportsSection] IS the
+                      // widget the Android and iOS app builds — one white card
+                      // holding the heading, the chips on a single horizontally
+                      // scrolling row, and the reports separated by hairlines.
+                      // Sharing it is the whole point; a parallel web version
+                      // is how the two drift apart again.
+                      if (compact)
+                        _animated(2, _buildReportsSection(base, ww, gutter: false))
+                      else ...[
+                        _animated(
+                          2,
+                          _buildReportsHeaderWeb(base, ww, reports.length),
+                        ),
+                        const SizedBox(height: 16),
+                        _animated(
+                          3,
+                          reports.isEmpty
+                              ? _buildEmptyState(base)
+                              : WebCardGrid(
+                                  targetColumnWidth: 520,
+                                  children: [
+                                    for (final r in reports)
+                                      _reportGridCard(base, ww, r),
+                                  ],
+                                ),
+                        ),
+                      ],
                     ],
                   ),
           ),
@@ -644,98 +738,101 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
   // ── KPI row ────────────────────────────────────────────────────────────────
 
   Widget _buildKpiRow(double w) {
-    final ww = w * 1.18;
-
-    // The four cards, built once. Both layouts below place these SAME widgets
-    // in the same order with the same gap — the phone gets the row it always
-    // had, wrapped in the padding it always had.
-    final cards = <Widget>[
-      _kpiCard(
-        w: w,
-        ww: ww,
-        icon: Icons.assignment_outlined,
-        count: _totalCount,
-        label: 'All',
-        iconBg: const Color(0xFFEEF2FF),
-        iconColor: AppColors.primaryBlue,
-        valueColor: AppColors.primaryBlue,
-        selected: _activeKpi == StatusFilter.all,
-        onTap: () => _selectKpi(StatusFilter.all),
-      ),
-      _kpiCard(
-        w: w,
-        ww: ww,
-        icon: Icons.access_time_rounded,
-        count: _pendingCount,
-        label: 'Pending',
-        iconBg: const Color(0xFFFFF7ED),
-        iconColor: const Color(0xFFD97706),
-        valueColor: const Color(0xFFD97706),
-        selected: _activeKpi == StatusFilter.pending,
-        onTap: () => _selectKpi(StatusFilter.pending),
-      ),
-      _kpiCard(
-        w: w,
-        ww: ww,
-        icon: Icons.check_circle_outline_rounded,
-        count: _resolvedCount,
-        label: 'Resolved',
-        iconBg: const Color(0xFFECFDF5),
-        iconColor: const Color(0xFF059669),
-        valueColor: const Color(0xFF059669),
-        selected: _activeKpi == StatusFilter.resolved,
-        onTap: () => _selectKpi(StatusFilter.resolved),
-      ),
-      _kpiCard(
-        w: w,
-        ww: ww,
-        icon: Icons.cancel_outlined,
-        count: _rejectedCount,
-        label: 'Rejected',
-        iconBg: const Color(0xFFFEF2F2),
-        iconColor: const Color(0xFFDC2626),
-        valueColor: const Color(0xFFDC2626),
-        selected: _activeKpi == StatusFilter.rejected,
-        onTap: () => _selectKpi(StatusFilter.rejected),
-      ),
-    ];
+    // The four cards, built at whatever base width the caller's layout resolves
+    // to. Both arrangements below place these SAME widgets in the same order
+    // with the same gap — the phone gets the row it always had, wrapped in the
+    // padding it always had.
+    List<Widget> cardsAt(double cw) {
+      final cww = cw * 1.18;
+      return <Widget>[
+        _kpiCard(
+          w: cw,
+          ww: cww,
+          icon: Icons.assignment_outlined,
+          count: _totalCount,
+          label: 'All',
+          iconBg: const Color(0xFFEEF2FF),
+          iconColor: AppColors.primaryBlue,
+          valueColor: AppColors.primaryBlue,
+          selected: _activeKpi == StatusFilter.all,
+          onTap: () => _selectKpi(StatusFilter.all),
+        ),
+        _kpiCard(
+          w: cw,
+          ww: cww,
+          icon: Icons.access_time_rounded,
+          count: _pendingCount,
+          label: 'Pending',
+          iconBg: const Color(0xFFFFF7ED),
+          iconColor: const Color(0xFFD97706),
+          valueColor: const Color(0xFFD97706),
+          selected: _activeKpi == StatusFilter.pending,
+          onTap: () => _selectKpi(StatusFilter.pending),
+        ),
+        _kpiCard(
+          w: cw,
+          ww: cww,
+          icon: Icons.check_circle_outline_rounded,
+          count: _resolvedCount,
+          label: 'Resolved',
+          iconBg: const Color(0xFFECFDF5),
+          iconColor: const Color(0xFF059669),
+          valueColor: const Color(0xFF059669),
+          selected: _activeKpi == StatusFilter.resolved,
+          onTap: () => _selectKpi(StatusFilter.resolved),
+        ),
+        _kpiCard(
+          w: cw,
+          ww: cww,
+          icon: Icons.cancel_outlined,
+          count: _rejectedCount,
+          label: 'Rejected',
+          iconBg: const Color(0xFFFEF2F2),
+          iconColor: const Color(0xFFDC2626),
+          valueColor: const Color(0xFFDC2626),
+          selected: _activeKpi == StatusFilter.rejected,
+          onTap: () => _selectKpi(StatusFilter.rejected),
+        ),
+      ];
+    }
 
     // NOTE: No CrossAxisAlignment.stretch here. All labels are single words now,
     // so the four cards are naturally identical height. Adding `stretch` to a Row
     // inside a vertical SingleChildScrollView gives it unbounded height and throws
     // a layout error (which renders as a blank grey screen in release builds).
-    Widget rowOf(List<Widget> items) => Row(
-      children: [
-        for (var i = 0; i < items.length; i++) ...[
-          if (i > 0) SizedBox(width: w * .03),
-          Expanded(child: items[i]),
+    Widget rowOf(double cw) {
+      final cards = cardsAt(cw);
+      return Row(
+        children: [
+          for (var i = 0; i < cards.length; i++) ...[
+            if (i > 0) SizedBox(width: cw * .03),
+            Expanded(child: cards[i]),
+          ],
         ],
-      ],
-    );
+      );
+    }
 
     if (kIsWeb) {
+      // ── One row at every width, like the phone ────────────────────────────
+      //
+      // This used to fall to a 2x2 block below 560px of pane, which cost a
+      // whole extra row of vertical space on exactly the screens with the least
+      // of it — and it did that because the cards were sized off a hardcoded
+      // 460 no matter how little room they actually had, so four of them really
+      // did stop fitting. Sizing them off the pane instead removes the reason:
+      // the ratios are the mobile app's, and four across is what the mobile app
+      // shows on a 320px handset.
+      //
+      // Above ~423px of pane [_compactBase] returns the same 460 the old code
+      // hardcoded, so nothing about the desktop row changes.
       return LayoutBuilder(
-        builder: (context, c) {
-          // Four across needs roughly 140 per card before the count and its
-          // label start colliding. Below that they go two-up, which is the
-          // only arrangement that keeps all four legible — shrinking them
-          // further just makes four unreadable cards instead of two rows of
-          // readable ones.
-          if (c.maxWidth >= 560) return rowOf(cards);
-          return Column(
-            children: [
-              rowOf(cards.sublist(0, 2)),
-              SizedBox(height: w * .03),
-              rowOf(cards.sublist(2)),
-            ],
-          );
-        },
+        builder: (context, c) => rowOf(_compactBase(c.maxWidth)),
       );
     }
 
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: w * .04),
-      child: rowOf(cards),
+      child: rowOf(w),
     );
   }
 
@@ -805,10 +902,17 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
 
   // ── Reports section ────────────────────────────────────────────────────────
 
-  Widget _buildReportsSection(double w, double ww) {
+  /// The Report History card: heading, the date chips on one horizontally
+  /// scrolling row, and the reports separated by hairlines.
+  ///
+  /// [gutter] is the phone's `w * .04` page margin. The mobile body has no
+  /// padding of its own, so it needs it; the compact web page has already
+  /// applied its own gutter to the whole column, and a second one here would
+  /// inset this card from the stat row directly above it.
+  Widget _buildReportsSection(double w, double ww, {bool gutter = true}) {
     final reports = _filteredReports;
     return Padding(
-      padding: EdgeInsets.symmetric(horizontal: w * .04),
+      padding: EdgeInsets.symmetric(horizontal: gutter ? w * .04 : 0),
       child: Container(
         decoration: BoxDecoration(
           color: Colors.white,
