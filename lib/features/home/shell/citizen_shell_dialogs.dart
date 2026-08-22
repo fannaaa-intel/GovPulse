@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/citizen_ui.dart';
 import '../../../core/widgets/Home/Quick-action/Web/quick_action_split_panel.dart'
-    show QaKeyboardScope;
+    show QaFullBleedScope, QaKeyboardScope;
 import '../../../core/widgets/app_dialog.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -248,11 +248,33 @@ Future<T?> showCitizenSplitPanelDialog<T>({
       // above rather than from inside.
       if (fullscreen) {
         return Scaffold(
-          backgroundColor: CitizenUi.pageBg,
+          // The panel's own surface, not the shell's grey. Fullscreen there is
+          // nothing behind the panel for a page colour to be the colour OF, and
+          // the only place the grey still showed was the 12px band around the
+          // cards and the trough between them — which is exactly what made a
+          // sheet filling the viewport read as a card floating over something.
+          backgroundColor: CitizenUi.surface,
           resizeToAvoidBottomInset: true,
           body: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
+            // ── No inset, and the cards give up their outline ──────────────
+            //
+            // It was `Padding(all: 12)` around bordered, rounded cards. Every
+            // one of those pixels is spent framing the panel against a page
+            // that is not there: 12 a side plus the 14px trough between the two
+            // zones is ~38px of grey on a 390px phone, and it cost the list the
+            // same height it cost the frame.
+            //
+            // [QaFullBleedScope] is the other half — it is what turns the two
+            // cards into one sheet, so removing the inset does not simply move
+            // a rounded card up against the screen edge. The docked chat made
+            // the same call for the same reason: `BorderRadius.zero`, edge to
+            // edge, "the card meets every viewport edge, so rounded corners
+            // would leave the page showing through in four notches".
+            //
+            // [SafeArea] stays: flush to the viewport is not flush under a
+            // notch or a home indicator.
+            child: QaFullBleedScope(
+              fullBleed: true,
               child: QaKeyboardScope(
                 keyboardUp: keyboardUp,
                 child: builder(dialogContext, close),

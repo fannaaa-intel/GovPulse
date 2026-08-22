@@ -129,6 +129,52 @@ void main() {
       }
     });
 
+    testWidgets('stacked, the nine chips are one scrolling row, not three', (
+      tester,
+    ) async {
+      await _pumpSplit(tester, size: const Size(390, 844));
+
+      // ── Why this is not the [Wrap] the wide layout draws ─────────────────
+      // Wrapped into a ~340px column the same nine chips made THREE lines,
+      // ~110px, under a header, a tab switcher and a search box — and what was
+      // left of an 844px viewport showed one and a half events. The row gives
+      // ~78px of that back to the list.
+      final row = find.byWidgetPredicate(
+        (w) => w is ListView && w.scrollDirection == Axis.horizontal,
+      );
+      expect(row, findsOneWidget);
+      expect(tester.getSize(row).height, 32);
+
+      // Nothing is hidden behind a disclosure: the chips off the right edge are
+      // scrolled to, not stashed. (The mobile bar's "More..." is a different
+      // rendering of the same filters and is untouched — it is not in here.)
+      expect(find.text('All'), findsOneWidget);
+      expect(find.text('More...'), findsNothing);
+      await tester.dragUntilVisible(
+        find.text('Others'),
+        row,
+        const Offset(-120, 0),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Others'), findsOneWidget);
+    });
+
+    testWidgets('side by side the chips still wrap, all nine at once', (
+      tester,
+    ) async {
+      await _pumpSplit(tester);
+
+      // The 660px column has room for two lines of nine, so the row idiom would
+      // be trading a glance for a scroll. Only the stacked panel swaps.
+      expect(
+        find.byWidgetPredicate(
+          (w) => w is ListView && w.scrollDirection == Axis.horizontal,
+        ),
+        findsNothing,
+      );
+      expect(find.text('Others'), findsOneWidget);
+    });
+
     testWidgets('below the breakpoint the columns stack with no overflow', (
       tester,
     ) async {

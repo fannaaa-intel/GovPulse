@@ -88,6 +88,13 @@ const List<String> _moreFilters = [
   'Others',
 ];
 
+/// Height of the split panel's stacked filter row.
+///
+/// A horizontal [ListView] has no intrinsic height, so the row has to be told
+/// one. This is the chip's own measured height — see [_SplitFilterChip]: 12px
+/// text (~16), 7 of vertical padding each side, 1 of border each side.
+const double _kSplitChipRowHeight = 32;
+
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 class EventsScreen extends StatefulWidget {
@@ -652,8 +659,8 @@ class _EventsScreenState extends State<EventsScreen>
           else if (!stacked || _splitTab == 0) ...[
             _splitSearchField(),
             const SizedBox(height: 10),
-            _splitFilterChips(),
-            const SizedBox(height: 14),
+            _splitFilterChips(stacked),
+            SizedBox(height: stacked ? 10 : 14),
           ],
 
           // ── Zone 2: the working area, the panel's only scroller ──────────
@@ -717,26 +724,61 @@ class _EventsScreenState extends State<EventsScreen>
     );
   }
 
-  /// Every filter as one wrapping row.
+  /// Every filter, wrapped where there is room and scrolled where there is not.
   ///
   /// ── Why the "More" disclosure is gone here ───────────────────────────────
   /// On a phone the nine chips do not fit, so the mobile bar hides four behind
-  /// a tune icon. The panel is wide enough to wrap all nine into two lines, and
-  /// a disclosure that hides options there is a click spent on nothing. The
-  /// mobile bar keeps its own behaviour untouched — this is a second rendering
-  /// of the same `_selectedFilter`, not a change to the first.
-  Widget _splitFilterChips() {
-    return Wrap(
-      spacing: 7,
-      runSpacing: 7,
-      children: [
-        for (final f in [..._primaryFilters, ..._moreFilters])
-          _SplitFilterChip(
-            label: f,
-            selected: _selectedFilter == f,
-            onTap: () => setState(() => _selectedFilter = f),
-          ),
-      ],
+  /// a tune icon. The panel never hides one: a disclosure is a click spent on
+  /// nothing when the same width can simply be scrolled. The mobile bar keeps
+  /// its own behaviour untouched — this is a second rendering of the same
+  /// `_selectedFilter`, not a change to the first.
+  ///
+  /// ── Why STACKED does not wrap ────────────────────────────────────────────
+  /// Wrapping is right in the ~640px column the side-by-side layout gives this:
+  /// nine chips make two lines, ~71px, and the list keeps the rest. In the
+  /// stacked panel the same [Wrap] made THREE lines (All/Today/Upcoming/Recent,
+  /// then Health/Training/Environment/Special, then Others) — ~110px of filter
+  /// bar sitting under a header, a tab switcher and a search box, on a viewport
+  /// that had ~500px for all of it. What was left showed one and a half events,
+  /// which is a browse surface you cannot browse.
+  ///
+  /// One horizontally scrolling row is ~32px, so ~78px goes back to the list —
+  /// about two more event rows. Nothing is hidden and nothing is behind an
+  /// extra tap: every chip is in the row, in the same order, and the row
+  /// scrolls. It is also the idiom this very screen already uses on mobile
+  /// (see [_buildFilterChips]), so the panel is not inventing a third way to
+  /// present the same nine filters.
+  Widget _splitFilterChips(bool stacked) {
+    final chips = [
+      for (final f in [..._primaryFilters, ..._moreFilters])
+        _SplitFilterChip(
+          label: f,
+          selected: _selectedFilter == f,
+          onTap: () => setState(() => _selectedFilter = f),
+        ),
+    ];
+
+    if (!stacked) {
+      return Wrap(spacing: 7, runSpacing: 7, children: chips);
+    }
+
+    // A fixed height, because a horizontal [ListView] has no intrinsic one and
+    // this sits in the head's unbounded Column. 32 is what the chip measures:
+    // 12px text on a 1.0 height (~16), plus 7 of padding a side, plus the 1px
+    // border. `clipBehavior: none` would spill the row over the search box
+    // above it, so the default clip stays.
+    return SizedBox(
+      height: _kSplitChipRowHeight,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        padding: EdgeInsets.zero,
+        itemCount: chips.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 7),
+        // Centred, so the chips do not stretch to the row's full height and
+        // come out as tall pills.
+        itemBuilder: (_, i) => Center(child: chips[i]),
+      ),
     );
   }
 

@@ -1974,9 +1974,13 @@ class _ReportIssueScreenState extends State<ReportIssueForm>
   /// like the recap is the thing being confirmed. So the zone goes away with
   /// the pane, and comes back exactly as it was — the buttons never stopped
   /// reading `_splitStep`, so nothing about the wizard moved while it was gone.
-  Widget _splitRightRail(bool stacked) {
+  Widget? _splitRightRail(bool stacked) {
     if (stacked) {
-      if (_splitTab != 0) return const SizedBox.shrink();
+      // Null, not an empty box: the Summary pane has nothing to press, and
+      // [QaSplitPanel] draws the zone's separator only when there is a zone.
+      // Returning a zero-height widget instead left a hairline across the
+      // bottom of the screen in the fullscreen presentation.
+      if (_splitTab != 0) return null;
       // Tighter chrome than the rail's 20 a side: this card is a bar, and every
       // pixel of padding on it is a pixel the step above loses. The border and
       // radius stay, so it still reads as one of the panel's cards.

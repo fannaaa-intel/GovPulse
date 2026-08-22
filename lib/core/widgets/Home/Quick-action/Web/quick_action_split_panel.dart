@@ -159,9 +159,60 @@ class QaKeyboardScope extends InheritedWidget {
       oldWidget.keyboardUp != keyboardUp;
 }
 
+/// Carries "this panel IS the page" down to the chrome.
+///
+/// ── Why the chrome cannot work this out for itself ────────────────────────
+/// A rounded, bordered card floating on the shell's grey is right when there is
+/// a shell behind it to float over. Once the host presents the panel
+/// fullscreen there is nothing behind it: the "floating" card is drawn on a
+/// grey band the citizen reads as the page, inside a viewport the card is
+/// already filling. On a phone that band cost 12px of inset a side plus a 14px
+/// trough between the two zones — visible in the browser as a modal hovering
+/// over nothing.
+///
+/// Only the HOST knows which presentation it chose (see
+/// `showCitizenSplitPanelDialog`), and the chrome is several widgets down from
+/// it, so the answer is handed down rather than re-derived from a width. That
+/// matters: a second `MediaQuery.sizeOf(context) < …` inside [QaPanelCard]
+/// would be a copy of the host's threshold, free to drift out of step with the
+/// presentation it is describing.
+///
+/// Defaults to FALSE with no scope present, so every host that does not opt in
+/// — tests, previews, the side-by-side dialog — keeps the cards it has always
+/// drawn, pixel for pixel.
+class QaFullBleedScope extends InheritedWidget {
+  final bool fullBleed;
+
+  const QaFullBleedScope({
+    super.key,
+    required this.fullBleed,
+    required super.child,
+  });
+
+  static bool of(BuildContext context) =>
+      context
+          .dependOnInheritedWidgetOfExactType<QaFullBleedScope>()
+          ?.fullBleed ??
+      false;
+
+  @override
+  bool updateShouldNotify(QaFullBleedScope oldWidget) =>
+      oldWidget.fullBleed != fullBleed;
+}
+
 class QaSplitPanel extends StatelessWidget {
   final Widget Function(bool stacked) left;
-  final Widget Function(bool stacked) right;
+
+  /// The rail, or the pinned action zone once stacked.
+  ///
+  /// Nullable so a pane that has NO actions can say so, rather than returning
+  /// an empty box the panel then has to frame. Three of the four quick actions
+  /// use it: their Summary pane carries nothing to press, and under a
+  /// [QaFullBleedScope] the zone is separated by a hairline rather than by a
+  /// gap — a rule drawn above an empty box is a stray line across the bottom of
+  /// the screen. A builder that always returns a widget is unaffected, and
+  /// still assigns to this type.
+  final Widget? Function(bool stacked) right;
   final double collapseBelow;
 
   const QaSplitPanel({
@@ -218,6 +269,19 @@ class QaSplitPanel extends StatelessWidget {
             // one place, the citizen web shell — so the app never runs this.
             final keyboardUp = QaKeyboardScope.of(context);
 
+            // Fullscreen, the two zones are two halves of one sheet, not two
+            // cards on a page: the [kQaGap] trough between them is grey the
+            // page no longer has, so it reads as a seam in the middle of the
+            // screen. A hairline says the same thing — "the actions are a
+            // separate zone" — in 1px instead of 14, and the height it gives
+            // back goes to the list, which is the part the citizen came for.
+            final fullBleed = QaFullBleedScope.of(context);
+
+            // Built once, so the null check and the child are the same call:
+            // asking twice would run a builder that may read form state twice
+            // per frame, and could disagree with itself.
+            final actions = right(true);
+
             final zones = Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -261,14 +325,17 @@ class QaSplitPanel extends StatelessWidget {
                       : const Duration(milliseconds: 260),
                   curve: Curves.easeInOutCubic,
                   alignment: Alignment.topCenter,
-                  child: keyboardUp
+                  child: (keyboardUp || actions == null)
                       ? const SizedBox.shrink()
                       : Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const SizedBox(height: kQaGap),
-                            right(true),
+                            if (fullBleed)
+                              const _QaZoneRule()
+                            else
+                              const SizedBox(height: kQaGap),
+                            actions,
                           ],
                         ),
                 ),
@@ -312,7 +379,10 @@ class QaSplitPanel extends StatelessWidget {
               children: [
                 Expanded(flex: 17, child: left(false)),
                 const SizedBox(width: kQaGap),
-                Expanded(flex: 10, child: right(false)),
+                // Side by side the rail is never absent — the summary is half
+                // of what the layout is FOR — so this fallback is only the
+                // type's, not a state any of the four reaches.
+                Expanded(flex: 10, child: right(false) ?? const SizedBox()),
               ],
             ),
           );
@@ -322,8 +392,28 @@ class QaSplitPanel extends StatelessWidget {
   }
 }
 
+/// The hairline that separates the two zones when the panel is the page.
+///
+/// A [Container] with an explicit height rather than a [Divider], which brings
+/// 16px of its own vertical padding and would put most of the trough back.
+class _QaZoneRule extends StatelessWidget {
+  const _QaZoneRule();
+
+  @override
+  Widget build(BuildContext context) =>
+      Container(height: 1, color: CitizenUi.border);
+}
+
 /// One of the two rounded cards. Hairline border, no shadow — these sit on the
 /// dialog's own grey, not on the page, and a shadow at this size reads as grime.
+///
+/// Under a [QaFullBleedScope] there is no grey for them to sit on: the panel is
+/// the whole viewport, so the border and the corner radius are the only things
+/// still drawing a card, around content that reaches every screen edge. Both
+/// go, and what is left is a plain white sheet — the shape a full-screen
+/// surface has everywhere else in this app (see the docked chat's own
+/// `BorderRadius.zero` sheet). The padding is untouched either way: that is the
+/// content's own margin, not the card's outline.
 class QaPanelCard extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry padding;
@@ -336,12 +426,15 @@ class QaPanelCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final fullBleed = QaFullBleedScope.of(context);
     return Container(
       padding: padding,
       decoration: BoxDecoration(
         color: CitizenUi.surface,
-        borderRadius: BorderRadius.circular(CitizenUi.cardRadius),
-        border: Border.all(color: CitizenUi.border),
+        borderRadius: fullBleed
+            ? BorderRadius.zero
+            : BorderRadius.circular(CitizenUi.cardRadius),
+        border: fullBleed ? null : Border.all(color: CitizenUi.border),
       ),
       child: child,
     );
