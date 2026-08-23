@@ -582,11 +582,26 @@ class _VerifiedStripShimmerState extends State<_VerifiedStripShimmer>
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Image.asset(
-                'assets/images/check.webp',
-                width: w * 0.042,
-                height: w * 0.042,
-                color: const Color(0xFF15803D),
+              // A scalloped seal, not the plain circle-check this used to be.
+              // The strip states an identity claim, and a ring-and-tick outline
+              // reads as "task done" rather than "verified" — the same glyph the
+              // rest of the world uses for a verified account carries that
+              // meaning without the label having to do all the work. Material's
+              // filled variant knocks the check out of the seal, so the strip's
+              // mint fill shows through it and there is no second layer to keep
+              // aligned.
+              //
+              // Clamped rather than purely proportional: the label beside it is
+              // the widest thing in the card (see the Flexible below), and at
+              // 480 an unclamped w * 0.046 would grow past the icon's useful
+              // size and eat the margin that keeps the Tagalog string off the
+              // ellipsis. The floor keeps the seal's interior check legible on a
+              // 320dp phone, where the old 13px circle was already the smallest
+              // thing on the screen.
+              Icon(
+                Icons.verified_rounded,
+                size: (w * 0.046).clamp(14.0, 22.0),
+                color: const Color(0xFF16A34A),
               ),
               SizedBox(width: w * 0.020),
               // Flexible, not bare: this label is the widest thing in the card
