@@ -2,6 +2,9 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'dart:async';
 import '../../../../core/theme/citizen_ui.dart';
+// kNavTopBreakpoint: the brand steps on the same width line the nav band does.
+// nav_band is a dependency-free leaf, so importing it here cannot cycle.
+import 'nav_band.dart' show kNavTopBreakpoint;
 
 /// Draw the bell and the profile chip as BARE controls — no grey circle behind
 /// the bell, no grey pill behind the chip — and let the control itself carry
@@ -192,8 +195,82 @@ class _HomeTopNavState extends State<HomeTopNav> {
 }
 
 // ── Brand logo ────────────────────────────────────────────────────────────────
+/// Mark height, wordmark size and the gap between them, for a web viewport
+/// [width].
+///
+/// Stepped rather than a continuous ratio: the bar is a fixed 60 tall, so the
+/// mark has a hard ceiling anyway, and steps keep the lockup on one optical
+/// baseline instead of shifting a pixel per drag of the window edge. The
+/// [kNavTopBreakpoint] step is the same 900 line that decides the nav band, so
+/// the brand grows exactly when the bar stops sharing its row with a hamburger.
+({double mark, double text, double gap}) _brandMetrics(double width) {
+  if (width >= 1440) return (mark: 44, text: 21, gap: 12);
+  if (width >= 1200) return (mark: 40, text: 19, gap: 11);
+  if (width >= kNavTopBreakpoint) return (mark: 36, text: 18, gap: 10);
+  if (width >= 600) return (mark: 32, text: 17, gap: 9);
+  return (mark: 28, text: 15, gap: 8);
+}
+
 class _BrandLogo extends StatelessWidget {
   const _BrandLogo();
+
+  @override
+  Widget build(BuildContext context) {
+    // Native is deliberately untouched. This nav is NOT web-only — see the
+    // docs on [HomeTopNav]: `resolveNavBand` hands the same bar to a landscape
+    // tablet, which IS the mobile app — so the whole web brand treatment sits
+    // behind the same `kIsWeb` gate the flat chrome uses, and the app renders
+    // byte-identically to before.
+    if (!kIsWeb) return const _BrandLogoNative();
+
+    final m = _brandMetrics(MediaQuery.sizeOf(context).width);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Image.asset(
+          // The bare "A" mark, not `applogocrop` — that asset is the STACKED
+          // lockup (mark above the word "GovPulse"), so beside the text it
+          // repeated the wordmark, and forcing its 1080x784 into a 28x28 box
+          // left it drawing 28x20: a smudge. This one is 1080x972, near
+          // square, and is the mark that lockup is built from.
+          'assets/images/applogo.webp',
+          // Height only. Constraining one axis lets the mark keep its own
+          // aspect instead of being letterboxed inside a square.
+          height: m.mark,
+          fit: BoxFit.contain,
+          filterQuality: FilterQuality.medium,
+          errorBuilder: (_, _, _) => Container(
+            width: m.mark,
+            height: m.mark,
+            decoration: BoxDecoration(
+              color: const Color(0xFF1A4DB8),
+              borderRadius: BorderRadius.circular(m.mark * 0.22),
+            ),
+            child: Icon(
+              Icons.account_balance,
+              size: m.mark * 0.56,
+              color: Colors.white,
+            ),
+          ),
+        ),
+        SizedBox(width: m.gap),
+        Text(
+          'GovPulse',
+          style: TextStyle(
+            fontSize: m.text,
+            fontWeight: FontWeight.w800,
+            color: const Color(0xFF1A4DB8),
+            letterSpacing: -0.3,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The pre-existing lockup, unchanged, for every non-web caller of this nav.
+class _BrandLogoNative extends StatelessWidget {
+  const _BrandLogoNative();
 
   @override
   Widget build(BuildContext context) {
