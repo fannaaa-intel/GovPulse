@@ -15,6 +15,7 @@ import '../widgets/app_snackbar.dart';
 import '../../features/onboarding/splash_screen.dart';
 import '../../features/onboarding/intro_screen.dart';
 import '../../features/auth/login_screen.dart';
+import '../services/auth_ready.dart';
 import '../services/auth_service.dart';
 import '../services/session_teardown.dart';
 import '../../features/auth/signup_screen.dart';
@@ -201,6 +202,22 @@ Widget buildLoginScreen(BuildContext ctx) => LoginScreen(
     // navigates or touches [ctx], and none of it can run against a dead route.
     if (!ctx.mounted) return;
     container.invalidate(userProfileProvider);
+
+    // Hand the role we ALREADY looked up to the guard, before navigating.
+    //
+    // AuthService.login resolves role_id as step 4 of signing in, so without
+    // this the console route mounted with `roleKnown == false`, rendered the
+    // startup spinner, and AuthRestoration._refreshRole re-issued the identical
+    // query — a redundant round-trip the user watched as a spinner flash on
+    // every single console login.
+    //
+    // Web-only and non-null-only by construction; see [AuthRestoration.
+    // adoptRole] for why a null role is deliberately NOT adopted. Ordered after
+    // the session exists (uid above) and before the ctx.go calls below, so the
+    // guard's first evaluation of /admin or /staff already knows the answer.
+    if (uid != null) {
+      AuthRestoration.instance.adoptRole(userId: uid, roleId: result.roleId);
+    }
 
     // Role-based routing
     // 1 = admin  → admin dashboard (web & mobile)

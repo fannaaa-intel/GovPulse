@@ -455,6 +455,47 @@ class AuthRestoration extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Adopt a role that an authoritative lookup has ALREADY resolved, so the
+  /// guard does not re-ask for something the caller is holding.
+  ///
+  /// WEB ONLY, like everything else that touches the role — mobile never reads
+  /// it, and [kIsWeb] is a const so this folds to a no-op there.
+  ///
+  /// ── Why this exists ────────────────────────────────────────────────────────
+  /// [AuthService.login] already runs `user_roles.select('role_id')` and returns
+  /// the answer. Without this, signing in threw that answer away: the auth-state
+  /// listener re-armed `_roleKnown = false`, the console route rendered the
+  /// startup spinner, and [_refreshRole] issued the SAME query a second time —
+  /// so every console login paid a redundant round-trip as a visible spinner
+  /// flash between the login form and the dashboard.
+  ///
+  /// ── Only a POSITIVE role is adopted, and that is the whole safety rule ─────
+  /// `null` from a lookup is ambiguous — a real citizen, an unverified account,
+  /// or (before the caller's own error handling) a query that did not land.
+  /// Adopting a null would set `_roleKnown = true` on a maybe-wrong answer, and
+  /// because a known role is never re-derived that wrong answer would STICK —
+  /// which is precisely the demotion bug the retry-and-fall-back logic in
+  /// [_refreshRole] exists to prevent. So callers may only hand over 1 or 2, and
+  /// anything else is ignored here rather than trusted. A citizen simply follows
+  /// the normal path; they never reach a console builder anyway.
+  ///
+  /// [_roleUid] is set alongside, so the sign-in event that follows sees an
+  /// unchanged identity and does not re-arm the hold this call just satisfied.
+  void adoptRole({required String userId, required int? roleId}) {
+    if (!kIsWeb) return;
+    if (roleId != 1 && roleId != 2) return;
+
+    _roleUid = userId;
+    _roleId = roleId;
+    _roleKnown = true;
+
+    // Same hint [_refreshRole] writes on a real answer, so the next cold load
+    // classifies this user synchronously instead of holding.
+    _writeRoleCache(userId, roleId);
+
+    notifyListeners();
+  }
+
   /// Waits for Firebase's first auth event, or [timeout] — whichever first.
   ///
   /// Bounded because the alternative is a visitor stuck on the startup spinner
