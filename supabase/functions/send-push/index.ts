@@ -1,10 +1,22 @@
 // ════════════════════════════════════════════════════════════════════════════
 //  send-push  —  turns every `notifications` row into a real device push.
 //
-//  Invoked by a Database Webhook / trigger on INSERT into public.notifications
-//  (see supabase/push_on_notification.sql). It looks up the target user's
-//  registered FCM tokens (device_tokens) and sends each one an FCM message via
-//  the HTTP v1 API. Dead tokens (UNREGISTERED) are pruned.
+//  Invoked by a statement-level trigger on INSERT into public.notifications
+//  (migration 20260824000005). It is handed a BATCH of notification ids, looks
+//  up the target users' registered FCM tokens (device_tokens), and sends each
+//  one an FCM message via the HTTP v1 API. Dead tokens (UNREGISTERED) are
+//  pruned.
+//
+//  Batching is the whole point (audit 2026-08-24, WR-1): the trigger used to be
+//  FOR EACH ROW, so a broadcast to 10k citizens meant 10k vault decrypts, 10k
+//  net.http_post calls and 10k invocations of this function, all queued through
+//  pg_net's single worker — which starved classify-report and moderate-content
+//  behind it. It is now FOR EACH STATEMENT over a transition table, so the same
+//  broadcast is ~20 invocations. A single targeted notification is still one
+//  statement, one id, one invocation, exactly as before.
+//
+//  Single-row payload shapes are still accepted; see the handler for why that
+//  matters for deploy ordering.
 //
 //  Why v1 (not the old server key): the legacy FCM `/fcm/send` endpoint was shut
 //  down in 2024. v1 needs a Google OAuth2 access token, minted here by signing a
@@ -87,17 +99,80 @@ async function getAccessToken(sa: Record<string, string>): Promise<string> {
 }
 
 // ── Handler ──────────────────────────────────────────────────────────────────
+//
+// Accepts THREE payload shapes, so this function stays correct both before and
+// after the batching trigger is in place (audit 2026-08-24, WR-1):
+//
+//   { notification_ids: [uuid, ...] }   ← batched statement-level trigger
+//   { record: { id, ... } }             ← Supabase Database Webhook shape
+//   { id, ... }                         ← a bare notifications row
+//
+// The single-row shapes are NOT legacy cruft to be cleaned up later: a Database
+// Webhook configured in the dashboard still speaks them, and keeping them is
+// what allows this function to be deployed BEFORE the migration that starts
+// sending batches. Deploying in the other order stops every push in the system
+// silently — the old code looks for `.id`, does not find one, and skips.
+
+// One notification can fan out to several devices, and one batch to several
+// hundred notifications. Sending is one HTTP call per (row, token) pair, so the
+// work is bounded here rather than handed to Promise.all in a single burst: an
+// unbounded burst of ~500 fetches exhausts the isolate's socket budget, and the
+// tail of the batch then fails with connection errors rather than FCM errors —
+// which the pruning branch below would misread as dead tokens and delete.
+const FCM_CONCURRENCY = 25;
+
+// A hard ceiling on one invocation's work. This endpoint is reachable by anyone
+// holding the public anon key. Ids alone are not forgeable into a fake push
+// (every field sent to the device is re-read from the row), but an oversized id
+// array is still a cheap way to make one invocation do unbounded work, so the
+// list is capped rather than trusted.
+const MAX_IDS_PER_CALL = 1000;
+
+async function pooled<T>(
+  items: T[],
+  limit: number,
+  worker: (item: T) => Promise<void>,
+): Promise<void> {
+  let cursor = 0;
+  const runners = Array.from(
+    { length: Math.min(limit, items.length) },
+    async () => {
+      while (cursor < items.length) {
+        const idx = cursor++;
+        await worker(items[idx]);
+      }
+    },
+  );
+  await Promise.all(runners);
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok");
   if (req.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
   }
 
+  const json = (b: unknown, status = 200) =>
+    new Response(JSON.stringify(b), {
+      status,
+      headers: { "Content-Type": "application/json" },
+    });
+
   try {
     const payload = await req.json();
-    // Supabase webhook shape: { type, table, schema, record, old_record }.
-    const incoming = payload?.record ?? payload;
-    const notifId = incoming?.id;
+
+    // Normalise every accepted shape down to a list of ids.
+    let ids: string[];
+    if (Array.isArray(payload?.notification_ids)) {
+      ids = payload.notification_ids;
+    } else {
+      const incoming = payload?.record ?? payload;
+      ids = incoming?.id ? [incoming.id] : [];
+    }
+    ids = [...new Set(ids.filter((v: unknown) => typeof v === "string" && v))]
+      .slice(0, MAX_IDS_PER_CALL);
+
+    if (ids.length === 0) return json({ skipped: "no notification id" });
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -107,30 +182,78 @@ Deno.serve(async (req) => {
     // Trust the DB, not the caller. This function is reachable by anyone holding
     // the public anon key, so the request body cannot be authoritative for who
     // gets pushed or what the push says — otherwise a forged payload could send
-    // an arbitrary notification to any user_id. Re-read the row by its id and
-    // use ONLY those DB-sourced fields; a payload with no matching row is a
-    // no-op. The legitimate INSERT trigger always passes a real, committed id.
-    if (!notifId) {
-      return new Response(JSON.stringify({ skipped: "no notification id" }), {
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    const { data: row } = await supabase
+    // an arbitrary notification to any user_id. Re-read the rows by id and use
+    // ONLY those DB-sourced fields; ids with no matching row are a no-op. The
+    // batching trigger only ever passes real, committed ids.
+    const { data: rows, error: rowsErr } = await supabase
       .from("notifications")
       .select("id, user_id, title, subtitle, type, topic, is_approved")
-      .eq("id", notifId)
-      .maybeSingle();
+      .in("id", ids);
+    if (rowsErr) throw rowsErr;
 
-    if (!row || !row.user_id) {
-      return new Response(JSON.stringify({ skipped: "unknown or userless row" }), {
-        headers: { "Content-Type": "application/json" },
-      });
+    // Untargeted rows have nobody to push to; unapproved (e.g. moderation-
+    // pending) rows must never be pushed.
+    const eligible = (rows ?? []).filter(
+      (r) => r.user_id && r.is_approved !== false,
+    );
+    if (eligible.length === 0) {
+      return json({ skipped: "no eligible rows", considered: ids.length });
     }
-    // Never push an unapproved (e.g. moderation-pending) row.
-    if (row.is_approved === false) {
-      return new Response(JSON.stringify({ skipped: "not approved" }), {
-        headers: { "Content-Type": "application/json" },
+
+    const userIds = [...new Set(eligible.map((r) => r.user_id as string))];
+
+    // Respect each user's push master-switch. One query for the whole batch;
+    // no row = enabled (default), so only an explicit false blocks.
+    const { data: prefs, error: prefErr } = await supabase
+      .from("notification_preferences")
+      .select("user_id, push_enabled")
+      .in("user_id", userIds);
+    if (prefErr) throw prefErr;
+    const disabled = new Set(
+      (prefs ?? [])
+        .filter((p) => p.push_enabled === false)
+        .map((p) => p.user_id),
+    );
+
+    // Every registered device for everyone in the batch, in one query.
+    const { data: tokenRows, error: tokErr } = await supabase
+      .from("device_tokens")
+      .select("user_id, token")
+      .in("user_id", userIds);
+    if (tokErr) throw tokErr;
+
+    const tokensByUser = new Map<string, Set<string>>();
+    for (const t of tokenRows ?? []) {
+      if (!t.token) continue;
+      // Dedupe per user. A device can accumulate more than one row for the SAME
+      // token (a register that inserts rather than upserts, no unique index on
+      // token, a reinstall), and every extra row is another identical push
+      // landing on the same phone — which is exactly what a user sees as a
+      // "duplicated notification". Sending is not idempotent, so this is deduped
+      // here rather than trusted to the table's shape.
+      //
+      // Deliberately per USER and not global: two different notifications
+      // legitimately send to the same token, and collapsing across rows would
+      // silently drop the second one.
+      let set = tokensByUser.get(t.user_id);
+      if (!set) tokensByUser.set(t.user_id, (set = new Set<string>()));
+      set.add(t.token);
+    }
+
+    type Row = (typeof eligible)[number];
+    const jobs: Array<{ token: string; row: Row }> = [];
+    for (const row of eligible) {
+      if (disabled.has(row.user_id as string)) continue;
+      for (const token of tokensByUser.get(row.user_id as string) ?? []) {
+        jobs.push({ token, row });
+      }
+    }
+
+    if (jobs.length === 0) {
+      return json({
+        sent: 0,
+        reason: "no devices",
+        notifications: eligible.length,
       });
     }
 
@@ -138,125 +261,89 @@ Deno.serve(async (req) => {
     if (!saRaw) throw new Error("FCM_SERVICE_ACCOUNT secret is not set");
     const sa = JSON.parse(saRaw) as Record<string, string>;
 
-    // Respect the user's push master-switch. No row = enabled (default).
-    const { data: pref } = await supabase
-      .from("notification_preferences")
-      .select("push_enabled")
-      .eq("user_id", row.user_id)
-      .maybeSingle();
-    if (pref && pref.push_enabled === false) {
-      return new Response(JSON.stringify({ skipped: "push disabled by user" }), {
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    // This user's registered devices.
-    const { data: tokens, error } = await supabase
-      .from("device_tokens")
-      .select("token")
-      .eq("user_id", row.user_id);
-    if (error) throw error;
-
-    // Dedupe before sending. A device can accumulate more than one row for the
-    // SAME token (a register that inserts rather than upserts, no unique index
-    // on token, a reinstall), and every extra row is another identical push
-    // landing on the same phone — which is exactly what a user sees as a
-    // "duplicated notification". Sending is not idempotent, so this is deduped
-    // here rather than trusted to the table's shape.
-    const unique = [...new Set(
-      (tokens ?? []).map((t: { token: string }) => t.token).filter(Boolean),
-    )];
-
-    if (unique.length === 0) {
-      return new Response(JSON.stringify({ sent: 0, reason: "no devices" }), {
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
     const accessToken = await getAccessToken(sa);
     const endpoint =
       `https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`;
 
-    const title = (row.title as string) ?? "Notification";
-    const body = (row.subtitle as string) ?? "";
-    const data = {
-      type: String(row.type ?? ""),
-      topic: String(row.topic ?? ""),
-      notification_id: String(row.id ?? ""),
-    };
-
     let sent = 0;
-    const dead: string[] = [];
+    const dead = new Set<string>();
 
-    // Collapse key: one notification ROW should only ever occupy one slot in the
-    // tray. Tagging by row id means a second delivery of the same row REPLACES
-    // the first instead of stacking beside it, so a duplicate at any layer above
-    // (a second webhook wired to this function, a retry, two live tokens for one
-    // phone) can no longer show the user two copies.
-    //
-    // Only applied when the row actually has an id: an empty tag is a tag, and
-    // would collapse every unrelated notification into a single entry.
-    const collapseId = row.id ? String(row.id) : null;
+    await pooled(jobs, FCM_CONCURRENCY, async ({ token, row }) => {
+      const title = (row.title as string) ?? "Notification";
+      const body = (row.subtitle as string) ?? "";
+      const data = {
+        type: String(row.type ?? ""),
+        topic: String(row.topic ?? ""),
+        notification_id: String(row.id ?? ""),
+      };
 
-    await Promise.allSettled(
-      unique.map(async (token: string) => {
-        const res = await fetch(endpoint, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            message: {
-              token,
-              notification: { title, body },
-              data,
-              android: {
-                priority: "HIGH",
-                notification: {
-                  channel_id: "general_channel",
-                  default_sound: true,
-                  ...(collapseId ? { tag: collapseId } : {}),
-                },
-              },
-              apns: {
-                ...(collapseId
-                  ? { headers: { "apns-collapse-id": collapseId } }
-                  : {}),
-                payload: { aps: { sound: "default", badge: 1 } },
+      // Collapse key: one notification ROW should only ever occupy one slot in
+      // the tray. Tagging by row id means a second delivery of the same row
+      // REPLACES the first instead of stacking beside it, so a duplicate at any
+      // layer above (a second webhook wired to this function, a retry, two live
+      // tokens for one phone) can no longer show the user two copies.
+      //
+      // Only applied when the row actually has an id: an empty tag is a tag, and
+      // would collapse every unrelated notification into a single entry.
+      const collapseId = row.id ? String(row.id) : null;
+
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: {
+            token,
+            notification: { title, body },
+            data,
+            android: {
+              priority: "HIGH",
+              notification: {
+                channel_id: "general_channel",
+                default_sound: true,
+                ...(collapseId ? { tag: collapseId } : {}),
               },
             },
-          }),
-        });
-        if (res.ok) {
-          sent++;
-        } else {
-          const errBody = await res.text();
-          // Prune tokens FCM says are gone (app uninstalled / token rotated).
-          if (
-            res.status === 404 ||
-            errBody.includes("UNREGISTERED") ||
-            errBody.includes("INVALID_ARGUMENT")
-          ) {
-            dead.push(token);
-          }
-        }
-      }),
-    );
+            apns: {
+              ...(collapseId
+                ? { headers: { "apns-collapse-id": collapseId } }
+                : {}),
+              payload: { aps: { sound: "default", badge: 1 } },
+            },
+          },
+        }),
+      });
 
-    if (dead.length > 0) {
-      await supabase.from("device_tokens").delete().in("token", dead);
+      if (res.ok) {
+        sent++;
+      } else {
+        const errBody = await res.text();
+        // Prune tokens FCM says are gone (app uninstalled / token rotated).
+        if (
+          res.status === 404 ||
+          errBody.includes("UNREGISTERED") ||
+          errBody.includes("INVALID_ARGUMENT")
+        ) {
+          dead.add(token);
+        }
+      }
+    });
+
+    if (dead.size > 0) {
+      await supabase.from("device_tokens").delete().in("token", [...dead]);
     }
 
-    return new Response(JSON.stringify({ sent, pruned: dead.length }), {
-      headers: { "Content-Type": "application/json" },
+    return json({
+      sent,
+      pruned: dead.size,
+      notifications: eligible.length,
+      devices: jobs.length,
     });
   } catch (e) {
     // Never surface a 500 that would make the webhook retry-storm; log + 200.
     console.error("send-push error:", e);
-    return new Response(JSON.stringify({ error: String(e) }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+    return json({ error: String(e) });
   }
 });
