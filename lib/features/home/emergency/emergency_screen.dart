@@ -548,9 +548,29 @@ class _EmergencyScreenState extends State<EmergencyBody>
       physics: const BouncingScrollPhysics(),
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1080),
+          // ── The citizen record band, not a private 1080 ──────────────────
+          //
+          // This page was the last one still claiming its own measure: 1080
+          // with a 24 gutter is 1032 of content, against the 816 every other
+          // citizen page resolves to. Emergency and My Reports are one nav
+          // click apart, so the content edges jumped 216px between two
+          // siblings — the same defect as a list and its detail disagreeing,
+          // just moved sideways.
+          //
+          // Everything on the page follows the narrower band on its own. The
+          // service grid's `>= 900 ? 3 : 2` drops to two columns of ~400,
+          // which is both above the 260 a row card needs AND the width My
+          // Reports gives its cards, so the two grid pages now match. The 911
+          // band loses its watermark, which is correct: that fills a gap that
+          // only exists above ~960, and at 816 there is no gap to fill.
+          constraints: const BoxConstraints(maxWidth: kAccountMaxWidth),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 24, 24, 56),
+            padding: const EdgeInsets.fromLTRB(
+              kAccountPageGutter,
+              24,
+              kAccountPageGutter,
+              56,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [

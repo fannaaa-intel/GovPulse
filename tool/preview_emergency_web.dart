@@ -6,11 +6,14 @@
 // is static — so it renders standalone with no Supabase and no sign-in, and all
 // four widths fit on ONE page side by side.
 //
-// The widths are the shapes the 911 band switches between (see
-// _hero911CardWeb): 1032 is what the shell actually hands this page on an
-// ordinary desktop (band + watermark), 900 the band without it, 700 the stacked
-// shape a narrow window falls back to, and 560 the smallest pane the web shell
-// will hand this page.
+// The widths are PANES, not content. Since the page joined the citizen record
+// band its content is min(pane, kAccountMaxWidth) - 2 * kAccountPageGutter, so
+// a 1032 pane and a 900 pane now resolve to the same 816 and the same layout —
+// which is the point of the band. 700 and 560 are below the cap, so they still
+// exercise the shapes the 911 band and the service grid fall back to.
+//
+// The watermark is no longer reachable from this page: it needs 960 of content
+// and the band tops out at 816. That is deliberate — see _hero911CardWeb.
 //
 // `canPlaceCalls` reads the WINDOW, not the frame, so on a desktop-sized
 // browser window every frame here shows the copy control — which is the
