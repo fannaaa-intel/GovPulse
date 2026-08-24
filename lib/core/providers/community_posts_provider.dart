@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -88,6 +90,10 @@ class CommunityPostsProvider extends ChangeNotifier {
   }
 
   RealtimeChannel? _realtimeChannel;
+  Timer? _realtimeDebounce;
+  DateTime? _lastRealtimeRefresh;
+  bool _silentRefreshInFlight = false;
+  bool _silentRefreshQueued = false;
   final Map<String, List<Map<String, dynamic>>> _optimisticComments = {};
   final Set<String> _pendingEditIds = {};
 
@@ -341,6 +347,33 @@ class CommunityPostsProvider extends ChangeNotifier {
   }
 
   // ── Realtime ─────────────────────────────────────────────────────────
+  //
+  // ⚠️ THIS SUBSCRIPTION IS CURRENTLY DORMANT, AND THAT IS LOAD-BEARING.
+  //
+  // `community_posts` and `community_comments` are deliberately NOT in the
+  // `supabase_realtime` publication, so none of these callbacks ever fire.
+  // Adding those two tables to the publication is the obvious "make the feed
+  // live" move — DO NOT do it as a one-liner. Read the note on
+  // [_onRealtimeChange] first; the reload it schedules is a whole-feed reload,
+  // and it runs on every connected client at once.
+  //
+  // To actually go live, in this order:
+  //   1. Replace the coalesced reload with per-event patching, using the
+  //      incremental helpers this class already has (bumpPostLike,
+  //      removeCommentFromPost, decrementCommentCount, ...).
+  //   2. Give the channel a server-side filter so a client is not woken for
+  //      posts outside its barangay (audit 2026-08-24, RT-3).
+  //   3. THEN add the tables to the publication.
+  // Doing 3 before 1 turns a dormant problem into a live outage.
+
+  /// Coalescing window. Every change to any post or any comment lands here.
+  static const Duration _realtimeCoalesceWindow = Duration(milliseconds: 500);
+
+  /// Hard floor between two actual reloads, regardless of traffic. A busy
+  /// thread produces events faster than a trailing debounce drains them, so the
+  /// debounce alone does not bound the work — this does.
+  static const Duration _realtimeRefreshFloor = Duration(seconds: 3);
+
   void subscribeRealtime() {
     if (_guestMode) return; // guests can't read comment/like tables
     if (_realtimeChannel != null) return;
@@ -350,23 +383,75 @@ class CommunityPostsProvider extends ChangeNotifier {
           event: PostgresChangeEvent.all,
           schema: 'public',
           table: 'community_posts',
-          callback: (_) => _silentRefresh(),
+          callback: (_) => _onRealtimeChange(),
         )
         .onPostgresChanges(
           event: PostgresChangeEvent.all,
           schema: 'public',
           table: 'community_comments',
-          callback: (_) => _silentRefresh(),
+          callback: (_) => _onRealtimeChange(),
         )
         .subscribe();
   }
 
+  /// Funnels every realtime event into at most one whole-feed reload per
+  /// [_realtimeRefreshFloor].
+  ///
+  /// The callbacks used to call [_silentRefresh] directly (audit 2026-08-24,
+  /// RT-1). That is one full reload of every approved post AND every comment on
+  /// every post, per event, on every connected client — so a single comment on
+  /// a busy thread fanned out into a feed-wide refetch for everyone watching,
+  /// and a lively thread degenerated into a self-sustaining load loop.
+  ///
+  /// This does NOT make the reload cheap; it makes its RATE bounded. The real
+  /// fix is per-event patching, which is deliberately not written yet: with the
+  /// tables outside the publication these callbacks never run, so that code
+  /// could not be exercised even once before shipping. Write it when the
+  /// feature is actually being switched on and can be tested.
+  void _onRealtimeChange() {
+    _realtimeDebounce?.cancel();
+    _realtimeDebounce = Timer(_realtimeCoalesceWindow, _drainRealtimeChange);
+  }
+
+  void _drainRealtimeChange() {
+    final last = _lastRealtimeRefresh;
+    if (last != null) {
+      final since = DateTime.now().difference(last);
+      if (since < _realtimeRefreshFloor) {
+        // Too soon. Re-arm for the remainder of the floor rather than dropping
+        // the event: the LAST change in a burst is the one that must land, and
+        // dropping it leaves the feed stale until some later, unrelated event
+        // happens to arrive.
+        _realtimeDebounce?.cancel();
+        _realtimeDebounce = Timer(
+          _realtimeRefreshFloor - since,
+          _drainRealtimeChange,
+        );
+        return;
+      }
+    }
+    _lastRealtimeRefresh = DateTime.now();
+    _silentRefresh();
+  }
+
   void unsubscribeRealtime() {
+    _realtimeDebounce?.cancel();
+    _realtimeDebounce = null;
     _realtimeChannel?.unsubscribe();
     _realtimeChannel = null;
   }
 
   Future<void> _silentRefresh() async {
+    // Never run two of these concurrently. Each one refetches the whole feed
+    // and then rebuilds _posts wholesale, so overlapping runs race on the
+    // optimistic-comment reconciliation below and can resurrect a comment the
+    // other just cleared. A change that arrives mid-flight is remembered and
+    // drained once, rather than dropped or run in parallel.
+    if (_silentRefreshInFlight) {
+      _silentRefreshQueued = true;
+      return;
+    }
+    _silentRefreshInFlight = true;
     try {
       var query = _supabase
           .from('community_feed')
@@ -477,6 +562,14 @@ class CommunityPostsProvider extends ChangeNotifier {
     } catch (e) {
       if (kDebugMode) {
         debugPrint('CommunityPostsProvider silent refresh error: $e');
+      }
+    } finally {
+      _silentRefreshInFlight = false;
+      if (_silentRefreshQueued) {
+        _silentRefreshQueued = false;
+        // Back through the floor, not straight into another refetch — a
+        // queued change must not be a way to bypass the rate limit.
+        _onRealtimeChange();
       }
     }
   }
