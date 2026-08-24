@@ -564,12 +564,12 @@ class _EmergencyScreenState extends State<EmergencyBody>
                       'Aparri, Cagayan — official hotlines. '
                       'In a life-threatening emergency, dial 911.',
                 ),
-                Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 720),
-                    child: _hero911Card(w),
-                  ),
-                ),
+                // Full content width, same as the grid below it. The hero
+                // used to be capped at 720 and centred under a 1080 page, so
+                // the two blocks on this screen started and ended at different
+                // x — see _hero911CardWeb for why the band shape replaces the
+                // card here.
+                _hero911CardWeb(),
                 const SizedBox(height: 40),
                 _sectionLabel(w, 'Emergency Services'),
                 const SizedBox(height: 20),
@@ -634,12 +634,9 @@ class _EmergencyScreenState extends State<EmergencyBody>
                   },
                 ),
                 const SizedBox(height: 28),
-                Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 720),
-                    child: _disclaimer(w),
-                  ),
-                ),
+                // Also full width now. A 720 note centred under a 1080 grid
+                // was the same split measure the hero had.
+                _disclaimer(w),
               ],
             ),
           ),
@@ -698,6 +695,122 @@ class _EmergencyScreenState extends State<EmergencyBody>
     );
   }
 
+  /// The pulsing white 911 disc, drawn to fill a [box]-square.
+  ///
+  /// Every measurement inside is a fraction of [box], not of the page scale, so
+  /// the same disc serves the phone hero (`w * .26`) and the web band's larger
+  /// one without either having to restate the animation. The fractions are the
+  /// phone's original numbers divided through by `.26` — passing `w * .26` here
+  /// renders exactly what the hard-coded version did.
+  Widget _badge911(double box) {
+    final ring = box * .692308; // was w * .18
+    final disc = box * .653846; // was w * .17
+    return SizedBox(
+      width: box,
+      height: box,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          AnimatedBuilder(
+            animation: _pulseCtrl,
+            builder: (_, _) => Transform.scale(
+              scale: _pulseScale.value,
+              child: Container(
+                width: ring,
+                height: ring,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Colors.white.withValues(
+                      alpha: _pulseOpacity.value * .6,
+                    ),
+                    width: 1.5,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          AnimatedBuilder(
+            animation: _pulseCtrl,
+            builder: (_, _) {
+              final t = (_pulseCtrl.value + 0.5) % 1.0;
+              final scale = 0.85 + t * 0.75;
+              final opacity = (0.55 * (1.0 - t)).clamp(0.0, 1.0);
+              return Transform.scale(
+                scale: scale,
+                child: Container(
+                  width: ring,
+                  height: ring,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white.withValues(alpha: opacity * 0.12),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: opacity * 0.4),
+                      width: 1.2,
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+          AnimatedBuilder(
+            animation: _breatheCtrl,
+            builder: (_, child) => Transform.scale(
+              scale: _breatheScale.value,
+              child: Container(
+                width: disc,
+                height: disc,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.white.withValues(alpha: .45),
+                      blurRadius: _breatheGlow.value,
+                      spreadRadius: _breatheGlow.value * 0.3,
+                    ),
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: .22),
+                      blurRadius: 14,
+                      offset: const Offset(0, 5),
+                    ),
+                  ],
+                ),
+                child: child,
+              ),
+            ),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '911',
+                    style: TextStyle(
+                      fontSize: box * .176923, // was w * .046
+                      fontWeight: FontWeight.w900,
+                      color: AppColors.red,
+                      letterSpacing: -1.5,
+                      height: 1.0,
+                    ),
+                  ),
+                  Text(
+                    'CALL',
+                    style: TextStyle(
+                      fontSize: box * .069231, // was w * .018
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.red.withValues(alpha: .6),
+                      letterSpacing: 1.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ── 911 Hero Card — ORIGINAL sizes ───────────────────────────────────────
   Widget _hero911Card(double w) {
     return Container(
@@ -749,123 +862,7 @@ class _EmergencyScreenState extends State<EmergencyBody>
               children: [
                 Row(
                   children: [
-                    SizedBox(
-                      width: w * .26,
-                      height: w * .26,
-                      child: Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          AnimatedBuilder(
-                            animation: _pulseCtrl,
-                            builder: (_, _) => Transform.scale(
-                              scale: _pulseScale.value,
-                              child: Container(
-                                width: w * .18,
-                                height: w * .18,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: Colors.white.withValues(
-                                      alpha: _pulseOpacity.value * .6,
-                                    ),
-                                    width: 1.5,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                          AnimatedBuilder(
-                            animation: _pulseCtrl,
-                            builder: (_, _) {
-                              final t = (_pulseCtrl.value + 0.5) % 1.0;
-                              final scale = 0.85 + t * 0.75;
-                              final opacity = (0.55 * (1.0 - t)).clamp(
-                                0.0,
-                                1.0,
-                              );
-                              return Transform.scale(
-                                scale: scale,
-                                child: Container(
-                                  width: w * .18,
-                                  height: w * .18,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: Colors.white.withValues(
-                                      alpha: opacity * 0.12,
-                                    ),
-                                    border: Border.all(
-                                      color: Colors.white.withValues(
-                                        alpha: opacity * 0.4,
-                                      ),
-                                      width: 1.2,
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                          AnimatedBuilder(
-                            animation: _breatheCtrl,
-                            builder: (_, child) => Transform.scale(
-                              scale: _breatheScale.value,
-                              child: Container(
-                                width: w * .17,
-                                height: w * .17,
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  shape: BoxShape.circle,
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.white.withValues(
-                                        alpha: .45,
-                                      ),
-                                      blurRadius: _breatheGlow.value,
-                                      spreadRadius: _breatheGlow.value * 0.3,
-                                    ),
-                                    BoxShadow(
-                                      color: Colors.black.withValues(
-                                        alpha: .22,
-                                      ),
-                                      blurRadius: 14,
-                                      offset: const Offset(0, 5),
-                                    ),
-                                  ],
-                                ),
-                                child: child,
-                              ),
-                            ),
-                            child: Center(
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    '911',
-                                    style: TextStyle(
-                                      fontSize: w * .046,
-                                      fontWeight: FontWeight.w900,
-                                      color: AppColors.red,
-                                      letterSpacing: -1.5,
-                                      height: 1.0,
-                                    ),
-                                  ),
-                                  Text(
-                                    'CALL',
-                                    style: TextStyle(
-                                      fontSize: w * .018,
-                                      fontWeight: FontWeight.w800,
-                                      color: AppColors.red.withValues(
-                                        alpha: .6,
-                                      ),
-                                      letterSpacing: 1.5,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                    _badge911(w * .26),
                     SizedBox(width: w * .024),
                     Expanded(
                       child: Column(
@@ -913,6 +910,171 @@ class _EmergencyScreenState extends State<EmergencyBody>
     );
   }
 
+  // ── 911 hero — WEB ────────────────────────────────────────────────────────
+  //
+  // The phone hero is a TALL CARD: badge and title on one row, the call control
+  // on a second, everything a fraction of a ~380 scale. Centred at 720 inside a
+  // 1080 page that was ~200px of red carrying about six words, sitting narrower
+  // than the service grid beneath it — so the page had two different measures
+  // and its loudest element was also its emptiest.
+  //
+  // On the web it becomes a BAND instead: full content width so the page reads
+  // as one column, and short, because the height was never carrying anything.
+  // The control moves up onto the same row as the badge and the title, which is
+  // what removes the empty half.
+  //
+  // Three shapes, by available width — this reads the LayoutBuilder's own
+  // constraint, not MediaQuery, so it is the shell's centre column that decides
+  // and the page behaves the same embedded or not:
+  //
+  //   >= 960  band + the oversized 911 watermark that fills the gap the button
+  //           and the title leave between them on a wide monitor. 960, because
+  //           the shell hands this page a ~1032 centre column on an ordinary
+  //           desktop and the page spends 48 of that on its own padding — a
+  //           threshold set off the WINDOW width would never fire here. Below
+  //           it the title has to wrap to make room, which is worse than not
+  //           having the watermark;
+  //   >= 720  band, no watermark — the gap is not there to fill;
+  //    < 720  stacked, which is the phone's shape and the right one for a
+  //           narrow window.
+  //
+  // A viewport that CAN dial is always stacked whatever its width: there the
+  // control is the slide-to-call track, and a track you cannot slide the full
+  // width of is not the affordance it is pretending to be.
+  Widget _hero911CardWeb() {
+    return LayoutBuilder(
+      builder: (context, c) {
+        final width = c.maxWidth;
+        final dialable = canPlaceCalls(context);
+        final band = width >= 720 && !dialable;
+        final watermark = band && width >= 960;
+        final badgeBox = band ? 104.0 : 92.0;
+        final roomy = width >= 900;
+        final pad = band ? 26.0 : 22.0;
+
+        final title = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'National Emergency Hotline',
+              style: TextStyle(
+                fontSize: band && roomy ? 25 : 22,
+                fontWeight: FontWeight.w900,
+                color: Colors.white,
+                height: 1.15,
+                letterSpacing: -.6,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                _pill(Icons.local_police_rounded, 'Police', scale: 1.25),
+                _pill(Icons.local_fire_department_rounded, 'Fire', scale: 1.25),
+                _pill(Icons.local_hospital_rounded, 'Medical', scale: 1.25),
+              ],
+            ),
+          ],
+        );
+
+        final action = dialable
+            ? _Slider911(onTriggered: () => _call('911'))
+            : _Copy911Web(onTap: () => _copyNumber('911'));
+
+        return Container(
+          decoration: BoxDecoration(
+            // Swept along the LONG axis. The phone's topLeft→bottomRight
+            // diagonal is right for a card that is taller than it is wide; on a
+            // 1000x150 band it crams the whole gradient into the corners and
+            // leaves the middle one flat red — which is most of what read as
+            // dull here.
+            gradient: const LinearGradient(
+              colors: [Color(0xFFE53935), Color(0xFFC62828), Color(0xFFB71C1C)],
+              stops: [0, .55, 1],
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+            ),
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.red.withValues(alpha: .32),
+                blurRadius: 26,
+                offset: const Offset(0, 10),
+                spreadRadius: -8,
+              ),
+            ],
+          ),
+          // Clipped so the decorative circles can hang off the edges without
+          // squaring the corners off.
+          clipBehavior: Clip.antiAlias,
+          child: Stack(
+            children: [
+              Positioned(right: -40, top: -70, child: _glassCircle(200)),
+              Positioned(
+                left: badgeBox * .6,
+                bottom: -60,
+                child: _glassCircle(120, alpha: .04),
+              ),
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: pad, vertical: pad),
+                child: band
+                    ? Row(
+                        children: [
+                          _badge911(badgeBox),
+                          const SizedBox(width: 22),
+                          // Expanded, never intrinsic: at a 720 pane the title
+                          // wants ~330px and only ~270 are left over once the
+                          // badge and the button have taken theirs, so an
+                          // unconstrained Text here overflows the band. Inside
+                          // it, spaceBetween parks the watermark against the
+                          // button's gutter, and the Flexible title is the one
+                          // that gives way if anything has to.
+                          Expanded(
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Flexible(child: title),
+                                if (watermark) const _Watermark911(),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 24),
+                          SizedBox(width: 268, child: action),
+                        ],
+                      )
+                    : Column(
+                        children: [
+                          Row(
+                            children: [
+                              _badge911(badgeBox),
+                              const SizedBox(width: 18),
+                              Expanded(child: title),
+                            ],
+                          ),
+                          const SizedBox(height: 20),
+                          action,
+                        ],
+                      ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// One of the faint white discs behind the band. Pure decoration.
+  Widget _glassCircle(double size, {double alpha = .06}) => Container(
+    width: size,
+    height: size,
+    decoration: BoxDecoration(
+      shape: BoxShape.circle,
+      color: Colors.white.withValues(alpha: alpha),
+    ),
+  );
+
   /// Shown only where a call cannot be placed — a desktop browser.
   ///
   /// It used to read "In an emergency, call 911" and then copy to the
@@ -957,10 +1119,13 @@ class _EmergencyScreenState extends State<EmergencyBody>
     );
   }
 
-  // ORIGINAL pill
-  Widget _pill(IconData icon, String label) {
+  // ORIGINAL pill. [scale] is 1 everywhere the phone draws it, so the app is
+  // byte-for-byte what it was; the web band asks for a slightly larger one,
+  // because 10px type reads as a footnote on a monitor and these three words
+  // are what tell you WHICH emergencies this number is for.
+  Widget _pill(IconData icon, String label, {double scale = 1}) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: EdgeInsets.symmetric(horizontal: 8 * scale, vertical: 4 * scale),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: .18),
         borderRadius: BorderRadius.circular(20),
@@ -969,12 +1134,16 @@ class _EmergencyScreenState extends State<EmergencyBody>
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 10, color: Colors.white.withValues(alpha: .9)),
-          const SizedBox(width: 4),
+          Icon(
+            icon,
+            size: 10 * scale,
+            color: Colors.white.withValues(alpha: .9),
+          ),
+          SizedBox(width: 4 * scale),
           Text(
             label,
             style: TextStyle(
-              fontSize: 10,
+              fontSize: 10 * scale,
               fontWeight: FontWeight.w700,
               color: Colors.white.withValues(alpha: .9),
             ),
@@ -1150,6 +1319,98 @@ class _EmergencyScreenState extends State<EmergencyBody>
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Web-only pieces of the 911 band
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// The oversized, near-transparent 911 set into the band's slack.
+///
+/// A wide band leaves a gap between the title and the button that is too small
+/// to put anything real in and too large to read as deliberate. Filling it with
+/// the number the whole band is about costs nothing, says nothing new, and is
+/// the difference between a considered banner and a wide red rectangle.
+class _Watermark911 extends StatelessWidget {
+  const _Watermark911();
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      '911',
+      style: TextStyle(
+        fontSize: 74,
+        fontWeight: FontWeight.w900,
+        height: 1,
+        letterSpacing: -4,
+        color: Colors.white.withValues(alpha: .10),
+      ),
+    );
+  }
+}
+
+/// The copy-the-number control, for the browsers that cannot dial.
+///
+/// Same contract as the phone's [_EmergencyScreenState._copy911Button]: it
+/// names only what it actually does, and it puts the number on screen so the
+/// fallback is to READ it if the clipboard is unavailable. Two web-specific
+/// differences — it says "click", because this control only ever appears on a
+/// machine with no touch and no dialer, and it lifts on hover, because on the
+/// web a thing that does something on click should look like it will.
+class _Copy911Web extends StatefulWidget {
+  final VoidCallback onTap;
+  const _Copy911Web({required this.onTap});
+
+  @override
+  State<_Copy911Web> createState() => _Copy911WebState();
+}
+
+class _Copy911WebState extends State<_Copy911Web> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          height: 54,
+          transform: Matrix4.translationValues(0, _hover ? -2 : 0, 0),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(27),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: _hover ? .22 : .14),
+                blurRadius: _hover ? 18 : 12,
+                offset: Offset(0, _hover ? 7 : 4),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.copy_rounded, size: 17, color: AppColors.red),
+              const SizedBox(width: 9),
+              Text(
+                'Dial 911 · click to copy',
+                style: TextStyle(
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.red,
+                  letterSpacing: -.2,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
