@@ -60,6 +60,16 @@ class AuthService {
     String password,
   ) async {
     final cleanUsername = username.trim();
+    // DO NOT REMOVE THIS .trim() (audit F-12).
+    //
+    // It is not ideal — it silently strips leading/trailing whitespace and so
+    // slightly shrinks the password space. But signup trims too
+    // (signup_screen.dart, _submitSignup), so any account created through the
+    // app has a TRIMMED password stored in GoTrue. Dropping the trim here would
+    // send the untrimmed string and lock out every existing user whose password
+    // has surrounding whitespace. Changing this safely means changing signup and
+    // login together AND migrating existing credentials — which cannot be done,
+    // because the stored bcrypt hashes are one-way. Treat it as permanent.
     final cleanPassword = password.trim();
 
     if (cleanUsername.isEmpty || cleanPassword.isEmpty) {
@@ -162,28 +172,19 @@ class AuthService {
           "immediately.$offBy Turn on automatic date and time, then try again.";
     }
 
-    // Step 3 — block deactivated accounts. The admin console can soft-deactivate
-    // an account (profiles.is_deactivated); the credentials still work, so
-    // without this check the sign-in above succeeds and the user gets a live
-    // session. Read the flag on the just-authenticated row (read-own RLS); a
-    // read failure is treated as "not deactivated" so it can't hard-block a
-    // legitimate login.
-    bool deactivated = false;
-    try {
-      final profile = await _client
-          .from('profiles')
-          .select('is_deactivated')
-          .eq('id', userId)
-          .maybeSingle();
-      deactivated = (profile?['is_deactivated'] as bool?) ?? false;
-    } catch (_) {
-      deactivated = false;
-    }
-    if (deactivated) {
-      // Drop the session we just created, then reject the login.
-      await _client.auth.signOut();
-      throw 'This account has been deactivated. Please contact the LGU to restore access.';
-    }
+    // Step 3 — deactivation is gated SERVER-SIDE and is not re-checked here.
+    //
+    // Removed 2026-08-23 (audit F-13). This used to re-read
+    // profiles.is_deactivated and treat a read error as "not deactivated".
+    // It was dead code and weaker than the real gate:
+    //   * username-login already answers 403 for a deactivated account and
+    //     revokes the session it minted, so a deactivated user never reaches
+    //     this line with a session at all — the 403 is handled above.
+    //   * that gate FAILS CLOSED (an unreadable flag returns 500 and revokes);
+    //     this copy failed OPEN, so keeping it around implied a protection it
+    //     did not provide.
+    // It also cost an extra round-trip on every single successful login.
+    // Do not reinstate a client-side copy: the server decides.
 
     // Step 4 — fetch role_id (null = unverified citizen)
     final roleData = await _client

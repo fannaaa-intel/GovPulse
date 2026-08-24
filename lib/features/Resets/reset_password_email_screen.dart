@@ -114,7 +114,7 @@ class _ResetPasswordEmailScreenState extends State<ResetPasswordEmailScreen>
         final msg =
             data["message"] as String? ??
             data["error"] as String? ??
-            "Email not registered. Please try again.";
+            "Something went wrong. Please try again.";
         if (!mounted) return;
         setState(() {
           showError = true;
@@ -141,8 +141,12 @@ class _ResetPasswordEmailScreenState extends State<ResetPasswordEmailScreen>
         lower.contains("connection")) {
       return "Network error. Please check your internet connection and try again.";
     }
+    // NOTE: reset-send-otp no longer reveals whether an address is registered
+    // (anti-enumeration, audit 2026-08-23), so this branch is effectively dead.
+    // Kept defensively, but it must NOT assert non-registration — that would
+    // reintroduce the oracle in the UI.
     if (lower.contains("not registered") || lower.contains("not found")) {
-      return "Email not registered. Please check and try again.";
+      return "We couldn't send a code. Please check the address and try again.";
     }
     if (lower.contains("too many") || lower.contains("rate limit")) {
       return "Too many attempts. Please wait a moment and try again.";
@@ -323,7 +327,7 @@ class _ResetPasswordEmailScreenState extends State<ResetPasswordEmailScreen>
                                           if (response.statusCode != 200 ||
                                               !(data["success"] ?? false)) {
                                             throw (data["message"] ??
-                                                    "Email not registered")
+                                                    "Couldn't send the code. Please try again.")
                                                 .toString();
                                           }
                                         },
@@ -356,7 +360,7 @@ class _ResetPasswordEmailScreenState extends State<ResetPasswordEmailScreen>
                                       showError = true;
                                       errorText =
                                           result?["error"] ??
-                                          "Email not registered";
+                                          "Couldn't send the code. Please try again.";
                                     });
                                   }
                                 }
