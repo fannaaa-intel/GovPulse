@@ -83,9 +83,38 @@ const double kAccountRadius = 14;
 /// Side of the compact [AccountBackLink] chevron, and the gap after it.
 ///
 /// Public because [AccountPageTitle] indents its subtitle by exactly these to
-/// sit under the title rather than under the chevron.
+/// sit under the title rather than under the chevron — but only in the compact
+/// shape. Prefer [AccountHeaderIndent] over doing that arithmetic at a call
+/// site: above [kAccountBackLabelAbove] the correct indent is zero.
 const double kAccountBackChevron = 36;
 const double kAccountBackChevronGap = 14;
+
+/// At or above this CONTENT width the back control NAMES its destination and
+/// takes its own line above the title. Below it, it stays the bare chevron
+/// sitting level with the title.
+///
+/// ── Why a labelled link, and why only when there is room ─────────────────
+/// The compact chevron says only "back". WHERE it goes is written in the
+/// Semantics label — 'Back to My Submissions' — which reaches precisely the
+/// audience that cannot see it. On a phone-width pane that is a fair trade:
+/// there is one plausible destination, and a line of vertical space is worth
+/// more than the words. On a desktop pane it is not. There is room to say it,
+/// and a record detail reachable from two different lists — My Submissions and
+/// My Reports — is exactly the case where "back" alone is ambiguous.
+///
+/// Moving it onto its own line is what makes the labelled shape work. Level
+/// with the title, a ~210px control would shove a 24px heading into the middle
+/// of the header and drag the subtitle's indent out with it. Above the title it
+/// reads as the breadcrumb it is — and because nothing then has to be indented
+/// past it, the title, the subtitle and the pills all line up with the left
+/// edge of the cards below, which the indented shape never did.
+///
+/// 560, not [kAccountStackBelow]: this is not a question about columns. It is
+/// where the link plus the title stops feeling cramped, and it keeps the
+/// labelled shape on the ~730 content box the shell hands a detail page — a
+/// threshold at 720 would sit one rounding away from flipping between the two
+/// shapes there.
+const double kAccountBackLabelAbove = 560;
 
 // ════════════════════════════════════════════════════════════════════════════
 //  Page scaffold
@@ -195,43 +224,113 @@ class AccountPageTitle extends StatelessWidget {
       ),
     );
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 22),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ── The chevron shares the TITLE's row, not the whole block's ─────
-          //
-          // Centring it against title-plus-subtitle would park it between the
-          // two lines, attached to neither. Centring it on the title line alone
-          // is also the only version that survives a text-scale change: there
-          // is no hand-computed offset here to go stale when the user's browser
-          // font size is not 100%.
-          if (onBack == null)
-            titleText
-          else
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
+    if (onBack == null) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 22),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [titleText, const SizedBox(height: 4), subtitleText],
+        ),
+      );
+    }
+
+    // The shape is read off the CONTENT BOX through a LayoutBuilder — the same
+    // rule as [AccountPageBody]'s `stack` flag, and for the same reason: inside
+    // the shell the MediaQuery this page sees describes the centre column,
+    // which is two layers of indirection away from the box this header is
+    // actually given.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final labelled = constraints.maxWidth >= kAccountBackLabelAbove;
+
+        // Breadcrumb shape. Nothing is indented: the link sits above the block
+        // rather than beside it, so the title, the subtitle and whatever the
+        // caller hangs underneath all start at the page's left edge.
+        if (labelled) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 22),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                AccountBackLink(label: backLabel, onTap: onBack!),
-                const SizedBox(width: kAccountBackChevronGap),
-                Expanded(child: titleText),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: AccountBackLink(
+                    label: backLabel,
+                    onTap: onBack!,
+                    showLabel: true,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                titleText,
+                const SizedBox(height: 4),
+                subtitleText,
               ],
             ),
-          const SizedBox(height: 4),
-          // Indented by exactly the chevron and its gap, so the subtitle starts
-          // under the TITLE. Left at the page edge it would sit under the
-          // chevron and read as a caption for the button.
-          if (onBack == null)
-            subtitleText
-          else
-            Padding(
-              padding: const EdgeInsets.only(
-                left: kAccountBackChevron + kAccountBackChevronGap,
+          );
+        }
+
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 22),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ── The chevron shares the TITLE's row, not the whole block's ──
+              //
+              // Centring it against title-plus-subtitle would park it between
+              // the two lines, attached to neither. Centring it on the title
+              // line alone is also the only version that survives a text-scale
+              // change: there is no hand-computed offset here to go stale when
+              // the user's browser font size is not 100%.
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  AccountBackLink(label: backLabel, onTap: onBack!),
+                  const SizedBox(width: kAccountBackChevronGap),
+                  Expanded(child: titleText),
+                ],
               ),
-              child: subtitleText,
-            ),
-        ],
+              const SizedBox(height: 4),
+              // Indented by exactly the chevron and its gap, so the subtitle
+              // starts under the TITLE. Left at the page edge it would sit
+              // under the chevron and read as a caption for the button.
+              Padding(
+                padding: const EdgeInsets.only(
+                  left: kAccountBackChevron + kAccountBackChevronGap,
+                ),
+                child: subtitleText,
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Indents [child] to line up with the title of the [AccountPageTitle] above
+/// it, whichever shape that title took.
+///
+/// Call sites used to write `EdgeInsets.only(left: kAccountBackChevron +
+/// kAccountBackChevronGap)` by hand for the row of pills under a header. That
+/// is only right while the back control sits BESIDE the title; at
+/// [kAccountBackLabelAbove] and up it sits above it and the correct indent is
+/// zero. This measures the same box the title measured, so the two cannot
+/// disagree — which by hand they immediately would have.
+class AccountHeaderIndent extends StatelessWidget {
+  final Widget child;
+
+  const AccountHeaderIndent({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) => Padding(
+        padding: EdgeInsets.only(
+          left: constraints.maxWidth >= kAccountBackLabelAbove
+              ? 0
+              : kAccountBackChevron + kAccountBackChevronGap,
+        ),
+        child: child,
       ),
     );
   }
@@ -250,47 +349,120 @@ class AccountPageTitle extends StatelessWidget {
 /// reads Settings and browser Back leaves the account area rather than closing
 /// the page. Without this they are a room with no door.
 ///
-/// ── Why it carries no visible label ──────────────────────────────────────
-/// Because it never stands alone: [AccountPageTitle] is its only caller, and
-/// the page's own name sits immediately to its right. A label here would be a
-/// second heading on the same line. [label] still names the destination for
-/// screen readers, which is the one audience that cannot see the title beside
-/// it.
+/// ── Two shapes ───────────────────────────────────────────────────────────
+/// [showLabel] false is the compact chevron: a bare square, because it never
+/// stands alone — the page's own name sits immediately to its right, and a
+/// label there would be a second heading on the same line. [label] still names
+/// the destination for screen readers, which is the one audience that cannot
+/// see the title beside it.
 ///
-/// The submission detail views deliberately do NOT use this. They keep the
-/// app's collapsing hero, chevron and all, so that one screen looks the same
-/// in the browser as it does in the phone.
-class AccountBackLink extends StatelessWidget {
-  /// Names the destination for screen readers, e.g. 'Back to Settings'.
+/// [showLabel] true is the same control with the destination written on it, for
+/// the breadcrumb position above the title. [AccountPageTitle] picks between
+/// them by content width — see [kAccountBackLabelAbove] for why.
+///
+/// Either way it responds to the pointer. A bordered box on a web page that
+/// does nothing under the cursor reads as a static badge, and this one is the
+/// way out of the page.
+class AccountBackLink extends StatefulWidget {
+  /// Names the destination, e.g. 'Back to My Submissions'. Read aloud by screen
+  /// readers in both shapes, and printed on the control in the labelled one —
+  /// so write it as the words a reader should SEE, not as an aside.
   final String label;
 
   final VoidCallback onTap;
 
-  const AccountBackLink({super.key, required this.label, required this.onTap});
+  /// Writes [label] on the control. Set by [AccountPageTitle] from the content
+  /// width; see [kAccountBackLabelAbove].
+  final bool showLabel;
+
+  const AccountBackLink({
+    super.key,
+    required this.label,
+    required this.onTap,
+    this.showLabel = false,
+  });
+
+  @override
+  State<AccountBackLink> createState() => _AccountBackLinkState();
+}
+
+class _AccountBackLinkState extends State<AccountBackLink> {
+  bool _hover = false;
 
   @override
   Widget build(BuildContext context) {
+    final radius = BorderRadius.circular(CitizenUi.controlRadius);
+    final icon = Icon(
+      Icons.arrow_back_rounded,
+      size: widget.showLabel ? 17 : 18,
+      color: _hover ? CitizenUi.accent : CitizenUi.textSecondary,
+    );
+
     return Semantics(
       button: true,
-      label: label,
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(CitizenUi.controlRadius),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(CitizenUi.controlRadius),
-          child: Container(
-            width: kAccountBackChevron,
-            height: kAccountBackChevron,
-            decoration: BoxDecoration(
-              color: CitizenUi.surface,
-              borderRadius: BorderRadius.circular(CitizenUi.controlRadius),
-              border: Border.all(color: CitizenUi.border),
-            ),
-            child: const Icon(
-              Icons.arrow_back_rounded,
-              size: 18,
-              color: CitizenUi.textSecondary,
+      label: widget.label,
+      // The label is already spoken by Semantics above; excluding the visible
+      // copy stops a screen reader announcing the destination twice.
+      excludeSemantics: true,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hover = true),
+        onExit: (_) => setState(() => _hover = false),
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: radius,
+          child: InkWell(
+            onTap: widget.onTap,
+            borderRadius: radius,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 130),
+              height: kAccountBackChevron,
+              // Square when it is only a chevron; sized to its words otherwise.
+              width: widget.showLabel ? null : kAccountBackChevron,
+              padding: widget.showLabel
+                  ? const EdgeInsets.symmetric(horizontal: 13)
+                  : null,
+              // No `alignment` here, deliberately: a Container given one
+              // EXPANDS to its parent's bounded width, which turned the
+              // labelled link into a full-width bar the first time round. The
+              // Row's mainAxisSize.min sizes it to its words instead, and a
+              // bare Icon centres its own glyph in the square.
+              decoration: BoxDecoration(
+                // Hover TINTS rather than shades. Two greyer variants were
+                // tried first — `subtle` as the fill, then a firmer border and
+                // a drop shadow — and both were invisible in a screenshot at
+                // 1x, which is the size a reader actually sees this at. A
+                // white control on a grey page going greyer also reads as
+                // being disabled, which is the opposite of the message. The
+                // accent wash says "navigation", which is what this is.
+                color: _hover ? CitizenUi.accentWash : CitizenUi.surface,
+                borderRadius: radius,
+                border: Border.all(
+                  color: _hover
+                      ? CitizenUi.accent.withValues(alpha: .35)
+                      : CitizenUi.border,
+                ),
+              ),
+              child: widget.showLabel
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        icon,
+                        const SizedBox(width: 8),
+                        Text(
+                          widget.label,
+                          style: TextStyle(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w600,
+                            color: _hover
+                                ? CitizenUi.accent
+                                : CitizenUi.textSecondary,
+                            letterSpacing: -0.1,
+                          ),
+                        ),
+                      ],
+                    )
+                  : icon,
             ),
           ),
         ),

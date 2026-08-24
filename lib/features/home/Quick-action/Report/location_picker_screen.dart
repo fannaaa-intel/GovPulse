@@ -1304,14 +1304,10 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
                             onBack: _close,
                             backLabel: 'Back to report details',
                           ),
-                          Padding(
-                            // Indented past the chevron to the title's left
-                            // edge, exactly as the detail page indents its
-                            // status pills, so the two headers line up.
-                            padding: const EdgeInsets.only(
-                              left:
-                                  kAccountBackChevron + kAccountBackChevronGap,
-                            ),
+                          AccountHeaderIndent(
+                            // Lines up with the title's left edge, exactly as
+                            // the detail page places its status pills, so the
+                            // two headers agree.
                             child: _webViewOnlyPill(),
                           ),
                           const SizedBox(height: kAccountSectionGap),

@@ -735,12 +735,10 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
                   onBack: () => Navigator.pop(context),
                   backLabel: 'Back',
                 ),
-                Padding(
-                  // Indented past the chevron to the title's left edge, so the
-                  // header reads as one block.
-                  padding: const EdgeInsets.only(
-                    left: kAccountBackChevron + kAccountBackChevronGap,
-                  ),
+                AccountHeaderIndent(
+                  // Lines up with the title's left edge, so the header reads as
+                  // one block — whether the back control is sitting beside the
+                  // title or on its own line above it.
                   child: Wrap(
                     spacing: 8,
                     runSpacing: 8,

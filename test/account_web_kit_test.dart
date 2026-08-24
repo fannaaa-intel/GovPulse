@@ -777,7 +777,38 @@ void main() {
   });
 
   group('page title back chevron', () {
-    testWidgets('rides level with the title, not above it', (tester) async {
+    testWidgets('rides level with the title on a narrow page', (tester) async {
+      // 500 gives a ~460 content box — under kAccountBackLabelAbove, so this is
+      // the compact shape.
+      await _pumpAt(
+        tester,
+        500,
+        AccountPageBody(
+          builder: (_, _) => AccountPageTitle(
+            title: 'Privacy Policy',
+            subtitle: 'How GovPulse protects your information.',
+            onBack: () {},
+            backLabel: 'Back to Settings',
+          ),
+        ),
+      );
+
+      // No visible words here: the title is right beside it, and a label would
+      // be a second heading on the same line.
+      expect(find.text('Back to Settings'), findsNothing);
+
+      final chevron = tester.getRect(find.byIcon(Icons.arrow_back_rounded));
+      final title = tester.getRect(find.text('Privacy Policy'));
+
+      // Level, not stacked: on its own line a BARE chevron reads as a stray
+      // control sitting above a page. Beside the title it reads as one header.
+      expect(chevron.center.dy, closeTo(title.center.dy, 2.0));
+      expect(chevron.right, lessThanOrEqualTo(title.left));
+    });
+
+    testWidgets('names its destination above the title on a wide page', (
+      tester,
+    ) async {
       await _pumpAt(
         tester,
         1200,
@@ -791,13 +822,79 @@ void main() {
         ),
       );
 
-      final chevron = tester.getRect(find.byIcon(Icons.arrow_back_rounded));
-      final title = tester.getRect(find.text('Privacy Policy'));
+      // Where it goes is the whole point of the wide shape: on a desktop pane
+      // there is room to say it, and a detail page reachable from two different
+      // lists is exactly where "back" alone is ambiguous.
+      expect(find.text('Back to Settings'), findsOneWidget);
 
-      // Level, not stacked: on its own line the chevron read as a stray control
-      // sitting above a page. Beside the title it reads as one header.
-      expect(chevron.center.dy, closeTo(title.center.dy, 2.0));
-      expect(chevron.right, lessThanOrEqualTo(title.left));
+      final back = tester.getRect(find.byType(AccountBackLink));
+      final title = tester.getRect(find.text('Privacy Policy'));
+      final subtitle = tester.getRect(
+        find.text('How GovPulse protects your information.'),
+      );
+
+      // Above, not beside — a ~210px control level with the heading would shove
+      // it into the middle of the header.
+      expect(back.bottom, lessThanOrEqualTo(title.top));
+      // And nothing is indented past it any more, so the header's three lines
+      // share one left edge.
+      expect(title.left, closeTo(back.left, 0.5));
+      expect(subtitle.left, closeTo(back.left, 0.5));
+    });
+
+    testWidgets('the wide shape lines pills up with the title', (tester) async {
+      await _pumpAt(
+        tester,
+        1200,
+        AccountPageBody(
+          builder: (_, _) => Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AccountPageTitle(
+                title: 'Privacy Policy',
+                subtitle: 'Subtitle',
+                onBack: () {},
+                backLabel: 'Back to Settings',
+              ),
+              const AccountHeaderIndent(child: Text('Pending')),
+            ],
+          ),
+        ),
+      );
+
+      // AccountHeaderIndent has to agree with the title about which shape is on
+      // screen. Hand-written `kAccountBackChevron + kAccountBackChevronGap`
+      // padding at a call site would be 50px wrong here.
+      final title = tester.getRect(find.text('Privacy Policy'));
+      final pill = tester.getRect(find.text('Pending'));
+      expect(pill.left, closeTo(title.left, 0.5));
+    });
+
+    testWidgets('the compact shape indents pills to the title', (tester) async {
+      await _pumpAt(
+        tester,
+        500,
+        AccountPageBody(
+          builder: (_, _) => Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AccountPageTitle(
+                title: 'Privacy Policy',
+                subtitle: 'Subtitle',
+                onBack: () {},
+                backLabel: 'Back to Settings',
+              ),
+              const AccountHeaderIndent(child: Text('Pending')),
+            ],
+          ),
+        ),
+      );
+
+      // Same rule, the other way round: here the title IS indented past the
+      // chevron, so the pills have to be too.
+      final title = tester.getRect(find.text('Privacy Policy'));
+      final pill = tester.getRect(find.text('Pending'));
+      expect(pill.left, closeTo(title.left, 0.5));
     });
 
     testWidgets('the chevron takes over the page left edge', (tester) async {

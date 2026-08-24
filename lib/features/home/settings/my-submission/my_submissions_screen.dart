@@ -2920,13 +2920,10 @@ class _DetailScaffoldState extends State<_DetailScaffold>
                 backLabel: 'Back to My Submissions',
               ),
               if (widget.pills.isNotEmpty)
-                Padding(
-                  // Indented to the title's left edge, past the chevron, so
-                  // the header reads as one block rather than as a heading
-                  // with a stray row of pills beneath it.
-                  padding: const EdgeInsets.only(
-                    left: kAccountBackChevron + kAccountBackChevronGap,
-                  ),
+                AccountHeaderIndent(
+                  // Lines up with the title's left edge, so the header reads as
+                  // one block rather than as a heading with a stray row of
+                  // pills beneath it.
                   child: Wrap(
                     spacing: 8,
                     runSpacing: 8,
