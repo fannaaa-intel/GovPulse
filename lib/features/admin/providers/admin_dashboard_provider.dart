@@ -418,26 +418,30 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
   }
 
   Future<AdminDashboardData> _fetch() async {
-    // Independent reads run concurrently.
+    // Independent reads run concurrently. The pending-verification count is
+    // started here but awaited below so it overlaps the row reads: it is an
+    // int, not rows, so it cannot ride in the same Future.wait.
+    final pendingVerificationFuture = _countPendingVerifications();
     final results = await Future.wait<List<Map<String, dynamic>>>([
       _selectReports(),
-      _selectPendingVerifications(),
       _selectRecentVerifications(),
       _selectFeedbacks(),
       _selectSuggestions(),
     ]);
+    final pendingVerification = await pendingVerificationFuture;
 
     // Dismissed (spam / nonsense) rows are excluded from every metric and the
-    // AI forecast. Rows fetched before the spam_moderation migration simply lack
-    // the column (null), so they are all treated as active.
+    // AI forecast. The selects now ask PostgREST to exclude them, so this is a
+    // no-op safety net for the degraded column sets that have no dismissed_at
+    // column at all — there, the key is simply absent and every row is active,
+    // which is the same answer the filter would give.
     final reportRows =
         results[0].where((r) => r['dismissed_at'] == null).toList();
-    final pendingRows = results[1];
-    final recentVerifRows = results[2];
+    final recentVerifRows = results[1];
     final feedbackRows =
-        results[3].where((r) => r['dismissed_at'] == null).toList();
+        results[2].where((r) => r['dismissed_at'] == null).toList();
     final suggestionRows =
-        results[4].where((r) => r['dismissed_at'] == null).toList();
+        results[3].where((r) => r['dismissed_at'] == null).toList();
 
     // AI recommendations are optional (function may not be deployed) and must
     // never break the dashboard — fetched separately and guarded.
@@ -494,7 +498,7 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
       totalReports: totalReports,
       reportsThisWeek: reportsThisWeek,
       reportsWeekDeltaPct: reportsWeekDeltaPct,
-      pendingVerification: pendingRows.length,
+      pendingVerification: pendingVerification,
       resolutionRate: resolutionRate,
       resolutionRateDeltaPts: resolutionRateDeltaPts,
       statusCounts: statusCounts,
@@ -524,10 +528,15 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
       baseCols,
     ]) {
       try {
-        final res = await _db
-            .from('reports')
-            .select(cols)
-            .order('created_at', ascending: false);
+        // Drop dismissed (spam / nonsense) rows in PostgREST rather than
+        // downloading them and discarding them on the client. Only the column
+        // sets that actually have the column can filter on it; the degraded
+        // sets have nothing to dismiss, so they are already equivalent.
+        var q = _db.from('reports').select(cols);
+        if (cols.contains('dismissed_at')) {
+          q = q.isFilter('dismissed_at', null);
+        }
+        final res = await q.order('created_at', ascending: false);
         return List<Map<String, dynamic>>.from(res);
       } catch (_) {
         // Column set unavailable — fall through to the next, smaller one.
@@ -536,12 +545,25 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
     return const [];
   }
 
-  Future<List<Map<String, dynamic>>> _selectPendingVerifications() async {
-    final res = await _db
-        .from('verification_submissions')
-        .select('id')
-        .eq('status', 'pending');
-    return List<Map<String, dynamic>>.from(res);
+  /// How many verification submissions are awaiting review.
+  ///
+  /// The dashboard only ever showed `.length` of this, but used to download an
+  /// id row for every pending submission to get it (audit 2026-08-24, CL-1) —
+  /// on a poll tick every 30s, for every open admin tab. `from().count()` is a
+  /// HEAD request: PostgREST answers from the Content-Range header and sends no
+  /// rows at all, so this is constant-size regardless of the backlog.
+  ///
+  /// Guarded like the other reads: a failed count degrades the tile to 0 rather
+  /// than taking the whole dashboard down.
+  Future<int> _countPendingVerifications() async {
+    try {
+      return await _db
+          .from('verification_submissions')
+          .count(CountOption.exact)
+          .eq('status', 'pending');
+    } catch (_) {
+      return 0;
+    }
   }
 
   /// Citizen suggestions — what people are *asking for*, as opposed to what
@@ -556,7 +578,12 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
     const baseCols = 'id, category, category_other, barangay, created_at';
     for (final cols in ['$baseCols, dismissed_at', baseCols]) {
       try {
-        final res = await _db.from('suggestions').select(cols);
+        // Dismissed rows filtered server-side; see _selectReports.
+        var q = _db.from('suggestions').select(cols);
+        if (cols.contains('dismissed_at')) {
+          q = q.isFilter('dismissed_at', null);
+        }
+        final res = await q;
         return List<Map<String, dynamic>>.from(res);
       } catch (_) {
         // Column set unavailable — fall through to the next, smaller one.
@@ -684,7 +711,12 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
       baseCols,
     ]) {
       try {
-        final res = await _db.from('feedbacks').select(cols);
+        // Dismissed rows filtered server-side; see _selectReports.
+        var q = _db.from('feedbacks').select(cols);
+        if (cols.contains('dismissed_at')) {
+          q = q.isFilter('dismissed_at', null);
+        }
+        final res = await q;
         return List<Map<String, dynamic>>.from(res);
       } catch (_) {
         // Column set unavailable — fall through to the next, smaller one.
