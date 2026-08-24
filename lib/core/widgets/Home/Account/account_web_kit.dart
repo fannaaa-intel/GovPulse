@@ -71,6 +71,19 @@ const double kAccountMaxWidth = 880;
 /// by the width of the left rail, and the page only ever gets the former.
 const double kAccountStackBelow = 720;
 
+/// Gutter between the content band and the edge of the page.
+///
+/// Paired with [kAccountMaxWidth] this is what fixes the CONTENT measure: 880
+/// less two 32s is 816, and 816 is the number every citizen record page is
+/// meant to land on — the lists and the detail pages both. Tapping a card used
+/// to change it (My Reports 1112 → detail 722, My Submissions 816 → detail
+/// 722), so the page appeared to shrink around the record you had just opened.
+///
+/// The tight value is for panes below [kAccountStackBelow], where 32 a side is
+/// a tenth of the screen.
+const double kAccountPageGutter = 32;
+const double kAccountPageGutterTight = 20;
+
 /// Gap between columns in a row, and between rows.
 const double kAccountGap = 18;
 
@@ -140,7 +153,7 @@ class AccountPageBody extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final stack = constraints.maxWidth < kAccountStackBelow;
-        final pad = stack ? 20.0 : 32.0;
+        final pad = stack ? kAccountPageGutterTight : kAccountPageGutter;
 
         return SingleChildScrollView(
           physics: const BouncingScrollPhysics(),

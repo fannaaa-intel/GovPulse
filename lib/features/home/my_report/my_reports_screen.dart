@@ -93,7 +93,16 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
   static const double _kWebFadeFloor = 0.35;
 
   /// Widest the web page's content band ever gets, gutters included.
-  static const double _kWebMaxBand = 1160.0;
+  ///
+  /// It was 1160 — a 1112 content column, against the 816 My Submissions gives
+  /// the same records and the 722 the detail page gave them. Opening a card
+  /// therefore shrank the page by 390px. [kAccountMaxWidth] with a
+  /// [kAccountPageGutter] each side is 816, which every one of those pages now
+  /// lands on, so moving between them moves nothing.
+  ///
+  /// The card grid's target column width came down with it — see the grid
+  /// itself. At 816 a 520 target would have floored to ONE column.
+  static const double _kWebMaxBand = kAccountMaxWidth;
 
   /// Content band at or below which the web page renders the MOBILE app's
   /// arrangement instead of the desktop one.
@@ -103,8 +112,8 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
   /// the desktop type size, so below that they start stacking — three rows deep
   /// by the time the pane is phone width, which is the "filters eat the screen"
   /// this was raised for. The card grid gives up at almost the same place:
-  /// `targetColumnWidth: 520` means one column below ~1090, so from 620 down
-  /// the grid is already a single stack of cards and the mobile card's
+  /// `targetColumnWidth: 380` means one column below 760, so from 620 down the
+  /// grid is already a single stack of cards and the mobile card's
   /// hairline-separated rows say the same thing in far less height.
   ///
   /// It is deliberately NOT a viewport test. The shell hands this body its
@@ -126,8 +135,7 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
   /// past what desktop shows — between ~423px of content and the compact
   /// breakpoint this returns exactly the old fixed 460 and nothing moves. The
   /// 320 floor is the narrowest phone the app supports.
-  static double _compactBase(double pane) =>
-      (pane / .92).clamp(320.0, 460.0);
+  static double _compactBase(double pane) => (pane / .92).clamp(320.0, 460.0);
 
   late final AnimationController _entryCtrl;
 
@@ -421,13 +429,14 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
             ? _kWebMaxBand
             : outer.maxWidth;
         final bool compact = band <= _kWebCompactPane;
-        final double gutter = compact ? 16.0 : 24.0;
+        // Desktop takes the shared page gutter, so band minus gutters is the
+        // same 816 the account pages and the detail page resolve to. Compact
+        // keeps 16: it is drawing the phone's arrangement, at phone widths.
+        final double gutter = compact ? 16.0 : kAccountPageGutter;
         // On the compact path everything is sized off the phone width that
         // would have produced this content column, so the page inherits the
         // mobile app's proportions rather than a desktop measure shrunk down.
-        final double base = compact
-            ? _compactBase(band - gutter * 2)
-            : w;
+        final double base = compact ? _compactBase(band - gutter * 2) : w;
         return _buildWebColumn(w, base, compact: compact, gutter: gutter);
       },
     );
@@ -442,14 +451,19 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
     final ww = base * 1.18;
     final reports = _filteredReports;
     return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(),
+      // Clamping, not bouncing. The rubber-band is an iOS gesture idiom, and in
+      // a browser its only visible effect here was on FILTERING: picking a
+      // status shortens the page, and the scroll view sprang back off the new
+      // bottom — the "bounce" the whole page appeared to do. The phone body
+      // keeps BouncingScrollPhysics, where it is the platform's own behaviour.
+      physics: const ClampingScrollPhysics(),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: _kWebMaxBand),
           child: Padding(
             padding: EdgeInsets.fromLTRB(
               gutter,
-              compact ? 16 : 24,
+              compact ? 16 : kAccountPageGutter,
               gutter,
               compact ? 32 : 56,
             ),
@@ -477,7 +491,17 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
                             'Track the issues you have submitted and '
                             'where each one has got to.',
                       ),
-                      _animated(1, _buildKpiRow(base)),
+                      // ── Not _animated ──────────────────────────────────
+                      //
+                      // The entrance used to fade-and-slide the whole page in
+                      // three staggered steps — stat row, then heading, then
+                      // cards. The stat row and the heading are the page's
+                      // furniture: they are in the same place before and after
+                      // any filter, so animating them on the way in only makes
+                      // the page look like it is settling into position. The
+                      // motion belongs on the thing that actually changes,
+                      // which is the cards.
+                      _buildKpiRow(base),
                       SizedBox(height: compact ? 18 : 28),
                       // ── Compact reuses the phone's section verbatim ──────
                       //
@@ -488,24 +512,43 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
                       // Sharing it is the whole point; a parallel web version
                       // is how the two drift apart again.
                       if (compact)
-                        _animated(2, _buildReportsSection(base, ww, gutter: false))
-                      else ...[
                         _animated(
                           2,
-                          _buildReportsHeaderWeb(base, ww, reports.length),
-                        ),
+                          _buildReportsSection(base, ww, gutter: false),
+                        )
+                      else ...[
+                        _buildReportsHeaderWeb(base, ww, reports.length),
                         const SizedBox(height: 16),
-                        _animated(
-                          3,
-                          reports.isEmpty
-                              ? _buildEmptyState(base)
-                              : WebCardGrid(
-                                  targetColumnWidth: 520,
-                                  children: [
-                                    for (final r in reports)
-                                      _reportGridCard(base, ww, r),
-                                  ],
-                                ),
+                        // The one animated block, and the one that changes: a
+                        // filter swaps which cards are here. AnimatedSize glides
+                        // the height instead of snapping it, matching what the
+                        // compact arrangement already does with its list.
+                        AnimatedSize(
+                          duration: const Duration(milliseconds: 260),
+                          curve: Curves.easeOutCubic,
+                          alignment: Alignment.topCenter,
+                          // Index 0: with the furniture no longer animating
+                          // there is nothing left to stagger behind, so the
+                          // cards start with the page instead of after it.
+                          child: _animated(
+                            0,
+                            reports.isEmpty
+                                ? _buildEmptyState(base)
+                                : WebCardGrid(
+                                    // 380, not 520: the band is 816 wide now and
+                                    // the grid fits floor(width / target)
+                                    // columns, so 520 would have collapsed two
+                                    // columns into one. 380 keeps the pair, at
+                                    // ~398 a card — and still drops to a single
+                                    // column below a 760 content width, which is
+                                    // where a two-up grid stops being readable.
+                                    targetColumnWidth: 380,
+                                    children: [
+                                      for (final r in reports)
+                                        _reportGridCard(base, ww, r),
+                                    ],
+                                  ),
+                          ),
                         ),
                       ],
                     ],

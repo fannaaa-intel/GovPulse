@@ -2770,7 +2770,28 @@ String _sheetDateTime(DateTime dt) {
 ///
 /// It was already the body's cap, written inline as a bare 760; the hero now
 /// has to agree with it, so it gets a name.
-const double _kDetailMeasure = 760;
+/// The content band this page lays out inside, and the gutter it keeps either
+/// side of it.
+///
+/// ── Why the web number is the ACCOUNT kit's ───────────────────────────────
+/// A record detail is opened from a list, and until now it was measured
+/// differently from every list that opens it: My Reports gave its cards a 1112
+/// content column and My Submissions gave its rows 816, and then both landed
+/// here on 722. Tapping a card visibly shrank the page around the record you
+/// had just asked to see.
+///
+/// [kAccountMaxWidth] less two [kAccountPageGutter]s is 816, which is what My
+/// Submissions already used and what My Reports now uses too, so the three
+/// pages share one measure and the transition between them moves nothing.
+///
+/// The APP keeps the 760 it has always had — `kIsWeb` is a compile-time
+/// constant, so this resolves at build time and the phone layout is byte for
+/// byte what it was.
+const double _kDetailMeasure = kIsWeb ? kAccountMaxWidth : 760;
+
+/// Page gutter. Web takes the shared [kAccountPageGutter]; the app keeps its
+/// viewport-proportional one.
+double _detailGutter(double w) => kIsWeb ? kAccountPageGutter : w * .04;
 
 class _DetailScaffold extends StatefulWidget {
   /// Small kicker above the title, e.g. 'Suggestion details'.
@@ -2874,9 +2895,9 @@ class _DetailScaffoldState extends State<_DetailScaffold>
                 constraints: const BoxConstraints(maxWidth: _kDetailMeasure),
                 child: Padding(
                   padding: EdgeInsets.fromLTRB(
+                    _detailGutter(w),
                     w * .04,
-                    w * .04,
-                    w * .04,
+                    _detailGutter(w),
                     w * .10 + bottomInset,
                   ),
                   child: Column(
@@ -2909,7 +2930,12 @@ class _DetailScaffoldState extends State<_DetailScaffold>
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: _kDetailMeasure),
         child: Padding(
-          padding: EdgeInsets.fromLTRB(w * .04, 24, w * .04, 0),
+          padding: EdgeInsets.fromLTRB(
+            _detailGutter(w),
+            24,
+            _detailGutter(w),
+            0,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

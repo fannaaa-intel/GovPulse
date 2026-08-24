@@ -1281,14 +1281,16 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
           // inside the shell's centre column, so the viewport width is not the
           // width it is given. Same reasoning as [AccountPageBody]'s `stack`.
           final narrow = outer.maxWidth < kAccountStackBelow;
-          final pad = narrow ? 20.0 : 32.0;
+          final pad = narrow ? kAccountPageGutterTight : kAccountPageGutter;
 
           return SingleChildScrollView(
             physics: const BouncingScrollPhysics(),
             child: Align(
               alignment: Alignment.topCenter,
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 760),
+                // The band the detail page this was opened from uses, so
+                // "View on map" does not narrow the page a second time.
+                constraints: const BoxConstraints(maxWidth: kAccountMaxWidth),
                 child: Padding(
                   padding: EdgeInsets.fromLTRB(pad, narrow ? 20 : 28, pad, 48),
                   child: FadeTransition(
