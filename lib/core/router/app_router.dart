@@ -561,6 +561,9 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
           child: ReportDetailScreen(
             report: args['report'] as ReportItem,
             username: args['username'] as String,
+            // Absent from a notification's push, where there is no one page
+            // "back" goes to — the screen's own default covers that.
+            backLabel: args['backLabel'] as String? ?? 'Back',
           ),
         ),
         transitionsBuilder: (_, anim, _, child) =>

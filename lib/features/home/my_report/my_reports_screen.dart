@@ -900,10 +900,22 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
         decoration: BoxDecoration(
           color: selected ? iconBg : Colors.white,
           borderRadius: BorderRadius.circular(w * .035),
-          border: Border.all(
-            color: selected ? iconColor : CitizenUi.sharedBorder,
-            width: selected ? 2 : 1,
-          ),
+          // ── The hairline is CONSTANT; the selection ring is painted in
+          //    front ────────────────────────────────────────────────────────
+          //
+          // A border inside `decoration` insets the child, so widening it to 2
+          // on selection made the card 2px taller. Four of these sit in a Row
+          // whose height is its tallest child, so selecting a filter grew the
+          // row — and every pixel of the page below it moved. Worse during a
+          // SWITCH: one card is shrinking while the other grows, both on a
+          // 320ms curve, so the row's height wobbles and the whole screen
+          // shakes for the length of the animation. That is the shake you see
+          // when tapping between All / Pending / Resolved / Rejected.
+          //
+          // `foregroundDecoration` paints over the child and takes no part in
+          // layout, so the ring can appear and vanish without the card ever
+          // changing size.
+          border: Border.all(color: CitizenUi.sharedBorder),
           boxShadow: [
             BoxShadow(
               color: selected
@@ -913,6 +925,13 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
               offset: const Offset(0, 2),
             ),
           ],
+        ),
+        foregroundDecoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(w * .035),
+          border: Border.all(
+            color: selected ? iconColor : Colors.transparent,
+            width: 2,
+          ),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1144,7 +1163,11 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
         pushLegacy(
           context,
           '/report_detail',
-          arguments: {'report': report, 'username': _username},
+          arguments: {
+            'report': report,
+            'username': _username,
+            'backLabel': 'Back to My Reports',
+          },
         );
       },
     );

@@ -819,6 +819,9 @@ final GoRouter citizenRouter = GoRouter(
                             builder: (_, report) => ReportDetailScreen(
                               report: report,
                               username: username,
+                              // This route is a child of the My Reports branch,
+                              // so popping it always lands on that list.
+                              backLabel: 'Back to My Reports',
                             ),
                           ),
                         );

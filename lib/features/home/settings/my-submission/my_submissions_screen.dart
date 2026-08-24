@@ -1379,7 +1379,13 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
     pushLegacy(
       context,
       '/report_detail',
-      arguments: {'report': item, 'username': widget.username},
+      arguments: {
+        'report': item,
+        'username': widget.username,
+        // The same screen opened from My Reports says "Back to My Reports".
+        // Popping lands where you came from, so the label has to as well.
+        'backLabel': 'Back to My Submissions',
+      },
     );
   }
 

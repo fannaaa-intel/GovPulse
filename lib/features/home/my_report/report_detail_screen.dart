@@ -62,10 +62,23 @@ class ReportDetailScreen extends StatefulWidget {
   final ReportItem report;
   final String username;
 
+  /// What the web header's back control says, and what a screen reader hears.
+  ///
+  /// This one screen is opened from three places, and "back" means a different
+  /// page in each: My Reports, My Submissions, or — from a notification —
+  /// whatever happened to be underneath. So the caller names it, and the
+  /// default stays the unqualified word for the case nobody can name.
+  ///
+  /// It is only ever SEEN on a wide pane: below [kAccountBackLabelAbove] the
+  /// control is a bare chevron beside the title, which is why this used to be
+  /// able to sit at a hardcoded 'Back' without looking wrong.
+  final String backLabel;
+
   const ReportDetailScreen({
     super.key,
     required this.report,
     required this.username,
+    this.backLabel = 'Back',
   });
 
   @override
@@ -756,7 +769,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
                   title: _report.category,
                   subtitle: 'Report details · RPT-${_report.id}',
                   onBack: () => Navigator.pop(context),
-                  backLabel: 'Back',
+                  backLabel: widget.backLabel,
                 ),
                 AccountHeaderIndent(
                   // Lines up with the title's left edge, so the header reads as
