@@ -46,16 +46,18 @@ class _HomeUpcomingEventsCardState extends State<HomeUpcomingEventsCard> {
   }
 
   Future<List<EventModel>> _loadUpcoming() async {
-    final all = await EventsService.instance.fetchEvents();
-
-    // Date-only comparison: an event happening later TODAY is still upcoming.
-    final now = DateTime.now();
-    final startOfToday = DateTime(now.year, now.month, now.day);
-
-    return all
-        .where((e) => !e.eventDate.isBefore(startOfToday))
-        .take(widget.maxItems)
-        .toList();
+    // Bounded server-side rather than filtered client-side. This used to fetch
+    // EVERY event the LGU has ever held and discard all but [maxItems] of them.
+    //
+    // The result is identical, not merely similar: fetchEvents orders by
+    // event_date ASCENDING, so the first [maxItems] rows at or after the start
+    // of today are exactly what `.where(!isBefore(startOfToday)).take(n)`
+    // selected from the full list. Date-only floor for the same reason as
+    // before — an event happening later TODAY is still upcoming.
+    return EventsService.instance.fetchEvents(
+      fromDate: DateTime.now(),
+      limit: widget.maxItems,
+    );
   }
 
   @override

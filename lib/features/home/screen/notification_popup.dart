@@ -186,14 +186,34 @@ class NotificationService {
   /// This one is unconditional.
   static final ValueNotifier<int> revision = ValueNotifier<int>(0);
 
+  /// How many rows this user has that are BOTH unread and older than the
+  /// [_loadWindow] most recent — i.e. unread rows the local list does not hold.
+  ///
+  /// [load] reads the list capped at [_loadWindow] but asks the server for an
+  /// exact unread count over ALL rows, and parks the difference here. Without
+  /// it the badge would silently become a lie the moment a user accumulates
+  /// more than [_loadWindow] notifications: the count is derived from the list,
+  /// so unread rows past the cap would stop being counted, and a user whose
+  /// newest 200 were all read would see a 0 badge while hundreds sat unread.
+  ///
+  /// Only [load] and [clearAll] ever write it. Local mutations deliberately do
+  /// NOT touch it — marking one loaded row read, or deleting one, changes the
+  /// list half of the sum and leaves this half correct, so the optimistic
+  /// behaviour below keeps working unchanged.
+  static int _unreadOutsideWindow = 0;
+
   /// Keep [unread] in lock-step with the backing list. Called after every
   /// mutation below.
   ///
   /// Counts UNREAD rows, not the list length: a tapped notification stays in
   /// the list (the user may want to find it again) but must stop counting, or
   /// the badge sits there at 1 after the thing it pointed at has been opened.
+  ///
+  /// Adds [_unreadOutsideWindow] so the badge stays truthful for a user with
+  /// more history than one page — see that field.
   static void _sync() {
-    unread.value = notifications.where((n) => !n.read).length;
+    unread.value =
+        notifications.where((n) => !n.read).length + _unreadOutsideWindow;
     revision.value++;
   }
 
@@ -265,18 +285,51 @@ class NotificationService {
   // local-notifications plugin of its own — two independent things showing the
   // same tray notification is how the same alert ends up on screen twice.
 
+  /// How many notification rows one [load] pulls down.
+  ///
+  /// This is a DISPLAY window, not a cap on the badge — see
+  /// [_unreadOutsideWindow]. Notifications are never pruned server-side, so
+  /// this read used to grow for the lifetime of the account and was re-issued
+  /// on every realtime event on the user's rows; a long-lived user was
+  /// re-parsing their entire history on the main isolate every time anything
+  /// changed. 200 matches the cap the admin/staff consoles already use.
+  static const int _loadWindow = 200;
+
   static Future<void> load() async {
     final uid = _uid;
     if (uid == null) return;
     try {
+      // Two reads on purpose. The list is windowed for the panel; the badge
+      // needs the truth over ALL rows, and `count` respects filters but ignores
+      // `limit`, so it cannot be folded into the query above.
       final rows = await _db
           .from('notifications')
           .select()
           .eq('user_id', uid)
-          .order('created_at', ascending: false);
+          .order('created_at', ascending: false)
+          .limit(_loadWindow);
       notifications = (rows as List)
           .map((r) => AppNotification.fromRow(r as Map<String, dynamic>))
           .toList();
+
+      // Exact unread total, then park whatever the window does not already
+      // account for. Guarded separately: if this read fails the list is still
+      // good, and the badge degrades to "unread among the loaded rows" rather
+      // than taking the whole load down with it.
+      try {
+        final res = await _db
+            .from('notifications')
+            .select('id')
+            .eq('user_id', uid)
+            .isFilter('read_at', null)
+            .count(CountOption.exact);
+        final loadedUnread = notifications.where((n) => !n.read).length;
+        _unreadOutsideWindow = (res.count - loadedUnread).clamp(0, 1 << 30);
+      } catch (e) {
+        debugPrint('NotificationService.load unread count failed: $e');
+        _unreadOutsideWindow = 0;
+      }
+
       _sync();
     } catch (e) {
       debugPrint('NotificationService.load error: $e');
@@ -383,6 +436,10 @@ class NotificationService {
     try {
       await _db.from('notifications').delete().eq('user_id', uid);
       notifications.clear();
+      // Every row for this user is gone, including the unread ones that sat
+      // outside the loaded window — so the parked remainder must go to zero or
+      // the badge would keep counting rows that no longer exist.
+      _unreadOutsideWindow = 0;
       _sync();
     } catch (e) {
       debugPrint('NotificationService.clearAll error: $e');
