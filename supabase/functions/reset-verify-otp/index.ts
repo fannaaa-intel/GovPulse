@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
-import { checkRateLimit, getClientIp, rateLimitResponse } from "../_shared/rate-limit.ts"
+import { checkRateLimit, getClientIp, rateLimitResponse, limiterUnavailableResponse } from "../_shared/rate-limit.ts"
 
 const MAX_FAILURES = 5
 const LOCKOUT_WINDOW = 900
@@ -39,6 +39,7 @@ serve(async (req) => {
     )
 
     const ipLimit = await checkRateLimit(rateLimitClient, `reset-verify:ip:${ip}`, 20, 600)
+    if (ipLimit.unavailable) return limiterUnavailableResponse(ipLimit.retryAfter)
     if (!ipLimit.allowed) {
       return rateLimitResponse(ipLimit.retryAfter, "Too many attempts. Please try again later.")
     }
@@ -62,8 +63,12 @@ serve(async (req) => {
 
     if (error) {
       await rateLimitClient.from("otp_failures").insert({ email: normalizedEmail })
+      // Generic body. This previously echoed GoTrue's error verbatim to an
+      // unauthenticated caller, which leaks upstream internals and can
+      // distinguish "wrong code" from "no such recovery token".
+      console.error("reset-verify-otp: verifyOtp failed:", error.message)
       return new Response(JSON.stringify({
-        success: false, message: error.message
+        success: false, message: "Invalid or expired code. Please try again."
       }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } })
     }
 
@@ -74,7 +79,7 @@ serve(async (req) => {
     }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } })
 
   } catch (err) {
-    console.error(err)
+    console.error("reset-verify-otp: unexpected error:", (err as Error)?.message)
     return new Response(JSON.stringify({
       success: false, message: "Server error"
     }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } })

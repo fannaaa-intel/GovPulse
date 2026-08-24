@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
-import { checkRateLimit, getClientIp, rateLimitResponse } from "../_shared/rate-limit.ts"
+import { checkRateLimit, getClientIp, rateLimitResponse, limiterUnavailableResponse } from "../_shared/rate-limit.ts"
 
 export const config = { auth: false }
 
@@ -16,11 +16,19 @@ serve(async (req) => {
   }
 
   try {
-    const { email, username, password } = await req.json()
+    // F-11: `password` is deliberately NOT destructured or required any more.
+    // This endpoint never used it — the password is only consumed later by
+    // verify-email-otp, which receives it directly from the client. Requiring
+    // it here meant the plaintext made an extra network hop, and sat in an
+    // extra request body, for no reason at all.
+    //
+    // Older app builds still SEND a password field; that is fine and is simply
+    // ignored, so this change is backward compatible.
+    const { email, username } = await req.json()
 
-    if (!email || !username || !password) {
+    if (!email || !username) {
       return new Response(
-        JSON.stringify({ success: false, message: "Email, username and password are required" }),
+        JSON.stringify({ success: false, message: "Email and username are required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       )
     }
@@ -34,6 +42,7 @@ serve(async (req) => {
     )
 
     const ipLimit = await checkRateLimit(supabase, `send-otp:ip:${ip}`, 10, 600)
+    if (ipLimit.unavailable) return limiterUnavailableResponse(ipLimit.retryAfter)
     if (!ipLimit.allowed) {
       return rateLimitResponse(ipLimit.retryAfter, "Too many requests from your network. Please try again later.")
     }
@@ -41,11 +50,13 @@ serve(async (req) => {
     // 5 per 10 min (not 3): the OTP expires in 2 minutes, so a user with slow
     // email delivery legitimately needs more re-sends inside one window.
     const emailShort = await checkRateLimit(supabase, `send-otp:email:${normalizedEmail}:short`, 5, 600)
+    if (emailShort.unavailable) return limiterUnavailableResponse(emailShort.retryAfter)
     if (!emailShort.allowed) {
       return rateLimitResponse(emailShort.retryAfter, "We just sent you a code. Please wait a few minutes before requesting another.")
     }
 
     const emailLong = await checkRateLimit(supabase, `send-otp:email:${normalizedEmail}:long`, 10, 3600)
+    if (emailLong.unavailable) return limiterUnavailableResponse(emailLong.retryAfter)
     if (!emailLong.allowed) {
       return rateLimitResponse(emailLong.retryAfter, "Too many code requests for this email. Try again in an hour.")
     }

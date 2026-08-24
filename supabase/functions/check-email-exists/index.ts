@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
-import { checkRateLimit, getClientIp, rateLimitResponse, corsHeaders } from "../_shared/rate-limit.ts"
+import { checkRateLimit, getClientIp, rateLimitResponse, limiterUnavailableResponse, corsHeaders } from "../_shared/rate-limit.ts"
 
 // Signup email-availability check. Thin wrapper over the email_exists RPC.
 //
@@ -16,23 +16,25 @@ import { checkRateLimit, getClientIp, rateLimitResponse, corsHeaders } from "../
 // strips spaces only, so any JS normalization re-introduces a divergence even
 // when it looks equivalent.
 //
-// ── FAIL-OPEN, AND FOR EMAIL IT IS UNBACKSTOPPED ──────────────────────────
+// ── FAIL-OPEN, BUT NOW BACKSTOPPED ON BOTH SIDES ──────────────────────────
 // An RPC error returns {"exists": false}, which the signup form reads as
-// "available". For usernames that is survivable: profiles carries a UNIQUE
-// index on lower(username), so a duplicate that slips past this check is
-// rejected by the database.
+// "available". A duplicate that slips past this check is then rejected by the
+// database, for BOTH fields:
 //
-// There is NO unique index on profiles.email at all. Nothing in profiles stops
-// a duplicate email row — the only constraint on the signup path is the
-// uniqueness auth.users enforces on the account itself. So a failure of this
-// check is caught, if at all, one layer away and by a different table, and
-// profiles can hold duplicate emails that no constraint here would prevent.
-// Treat a 500 from this endpoint as more serious than a 500 from its username
-// sibling; they are not symmetric.
+//   profiles_username_lower_key  UNIQUE (lower(username))
+//   profiles_email_lower_key     UNIQUE (lower(email))
+//
+// CORRECTED 2026-08-23: this block previously stated there was no unique index
+// on profiles.email and that a 500 here was therefore more dangerous than on
+// the username sibling. Migration 20260722000014 added that index; verified
+// present live via pg_indexes. The two endpoints are now symmetric.
 //
 // ── verify_jwt ─────────────────────────────────────────────────────────────
-// Deployed state is verify_jwt = false, set at the PLATFORM. This function is
-// not declared in config.toml, so the repo does not express its gate anywhere.
+// CORRECTED 2026-08-23: deployed state is verify_jwt = TRUE, and the function
+// IS declared in config.toml ([functions.check-email-exists]). Measured live —
+// a POST carrying no key returns 401 from the gateway, so the function never
+// runs. The client reaches it via functions.invoke(), which attaches the
+// publishable key automatically.
 //
 // The in-file `export const config = { auth: false }` below is INERT under the
 // pinned CLI (v2.75.0), which predates that mechanism. Measured on
@@ -71,6 +73,7 @@ serve(async (req) => {
     )
 
     const ipLimit = await checkRateLimit(supabase, `check-email:ip:${ip}`, 30, 60)
+    if (ipLimit.unavailable) return limiterUnavailableResponse(ipLimit.retryAfter)
     if (!ipLimit.allowed) {
       return rateLimitResponse(ipLimit.retryAfter, "Too many requests. Please slow down.")
     }

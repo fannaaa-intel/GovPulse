@@ -4,6 +4,7 @@ import {
   corsHeaders,
   getClientIp,
   checkRateLimit,
+  limiterUnavailableResponse,
   rateLimitResponse,
 } from "../_shared/rate-limit.ts"
 
@@ -135,10 +136,12 @@ serve(async (req) => {
     const userKey = `login:user:${await sha256Hex(`${LOGIN_RL_SALT}:${username.toLowerCase()}`)}`
 
     const ipRl = await checkRateLimit(service, ipKey, 30, 300)
+    if (ipRl.unavailable) return limiterUnavailableResponse(ipRl.retryAfter)
     if (!ipRl.allowed) {
       return rateLimitResponse(ipRl.retryAfter, "Too many login attempts. Please try again later.")
     }
     const userRl = await checkRateLimit(service, userKey, 10, 900)
+    if (userRl.unavailable) return limiterUnavailableResponse(userRl.retryAfter)
     if (!userRl.allowed) {
       return rateLimitResponse(userRl.retryAfter, "Too many login attempts. Please try again later.")
     }

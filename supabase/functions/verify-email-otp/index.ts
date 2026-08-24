@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 import type { AuthError, Session, User } from "https://esm.sh/@supabase/supabase-js@2"
-import { checkRateLimit, getClientIp, rateLimitResponse } from "../_shared/rate-limit.ts"
+import { checkRateLimit, getClientIp, rateLimitResponse, limiterUnavailableResponse } from "../_shared/rate-limit.ts"
 
 export const config = { auth: false }
 
@@ -28,10 +28,37 @@ serve(async (req) => {
       }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } })
     }
 
+    // ── F-07: server-side password policy ────────────────────────────────
+    // The 8/upper/digit/symbol rule lived ONLY in Dart (PasswordValidator).
+    // This endpoint runs with verify_jwt=false and hands `password` straight to
+    // admin.updateUserById, so anything posted directly to it got only GoTrue's
+    // own minimum. Enforced here too, before the OTP is consumed.
+    //
+    // DELIBERATELY AT LEAST AS PERMISSIVE AS THE CLIENT: the symbol test is
+    // "any non-alphanumeric", a strict superset of Dart's
+    // [!@#$%^&*(),.?":{}|<>]. Anything the app accepts, this accepts — so this
+    // can never reject a signup the UI allowed. Keep it that way.
+    const pw = String(password)
+    const pwOk =
+      pw.length >= 8 &&
+      /[A-Z]/.test(pw) &&
+      /[0-9]/.test(pw) &&
+      /[^A-Za-z0-9]/.test(pw)
+    if (!pwOk) {
+      return new Response(JSON.stringify({
+        success: false,
+        error: "weak_password",
+        message: "Password must be at least 8 characters and include an uppercase letter, a number, and a symbol.",
+      }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } })
+    }
+
     const normalizedEmail = email.trim().toLowerCase()
     const ip = getClientIp(req)
 
-    console.log(`[verify-otp] Attempting for: ${normalizedEmail}, code length: ${code.length}`)
+    // No email in logs (F-05). username-login was written never to log one;
+    // this function did it three times. Logs are retained, copied into
+    // monitoring, and readable by anyone with dashboard access.
+    console.log(`[verify-otp] attempt, code length: ${code.length}`)
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -39,6 +66,7 @@ serve(async (req) => {
     )
 
     const ipLimit = await checkRateLimit(supabase, `verify-otp:ip:${ip}`, 20, 600)
+    if (ipLimit.unavailable) return limiterUnavailableResponse(ipLimit.retryAfter)
     if (!ipLimit.allowed) {
       return rateLimitResponse(ipLimit.retryAfter, "Too many attempts. Please try again later.")
     }
@@ -61,7 +89,7 @@ serve(async (req) => {
       .eq("email", normalizedEmail)
       .single()
 
-    console.log(`[verify-otp] pending_signups lookup — found: ${!!pending}, error: ${pendingError?.message ?? "none"}`)
+    console.log(`[verify-otp] pending_signups lookup - found: ${!!pending}, error: ${pendingError?.message ?? "none"}`)
 
     if (pendingError || !pending) {
       return new Response(JSON.stringify({
@@ -95,9 +123,10 @@ serve(async (req) => {
 
     if (!data) {
       await supabase.from("otp_failures").insert({ email: normalizedEmail })
+      console.error("verify-email-otp: verifyOtp failed:", otpError?.message ?? "no user/session")
       return new Response(JSON.stringify({
         success: false,
-        message: otpError?.message ?? "Invalid or expired OTP. Please try again.",
+        message: "Invalid or expired code. Please try again.",
       }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } })
     }
 
@@ -110,7 +139,7 @@ serve(async (req) => {
     if (passError) {
       console.log(`[verify-otp] Password update failed: ${passError.message}`)
       return new Response(JSON.stringify({
-        success: false, message: passError.message
+        success: false, message: "Could not set your password. Please try again."
       }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } })
     }
 
@@ -166,16 +195,16 @@ serve(async (req) => {
     await supabase.from("otp_failures").delete().eq("email", normalizedEmail)
     await supabase.from("pending_signups").delete().eq("email", normalizedEmail)
 
-    console.log(`[verify-otp] Complete for: ${normalizedEmail}, type used: ${usedType}`)
+    console.log(`[verify-otp] complete, type used: ${usedType}`)
 
     return new Response(JSON.stringify({
       success: true, message: "OTP verified", session: data.session, user: data.user
     }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } })
 
   } catch (err) {
-    console.log(`[verify-otp] Uncaught error: ${(err as Error).message}`)
+    console.error(`[verify-otp] uncaught error: ${(err as Error)?.message}`)
     return new Response(JSON.stringify({
-      success: false, message: (err as Error).message ?? "Server error"
+      success: false, message: "Server error"
     }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } })
   }
 })
