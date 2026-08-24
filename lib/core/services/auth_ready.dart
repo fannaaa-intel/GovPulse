@@ -399,21 +399,58 @@ class AuthRestoration extends ChangeNotifier {
       notifyListeners();
     }
 
-    try {
-      final row = await Supabase.instance.client
-          .from('user_roles')
-          .select('role_id')
-          .eq('user_id', user.id)
-          .maybeSingle();
-      _roleId = row?['role_id'] as int?;
-    } catch (_) {
-      _roleId = null;
+    // ── The lookup, with ONE retry ───────────────────────────────────────
+    //
+    // `null` carries two different meanings here and they must not be
+    // conflated: "this user has no user_roles row, so they are a citizen", and
+    // "the query did not come back". This used to answer both with
+    // `_roleId = null`, which meant a single network blip classified an admin
+    // or a staff member as a citizen, swept them off their own console to
+    // /home, AND persisted that wrong answer to the role cache — so the next
+    // cold load started from "citizen" too, until a later refresh corrected it.
+    //
+    // It fails in the SAFE direction (a console user is downgraded, never a
+    // citizen upgraded) and every console query is re-checked server-side, so
+    // this was never a data-exposure bug — but being randomly and stickily
+    // ejected from your own console is its own kind of broken.
+    int? fetched;
+    var lookupOk = false;
+    for (var attempt = 0; attempt < 2 && !lookupOk; attempt++) {
+      if (attempt > 0) {
+        await Future.delayed(const Duration(milliseconds: 250));
+      }
+      try {
+        final row = await Supabase.instance.client
+            .from('user_roles')
+            .select('role_id')
+            .eq('user_id', user.id)
+            .maybeSingle();
+        fetched = row?['role_id'] as int?;
+        lookupOk = true;
+      } catch (_) {
+        // Retry once, then fall through to the fail-safe below.
+      }
     }
-    _roleKnown = true;
 
-    // Refresh the hint for next time. Fire-and-forget: nothing waits on it, and
-    // a failed write costs one held frame on the next cold load.
-    _writeRoleCache(user.id, _roleId);
+    if (lookupOk) {
+      _roleId = fetched;
+      _roleKnown = true;
+
+      // Refresh the hint for next time. Fire-and-forget: nothing waits on it,
+      // and a failed write costs one held frame on the next cold load.
+      //
+      // ONLY on a real answer. Caching a failure is what made the misclassify
+      // stick across reloads.
+      _writeRoleCache(user.id, _roleId);
+    } else {
+      // Fall back to the best answer we already hold for THIS user — the
+      // synchronous cache hit above, when it fired — rather than forcing null
+      // and demoting them. Keyed on the id so a previous account's role on a
+      // shared browser is never applied to a new one.
+      _roleId = (_cachedRoleUid == user.id) ? _cachedRoleId : null;
+      _roleKnown = true;
+      // Deliberately NOT written to the cache: nothing was learned.
+    }
 
     notifyListeners();
   }
