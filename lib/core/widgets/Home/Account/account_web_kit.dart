@@ -63,7 +63,7 @@ import '../../loading/loading_overlay.dart' show AppShimmerBox;
 /// pages holds — three name fields on one row in Edit Profile, which get about
 /// 268 each — while keeping a settings row from stretching so far that its
 /// label and its switch end up a thousand pixels apart with nothing between.
-const double kAccountMaxWidth = 880;
+const double kAccountMaxWidth = CitizenUi.recordBand;
 
 /// Below this CONTENT width, every multi-column arrangement becomes one column.
 ///
@@ -81,8 +81,8 @@ const double kAccountStackBelow = 720;
 ///
 /// The tight value is for panes below [kAccountStackBelow], where 32 a side is
 /// a tenth of the screen.
-const double kAccountPageGutter = 32;
-const double kAccountPageGutterTight = 20;
+const double kAccountPageGutter = CitizenUi.recordGutter;
+const double kAccountPageGutterTight = CitizenUi.recordGutterTight;
 
 /// Gap between columns in a row, and between rows.
 const double kAccountGap = 18;

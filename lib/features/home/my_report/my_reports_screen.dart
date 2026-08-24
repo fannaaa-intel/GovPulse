@@ -705,9 +705,16 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
       child: Column(
         children: [
           SizedBox(height: w * .04),
-          _animated(1, _buildKpiRow(w)),
+          // Not _animated, for the reason the web body gives: the stat row and
+          // the Report History card are the page's furniture, in the same place
+          // before and after any filter, and sliding them in only makes the
+          // page look like it is settling. The REPORTS inside that card still
+          // cascade — _buildAnimatedTile keys off the active filter, so they
+          // replay on every filter change, which is the one place the motion
+          // says something.
+          _buildKpiRow(w),
           SizedBox(height: w * .04),
-          _animated(2, _buildReportsSection(w, w * 1.18)),
+          _buildReportsSection(w, w * 1.18),
           SizedBox(height: w * .06),
         ],
       ),

@@ -24,6 +24,7 @@ import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:govpulse/core/widgets/Home/Account/account_web_kit.dart';
+import 'package:govpulse/core/widgets/loading/loading_overlay.dart';
 import 'package:govpulse/features/home/my_report/my_reports_screen.dart';
 import 'package:govpulse/features/home/my_report/report_detail_screen.dart';
 
@@ -186,6 +187,15 @@ class _PreviewApp extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                _pane(
+                  'My Reports · SKELETON',
+                  LoadingOverlay.bodyOrSkeleton(
+                    isLoading: true,
+                    layout: SkeletonLayout.myReports,
+                    webWide: true,
+                    child: const SizedBox.shrink(),
+                  ),
+                ),
                 _pane('My Reports · list', const MyReportsBody()),
                 _pane(
                   'Report detail',

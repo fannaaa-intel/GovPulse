@@ -145,6 +145,23 @@ class CitizenUi {
   static const double cardRadius = 14;
   static const double controlRadius = 10;
 
+  // ── The citizen RECORD BAND ─────────────────────────────────────────────
+  //
+  // One content measure for every page that shows a citizen's own records —
+  // My Reports, My Submissions, the report and submission details, and the
+  // account pages. `recordBand` less two `recordGutter`s is 816, and a page
+  // landing anywhere else is what made opening a card appear to resize the
+  // window.
+  //
+  // It lives here, beside the radii, rather than in the account kit that names
+  // it (kAccountMaxWidth / kAccountPageGutter alias these) because the LOADING
+  // SKELETONS need the same number, and the kit already imports the skeletons.
+  static const double recordBand = 880;
+  static const double recordGutter = 32;
+
+  /// Below [kAccountStackBelow], where 32 a side is a tenth of the screen.
+  static const double recordGutterTight = 20;
+
   static const List<BoxShadow> cardShadow = [
     BoxShadow(color: Color(0x141B2A4E), blurRadius: 16, offset: Offset(0, 4)),
   ];

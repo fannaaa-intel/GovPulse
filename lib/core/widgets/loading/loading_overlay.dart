@@ -564,28 +564,32 @@ Widget _skelSurface(
 
 /// The page band a web skeleton sits in.
 ///
-/// Standalone, it is centred and capped at 1080 — the measure the standalone
-/// web pages use. Inside the citizen shell it is neither: the pane has already
-/// been given exactly the width it should occupy, and re-centring inside it
-/// would inset the skeleton from a column the real content fills, so the page
-/// would appear to jump sideways on load.
-Widget _skelBand(Widget child) {
+/// [band] pins it to a page's own measure. Pass [CitizenUi.recordBand] for
+/// anything standing in for a page on the citizen record band: the skeleton
+/// then occupies exactly the width the content will, in the shell and out of
+/// it, so nothing changes width when the data lands. Without it, a skeleton
+/// filled the whole pane and the page visibly narrowed to 816 on load — the
+/// same jump the pages themselves used to have between list and detail.
+///
+/// Unpinned is the old behaviour, for the skeletons whose pages really do fill
+/// their pane (home, the feed): centred and capped at 1080 standalone, and the
+/// full pane inside the citizen shell, because there the pane has already been
+/// given exactly the width it should occupy.
+Widget _skelBand(Widget child, {double? band}) {
   return Builder(
     builder: (context) {
       final inShell = CitizenShellScope.of(context);
+      final double gutter = band != null
+          ? CitizenUi.recordGutter
+          : (inShell ? 0 : 24);
       return SingleChildScrollView(
         child: Center(
           child: ConstrainedBox(
             constraints: BoxConstraints(
-              maxWidth: inShell ? double.infinity : 1080,
+              maxWidth: band ?? (inShell ? double.infinity : 1080),
             ),
             child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                inShell ? 0 : 24,
-                24,
-                inShell ? 0 : 24,
-                40,
-              ),
+              padding: EdgeInsets.fromLTRB(gutter, 24, gutter, 40),
               child: child,
             ),
           ),
@@ -648,7 +652,9 @@ class _WebGridSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // My Reports and My Submissions both land on the record band.
     return _skelBand(
+      band: CitizenUi.recordBand,
       Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -693,7 +699,10 @@ class _WebProfileSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Settings and Edit Profile are AccountPageBody pages, so they resolve to
+    // the record band too.
     return _skelBand(
+      band: CitizenUi.recordBand,
       Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
