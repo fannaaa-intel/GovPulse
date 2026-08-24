@@ -97,14 +97,35 @@ class EventsService {
   /// Citizens & unauthenticated users: RLS already filters to approved only.
   /// Staff: sees approved + own pending (also handled by RLS).
   /// Admin: sees everything.
+  ///
+  /// [fromDate] and [limit] are OPT-IN bounds, both null by default so every
+  /// existing caller keeps its current unbounded behaviour. They exist because
+  /// this read has no natural ceiling: an LGU accumulates events forever, and
+  /// callers that only ever render a handful were downloading the whole table
+  /// to throw almost all of it away.
+  ///
+  /// A bare `limit` would be WRONG here and is deliberately not applied by
+  /// default. The order is `event_date` ASCENDING, so limiting without a date
+  /// floor returns the OLDEST events and hides every upcoming one — the exact
+  /// opposite of what an events list wants. Pass [fromDate] whenever you pass
+  /// [limit] unless you genuinely want the earliest rows.
   Future<List<EventModel>> fetchEvents({
     String? category,
     String? searchQuery,
+    DateTime? fromDate,
+    int? limit,
   }) async {
     var query = _client.from('events').select();
 
     if (category != null && category != 'All') {
       query = query.eq('category', category);
+    }
+
+    if (fromDate != null) {
+      // Date-only floor, matching how callers compare: an event happening
+      // later TODAY is still upcoming, so the boundary is the start of the day.
+      final floor = DateTime(fromDate.year, fromDate.month, fromDate.day);
+      query = query.gte('event_date', floor.toIso8601String());
     }
 
     if (searchQuery != null && searchQuery.isNotEmpty) {
@@ -120,7 +141,8 @@ class EventsService {
       }
     }
 
-    final response = await query.order('event_date', ascending: true);
+    final ordered = query.order('event_date', ascending: true);
+    final response = limit == null ? await ordered : await ordered.limit(limit);
     return (response as List).map((e) => EventModel.fromJson(e)).toList();
   }
 

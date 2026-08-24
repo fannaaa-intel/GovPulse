@@ -472,6 +472,16 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
   static const Duration _mediaCacheTtl = Duration(minutes: 45);
   static const int _signedUrlSeconds = 3600;
 
+  /// Ceiling on [_mediaCache] entries.
+  ///
+  /// The TTL bounds how STALE an entry may be, but nothing bounded how MANY
+  /// there were: an admin working through a long queue accumulated one entry
+  /// per report opened and never released any of them for the life of the
+  /// session — which on the web build is however long the tab stays open.
+  /// 120 keeps a comfortable working set (far more than anyone scrolls back
+  /// through) while making the growth finite.
+  static const int _mediaCacheMaxEntries = 120;
+
   /// Full media list (with signed URLs) for a single report — used by the
   /// detail dialog's gallery. Cached; a report's media is immutable once filed
   /// (completion photos live in their own table), so there's nothing to miss.
@@ -509,17 +519,50 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
 
     // `report-media` is a PRIVATE bucket, so a public URL 400s — sign each
     // object instead (mirrors how admin_verification_page views private media).
-    final out = <ReportMedia>[];
-    for (final r in List<Map<String, dynamic>>.from(rows)) {
-      final path = r['storage_path'] as String;
-      String url;
+    //
+    // Signed in ONE batch request rather than one per photo. This loop used to
+    // await createSignedUrl separately for every image, so opening a report
+    // with eight photos cost eight sequential storage round trips before
+    // anything could render. createSignedUrlsResult signs the whole list in a
+    // single call and reports per-path success or failure, so the existing
+    // best-effort fallback survives intact.
+    final mediaRows = List<Map<String, dynamic>>.from(rows);
+    final paths = [for (final r in mediaRows) r['storage_path'] as String];
+
+    // path -> signed url. Keyed by the path the server echoes back rather than
+    // by position: results are matched explicitly so a reordered or partial
+    // response can never pair a URL with the wrong photo.
+    final signed = <String, String>{};
+    if (paths.isNotEmpty) {
       try {
-        url = await _db.storage
+        for (final res in await _db.storage
             .from(_bucket)
-            .createSignedUrl(path, _signedUrlSeconds);
+            .createSignedUrlsResult(paths, _signedUrlSeconds)) {
+          if (res is SignedUrlSuccess) signed[res.path] = res.signedUrl;
+        }
       } catch (_) {
-        url = _db.storage.from(_bucket).getPublicUrl(path); // best-effort
+        // Whole-batch failure (network, endpoint unavailable). Fall back to the
+        // original per-path signing so one bad request cannot cost every photo
+        // its signature — the slow path, but only when the fast one is broken.
+        for (final path in paths) {
+          try {
+            signed[path] = await _db.storage
+                .from(_bucket)
+                .createSignedUrl(path, _signedUrlSeconds);
+          } catch (_) {
+            // leave unsigned; the getPublicUrl fallback below picks it up
+          }
+        }
       }
+    }
+
+    final out = <ReportMedia>[];
+    for (final r in mediaRows) {
+      final path = r['storage_path'] as String;
+      // best-effort: a public URL 400s on this private bucket, but it is a
+      // better broken-image src than an empty string and matches prior behaviour
+      final url =
+          signed[path] ?? _db.storage.from(_bucket).getPublicUrl(path);
       out.add(
         ReportMedia(
           url: url,
@@ -531,7 +574,30 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
       );
     }
     _mediaCache[reportId] = (at: DateTime.now(), media: out);
+    _evictMediaCache();
     return out;
+  }
+
+  /// Hold [_mediaCache] at [_mediaCacheMaxEntries] by dropping the oldest
+  /// entries first.
+  ///
+  /// Evicts by the recorded `at` rather than by Map insertion order: a cache
+  /// HIT does not re-insert, so insertion order says when an entry was first
+  /// fetched, not when it was last useful — and evicting on that would discard
+  /// exactly the reports being looked at most. Expired entries go first, since
+  /// they would be re-fetched on next access anyway.
+  void _evictMediaCache() {
+    if (_mediaCache.length <= _mediaCacheMaxEntries) return;
+
+    final now = DateTime.now();
+    _mediaCache.removeWhere((_, v) => now.difference(v.at) >= _mediaCacheTtl);
+    if (_mediaCache.length <= _mediaCacheMaxEntries) return;
+
+    final byAge = _mediaCache.entries.toList()
+      ..sort((a, b) => a.value.at.compareTo(b.value.at));
+    for (final e in byAge.take(_mediaCache.length - _mediaCacheMaxEntries)) {
+      _mediaCache.remove(e.key);
+    }
   }
 
   /// Full unfiltered set kept in memory so counts stay stable and filter/sort
