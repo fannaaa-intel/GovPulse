@@ -638,11 +638,43 @@ String? _signedOutRedirect(String loc) {
 /// visitor who actually belongs here it is replaced by their console rather
 /// than by a redirect.
 Widget _consoleOrHold(Widget console) {
-  final restoration = AuthRestoration.instance;
-  if (!restoration.settled || !restoration.roleKnown) {
-    return const _StartingUp();
-  }
-  return NetworkWrapper(child: console);
+  // LISTENS, rather than reading AuthRestoration once at build time.
+  //
+  // Reading it imperatively here left the console stuck on [_StartingUp] after
+  // a WEB login, until the user manually reloaded:
+  //
+  //   1. sign-in fires -> onAuthStateChange re-arms _roleKnown = false
+  //      (deliberately — see AuthRestoration.begin)
+  //   2. the login handler calls ctx.go('/admin'), this builder runs, sees
+  //      roleKnown == false and returns the spinner
+  //   3. _refreshRole() lands ~2s later, sets _roleKnown = true and notifies
+  //   4. refreshListenable re-runs _authRedirect — which returns NULL, because
+  //      an admin sitting on /admin is already exactly where they belong
+  //   5. a null redirect changes no location, so nothing marks this builder
+  //      dirty, and the spinner stays on screen forever
+  //
+  // The guard and the builder are complementary by design (see
+  // [_citizenRedirect]): the redirect turns the WRONG person away, this one
+  // declines to render while we do not yet know WHO they are. But only the
+  // redirect was wired to re-run. This subscribes the builder to the same
+  // ChangeNotifier the router already uses as its refreshListenable, so step 3
+  // rebuilds it and the console appears on its own.
+  //
+  // Web-only symptom, which is why mobile never hit it: _roleKnown initialises
+  // to `!kIsWeb`, so on mobile it is true before this builder ever runs.
+  //
+  // `console` is a const widget from the route table, so re-running this
+  // builder re-uses the same instance and the mounted console is not rebuilt.
+  return ListenableBuilder(
+    listenable: AuthRestoration.instance,
+    builder: (_, _) {
+      final restoration = AuthRestoration.instance;
+      if (!restoration.settled || !restoration.roleKnown) {
+        return const _StartingUp();
+      }
+      return NetworkWrapper(child: console);
+    },
+  );
 }
 
 final GoRouter citizenRouter = GoRouter(
