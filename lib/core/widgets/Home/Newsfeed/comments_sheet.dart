@@ -73,27 +73,23 @@ Future<void> showCommentsSheet(
   );
 
   if (wide) {
-    // Clamped against the viewport, not fixed. 560x720 inside a 24px inset
-    // needs 608x768 to draw — more height than a 1366x768 laptop has, which
-    // clipped the composer off the bottom on exactly the machines this console
-    // runs on.
+    // Size and insets come from news_feed_helpers so this dialog, the admin
+    // console's and the staff console's stay the same shape — and so the
+    // web's Facebook-parity proportions are stated in one place. Everything is
+    // clamped against the viewport, never fixed: the old fixed 560x720 inside
+    // a 24px inset needed 608x768 to draw, which clipped the composer off the
+    // bottom on exactly the 1366x768 laptops these consoles run on.
     final size = MediaQuery.of(context).size;
-    final cap = commentsDialogMaxWidth(size);
-    // Short viewports also claw back the vertical inset: on a 390dp-tall
-    // landscape phone, 24 top and bottom is an eighth of the screen.
-    final inset = size.height < 560 ? 10.0 : 24.0;
     return showAppDialog(
       context: context,
       builder: (_) => Dialog(
         backgroundColor: Colors.transparent,
-        insetPadding: EdgeInsets.symmetric(horizontal: 24, vertical: inset),
+        insetPadding: EdgeInsets.symmetric(
+          horizontal: kCommentsDialogHorizontalInset,
+          vertical: commentsDialogVerticalInset(size),
+        ),
         child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: size.width - 48 < cap ? size.width - 48 : cap,
-            maxHeight: size.height - inset * 2 < 720
-                ? size.height - inset * 2
-                : 720,
-          ),
+          constraints: commentsDialogConstraints(size),
           child: sheet(asDialog: true),
         ),
       ),

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import '../../../theme/app_colors.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -30,10 +31,63 @@ const double kCommentsDialogBreakpoint = 600;
 bool commentsUseSplitLayout(Size size) =>
     size.width >= 720 && size.height < 560;
 
-/// Dialog width cap. The split layout needs room for two columns; stacked keeps
-/// the reading-width 560 it has always used.
-double commentsDialogMaxWidth(Size size) =>
-    commentsUseSplitLayout(size) ? 900 : 560;
+/// Dialog width cap.
+///
+/// On the WEB these are Facebook's post-dialog proportions: a 700-wide stacked
+/// column — the width a photo, its caption and a comment thread are actually
+/// laid out at over there — and 1000 when the panel splits into two columns and
+/// has to fit a post beside a thread. The old 560 came from reading-width
+/// prose, and on a desktop browser it left the modal looking like a phone sheet
+/// dropped into the middle of the page.
+///
+/// Native keeps 560/900 untouched: `kIsWeb` is a compile-time false in the app,
+/// so a tablet build compiles to exactly the expression that was here before.
+double commentsDialogMaxWidth(Size size) {
+  if (commentsUseSplitLayout(size)) return kIsWeb ? 1000 : 900;
+  return kIsWeb ? 700 : 560;
+}
+
+/// Gap left between the dialog and the edge of the viewport, vertically.
+///
+/// Short viewports claw the inset back: on a 390dp-tall landscape phone, 24 top
+/// and bottom is an eighth of the screen. On the web the gap is Facebook's —
+/// the dialog is meant to read as the page's foreground, not as a card floating
+/// in it, so it stops just short of the window edge.
+double commentsDialogVerticalInset(Size size) {
+  if (size.height < 560) return 10;
+  return kIsWeb ? 28 : 24;
+}
+
+/// Dialog height cap, always clamped to the viewport.
+///
+/// A fixed 720 inside a 24px inset needs a 768px-tall display just to draw, and
+/// clipped the composer off the bottom of the 1366x768 laptops these consoles
+/// run on — hence the clamp. The WEB cap is 940 rather than 720 so a normal
+/// browser window fills the way Facebook's does (~93% of the viewport) instead
+/// of leaving a band of feed showing above and below; on a very tall monitor
+/// 940 still stops the thread from stretching past a readable height.
+double commentsDialogMaxHeight(Size size) {
+  final available = size.height - commentsDialogVerticalInset(size) * 2;
+  final cap = kIsWeb ? 940.0 : 720.0;
+  return available < cap ? available : cap;
+}
+
+/// The full constraint pair for a comments dialog, so the citizen feed, the
+/// staff console and the admin console cannot drift apart on size the way they
+/// once did on presentation. Pair it with [commentsDialogVerticalInset] for the
+/// Dialog's own `insetPadding`.
+BoxConstraints commentsDialogConstraints(Size size) {
+  final cap = commentsDialogMaxWidth(size);
+  final available = size.width - kCommentsDialogHorizontalInset * 2;
+  return BoxConstraints(
+    maxWidth: available < cap ? available : cap,
+    maxHeight: commentsDialogMaxHeight(size),
+  );
+}
+
+/// Horizontal breathing room either side of the dialog. Only binds below
+/// ~750px wide, where the dialog gives up its cap and tracks the window.
+const double kCommentsDialogHorizontalInset = 24;
 
 /// Small grey pill at the top of every bottom sheet.
 Widget dragHandle(double width) => Container(

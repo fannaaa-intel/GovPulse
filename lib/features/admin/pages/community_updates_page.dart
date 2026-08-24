@@ -2695,24 +2695,16 @@ void showCommentsPanel(
       builder: (_) => Dialog(
         backgroundColor: Colors.transparent,
         insetPadding: EdgeInsets.symmetric(
-          horizontal: 24,
-          // Short viewports claw back the vertical inset: on a 390dp-tall
-          // landscape phone, 24 top and bottom is an eighth of the screen.
-          vertical: size.height < 560 ? 10.0 : 24.0,
+          horizontal: kCommentsDialogHorizontalInset,
+          vertical: commentsDialogVerticalInset(size),
         ),
         child: ConstrainedBox(
-          // Clamped to the viewport — a fixed 720 inside a 24px inset needs a
+          // One shared clamp with the citizen feed and the staff console, so
+          // the three surfaces cannot drift apart on size — and always against
+          // the viewport, never fixed: a fixed 720 inside a 24px inset needs a
           // 768px-tall display just to draw, and clipped the composer on the
-          // 1366x768 laptops this console runs on. The cap widens when the
-          // panel splits into two columns.
-          constraints: BoxConstraints(
-            maxWidth: size.width - 48 < commentsDialogMaxWidth(size)
-                ? size.width - 48
-                : commentsDialogMaxWidth(size),
-            maxHeight: size.height < 560
-                ? size.height - 20
-                : (size.height - 48 < 720 ? size.height - 48 : 720),
-          ),
+          // 1366x768 laptops this console runs on.
+          constraints: commentsDialogConstraints(size),
           child: _CommentsPanel(
             post: post,
             highlightCommentId: highlightCommentId,
