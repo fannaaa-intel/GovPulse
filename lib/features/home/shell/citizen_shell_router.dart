@@ -449,6 +449,19 @@ String? _authRedirect(BuildContext context, GoRouterState state) {
   // neither a citizen nor a guest opening it should be swept anywhere else.
   if (loc.startsWith(kScanRoutePrefix)) return null;
 
+  // A screen is mid-way through driving auth state on purpose — hold.
+  //
+  // The reset-password screen has to setSession() before it can read the
+  // cooldown or call updateUser(), and that sign-in re-runs this guard
+  // synchronously while the screen sits on /login. Without this hold,
+  // _citizenRedirect below sweeps it to /home mid-flow and the user never sees
+  // whether the reset succeeded — see AuthRestoration.beginAuthFlow.
+  //
+  // Holding is safe: returning null means "use the requested location", the
+  // same thing the settled/roleKnown holds do, and it is released in a finally
+  // so it cannot stick. Every route still enforces its own access rules.
+  if (AuthRestoration.instance.authFlowActive) return null;
+
   // Citizen is tested FIRST, and deliberately ahead of the settled hold below.
   //
   // A present Supabase session is positive evidence: it can only mean citizen,

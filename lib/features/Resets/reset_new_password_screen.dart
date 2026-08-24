@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../core/router/legacy_nav.dart';
+import '../../core/services/auth_ready.dart';
 import '../../core/services/password_cooldown.dart';
 import '../../core/utils/password_validator.dart';
 import '../../core/theme/app_colors.dart';
@@ -156,9 +157,18 @@ class _ResetNewPasswordScreenState extends State<ResetNewPasswordScreen>
       apiError = null;
     });
 
-    try {
-      final supabase = Supabase.instance.client;
+    final supabase = Supabase.instance.client;
 
+    // ── Hold the web guard for the whole transaction ─────────────────────
+    // setSession() below signs the user in, which re-runs the router guard
+    // SYNCHRONOUSLY. This screen sits on /login, and a signed-in citizen on
+    // /login is swept to /home — so without this hold the user was thrown onto
+    // the home page the instant they pressed the button, never saw the result,
+    // and on a cooldown block was left believing a password change had happened
+    // when it had not. Released in the finally below, always.
+    AuthRestoration.instance.beginAuthFlow();
+
+    try {
       await supabase.auth.setSession(widget.refreshToken);
 
       // ── Cooldown gate ────────────────────────────────────────────────────
@@ -225,6 +235,25 @@ class _ResetNewPasswordScreenState extends State<ResetNewPasswordScreen>
         }
       });
     } finally {
+      // Drop the recovery session on EVERY path.
+      //
+      // On success the user is sent to the login screen to sign in with their
+      // new password (password_successfully_changed.dart -> goToLogin), so the
+      // session has no further use. On a cooldown block or an error it is a
+      // session they never asked for — leaving it behind is what made the web
+      // bug look like a silent login.
+      //
+      // Signing out BEFORE releasing the hold matters: the guard re-runs on
+      // release, and a signed-out visitor on /login is left where they are,
+      // which is what keeps the error message on screen.
+      try {
+        await supabase.auth.signOut();
+      } catch (_) {
+        // Never let a failed sign-out strand the hold; the release below is
+        // what must always happen.
+      }
+      AuthRestoration.instance.endAuthFlow();
+
       if (mounted) setState(() => isLoading = false);
     }
   }

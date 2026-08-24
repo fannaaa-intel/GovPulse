@@ -192,6 +192,44 @@ class AuthRestoration extends ChangeNotifier {
   /// location until this is true rather than guessing a role.
   bool get roleKnown => _roleKnown;
 
+  // ── Auth-flow hold ──────────────────────────────────────────────────────
+  //
+  // Set while a screen is DELIBERATELY driving auth state as part of its own
+  // flow, so the web guard leaves the location alone until it is finished.
+  //
+  // The case this exists for: the forgot-password reset screen must call
+  // setSession() before it can do anything, because both the 30-day cooldown
+  // read and updateUser() need an authenticated identity. That sign-in fires
+  // onAuthStateChange -> notifyListeners() -> _authRedirect, SYNCHRONOUSLY,
+  // long before the screen's own await has resumed. The screen sits on /login,
+  // and _citizenRedirect sweeps a signed-in citizen off /login to /home — so
+  // the user was thrown onto the home page mid-reset and never saw the result,
+  // success or failure. On a cooldown block that looked like "I typed a new
+  // password and it just logged me in", with the password silently unchanged.
+  //
+  // Only the guard reads this. It is NOT a security control: it holds the
+  // requested location, exactly like the [settled] and [roleKnown] holds, and
+  // every route still enforces its own access rules. Callers MUST release it in
+  // a finally block — see reset_new_password_screen.updatePassword.
+  bool _authFlowActive = false;
+
+  /// True while a screen owns the auth transition; the web guard holds.
+  bool get authFlowActive => _authFlowActive;
+
+  /// Take the hold. Deliberately does NOT notify: the point is to avoid a guard
+  /// re-run, not to cause one.
+  void beginAuthFlow() {
+    _authFlowActive = true;
+  }
+
+  /// Release the hold and re-run the guard so the user lands wherever their
+  /// now-final auth state says they belong.
+  void endAuthFlow() {
+    if (!_authFlowActive) return;
+    _authFlowActive = false;
+    notifyListeners();
+  }
+
   bool _started = false;
 
   /// Starts the one-shot restoration watch and subscribes to auth changes.
