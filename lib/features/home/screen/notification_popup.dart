@@ -10,6 +10,35 @@ import '../settings/my-submission/my_submissions_screen.dart'
     show MySubmissionsArgs, MySubmissionsScreen;
 import '../my_report/my_reports_screen.dart' show ReportItem;
 
+// ── Shared card metrics ───────────────────────────────────────────────────────
+//
+// The panel height, the loading skeleton and the real cards all have to agree
+// on how tall one row is. They used to each carry their own guess — the
+// skeleton hardcoded `w * 0.209` while a real card measured ~w * 0.219, so the
+// list visibly jumped the moment loading finished. These derive that number
+// once, from the same type sizes the card actually renders.
+
+/// Rows the skeleton draws (and the height the panel reserves) while loading.
+const int _kSkeletonRows = 3;
+
+/// Height of one line of text at [fontSize], matching the card's line height.
+double _kLine(double fontSize) => fontSize * 1.35;
+
+/// Full vertical extent of one notification row: card padding + the three
+/// stacked text lines + the gap below the card. Kept in sync with [_NotifItem]
+/// and [_NotifSkeletonCard], which both clamp their text to a single line.
+double _kCardExtent(double w) =>
+    w * 0.03 * 2 + // card padding, top + bottom
+    _kLine(w * 0.036) + // title
+    2 +
+    _kLine(w * 0.029) + // subtitle
+    2 +
+    _kLine(w * 0.027) + // timestamp
+    w * 0.025; // gap below the card
+
+/// Header row + the gap under it, above the list area.
+double _kHeaderExtent(double w) => _kLine(w * 0.045) + w * 0.04;
+
 // ── Model ─────────────────────────────────────────────────────────────────────
 class AppNotification {
   final String? id;
@@ -202,6 +231,25 @@ class NotificationService {
   /// behaviour below keeps working unchanged.
   static int _unreadOutsideWindow = 0;
 
+  /// Test-only: install a fixed list without touching Supabase, so the layout
+  /// tests can pump the sheet at a known row count. [load] is a no-op with no
+  /// signed-in user, which is the state a widget test runs in, so seeding here
+  /// is enough to drive the panel.
+  @visibleForTesting
+  static void debugSeed(List<AppNotification> rows) {
+    notifications = List.of(rows);
+    _unreadOutsideWindow = 0;
+    _sync();
+  }
+
+  /// Test-only: return the service to its empty starting state.
+  @visibleForTesting
+  static void debugReset() {
+    notifications = [];
+    _unreadOutsideWindow = 0;
+    _sync();
+  }
+
   /// Keep [unread] in lock-step with the backing list. Called after every
   /// mutation below.
   ///
@@ -218,7 +266,21 @@ class NotificationService {
   }
 
   static SupabaseClient get _db => Supabase.instance.client;
-  static String? get _uid => _db.auth.currentUser?.id;
+
+  /// Signed-in user id, or null when there is nobody (or no Supabase at all).
+  ///
+  /// Guarded because `Supabase.instance` ASSERTS when the SDK has not been
+  /// initialised rather than returning null — so in a widget test this threw
+  /// out of [load] before it could reach its own `uid == null` early return,
+  /// and the sheet sat on its loading skeleton forever. Every caller already
+  /// treats null as "no user, do nothing".
+  static String? get _uid {
+    try {
+      return _db.auth.currentUser?.id;
+    } catch (_) {
+      return null;
+    }
+  }
 
   // ── Live badge updates (Supabase Realtime) ─────────────────────────────────
   //
@@ -1170,10 +1232,49 @@ class _NotificationPopupState extends State<NotificationPopup> {
     _w = w; // cache for callbacks
 
     final popupWidth = w * 0.90;
-    final double maxH = sz.height * 0.85;
-    final double minH = math.min(360.0, maxH);
-    final double popupHeight = (w * 1.1).clamp(minH, maxH);
 
+    // The panel grows with its CONTENT and stops at the screen cap — it is not
+    // sized off the screen width. A width-derived fixed height left a tall
+    // block of empty glass under two notifications on every phone, because
+    // `w * 1.1` knows nothing about how many rows there actually are.
+    //
+    // Height budget: chrome (padding + header + header gap) plus one card
+    // extent per row, with the empty state given a single card's worth of room
+    // so "No notifications" is centred in a compact panel instead of a tall one.
+    final double chrome = w * 0.045 * 2 + _kHeaderExtent(w);
+    final int rows = _loading
+        ? _kSkeletonRows
+        : math.max(_notifications.length, 1);
+    final double contentH = rows * _kCardExtent(w);
+
+    final double maxH = sz.height * 0.85;
+    // Floor only tall enough for the chrome plus ~1.5 cards, so a single
+    // notification still reads as a panel rather than a strip, while two rows
+    // no longer force a half-screen box.
+    final double minH = math.min(chrome + _kCardExtent(w) * 1.5, maxH);
+    final double popupHeight = (chrome + contentH).clamp(minH, maxH);
+
+    // Every size in this sheet is already derived from the screen width, and
+    // the row height above is computed from those same font sizes. An OS text
+    // scaler multiplying on top would make real rows taller than the height
+    // reserved for them and overflow the card. Cap the scale-up (accessibility
+    // still gets larger text, just bounded) and never allow scale-DOWN.
+    final mq = MediaQuery.of(context);
+    final scaled = mq.textScaler.scale(100) / 100;
+    final clampedScaler = TextScaler.linear(scaled.clamp(1.0, 1.15));
+
+    return MediaQuery(
+      data: mq.copyWith(textScaler: clampedScaler),
+      child: _buildPanel(context, w, popupWidth, popupHeight),
+    );
+  }
+
+  Widget _buildPanel(
+    BuildContext context,
+    double w,
+    double popupWidth,
+    double popupHeight,
+  ) {
     return TweenAnimationBuilder<double>(
       duration: const Duration(milliseconds: 250),
       tween: Tween(begin: 0, end: 1),
@@ -1199,15 +1300,27 @@ class _NotificationPopupState extends State<NotificationPopup> {
                     opacity: v,
                     child: Transform.scale(
                       scale: 0.95 + 0.05 * v,
-                      child: Container(
+                      // Animated, because the height now follows the row
+                      // count: deleting a card, or the skeleton giving way to
+                      // a different number of real rows, would otherwise snap
+                      // the panel to its new size.
+                      child: AnimatedContainer(
+                        duration: _kCollapseD,
+                        curve: Curves.easeOut,
                         width: popupWidth,
                         height: popupHeight,
                         padding: EdgeInsets.all(w * 0.045),
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(28),
-                          color: Colors.white.withValues(alpha: .75),
+                          // Near-opaque. At .75 the blurred home screen showed
+                          // through the panel AND through each card's own
+                          // translucency on top of it, so notification text sat
+                          // on a moving coloured ground and read as greyed-out.
+                          // The frosted look comes from the BackdropFilter
+                          // behind the panel, not from letting content fade.
+                          color: Colors.white.withValues(alpha: .95),
                           border: Border.all(
-                            color: Colors.white.withValues(alpha: .4),
+                            color: Colors.white.withValues(alpha: .6),
                           ),
                           boxShadow: [
                             BoxShadow(
@@ -1223,13 +1336,24 @@ class _NotificationPopupState extends State<NotificationPopup> {
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text(
-                                  "Notifications",
-                                  style: TextStyle(
-                                    fontSize: w * 0.045,
-                                    fontWeight: FontWeight.w700,
+                                // Flexible: two hard-sized Texts in one Row
+                                // overflowed the header by 28px on a 320-wide
+                                // phone (and by more in Tagalog / at a large
+                                // font scale). The title yields first — the
+                                // "Clear All" action must stay fully readable.
+                                Flexible(
+                                  child: Text(
+                                    "Notifications",
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: w * 0.045,
+                                      height: 1.35,
+                                      fontWeight: FontWeight.w700,
+                                    ),
                                   ),
                                 ),
+                                SizedBox(width: w * 0.02),
                                 GestureDetector(
                                   onTap: _clearingAll ? null : _clearAll,
                                   child: AnimatedOpacity(
@@ -1237,8 +1361,11 @@ class _NotificationPopupState extends State<NotificationPopup> {
                                     opacity: _clearingAll ? 0.35 : 1.0,
                                     child: Text(
                                       "Clear All",
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
                                         fontSize: w * 0.032,
+                                        height: 1.35,
                                         color: Colors.blue,
                                         fontWeight: FontWeight.w500,
                                       ),
@@ -1395,11 +1522,13 @@ class _NotifLoadingSkeletonState extends State<_NotifLoadingSkeleton>
       // used to spill past the list area and trip a RenderFlex overflow.
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final cardExtent = w * 0.209; // card height + bottom margin
+          // Same row extent the panel reserves height with and the real cards
+          // occupy, so the list does not jump when the real rows land.
+          final cardExtent = _kCardExtent(w);
           final maxH = constraints.maxHeight.isFinite
               ? constraints.maxHeight
-              : cardExtent * 5;
-          final count = (maxH / cardExtent).floor().clamp(1, 5);
+              : cardExtent * _kSkeletonRows;
+          final count = (maxH / cardExtent).floor().clamp(1, _kSkeletonRows);
           return ClipRect(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -1440,7 +1569,8 @@ class _NotifSkeletonCard extends StatelessWidget {
       margin: EdgeInsets.only(bottom: w * 0.025),
       padding: EdgeInsets.all(w * 0.03),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: .65),
+        // Matches the loaded card's solid fill so the swap is invisible.
+        color: Colors.white,
         borderRadius: BorderRadius.circular(18),
       ),
       child: Row(
@@ -1459,11 +1589,14 @@ class _NotifSkeletonCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                bar(double.infinity, w * 0.032),
-                SizedBox(height: w * 0.02),
-                bar(w * 0.5, w * 0.028),
-                SizedBox(height: w * 0.02),
-                bar(w * 0.22, w * 0.024),
+                // Bars occupy the same line boxes as the real card's three
+                // Texts (see [_kCardExtent]), so the skeleton and the loaded
+                // row are the same height and nothing shifts on load.
+                bar(double.infinity, _kLine(w * 0.036)),
+                const SizedBox(height: 2),
+                bar(w * 0.5, _kLine(w * 0.029)),
+                const SizedBox(height: 2),
+                bar(w * 0.22, _kLine(w * 0.027)),
               ],
             ),
           ),
@@ -1532,37 +1665,64 @@ class _NotifItem extends StatelessWidget {
       margin: spaced ? EdgeInsets.only(bottom: w * 0.025) : EdgeInsets.zero,
       padding: EdgeInsets.all(w * 0.03),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: unread ? .65 : .38),
+        // Solid cards. Read/unread is carried by the title weight, the text
+        // colour and the unread dot — it does NOT need the card to fade out.
+        // Dropping a read card to .38 white made its content look disabled
+        // rather than merely "already seen".
+        color: unread ? Colors.white : const Color(0xFFF2F4F7),
         borderRadius: borderRadius ?? BorderRadius.circular(18),
       ),
       child: Row(
         children: [
-          Opacity(opacity: unread ? 1 : .6, child: leading),
+          // Full-strength avatar/icon in both states. Fading it to .6 was a
+          // second dimming pass on top of the card's own, and an actor's photo
+          // dimmed like that just looks like a failed image load.
+          leading,
           SizedBox(width: w * 0.025),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Every row is one line of each — a long title used to wrap and
+                // make its card taller than its neighbours (and taller than the
+                // skeleton that stood in for it). The full text is still one
+                // tap away on the destination screen.
                 Text(
                   n.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: w * 0.036,
-                    fontWeight: unread ? FontWeight.w700 : FontWeight.w500,
-                    color: unread ? Colors.black87 : Colors.grey[700],
+                    height: 1.35,
+                    fontWeight: unread ? FontWeight.w700 : FontWeight.w600,
+                    // Both states stay legible; weight, not colour, is what
+                    // separates read from unread.
+                    color: unread
+                        ? const Color(0xFF111827)
+                        : const Color(0xFF374151),
                   ),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   n.subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: w * 0.029,
-                    color: unread ? Colors.grey[700] : Colors.grey[600],
+                    height: 1.35,
+                    color: const Color(0xFF4B5563),
                   ),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   n.formatTimeAgo(n.time),
-                  style: TextStyle(fontSize: w * 0.027, color: Colors.grey),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: w * 0.027,
+                    height: 1.35,
+                    color: const Color(0xFF6B7280),
+                  ),
                 ),
               ],
             ),

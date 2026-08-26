@@ -201,7 +201,11 @@ void main() {
     // The row's own styling is the discriminator. Asserting only that the row
     // is STILL THERE would pass against a do-nothing reconciler — the row never
     // goes anywhere — so this reads the weight the card actually rendered:
-    // w700 while unread, w500 once read.
+    // w700 while unread, lighter once read.
+    //
+    // The read weight is w600, not w500: a read card no longer fades its
+    // background, so the title carries the read/unread distinction on its own
+    // and has to stay legible while still being visibly lighter than unread.
     FontWeight? weight() => tester.widget<Text>(find.text('First')).style?.fontWeight;
     expect(weight(), FontWeight.w700);
 
@@ -215,7 +219,7 @@ void main() {
 
     expect(find.text('First'), findsOneWidget,
         reason: 'a read row stays in the list, it is not removed');
-    expect(weight(), FontWeight.w500,
+    expect(weight(), FontWeight.w600,
         reason: 'the card must pick up the new read state in place');
     expect(tester.takeException(), isNull);
   });
