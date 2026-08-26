@@ -83,6 +83,11 @@ void main() async {
 
   await Hive.initFlutter();
 
+  // Drops the pre-fix unscoped chat boxes, which could hold one account's
+  // messages where the next account (or a signed-out visitor) would read them.
+  // Before any bind, so it can never delete a box the live session is using.
+  await ChatService.purgeLegacyUnscopedBoxes();
+
   // Web only: pull the cached role into memory before the first frame, so the
   // guard can classify a returning admin or staff member on its FIRST
   // evaluation rather than holding their location — and painting citizen

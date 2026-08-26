@@ -59,6 +59,36 @@ class ChatService extends ChangeNotifier {
     }
   }
 
+  /// One-time cleanup of the pre-fix UNSCOPED boxes.
+  ///
+  /// Until the `_scoped` fix in [_resetAll], starting a new conversation while
+  /// signed in rebound this service to the bare `chat_cache` name and every
+  /// `_persist()` afterwards wrote there — a box shared by every account on the
+  /// device, and the one [init] reads when nobody is signed in. The fix stops
+  /// new writes, but devices that ran the old build still carry whatever landed
+  /// there, so it would keep surfacing to the next user (and to signed-out
+  /// visitors) until something removes it.
+  ///
+  /// Safe to run unconditionally on every launch. Post-fix these names are only
+  /// ever used while `_currentUserId` is null — the signed-out case, which
+  /// starts from a greeting and has nothing worth keeping — so deleting them
+  /// costs a signed-out visitor nothing and reliably drops the leaked data.
+  ///
+  /// Runs BEFORE any bind, so it cannot delete a box the live session is using.
+  /// Failures are swallowed: on web these are IndexedDB round-trips, and a
+  /// cleanup that cannot run is not a reason to fail app start.
+  static Future<void> purgeLegacyUnscopedBoxes() async {
+    for (final name in const [
+      'chat_cache',
+      'chat_cache_followup',
+      _followUpIndexBox,
+    ]) {
+      try {
+        await Hive.deleteBoxFromDisk(name);
+      } catch (_) {}
+    }
+  }
+
   static String _boxNameForReport(String reportRef) {
     final safe = reportRef.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
     return _scoped('chat_cache_followup_$safe');
@@ -1637,7 +1667,22 @@ class ChatService extends ChangeNotifier {
       await b.clear();
       await b.flush();
     } catch (_) {}
-    _activeBoxName = _baseBox;
+    // SCOPED, not the bare [_baseBox] this used to assign.
+    //
+    // `userRequested` is the path that was broken. The user is still signed IN
+    // when they start a new conversation, so dropping the `__<uid>` suffix
+    // pointed this instance at the SHARED, unscoped box for the rest of the
+    // session: every `_persist()` afterwards wrote that citizen's messages to
+    // `chat_cache`, where the next account on the same device read them back.
+    // Nothing re-scoped it in between — [_rebindToCurrentUser] only rebinds
+    // when the uid CHANGES, so even the same user signing back in kept it.
+    //
+    // `logout` is unaffected either way. `_currentUserId` is still set here
+    // (onUserSignedOut nulls it in its `finally`, after this returns), so this
+    // now leaves the field on the scoped name rather than the base one — but
+    // the disk clear above has already emptied that box, and the next
+    // [onUserAuthenticated] assigns the field before any read of it.
+    _activeBoxName = _scoped(_baseBox);
 
     notifyListeners();
     debugPrint('ChatService: reset (reason=${reason.name})');
@@ -1884,6 +1929,22 @@ class ChatService extends ChangeNotifier {
   /// that 32-character alphabet and nothing else compares them. These expose the
   /// real generator (not a reimplementation) so a test can cross-check its
   /// output against the live regex. See test/reference_format_test.dart.
+  /// The Hive box this instance currently reads and writes.
+  ///
+  /// Exposed so the scoping regression can be asserted directly: the bug was
+  /// this field silently losing its `__<uid>` suffix, which is invisible from
+  /// the outside until another account reads the messages back.
+  @visibleForTesting
+  String get activeBoxNameForTest => _activeBoxName;
+
+  /// Binds/unbinds the static user scope without touching Hive or the network,
+  /// so a test can exercise the naming rules on their own.
+  @visibleForTesting
+  static void setUserScopeForTest(String? uid) => _currentUserId = uid;
+
+  @visibleForTesting
+  static String scopedForTest(String base) => _scoped(base);
+
   @visibleForTesting
   static String generateReferenceForTest() => _generateRef();
   @visibleForTesting
