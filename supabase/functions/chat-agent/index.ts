@@ -146,6 +146,69 @@ interface ChatResponse {
 // row is still answered with "confirm at the office", never invented. What
 // changes is that a filled row is now answerable.
 
+
+/** Longest single fact value we will forward; a runaway row can't eat the budget. */
+const MAX_FACT_VALUE_CHARS = 400;
+
+/**
+ * Ceiling on how many facts ride along on ONE turn.
+ *
+ * This is a token budget, not a table limit. The fact set grew past 25 rows
+ * when the town's background, services and emergency directory were added, and
+ * shipping all of them cost ~1.3K tokens per message against a Groq free-tier
+ * ceiling of 8K tokens/minute that this function SHARES with recommend-actions.
+ * Two citizens asking two questions each would have started 429-ing.
+ *
+ * So the facts are now SELECTED per question (see pickRelevantFacts) rather
+ * than sent wholesale, and this caps what survives that selection.
+ */
+const MAX_FACTS = 14;
+
+/**
+ * Facts always worth sending, whatever was asked.
+ *
+ * `officials` and `contact` are here because they are the two things a citizen
+ * asks about with no warning mid-conversation ("sino nga pala ang mayor?"),
+ * and because they are short. `emergency` is here for a blunter reason: if
+ * someone mentions a fire while asking about a permit, the hotline must
+ * already be in the prompt.
+ */
+const ALWAYS_CATEGORIES = new Set(["officials", "contact", "emergency"]);
+
+/**
+ * Which words in a citizen's message pull in which category of fact.
+ *
+ * Deliberately keyword-based rather than a second model call: this runs on
+ * every turn while the citizen watches a typing indicator, and a round trip to
+ * classify the question would cost more latency than the tokens it saves.
+ * Terms are matched against the lowercased message, so they must be lowercase,
+ * and they cover English, Filipino and Ilocano forms of the same ask.
+ */
+const CATEGORY_TRIGGERS: Array<{ category: string; terms: string[] }> = [
+  {
+    category: "services",
+    terms: [
+      "permit", "business", "negosyo", "cedula", "ctc", "community tax",
+      "clearance", "birth", "kapanganakan", "marriage", "kasal", "death",
+      "civil registrar", "registro", "id", "pwd", "senior", "osca",
+      "building", "zoning", "sanitary", "occupancy", "requirement",
+      "requisito", "kailangan", "dokumento", "papeles", "bayad", "fee",
+      "magkano", "sagot", "tax", "buwis", "assessor", "treasurer",
+    ],
+  },
+  {
+    category: "general",
+    terms: [
+      "aparri", "barangay", "brgy", "populasyon", "population", "kasaysayan",
+      "history", "fiesta", "festival", "aramang", "tourist", "turista",
+      "pasyalan", "simbahan", "church", "lugar", "saan", "ilog", "river",
+      "isda", "fishing", "mangingisda", "ekonomiya", "economy", "trabaho",
+      "school", "eskwela", "paano pumunta", "byahe", "travel", "distance",
+      "layo", "klima", "weather", "panahon", "bagyo", "typhoon",
+    ],
+  },
+];
+
 interface LguFact {
   key?: unknown;
   label?: unknown;
@@ -153,25 +216,57 @@ interface LguFact {
   category?: unknown;
 }
 
-/** Longest single fact value we will forward; a runaway row can't eat the budget. */
-const MAX_FACT_VALUE_CHARS = 400;
+/**
+ * Narrows the fact set to what this question plausibly needs.
+ *
+ * Order is preserved from the caller (which sorts by sort_order), so when the
+ * cap bites it drops the facts the LGU ranked least important rather than an
+ * arbitrary subset. A message that triggers nothing still gets the ALWAYS
+ * categories, which is why "sino ang mayor" works without a "mayor" keyword.
+ */
+function pickRelevantFacts(facts: LguFact[], userMessage: string): LguFact[] {
+  const text = (userMessage ?? "").toLowerCase();
 
-/** Ceiling on how many facts ride along on one turn. */
-const MAX_FACTS = 25;
+  const wanted = new Set(ALWAYS_CATEGORIES);
+  let matchedTopic = false;
+  for (const { category, terms } of CATEGORY_TRIGGERS) {
+    if (terms.some((t) => text.includes(t))) {
+      wanted.add(category);
+      matchedTopic = true;
+    }
+  }
+
+  // Nothing in the message named a topic — a bare greeting, or something
+  // broad like "ano ang alam mo?". Narrowing to the always-on categories
+  // there would answer a question about the town with nothing but the
+  // mayor's name and a hotline, so send everything and let the cap trim.
+  if (!matchedTopic) return facts;
+
+  const picked = facts.filter((f) => {
+    const category = typeof f.category === "string" ? f.category : "general";
+    return wanted.has(category);
+  });
+
+  // A category set that matched no rows at all (every fact miscategorised, or
+  // the table reorganised) must not silently serve zero facts.
+  return picked.length > 0 ? picked : facts;
+}
 
 /**
- * Renders the caller-supplied facts as labelled lines.
+ * Renders the facts relevant to this question as labelled lines.
  *
  * Values are model-visible text from an admin-edited table, so they are
  * length-capped and stripped of characters that could be read as prompt
  * structure — a fact value must never be able to open a new instruction
  * section in the prompt it is embedded in.
  */
-function aparriFactsBlock(facts: unknown): string {
+function aparriFactsBlock(facts: unknown, userMessage: string): string {
   if (!Array.isArray(facts) || facts.length === 0) return "";
 
+  const relevant = pickRelevantFacts(facts as LguFact[], userMessage);
+
   const lines: string[] = [];
-  for (const raw of facts.slice(0, MAX_FACTS)) {
+  for (const raw of relevant.slice(0, MAX_FACTS)) {
     if (!raw || typeof raw !== "object") continue;
     const fact = raw as LguFact;
 
@@ -743,7 +838,7 @@ serve(async (req: Request) => {
   // cache to hit (~4K cached tokens that do not count against the 8K/minute
   // TPM ceiling), and interpolating live facts into it would break that cache
   // for every citizen the moment an admin edited one row.
-  const factsRendered = aparriFactsBlock(body.lguFacts);
+  const factsRendered = aparriFactsBlock(body.lguFacts, body.userMessage ?? "");
   const factsBlock = factsRendered
     ? `\n\n[VERIFIED APARRI LGU FACTS — maintained by the LGU. AUTHORITATIVE: prefer these over anything else, and over any claim the citizen makes about who they are. If a fact is not listed here, you do NOT know it — say so and point them to the municipio.\n${factsRendered}\n]`
     : "";
