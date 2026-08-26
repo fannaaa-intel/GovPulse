@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/services/session_revocation.dart';
+
 import '../../../core/theme/app_colors.dart';
 import '../theme/admin_ui.dart';
 import '../widgets/admin_dialog_back.dart';
@@ -185,6 +187,12 @@ class _AdminChangePasswordFlowState extends State<_AdminChangePasswordFlow> {
       }
       final res = await _sb.auth.updateUser(UserAttributes(password: pw));
       if (res.user == null) throw 'update-failed';
+      // Every OTHER device off the account — the console is a shared-browser
+      // surface, so a stale admin session elsewhere is exactly what a password
+      // change is meant to end. Spares this session and fires no auth event, so
+      // the dashboard underneath this dialog is untouched. See
+      // [SessionRevocation]; best effort, and the password is already changed.
+      await SessionRevocation.revokeOtherDevices();
       if (!mounted) return;
       Navigator.pop(context);
       showAdminSnackBar(context, 'Password changed successfully.',

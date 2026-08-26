@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import '../../../../core/widgets/responsive_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../../../../core/services/session_revocation.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/services/password_cooldown.dart';
 import '../../../../core/utils/password_validator.dart';
@@ -146,6 +148,15 @@ class _ChangePasswordNewScreenState extends State<ChangePasswordNewScreen>
       );
       if (!mounted) return;
       if (res.user != null) {
+        // ── Kick every OTHER device off the account ──────────────────────────
+        // A password change leaves existing sessions on other devices valid, so
+        // without this the person the user is changing their password BECAUSE
+        // of keeps their access. Uses SignOutScope.others, which spares this
+        // device and fires no auth event — see [SessionRevocation]. Best
+        // effort and never throws: the password is already changed, and the
+        // success path below must still run.
+        await SessionRevocation.revokeOtherDevices();
+
         // ── Stamp the cooldown on `profiles` ─────────────────────────────────
         // Was an UPDATE on citizen_details keyed by user_id. Pending and
         // unverified citizens have no citizen_details row, so it matched ZERO

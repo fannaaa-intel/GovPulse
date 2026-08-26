@@ -9,6 +9,8 @@ import '../../core/widgets/inputs/rounded_input_field.dart';
 import '../../core/widgets/indicators/password_strength_bar.dart';
 import '../../features/Resets/password_successfully_changed.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../../core/services/session_revocation.dart';
 import '../../core/widgets/web/web.dart';
 import '../../core/widgets/mobile_form_shell.dart';
 import '../../core/theme/mobile_metrics.dart';
@@ -201,6 +203,14 @@ class _ResetNewPasswordScreenState extends State<ResetNewPasswordScreen>
       if (!mounted) return;
 
       if (res.user != null) {
+        // ── Kick every OTHER device off the account ──────────────────────────
+        // This matters MORE here than on the change-password screen: a user
+        // locked out by someone else reaches for "forgot password" first, and
+        // a reset that leaves the intruder's session valid does not actually
+        // get the account back. Spares this device and fires no auth event —
+        // see [SessionRevocation]. Best effort; the reset already succeeded.
+        await SessionRevocation.revokeOtherDevices();
+
         // Same stamp as the change-password flow, so a reset starts the
         // cooldown too. Without this, resetting repeatedly stays free.
         await PasswordCooldown.stamp(supabase, res.user!.id);
