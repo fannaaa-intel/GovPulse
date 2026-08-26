@@ -319,6 +319,12 @@ class AdminNotifCenter {
     _channel = null;
     _subscribedUid = null;
     unread.value = 0;
+    // One admin's private mute list must not filter the next admin's badge.
+    // The keys behind it are uid-scoped, so [AdminSettingsNotifier] re-loads
+    // the right set for whoever signs in — but that is async, and until it
+    // resolves this set would still be the previous admin's. Dropping it here
+    // makes the gap count everything rather than silently hiding topics.
+    _mutedTopics = const {};
   }
 
   Future<void> refreshUnread() async {

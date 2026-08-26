@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../widgets/admin_notifications.dart';
 
@@ -42,8 +43,21 @@ class AdminSettings {
       );
 }
 
-const String _kPollKey = 'admin_poll_seconds';
-const String _kMutedKey = 'admin_muted_topics';
+// PER-ADMIN, not per-device. These are one admin's private preferences, and
+// the console is a browser surface where several accounts share one machine —
+// so a flat key handed the outgoing admin's mutes to the incoming one, and
+// `_load` then applied them to the live badge. Suffixed with the uid the way
+// the citizen "seen reply" marks already are.
+//
+// The `?? 'anon'` fallback is unreachable in practice (this provider only
+// builds inside the admin console, behind an authenticated guard) but keeps
+// the key well-formed rather than ending in a bare underscore if it is ever
+// read a frame before the session resolves.
+String _uidSuffix() =>
+    Supabase.instance.client.auth.currentUser?.id ?? 'anon';
+
+String _pollKey() => 'admin_poll_seconds_${_uidSuffix()}';
+String _mutedKey() => 'admin_muted_topics_${_uidSuffix()}';
 
 class AdminSettingsNotifier extends Notifier<AdminSettings> {
   @override
@@ -55,8 +69,8 @@ class AdminSettingsNotifier extends Notifier<AdminSettings> {
 
   Future<void> _load() async {
     final p = await SharedPreferences.getInstance();
-    final poll = p.getInt(_kPollKey) ?? AdminSettings.defaults.pollSeconds;
-    final muted = (p.getStringList(_kMutedKey) ?? const <String>[]).toSet();
+    final poll = p.getInt(_pollKey()) ?? AdminSettings.defaults.pollSeconds;
+    final muted = (p.getStringList(_mutedKey()) ?? const <String>[]).toSet();
     state = AdminSettings(pollSeconds: poll, mutedTopics: muted);
     // Apply mutes to the live notification center so the badge is correct even
     // before the Settings page is opened.
@@ -67,7 +81,7 @@ class AdminSettingsNotifier extends Notifier<AdminSettings> {
     if (seconds == state.pollSeconds) return;
     state = state.copyWith(pollSeconds: seconds);
     final p = await SharedPreferences.getInstance();
-    await p.setInt(_kPollKey, seconds);
+    await p.setInt(_pollKey(), seconds);
   }
 
   /// Mute or unmute a single admin-notification topic.
@@ -81,7 +95,7 @@ class AdminSettingsNotifier extends Notifier<AdminSettings> {
     state = state.copyWith(mutedTopics: next);
     AdminNotifCenter.I.setMutedTopics(next);
     final p = await SharedPreferences.getInstance();
-    await p.setStringList(_kMutedKey, next.toList());
+    await p.setStringList(_mutedKey(), next.toList());
   }
 }
 
