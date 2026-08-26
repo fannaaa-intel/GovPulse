@@ -18,8 +18,10 @@ import '../my_report/my_reports_screen.dart' show ReportItem;
 // list visibly jumped the moment loading finished. These derive that number
 // once, from the same type sizes the card actually renders.
 
-/// Rows the skeleton draws (and the height the panel reserves) while loading.
-const int _kSkeletonRows = 3;
+/// Upper bound on skeleton rows. The skeleton fills whatever the fixed panel
+/// gives it (see [_NotifLoadingSkeleton]); this only stops it running away on
+/// a very tall screen.
+const int _kMaxSkeletonRows = 6;
 
 /// Height of one line of text at [fontSize], matching the card's line height.
 double _kLine(double fontSize) => fontSize * 1.35;
@@ -35,9 +37,6 @@ double _kCardExtent(double w) =>
     2 +
     _kLine(w * 0.027) + // timestamp
     w * 0.025; // gap below the card
-
-/// Header row + the gap under it, above the list area.
-double _kHeaderExtent(double w) => _kLine(w * 0.045) + w * 0.04;
 
 // ── Model ─────────────────────────────────────────────────────────────────────
 class AppNotification {
@@ -1202,10 +1201,27 @@ class _NotificationPopupState extends State<NotificationPopup> {
     // Snapshot key list before any mutations (removals shift the live list)
     final keys = List<GlobalKey<_AnimatedNotifItemState>>.from(_itemKeys);
 
-    // Stagger slide-outs bottom → top so notifications peel away sequentially
+    // Snapshot the rows alongside their keys: a row that never animates still
+    // has to be removed, and by then the live list has shifted under us.
+    final rows = List<AppNotification>.from(_notifications);
+
+    // Stagger slide-outs bottom → top so notifications peel away sequentially.
+    //
+    // A row only has a `currentState` while AnimatedList has it BUILT, and the
+    // sheet is a fixed frame that builds roughly five rows — so on a longer
+    // list every off-screen row used to hit the null-safe call, animate
+    // nothing, and survive Clear All. Rows 0-4 cleared, the list scrolled the
+    // rest into view, and the sheet settled with them still sitting there.
+    // Falling through to a direct remove is what makes Clear All actually
+    // clear all; the animation is just the part you can see.
     for (int i = count - 1; i >= 0; i--) {
       if (!mounted) break;
-      keys[i].currentState?.slideOut(force: true);
+      final state = keys[i].currentState;
+      if (state != null) {
+        state.slideOut(force: true);
+      } else {
+        _removeNotification(rows[i]);
+      }
       if (i > 0) await Future.delayed(_kStagger);
     }
 
@@ -1233,26 +1249,17 @@ class _NotificationPopupState extends State<NotificationPopup> {
 
     final popupWidth = w * 0.90;
 
-    // The panel grows with its CONTENT and stops at the screen cap — it is not
-    // sized off the screen width. A width-derived fixed height left a tall
-    // block of empty glass under two notifications on every phone, because
-    // `w * 1.1` knows nothing about how many rows there actually are.
+    // FIXED height, on purpose. The sheet is a stable frame that content
+    // scrolls inside — it deliberately does NOT resize itself around the row
+    // count. A content-driven height was tried and reverted: the panel
+    // changing shape as notifications arrived, were read, or were deleted read
+    // as the UI twitching, and the empty state collapsed the sheet to a strip.
     //
-    // Height budget: chrome (padding + header + header gap) plus one card
-    // extent per row, with the empty state given a single card's worth of room
-    // so "No notifications" is centred in a compact panel instead of a tall one.
-    final double chrome = w * 0.045 * 2 + _kHeaderExtent(w);
-    final int rows = _loading
-        ? _kSkeletonRows
-        : math.max(_notifications.length, 1);
-    final double contentH = rows * _kCardExtent(w);
-
+    // One box, always the same size; when there are more rows than fit, the
+    // list scrolls. See the AnimatedList below, which owns that scrolling.
     final double maxH = sz.height * 0.85;
-    // Floor only tall enough for the chrome plus ~1.5 cards, so a single
-    // notification still reads as a panel rather than a strip, while two rows
-    // no longer force a half-screen box.
-    final double minH = math.min(chrome + _kCardExtent(w) * 1.5, maxH);
-    final double popupHeight = (chrome + contentH).clamp(minH, maxH);
+    final double minH = math.min(360.0, maxH);
+    final double popupHeight = (w * 1.1).clamp(minH, maxH);
 
     // Every size in this sheet is already derived from the screen width, and
     // the row height above is computed from those same font sizes. An OS text
@@ -1300,13 +1307,7 @@ class _NotificationPopupState extends State<NotificationPopup> {
                     opacity: v,
                     child: Transform.scale(
                       scale: 0.95 + 0.05 * v,
-                      // Animated, because the height now follows the row
-                      // count: deleting a card, or the skeleton giving way to
-                      // a different number of real rows, would otherwise snap
-                      // the panel to its new size.
-                      child: AnimatedContainer(
-                        duration: _kCollapseD,
-                        curve: Curves.easeOut,
+                      child: Container(
                         width: popupWidth,
                         height: popupHeight,
                         padding: EdgeInsets.all(w * 0.045),
@@ -1522,13 +1523,14 @@ class _NotifLoadingSkeletonState extends State<_NotifLoadingSkeleton>
       // used to spill past the list area and trip a RenderFlex overflow.
       child: LayoutBuilder(
         builder: (context, constraints) {
-          // Same row extent the panel reserves height with and the real cards
-          // occupy, so the list does not jump when the real rows land.
+          // Same row extent the real cards occupy, so the list does not jump
+          // when the real rows land. The panel is a fixed frame, so the
+          // skeleton simply fills it.
           final cardExtent = _kCardExtent(w);
           final maxH = constraints.maxHeight.isFinite
               ? constraints.maxHeight
-              : cardExtent * _kSkeletonRows;
-          final count = (maxH / cardExtent).floor().clamp(1, _kSkeletonRows);
+              : cardExtent * _kMaxSkeletonRows;
+          final count = (maxH / cardExtent).floor().clamp(1, _kMaxSkeletonRows);
           return ClipRect(
             child: Column(
               mainAxisSize: MainAxisSize.min,

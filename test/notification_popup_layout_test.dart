@@ -1,16 +1,19 @@
 // Layout regression tests for the MOBILE notification sheet.
 //
-// The 2026-08-26 screenshot showed a half-screen frosted panel holding two
-// notifications, with the bottom half empty glass, one card taller than the
-// other, and content that read as greyed-out. All four causes are pinned here:
+// The sheet is a FIXED-SIZE frame that content scrolls inside. A
+// content-driven height was tried and reverted — a panel that resized itself
+// around the row count read as the UI twitching — so "the panel is the same
+// size regardless of how many notifications there are" is a REQUIREMENT here,
+// not an accident, and these tests pin it.
 //
-//   1. the panel height was `w * 1.1` — derived from the SCREEN WIDTH, so it
-//      reserved the same box for 2 notifications as for 20;
-//   2. the card's title/subtitle had no `maxLines`, so a long title wrapped and
+// The 2026-08-26 screenshot also showed three defects inside that frame, all
+// still fixed and still pinned below:
+//
+//   1. the card's title/subtitle had no `maxLines`, so a long title wrapped and
 //      made its card taller than its neighbours;
-//   3. the skeleton hardcoded a row extent that no real card matched, so the
+//   2. the skeleton hardcoded a row extent that no real card matched, so the
 //      list jumped on load;
-//   4. cards were translucent white ON a translucent panel, so the blurred
+//   3. cards were translucent white ON a translucent panel, so the blurred
 //      home screen behind bled through and desaturated the text.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -33,14 +36,17 @@ AppNotification _notif({
   read: read,
 );
 
-/// The panel is the sized box directly under the entrance Transform.scale.
+/// The frosted panel, found by its own decoration rather than by position in
+/// the tree: it is the only Container with the sheet's 28px corner radius.
+/// (The full-screen backdrop tint and the 18px cards are the near misses.)
 Size _panelSize(WidgetTester tester) {
-  final panel = find
-      .descendant(
-        of: find.byType(NotificationPopup),
-        matching: find.byType(AnimatedContainer),
-      )
-      .first;
+  final panel = find.byWidgetPredicate((w) {
+    if (w is! Container) return false;
+    final d = w.decoration;
+    return d is BoxDecoration &&
+        d.borderRadius == BorderRadius.circular(28);
+  });
+  expect(panel, findsOneWidget, reason: 'could not locate the sheet panel');
   return tester.getSize(panel);
 }
 
@@ -64,47 +70,44 @@ Future<void> _pumpSheet(
 void main() {
   tearDown(NotificationService.debugReset);
 
-  group('panel height follows content, not screen width', () {
-    // The exact regression in the screenshot: two notifications must not
-    // reserve a half-screen panel.
-    testWidgets('two notifications use well under half the screen', (
-      tester,
-    ) async {
+  group('the panel is a fixed frame', () {
+    // The deliberate behaviour: the sheet must NOT resize itself around the
+    // number of notifications. Two rows and twenty rows get the same box.
+    testWidgets('height does not change with the row count', (tester) async {
       for (final device in kPortrait) {
+        await _pumpSheet(tester, device, [_notif(title: 'one')]);
+        final oneRow = _panelSize(tester).height;
+
         await _pumpSheet(tester, device, [
-          _notif(title: 'The LGU replied to your Public Service suggestion'),
-          _notif(title: 'New reply'),
+          for (var i = 0; i < 20; i++) _notif(title: 'notification $i'),
         ]);
-        final h = _panelSize(tester).height;
+        final manyRows = _panelSize(tester).height;
+
         expect(
-          h / device.size.height,
-          lessThan(0.45),
+          manyRows,
+          closeTo(oneRow, 0.5),
           reason:
-              '$device: 2 notifications filled ${(h / device.size.height * 100).round()}% '
-              'of the screen — the width-derived height is back.',
+              '$device: the panel resized with its content ($oneRow -> '
+              '$manyRows). The sheet is a fixed frame; the list scrolls.',
         );
       }
     });
 
-    testWidgets('more notifications make a taller panel', (tester) async {
+    testWidgets('the empty state keeps the full-size frame', (tester) async {
       const device = kModernPhone;
-
       await _pumpSheet(tester, device, [_notif(title: 'one')]);
-      final small = _panelSize(tester).height;
+      final withRow = _panelSize(tester).height;
 
-      await _pumpSheet(tester, device, [
-        for (var i = 0; i < 5; i++) _notif(title: 'n$i'),
-      ]);
-      final large = _panelSize(tester).height;
-
+      await _pumpSheet(tester, device, []);
+      expect(find.text('No notifications'), findsOneWidget);
       expect(
-        large,
-        greaterThan(small),
-        reason: 'panel height ignored the row count',
+        _panelSize(tester).height,
+        closeTo(withRow, 0.5),
+        reason: 'an empty sheet collapsed instead of holding its frame',
       );
     });
 
-    testWidgets('a long list is capped at 85% of the screen', (tester) async {
+    testWidgets('the panel never exceeds the screen', (tester) async {
       for (final device in kPortrait) {
         await _pumpSheet(tester, device, [
           for (var i = 0; i < 30; i++) _notif(title: 'notification $i'),
@@ -118,10 +121,100 @@ void main() {
     });
   });
 
-  group('cards are uniform height', () {
-    testWidgets('a long title does not make its card taller', (tester) async {
+  group('overflowing content scrolls', () {
+    testWidgets('a list longer than the frame is scrollable', (tester) async {
       const device = kModernPhone;
       await _pumpSheet(tester, device, [
+        for (var i = 0; i < 20; i++) _notif(title: 'notification $i'),
+      ]);
+
+      final list = find.descendant(
+        of: find.byType(NotificationPopup),
+        matching: find.byType(Scrollable),
+      );
+      expect(list, findsWidgets);
+
+      final pos = tester.state<ScrollableState>(list.first).position;
+      expect(
+        pos.maxScrollExtent,
+        greaterThan(0),
+        reason: '20 notifications did not produce a scrollable extent',
+      );
+
+      // And it actually moves.
+      await tester.drag(list.first, const Offset(0, -200));
+      await tester.pump();
+      expect(pos.pixels, greaterThan(0), reason: 'the list did not scroll');
+    });
+
+    testWidgets('a short list does not scroll', (tester) async {
+      await _pumpSheet(tester, kModernPhone, [
+        _notif(title: 'only one'),
+      ]);
+      final list = find.descendant(
+        of: find.byType(NotificationPopup),
+        matching: find.byType(Scrollable),
+      );
+      final pos = tester.state<ScrollableState>(list.first).position;
+      expect(pos.maxScrollExtent, 0);
+    });
+  });
+
+  group('Clear All', () {
+    testWidgets('clears every row, including a scrolled-past one', (
+      tester,
+    ) async {
+      await _pumpSheet(tester, kModernPhone, [
+        for (var i = 0; i < 12; i++) _notif(title: 'notification $i'),
+      ]);
+      expect(find.text('notification 0'), findsOneWidget);
+
+      await tester.tap(find.text('Clear All'));
+      await tester.pump();
+
+      // Drive the staggered slide-out and watch the sheet empty out.
+      //
+      // Sampled DURING the cascade on purpose. `_clearAll` ends with
+      // `_syncFromService()`, and `NotificationService.remove` only drops its
+      // local copy AFTER the Supabase delete succeeds — with no Supabase in a
+      // widget test every delete fails, so that trailing sync correctly
+      // re-imports the rows. On a device the deletes land and they stay gone.
+      // What this pins is the part that is ours: the cascade reaches every
+      // row, including the ones scrolled out of view, which is where a stagger
+      // driven off built children would quietly skip rows.
+      var sawEmpty = false;
+      for (var step = 0; step < 80 && !sawEmpty; step++) {
+        await tester.pump(const Duration(milliseconds: 100));
+        sawEmpty = [
+          for (var i = 0; i < 12; i++)
+            if (find.text('notification $i').evaluate().isNotEmpty) i,
+        ].isEmpty;
+      }
+
+      expect(
+        sawEmpty,
+        isTrue,
+        reason: 'Clear All left rows on the sheet after the full cascade',
+      );
+
+      // Drain `_clearAll`'s trailing failsafe delay; leaving it pending trips
+      // the binding's "a Timer is still pending" check at teardown.
+      await tester.pump(const Duration(seconds: 5));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('is a no-op on an empty list', (tester) async {
+      await _pumpSheet(tester, kModernPhone, []);
+      await tester.tap(find.text('Clear All'));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 2));
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('cards are uniform height', () {
+    testWidgets('a long title does not make its card taller', (tester) async {
+      await _pumpSheet(tester, kModernPhone, [
         _notif(
           title:
               'The LGU replied to your Public Service suggestion about the '
@@ -133,28 +226,18 @@ void main() {
         _notif(title: 'New reply', subtitle: 'hello test'),
       ]);
 
-      final cards = tester
-          .widgetList<Container>(
-            find.descendant(
-              of: find.byType(NotificationPopup),
-              matching: find.byType(Container),
-            ),
-          )
-          .toList();
-      expect(cards, isNotEmpty);
-
-      final heights = tester
+      final clamped = tester
           .widgetList<Text>(find.byType(Text))
           .where((t) => t.maxLines != null)
           .toList();
-      // Every notification Text is clamped to a single line.
+      expect(clamped, isNotEmpty);
       expect(
-        heights.every((t) => t.maxLines == 1),
+        clamped.every((t) => t.maxLines == 1),
         isTrue,
         reason: 'a notification Text was left unclamped and can wrap',
       );
       expect(
-        heights.every((t) => t.overflow == TextOverflow.ellipsis),
+        clamped.every((t) => t.overflow == TextOverflow.ellipsis),
         isTrue,
         reason: 'a clamped Text has no ellipsis and will hard-cut',
       );
