@@ -241,6 +241,16 @@ class NotificationService {
     _sync();
   }
 
+  /// Test-only: seed the out-of-window unread count, the half of the badge
+  /// that does NOT come from [notifications]. Exposed so a test can prove the
+  /// sign-out path zeroes it — emptying the list alone leaves the badge on this
+  /// number, which is invisible from the list contents.
+  @visibleForTesting
+  static void debugSeedUnreadOutsideWindow(int n) {
+    _unreadOutsideWindow = n;
+    _sync();
+  }
+
   /// Test-only: return the service to its empty starting state.
   @visibleForTesting
   static void debugReset() {
@@ -337,6 +347,13 @@ class NotificationService {
     _channel = null;
     _subscribedUid = null;
     notifications = [];
+    // WITH the list, not just the list. [_sync] computes the badge as
+    // `unread rows + _unreadOutsideWindow`, so emptying `notifications` alone
+    // left the badge sitting on the outgoing user's out-of-window count — a
+    // non-zero bell for a signed-out app, and then for whoever signed in next
+    // ([startRealtime] calls this when the uid changes). Every other place that
+    // empties the list already resets this alongside it; this one did not.
+    _unreadOutsideWindow = 0;
     _sync();
   }
 
