@@ -422,6 +422,20 @@ class LocalAssistant {
           'schedule. Sa pangkalahatan, bukas po ang LGU tuwing weekdays sa oras '
           'ng trabaho. Salamat po sa pang-unawa!',
     ),
+    // Officials are answered ONLINE from public.lgu_facts, which this offline
+    // path cannot read. Rather than fall through to the generic fallback reply,
+    // say plainly that the answer needs a connection — and never hardcode a
+    // name here, which would go stale at the next election with nobody watching.
+    _Kb(
+      ['sino ang mayor', 'sinong mayor', 'mayor ng aparri', 'kasalukuyang mayor',
+        'vice mayor', 'bise mayor', 'sino ang alkalde', 'alkalde',
+        'konsehal', 'sangguniang bayan', 'sb member', 'opisyal ng aparri',
+        'who is the mayor', 'current mayor'],
+      'Pasensya na po — kailangan ko pong maka-connect sa internet para '
+          'masagot nang tama ang tanong tungkol sa mga kasalukuyang opisyal ng '
+          'Aparri. Ayoko pong manghula sa ganitong bagay. Pakisubukan po ulit '
+          'kapag may koneksyon, o i-confirm sa Municipal Hall ng Aparri.',
+    ),
     _Kb(
       ['govpulse', 'app na ito', 'ano ang app', 'gamit ng app'],
       'Sa GovPulse app po pwede kayong: mag-report ng issue (Quick Actions sa '

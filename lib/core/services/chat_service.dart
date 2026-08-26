@@ -1062,6 +1062,21 @@ class ChatService extends ChangeNotifier {
           .map(_trimEvent)
           .toList();
     }
+
+    // Verified Aparri facts (mayor, hotlines, office locations). Sent on the
+    // two stages that actually answer questions — askingQuestion, and
+    // awaitingIntent, where a citizen who typed "sino ang mayor?" instead of
+    // tapping a menu button gets answered in place rather than routed.
+    //
+    // Deliberately NOT sent on greeting: that turn has no citizen message to
+    // ground and already runs on a trimmed prompt for exactly this reason (see
+    // GREETING_SYSTEM_PROMPT in the edge function). Nor on the report/agent
+    // redirect stages, whose replies are two fixed sentences.
+    List<Map<String, dynamic>> lguFacts = const [];
+    if (_stage == ConversationStage.askingQuestion ||
+        _stage == ConversationStage.awaitingIntent) {
+      lguFacts = await TicketRepository.I.getLguFacts();
+    }
     if (session != _sessionId) return '';
 
     final payload = {
@@ -1075,6 +1090,7 @@ class ChatService extends ChangeNotifier {
       'history': history,
       'userMessage': latest.text,
       'events': events,
+      'lguFacts': lguFacts,
       if (_stage == ConversationStage.followUp) ...{
         'reportRef': _followUpReportRef,
         'reportStatus': _followUpReportStatus,
