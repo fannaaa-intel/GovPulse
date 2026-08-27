@@ -146,8 +146,7 @@ class _AdminVerificationPageState extends ConsumerState<AdminVerificationPage>
 
   // ── Stat cards (double as the status filter) ────────────────────────────────
   Widget _buildStatRow(List<AdminVerification> all, bool loading) {
-    int countOf(VerificationStatus s) =>
-        all.where((v) => v.status == s).length;
+    int countOf(VerificationStatus s) => all.where((v) => v.status == s).length;
 
     final cards = <Widget>[
       _StatCard(
@@ -239,8 +238,10 @@ class _AdminVerificationPageState extends ConsumerState<AdminVerificationPage>
             decoration: InputDecoration(
               isDense: true,
               hintText: 'Search name, ID number, barangay…',
-              hintStyle:
-                  const TextStyle(fontSize: 13, color: AdminUi.textMuted),
+              hintStyle: const TextStyle(
+                fontSize: 13,
+                color: AdminUi.textMuted,
+              ),
               prefixIcon: const Icon(
                 Icons.search_rounded,
                 size: 18,
@@ -301,9 +302,9 @@ class _AdminVerificationPageState extends ConsumerState<AdminVerificationPage>
   }
 
   static OutlineInputBorder _fieldBorder(Color color) => OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AdminUi.controlRadius),
-        borderSide: BorderSide(color: color),
-      );
+    borderRadius: BorderRadius.circular(AdminUi.controlRadius),
+    borderSide: BorderSide(color: color),
+  );
 
   // ── Results ─────────────────────────────────────────────────────────────────
   Widget _buildResults(
@@ -470,8 +471,11 @@ class _Avatar extends StatelessWidget {
   }
 
   static String _initials(String name) {
-    final parts =
-        name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+    final parts = name
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((p) => p.isNotEmpty)
+        .toList();
     if (parts.isEmpty) return '?';
     if (parts.length == 1) return parts.first.characters.first.toUpperCase();
     return (parts.first.characters.first + parts.last.characters.first)
@@ -783,55 +787,56 @@ class _VerificationCard extends StatelessWidget {
         radius: AdminUi.controlRadius,
         accent: AppColors.primaryBlue,
         child: Material(
-        color: AdminUi.surface,
-        clipBehavior: Clip.antiAlias,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AdminUi.controlRadius),
-          side: const BorderSide(color: AdminUi.border),
-        ),
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    _Avatar(name: verification.fullName, size: 30),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        verification.fullName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: AdminUi.textPrimary,
+          color: AdminUi.surface,
+          clipBehavior: Clip.antiAlias,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AdminUi.controlRadius),
+            side: const BorderSide(color: AdminUi.border),
+          ),
+          child: InkWell(
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      _Avatar(name: verification.fullName, size: 30),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          verification.fullName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: AdminUi.textPrimary,
+                          ),
                         ),
                       ),
-                    ),
-                    _StatusPill(verification.status),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  [
-                    if (verification.selectedIdType.isNotEmpty)
-                      verification.selectedIdType,
-                    if (verification.barangay.isNotEmpty) verification.barangay,
-                    _shortDate(verification.createdAt),
-                  ].join('  ·  '),
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AdminUi.textMuted,
+                      _StatusPill(verification.status),
+                    ],
                   ),
-                ),
-              ],
+                  const SizedBox(height: 8),
+                  Text(
+                    [
+                      if (verification.selectedIdType.isNotEmpty)
+                        verification.selectedIdType,
+                      if (verification.barangay.isNotEmpty)
+                        verification.barangay,
+                      _shortDate(verification.createdAt),
+                    ].join('  ·  '),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AdminUi.textMuted,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
         ),
       ),
     );
@@ -869,10 +874,20 @@ class _VerificationDetailDialogState
       extra: TextField(
         controller: notesCtrl,
         maxLines: 3,
+        style: const TextStyle(fontSize: 13, color: AdminUi.textPrimary),
         decoration: InputDecoration(
           isDense: true,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 10,
+          ),
           hintText: 'Note (optional, saved with the review)',
+          hintStyle: const TextStyle(fontSize: 13, color: AdminUi.textMuted),
           border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: AdminUi.border),
+          ),
+          enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
             borderSide: const BorderSide(color: AdminUi.border),
           ),
@@ -928,10 +943,20 @@ class _VerificationDetailDialogState
       extra: TextField(
         controller: notesCtrl,
         maxLines: 3,
+        style: const TextStyle(fontSize: 13, color: AdminUi.textPrimary),
         decoration: InputDecoration(
           isDense: true,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 10,
+          ),
           hintText: 'Reason (optional, shown to the applicant)',
+          hintStyle: const TextStyle(fontSize: 13, color: AdminUi.textMuted),
           border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: AdminUi.border),
+          ),
+          enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
             borderSide: const BorderSide(color: AdminUi.border),
           ),
@@ -985,6 +1010,28 @@ class _VerificationDetailDialogState
     }
   }
 
+  /// The approve/reject confirm box.
+  ///
+  /// ── Why this is not a bare [AlertDialog] any more ────────────────────────
+  /// It was, and on a desktop it arrived enormous: Material sizes an
+  /// AlertDialog to the room it is given, so with nothing capping it the card
+  /// stretched across a 1900px viewport, leaving a one-line question and a
+  /// three-line note field floating in a box far wider than either needs. It
+  /// was also the only confirm in the console still using the framework's bare
+  /// defaults - every sibling (admin_reports' merge, admin_moderation's
+  /// dismiss) already sets the admin surface, a 16 radius and its own type.
+  ///
+  /// [kWebDialogMaxWidth] is the existing answer to exactly this: the shared
+  /// cap the citizen confirms already render through, written for the same
+  /// problem ("phone proportions at desktop distance read as oversized").
+  /// Using it here is what puts this dialog back in step with the rest.
+  ///
+  /// ── Mobile ───────────────────────────────────────────────────────────────
+  /// The admin console runs on phones too - [adminDetailIsNarrow] takes the
+  /// detail full-screen - so this dialog is reachable there. The cap is a
+  /// MAXIMUM, not a fixed width, and it is applied through the dialog's own
+  /// inset rather than over it: a narrow screen keeps Material's 40px margin
+  /// and simply gets a narrower card, so nothing is squeezed or clipped.
   Future<bool?> _confirm({
     required String title,
     required String message,
@@ -995,31 +1042,98 @@ class _VerificationDetailDialogState
     return showAppDialog<bool>(
       context: context,
       barrierColor: Colors.black54,
-      builder: (ctx) => AlertDialog(
-        title: Text(title),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(message),
-            if (extra != null) ...[const SizedBox(height: 12), extra],
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: AdminUi.surface,
+          // Material's own default inset is kept, so the card can never touch
+          // the edges of a small screen. The width cap is applied to the
+          // CONTENT below rather than here: insetPadding is a per-side margin,
+          // so squeezing it does not stop AlertDialog sizing itself to the room
+          // it is given - on a 390px phone that overflowed off the right edge.
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
           ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: confirmColor,
-              foregroundColor: Colors.white,
+          titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+          contentPadding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+          actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+          title: Text(
+            title,
+            style: const TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              color: AdminUi.textPrimary,
             ),
-            child: Text(confirmLabel),
           ),
-        ],
-      ),
+          // The cap that keeps this from stretching across a desktop, and the
+          // shrink that keeps it inside a phone.
+          //
+          // A bare maxWidth is not enough: AlertDialog sizes itself to its
+          // CONTENT, so the card could still lay out wider than a 390px screen
+          // and run off the right edge.
+          content: LayoutBuilder(
+            // The CONSTRAINTS, not the window: this is the width the dialog is
+            // actually being offered, already inset by AlertDialog's margin and
+            // padding. Reading it here is what makes the box shrink on a phone
+            // and stop growing on a desktop, without either side guessing at
+            // the other's margins.
+            builder: (_, constraints) => SizedBox(
+              width: constraints.maxWidth.isFinite
+                  ? (constraints.maxWidth < kWebDialogMaxWidth
+                        ? constraints.maxWidth
+                        : kWebDialogMaxWidth)
+                  : kWebDialogMaxWidth,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    message,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      height: 1.45,
+                      color: AdminUi.textSecondary,
+                    ),
+                  ),
+                  if (extra != null) ...[const SizedBox(height: 14), extra],
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              style: TextButton.styleFrom(
+                foregroundColor: AdminUi.textSecondary,
+                textStyle: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: confirmColor,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                textStyle: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              child: Text(confirmLabel),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -1040,17 +1154,20 @@ class _VerificationDetailDialogState
     switch (v.status) {
       case VerificationStatus.pending:
         headline = 'This submission is awaiting review.';
-        blurb = 'Check the ID documents against the applicant\'s details, then '
+        blurb =
+            'Check the ID documents against the applicant\'s details, then '
             'approve or reject. The applicant is notified either way.';
         break;
       case VerificationStatus.approved:
         headline = 'This applicant is a verified resident.';
-        blurb = 'The ID was accepted and the citizen is marked verified across '
+        blurb =
+            'The ID was accepted and the citizen is marked verified across '
             'the app.';
         break;
       case VerificationStatus.rejected:
         headline = 'This submission was rejected.';
-        blurb = 'The applicant was notified and can submit again with corrected '
+        blurb =
+            'The applicant was notified and can submit again with corrected '
             'details.';
         break;
     }
@@ -1080,11 +1197,7 @@ class _VerificationDetailDialogState
             isLast: !decided,
             child: LayoutBuilder(
               builder: (context, c) {
-                const docs = [
-                  ('ID front', 0),
-                  ('ID back', 1),
-                  ('Selfie', 2),
-                ];
+                const docs = [('ID front', 0), ('ID back', 1), ('Selfie', 2)];
                 Widget thumbFor(int i) => _DocThumb(
                   label: docs[i].$1,
                   path: switch (i) {
@@ -1402,6 +1515,7 @@ class _VerificationDetailDialogState
       ),
     );
   }
+
   Widget _infoCard(List<Widget> tiles) {
     return Container(
       decoration: BoxDecoration(
@@ -1425,7 +1539,6 @@ class _VerificationDetailDialogState
       ),
     );
   }
-
 }
 
 /// Width at which the detail splits into two columns. Matches the reports,
@@ -1540,7 +1653,10 @@ class _StatusCard extends StatelessWidget {
               Container(
                 width: 7,
                 height: 7,
-                decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
+                decoration: BoxDecoration(
+                  color: accent,
+                  shape: BoxShape.circle,
+                ),
               ),
               const SizedBox(width: 6),
               Text(
@@ -1757,7 +1873,10 @@ class _ActionButton extends StatelessWidget {
           const SizedBox(
             width: 16,
             height: 16,
-            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: Colors.white,
+            ),
           )
         else
           Icon(icon, size: 17),
@@ -2013,8 +2132,9 @@ class _DocThumb extends ConsumerWidget {
           child: CachedNetworkImage(
             imageUrl: url,
             fit: BoxFit.contain,
-            placeholder: (_, _) =>
-                const Center(child: CircularProgressIndicator(color: Colors.white)),
+            placeholder: (_, _) => const Center(
+              child: CircularProgressIndicator(color: Colors.white),
+            ),
             errorWidget: (_, _, _) => const Icon(
               Icons.broken_image_rounded,
               color: Colors.white54,
@@ -2029,8 +2149,7 @@ class _DocThumb extends ConsumerWidget {
 
 // ── Shared bits ──────────────────────────────────────────────────────────────
 
-const TextStyle _ddStyle =
-    TextStyle(fontSize: 13, color: AdminUi.textPrimary);
+const TextStyle _ddStyle = TextStyle(fontSize: 13, color: AdminUi.textPrimary);
 
 class _FilterBox extends StatelessWidget {
   final Widget child;
@@ -2145,8 +2264,18 @@ class _Bar extends StatelessWidget {
 String _shortDate(DateTime? t) {
   if (t == null) return '—';
   const months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
   ];
   return '${months[t.month - 1]} ${t.day}, ${t.year}';
 }
