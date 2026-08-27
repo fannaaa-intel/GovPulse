@@ -104,11 +104,7 @@ class _HomeCommunitySectionWebState extends State<HomeCommunitySectionWeb> {
                 : Scrollbar(
                     controller: _scrollController,
                     thumbVisibility: true,
-                    child: SingleChildScrollView(
-                      controller: _scrollController,
-                      physics: const BouncingScrollPhysics(),
-                      child: _buildPostList(posts),
-                    ),
+                    child: _buildPostList(posts),
                   ),
           ),
         ],
@@ -126,21 +122,37 @@ class _HomeCommunitySectionWebState extends State<HomeCommunitySectionWeb> {
     );
   }
 
+  /// LAZY. This was a `Column` of every post inside a `SingleChildScrollView`,
+  /// which built one `_PostRow` per post in the provider — while the panel is
+  /// height-capped (`maxHeight: 520`, or the exact height two-column mode hands
+  /// it) and can only ever SHOW about six. At 200 posts that is 200 rows built
+  /// to display six, on the web landing page, every time it renders.
+  ///
+  /// `ListView.separated` builds only what is on screen plus a small cache
+  /// extent, so the cost is bounded by the panel's height instead of by the
+  /// size of the feed. The mobile sibling (home_community_section.dart) already
+  /// used a lazy list; only this web panel was eager.
+  ///
+  /// The list now owns the scrolling — it takes the `_scrollController` the
+  /// removed `SingleChildScrollView` used to hold, so the `Scrollbar` above
+  /// still tracks it. Separator placement is unchanged: `ListView.separated`
+  /// puts one between adjacent items and never after the last, which is exactly
+  /// what the old `if (i < posts.length - 1)` guard did.
   Widget _buildPostList(List<Map<String, dynamic>> posts) {
-    return Column(
-      children: [
-        for (int i = 0; i < posts.length; i++) ...[
-          _PostRow(
-            post: posts[i],
-            timeAgo: posts[i]['timestamp'] is DateTime
-                ? _timeAgo(posts[i]['timestamp'] as DateTime)
-                : '',
-            onTap: widget.onViewAll,
-          ),
-          if (i < posts.length - 1)
-            const Divider(height: 1, thickness: 1, color: Color(0xFFF3F4F6)),
-        ],
-      ],
+    return ListView.separated(
+      controller: _scrollController,
+      physics: const BouncingScrollPhysics(),
+      padding: EdgeInsets.zero,
+      itemCount: posts.length,
+      separatorBuilder: (_, _) =>
+          const Divider(height: 1, thickness: 1, color: Color(0xFFF3F4F6)),
+      itemBuilder: (_, i) => _PostRow(
+        post: posts[i],
+        timeAgo: posts[i]['timestamp'] is DateTime
+            ? _timeAgo(posts[i]['timestamp'] as DateTime)
+            : '',
+        onTap: widget.onViewAll,
+      ),
     );
   }
 

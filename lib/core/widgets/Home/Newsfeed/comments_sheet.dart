@@ -775,21 +775,76 @@ class _CommentsSheetState extends State<CommentsSheet> {
     _highlightFlash = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final ctx = _highlightBlockKey.currentContext;
-      if (ctx != null) {
-        Scrollable.ensureVisible(
-          ctx,
-          duration: const Duration(milliseconds: 350),
-          curve: Curves.easeOutCubic,
-          alignment: 0.2,
-        );
-      }
+      // The thread is a LAZY ListView.builder, so the target's element exists
+      // only once it has been built. A comment below the first viewport has no
+      // currentContext on this frame, and ensureVisible would silently no-op —
+      // the notification would open the sheet at the top instead of at the
+      // comment it points to.
+      //
+      // _scrollToHighlight walks the list toward the target instead: each jump
+      // builds the next screenful, so the key materialises and ensureVisible
+      // can finish the job precisely. Bounded so a target that never resolves
+      // (deleted mid-flight, filtered out) stops rather than looping.
+      _scrollToHighlight();
       Future.delayed(const Duration(milliseconds: 2600), () {
         if (mounted) setState(() => _highlightFlash = false);
       });
     });
     return blockId;
   }
+
+  /// Brings the deep-linked comment into view in the lazy thread.
+  ///
+  /// Fast path: it is already built (short thread, or the target is near the
+  /// top) — ensureVisible immediately, which is what the eager list always did.
+  ///
+  /// Otherwise page down [_highlightScrollStep] at a time, giving the builder a
+  /// frame to materialise the next run of items, and re-check. Stops on the
+  /// first frame the key resolves, at the end of the list, or after
+  /// [_highlightScrollMaxSteps] — never spins.
+  Future<void> _scrollToHighlight([int step = 0]) async {
+    if (!mounted) return;
+
+    final ctx = _highlightBlockKey.currentContext;
+    if (ctx != null) {
+      await Scrollable.ensureVisible(
+        ctx,
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeOutCubic,
+        alignment: 0.2,
+      );
+      return;
+    }
+
+    if (step >= _highlightScrollMaxSteps) return;
+
+    // No context yet: the target is below what has been built. Nudge down and
+    // let the next frame build more. Scrollable.of() is read from the sheet's
+    // own context, which sits above the ListView.
+    final scrollable = Scrollable.maybeOf(context);
+    final position = scrollable?.position;
+    if (position == null || !position.hasContentDimensions) return;
+    if (position.pixels >= position.maxScrollExtent) return;
+
+    final next = (position.pixels + _highlightScrollStep)
+        .clamp(0.0, position.maxScrollExtent);
+    await position.animateTo(
+      next,
+      duration: const Duration(milliseconds: 120),
+      curve: Curves.linear,
+    );
+    if (!mounted) return;
+    await WidgetsBinding.instance.endOfFrame;
+    await _scrollToHighlight(step + 1);
+  }
+
+  /// One screenful-ish per hop while hunting the deep-link target.
+  static const double _highlightScrollStep = 600;
+
+  /// Ceiling on those hops. 40 x 600px is ~24,000px of thread — far past any
+  /// realistic comment count, so this only ever fires when the target cannot be
+  /// found at all, and then it stops instead of scrolling forever.
+  static const int _highlightScrollMaxSteps = 40;
 
   @override
   Widget build(BuildContext context) {
@@ -994,7 +1049,22 @@ class _CommentsSheetState extends State<CommentsSheet> {
     String? highlightBlockId, {
     Widget? leading,
   }) {
-    return ListView(
+    // LAZY. This was `ListView(children: [...])`, the non-builder constructor —
+    // it LOOKS lazy but eagerly builds every child before the sheet paints. Each
+    // child is a full comment item WITH its replies, so opening a post with 300
+    // comments built 300 subtrees up front, on a bottom sheet that shows maybe
+    // six. `.builder` builds only what is visible plus a small cache extent.
+    //
+    // Index layout, kept identical to the old `children:` order:
+    //   0                      -> `leading`, when one was passed (the stacked
+    //                             dialog's post recap). Absent otherwise, so
+    //                             every later index shifts by `lead`.
+    //   lead .. lead+n-1       -> the comments
+    //   lead+n                 -> the trailing spacer
+    final int lead = leading == null ? 0 : 1;
+    final int n = comments.length;
+
+    return ListView.builder(
       physics: const BouncingScrollPhysics(),
       padding: EdgeInsets.fromLTRB(
         width * 0.035,
@@ -1002,48 +1072,51 @@ class _CommentsSheetState extends State<CommentsSheet> {
         width * 0.035,
         width * 0.03,
       ),
-      children: [
-        ?leading,
-        ...comments.map((c) {
-          final item = buildCommentItem(
-            context,
-            width,
-            c,
-            likedComments: widget.likedComments,
-            onToggleLike: (id) {
-              widget.onToggleLike(id);
-              setState(() {});
-            },
-            onReply: () => _setReplyByCommentId(
-              c['id'] as String,
-              c['author'] as String? ?? '',
-            ),
-            showReplies: true,
-            expandedReplies: _expandedReplies,
-            onToggleExpandReplies: _toggleExpandReplies,
-            onReplyToReply: (authorName, commentId) =>
-                _setReplyByCommentId(commentId, authorName),
-            currentUserId: _currentUserId,
-            onEdit: _handleEditComment,
-            onDelete: _handleDeleteComment,
-            official: true,
-          );
-          if (highlightBlockId != c['id']) return item;
-          // Deep-link target: blue wash that melts away once seen.
-          return AnimatedContainer(
-            key: _highlightBlockKey,
-            duration: const Duration(milliseconds: 450),
-            decoration: BoxDecoration(
-              color: _highlightFlash
-                  ? AppColors.primaryBlue.withValues(alpha: 0.08)
-                  : Colors.transparent,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: item,
-          );
-        }),
-        SizedBox(height: width * 0.04),
-      ],
+      itemCount: lead + n + 1,
+      itemBuilder: (_, index) {
+        if (lead == 1 && index == 0) return leading;
+        if (index == lead + n) return SizedBox(height: width * 0.04);
+
+        final c = comments[index - lead];
+        final item = buildCommentItem(
+          context,
+          width,
+          c,
+          likedComments: widget.likedComments,
+          onToggleLike: (id) {
+            widget.onToggleLike(id);
+            setState(() {});
+          },
+          onReply: () => _setReplyByCommentId(
+            c['id'] as String,
+            c['author'] as String? ?? '',
+          ),
+          showReplies: true,
+          expandedReplies: _expandedReplies,
+          onToggleExpandReplies: _toggleExpandReplies,
+          onReplyToReply: (authorName, commentId) =>
+              _setReplyByCommentId(commentId, authorName),
+          currentUserId: _currentUserId,
+          onEdit: _handleEditComment,
+          onDelete: _handleDeleteComment,
+          official: true,
+        );
+        if (highlightBlockId != c['id']) return item;
+        // Deep-link target: blue wash that melts away once seen. The key must
+        // stay on this element — _highlightBlockKey is what the deep-link scroll
+        // measures against to bring the target comment into view.
+        return AnimatedContainer(
+          key: _highlightBlockKey,
+          duration: const Duration(milliseconds: 450),
+          decoration: BoxDecoration(
+            color: _highlightFlash
+                ? AppColors.primaryBlue.withValues(alpha: 0.08)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: item,
+        );
+      },
     );
   }
 
