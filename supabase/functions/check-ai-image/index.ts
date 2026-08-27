@@ -113,7 +113,11 @@ async function detectFromBytes(
     const form = new FormData();
     form.append(
       "media",
-      new Blob([bytes], { type: mime || "image/jpeg" }),
+      // `bytes.buffer` is ArrayBufferLike, which Deno 2's lib types will not
+      // narrow to the ArrayBuffer that BlobPart wants (it cannot rule out
+      // SharedArrayBuffer). Runtime behaviour is unaffected — this is purely a
+      // type-level narrowing so `deno check` passes on this file.
+      new Blob([bytes as unknown as BlobPart], { type: mime || "image/jpeg" }),
       filename,
     );
     form.append("models", "genai");
@@ -198,27 +202,79 @@ serve(async (req: Request) => {
   }
 
   // ── 1. Detect ───────────────────────────────────────────────────────────────
+  //
+  // ── SERVER-DERIVED SOURCES (audit 2026-08-27) ──────────────────────────────
+  // Both branches below used to act on caller-supplied locations:
+  //
+  //   • feedback  : `publicUrl` was passed STRAIGHT to the detector, so this
+  //                 endpoint would fetch any URL a caller named — an SSRF lever
+  //                 pointed at whatever the function can reach.
+  //   • media     : `bucket` + `path` were handed to a SERVICE-ROLE download,
+  //                 so any caller could read ANY object in ANY bucket
+  //                 (verification selfies, IDs) and have it scored.
+  //
+  // The caller now only names WHICH ROW to score. The bucket is fixed per table
+  // and the path is read back from that row, so a caller can no longer choose
+  // what gets fetched. The client contract is unchanged — report/suggestion
+  // screens already send a bucket that matches the table, and the feedback
+  // screen already sends a URL derived from the row it just wrote.
+  const BUCKET_FOR_TABLE: Record<string, string> = {
+    report_media: "report-media",
+    suggestion_media: "suggestion-media",
+  };
+
   let score: number | null;
   if (isFeedback) {
-    // Photo is already public (feedback-assets bucket) → check it by URL, no
-    // download and no service role needed.
-    const url = String((payload as unknown as FeedbackPayload).publicUrl);
+    // Re-derive the photo URL from the row rather than trusting the body. The
+    // index is 1-BASED (Postgres arrays), so subtract 1 to read the JS array.
+    const p = payload as unknown as FeedbackPayload;
+    const idx = Number(p.index);
+    if (!Number.isInteger(idx) || idx < 1) return markFailed(`bad index ${p.index}`);
+
+    const { data: fb, error: fbErr } = await supabase
+      .from("feedbacks")
+      .select("photo_urls")
+      .eq("id", String(p.feedbackId))
+      .maybeSingle();
+    if (fbErr) return markFailed(`feedback lookup ${fbErr.message}`);
+    if (!fb) return markFailed("feedback row not found");
+
+    const urls = (fb.photo_urls ?? []) as unknown[];
+    const url = urls[idx - 1];
+    if (typeof url !== "string" || !url) {
+      return markFailed(`no photo at index ${idx}`);
+    }
     score = await detectFromUrl(apiUser, apiSecret, url);
   } else {
     // Private bucket → download server-side with the service role so we never
     // depend on a client signed URL (those expire) and the bucket stays private.
+    // The bucket comes from the table (not the body) and the path from the row.
     const p = payload as unknown as MediaPayload;
+    const bucket = BUCKET_FOR_TABLE[table];
+    if (!bucket) return markFailed(`no bucket mapped for ${table}`);
+
+    const { data: mediaRow, error: mediaErr } = await supabase
+      .from(table)
+      .select("storage_path")
+      .eq("id", String(p.id))
+      .maybeSingle();
+    if (mediaErr) return markFailed(`media lookup ${mediaErr.message}`);
+    if (!mediaRow) return markFailed("media row not found");
+
+    const storagePath = mediaRow.storage_path as string | null;
+    if (!storagePath) return markFailed("media row has no storage_path");
+
     let bytes: Uint8Array;
     let mime = "image/jpeg";
     let filename = "image.jpg";
     try {
-      const { data, error } = await supabase.storage.from(p.bucket).download(
-        p.path,
+      const { data, error } = await supabase.storage.from(bucket).download(
+        storagePath,
       );
       if (error || !data) return markFailed(`download ${error?.message}`);
       mime = data.type || mime;
       bytes = new Uint8Array(await data.arrayBuffer());
-      filename = p.path.split("/").pop() || filename;
+      filename = storagePath.split("/").pop() || filename;
     } catch (e) {
       return markFailed(`obtain bytes: ${e}`);
     }

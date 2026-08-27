@@ -18,9 +18,13 @@ import { checkRateLimit, getClientIp, rateLimitResponse, limiterUnavailableRespo
 // the database — the same fold the RPC uses, which is why the two agree.
 // The check is a UX affordance; the constraint is the control.
 //
-// This does NOT hold for check-email-exists — there is no unique index on
-// profiles.email at all. See that file's header; the two endpoints look
-// symmetric and their failure modes are not.
+// CORRECTED 2026-08-27: this block used to claim "there is no unique index on
+// profiles.email at all", making check-email-exists sound strictly more
+// dangerous than this endpoint. That stopped being true when migration
+// 20260722000014 added profiles_email_lower_key; the sibling file's header was
+// corrected on 2026-08-23 and this one was missed. The two endpoints ARE
+// symmetric: both fail open to "available", and both are backstopped by a
+// UNIQUE index on the lower() of their column.
 //
 // ── verify_jwt ─────────────────────────────────────────────────────────────
 // Deployed state is verify_jwt = false, set at the PLATFORM. This function is

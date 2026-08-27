@@ -71,12 +71,29 @@ serve(async (req) => {
       return rateLimitResponse(ipLimit.retryAfter, "Too many attempts. Please try again later.")
     }
 
+    // ── Per-email lockout. FAILS CLOSED (audit 2026-08-27) ──────────────────
+    // See the matching block in reset-verify-otp for the full reasoning: the
+    // discarded `error` here made `count` undefined, `?? 0` read that as zero,
+    // and the 5-strike lockout disappeared whenever the read failed. Retry once,
+    // then refuse with 503 rather than letting the signup OTP be brute-forced.
     const since = new Date(Date.now() - LOCKOUT_WINDOW * 1000).toISOString()
-    const { count: failureCount } = await supabase
-      .from("otp_failures")
-      .select("*", { count: "exact", head: true })
-      .eq("email", normalizedEmail)
-      .gte("created_at", since)
+    const readFailures = async () =>
+      await supabase
+        .from("otp_failures")
+        .select("*", { count: "exact", head: true })
+        .eq("email", normalizedEmail)
+        .gte("created_at", since)
+
+    let { count: failureCount, error: failureErr } = await readFailures()
+    if (failureErr) {
+      console.error("verify-email-otp: otp_failures read error (retrying once):", failureErr.message)
+      await new Promise((r) => setTimeout(r, 150))
+      ;({ count: failureCount, error: failureErr } = await readFailures())
+    }
+    if (failureErr) {
+      console.error("verify-email-otp: otp_failures unavailable, failing closed:", failureErr.message)
+      return limiterUnavailableResponse(30)
+    }
 
     if ((failureCount ?? 0) >= MAX_FAILURES) {
       return rateLimitResponse(LOCKOUT_WINDOW, "Too many failed attempts. Please request a new code in 15 minutes.")

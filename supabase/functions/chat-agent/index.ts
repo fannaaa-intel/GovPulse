@@ -775,39 +775,76 @@ serve(async (req: Request) => {
     });
   }
 
-  // ── Per-user AI rate limit (server-side, cannot be bypassed) ──────────────
+  // ── Per-user AI rate limit ────────────────────────────────────────────────
+  //
+  // FAIL CLOSED. This block used to be wrapped in `if (userId) { ... }` inside a
+  // catch-all, which meant it did nothing at all for an unauthenticated caller:
+  //
+  //   • verify_jwt = true is satisfied by the ANON key, which is public and
+  //     ships inside the app bundle. A caller presenting only that key clears
+  //     the gateway, so the function DOES run for them.
+  //   • getUser(anonKey) resolves no user, so `userId` was undefined, the `if`
+  //     was skipped, and the request went straight to Groq unmetered.
+  //   • the surrounding catch swallowed limiter errors, so even a failing
+  //     limiter fell through to the paid API call.
+  //
+  // Groq is a metered upstream on a free tier, so an unmetered path here is a
+  // direct quota-drain / cost lever for anyone who reads the anon key out of
+  // the app. Both holes are closed below: no user => 401, limiter error =>
+  // back-off reply, and the ONLY way past this block is an authenticated caller
+  // who is genuinely under the limit.
+  //
+  // Safe for every real caller: chat is reachable only from HomeScreen's
+  // quick-action, which already gates on a VERIFIED citizen
+  // (home_screen.dart:_openChat), and from report_detail / notification_popup,
+  // both of which sit behind a signed-in shell. There is no guest entry point,
+  // so no legitimate user reaches this without a session.
+  const supabase = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+  );
+
+  let userId: string | undefined;
   try {
     const authHeader = req.headers.get("Authorization") ?? "";
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-    );
-
     const token = authHeader.replace("Bearer ", "");
     const { data: userData } = await supabase.auth.getUser(token);
-    const userId = userData?.user?.id;
-
-    if (userId) {
-      const { error: rlError } = await supabase.rpc("enforce_rate_limit", {
-        p_key: `chat:${userId}`,
-        p_max_count: 30,
-        p_window_seconds: 60,
-        p_message: "Masyado pong mabilis. Paki-hinay-hinay lang po. 🙏",
-      });
-
-      if (rlError) {
-        return new Response(
-          JSON.stringify({
-            reply:
-              "Pasensya na po, masyado pong mabilis ang mga mensahe. " +
-              "Paki-hinay-hinay lang po at subukan ulit in a moment. 🙏",
-          } as ChatResponse),
-          { headers: { "Content-Type": "application/json", ...corsHeaders } },
-        );
-      }
-    }
+    userId = userData?.user?.id;
   } catch (e) {
-    console.error("rate limit check failed:", e);
+    // A getUser() failure is NOT a pass. Leaving userId undefined drops us into
+    // the 401 below, which is the fail-closed answer.
+    console.error("chat-agent: getUser failed:", e);
+  }
+
+  if (!userId) {
+    return new Response(
+      JSON.stringify({ error: "unauthorized" }),
+      { status: 401, headers: { "Content-Type": "application/json", ...corsHeaders } },
+    );
+  }
+
+  // Limiter errors now return the back-off reply instead of falling through.
+  // enforce_rate_limit raises when the caller is over the limit, so an error
+  // here is the limit being hit; a genuine limiter outage lands in the same
+  // branch, which is the correct fail-closed direction for a spend control.
+  try {
+    const { error: rlError } = await supabase.rpc("enforce_rate_limit", {
+      p_key: `chat:${userId}`,
+      p_max_count: 30,
+      p_window_seconds: 60,
+      p_message: "Masyado pong mabilis. Paki-hinay-hinay lang po. 🙏",
+    });
+    if (rlError) throw rlError;
+  } catch (e) {
+    console.error("chat-agent: rate limit engaged or unavailable:", e);
+    return new Response(
+      JSON.stringify({
+        reply:
+          "Pasensya na po, masyado pong mabilis ang mga mensahe. " +
+          "Paki-hinay-hinay lang po at subukan ulit in a moment. 🙏",
+      } as ChatResponse),
+      { headers: { "Content-Type": "application/json", ...corsHeaders } },
+    );
   }
 
   // ── Build message history (OpenAI format) ─────────────────────────────────

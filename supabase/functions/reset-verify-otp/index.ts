@@ -44,12 +44,37 @@ serve(async (req) => {
       return rateLimitResponse(ipLimit.retryAfter, "Too many attempts. Please try again later.")
     }
 
+    // ── Per-email lockout. FAILS CLOSED (audit 2026-08-27) ──────────────────
+    //
+    // This read used to discard its `error`. On a read failure `count` comes
+    // back undefined, `?? 0` turned that into 0, `0 >= 5` was false, and the
+    // ENTIRE brute-force lockout silently vanished — leaving a 6-digit recovery
+    // code guessable at whatever rate the IP limiter allows. It is the same
+    // fail-open that _shared/rate-limit.ts documents fixing in F-06; this call
+    // site (and its twin in verify-email-otp) was written by hand and missed
+    // the sweep.
+    //
+    // Same shape as checkRateLimit: retry once to absorb a transient blip, then
+    // refuse. A 503 is correct rather than 429 — the caller is not over any
+    // limit, we simply cannot tell, and they must not be told to keep guessing.
     const since = new Date(Date.now() - LOCKOUT_WINDOW * 1000).toISOString()
-    const { count: failureCount } = await rateLimitClient
-      .from("otp_failures")
-      .select("*", { count: "exact", head: true })
-      .eq("email", normalizedEmail)
-      .gte("created_at", since)
+    const readFailures = async () =>
+      await rateLimitClient
+        .from("otp_failures")
+        .select("*", { count: "exact", head: true })
+        .eq("email", normalizedEmail)
+        .gte("created_at", since)
+
+    let { count: failureCount, error: failureErr } = await readFailures()
+    if (failureErr) {
+      console.error("reset-verify-otp: otp_failures read error (retrying once):", failureErr.message)
+      await new Promise((r) => setTimeout(r, 150))
+      ;({ count: failureCount, error: failureErr } = await readFailures())
+    }
+    if (failureErr) {
+      console.error("reset-verify-otp: otp_failures unavailable, failing closed:", failureErr.message)
+      return limiterUnavailableResponse(30)
+    }
 
     if ((failureCount ?? 0) >= MAX_FAILURES) {
       return rateLimitResponse(LOCKOUT_WINDOW, "Too many failed attempts. Please request a new code in 15 minutes.")

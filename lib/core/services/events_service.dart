@@ -262,28 +262,15 @@ class EventsService {
 }
 
 // ─── Role helpers ─────────────────────────────────────────────────────────────
-
-enum UserRole { admin, staff, citizen }
-
-class UserService {
-  UserService._();
-  static final UserService instance = UserService._();
-
-  final _client = Supabase.instance.client;
-
-  Future<UserRole> currentRole() async {
-    final uid = _client.auth.currentUser?.id;
-    if (uid == null) return UserRole.citizen;
-
-    final response = await _client
-        .from('profiles')
-        .select('role')
-        .eq('id', uid)
-        .single();
-
-    return UserRole.values.firstWhere(
-      (r) => r.name == (response['role'] as String),
-      orElse: () => UserRole.citizen,
-    );
-  }
-}
+//
+// REMOVED 2026-08-27: `enum UserRole` + `UserService.currentRole()` lived here
+// and read `profiles.role` — a column that does not exist. Roles are stored in
+// `user_roles.role_id`, which is what all ten real call sites use
+// (auth_service.dart:191, splash_screen.dart:144, the admin providers, …), so
+// `.single()` on a missing column would have thrown for every caller.
+//
+// It was entirely unreferenced, so nothing was broken by it — but it read like
+// a usable helper sitting in a shared service, which is a trap. If a role
+// lookup is needed here later, query `user_roles` and map role_id
+// (1 = admin, 2 = staff, else citizen) the way `_roleFromId` does in
+// admin_users_provider.dart — do not reintroduce a `profiles.role` read.

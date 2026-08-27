@@ -879,7 +879,16 @@ class _VerificationDetailDialogState
         ),
       ),
     );
-    if (confirmed != true) return;
+    // Dispose the dialog's controller on EVERY exit path, including the cancel
+    // one below — it is created per invocation and was previously leaked on all
+    // of them. Read `.text` out first: the controller must outlive the dialog
+    // (the notes are read after it closes) but not this method.
+    if (confirmed != true) {
+      notesCtrl.dispose();
+      return;
+    }
+    final notes = notesCtrl.text;
+    notesCtrl.dispose();
 
     setState(() => _busy = true);
     try {
@@ -888,7 +897,7 @@ class _VerificationDetailDialogState
           .approve(
             widget.verification.id,
             userId: widget.verification.userId,
-            notes: notesCtrl.text,
+            notes: notes,
           );
       if (!mounted) return;
       Navigator.pop(context);
@@ -929,18 +938,24 @@ class _VerificationDetailDialogState
         ),
       ),
     );
-    if (confirmed != true) return;
+    // Same per-invocation controller disposal as _approve(); see the note there.
+    if (confirmed != true) {
+      notesCtrl.dispose();
+      return;
+    }
+    final notes = notesCtrl.text;
+    notesCtrl.dispose();
 
     setState(() => _busy = true);
     try {
       await ref
           .read(adminVerificationProvider.notifier)
-          .reject(widget.verification.id, notes: notesCtrl.text);
+          .reject(widget.verification.id, notes: notes);
 
       // Deliver the reason to the applicant as an in-app notification. Fail-soft:
       // the rejection is already saved, and adminSend swallows its own errors,
       // so a notification hiccup never turns into a failed rejection.
-      final reason = notesCtrl.text.trim();
+      final reason = notes.trim();
       await NotificationService.adminSend(
         targetUserId: widget.verification.userId,
         title: 'ID verification not approved',

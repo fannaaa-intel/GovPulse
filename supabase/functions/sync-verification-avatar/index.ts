@@ -41,6 +41,38 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     )
 
+    // ── Authorize: caller must be an admin (role_id = 1) ────────────────────
+    //
+    // config.toml says this function "requires a signed-in caller (the admin
+    // approving the submission)" — but nothing here ever checked that. The
+    // verify_jwt gate is satisfied by the ANON key, which is public, so before
+    // this block ANY caller could pass an arbitrary user_id and force that
+    // citizen's ID-verification selfie to be published into the PUBLIC
+    // profile-photos bucket, and have citizen_details.profile_photo_path
+    // repointed at it. The body's user_id is attacker-chosen; the service-role
+    // client below happily acts on it.
+    //
+    // The only real caller is an admin approving a verification
+    // (admin_verification_provider.dart:167), so gating on role_id = 1 matches
+    // production use exactly. Mirrors the pattern already used by create-staff.
+    const authHeader = req.headers.get("Authorization") ?? ""
+    const callerClient = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_ANON_KEY")!,
+      { global: { headers: { Authorization: authHeader } } },
+    )
+    const { data: { user: caller } } = await callerClient.auth.getUser()
+    if (!caller) return json({ success: false, message: "Not authenticated" }, 401)
+
+    const { data: callerRole } = await supabase
+      .from("user_roles")
+      .select("role_id")
+      .eq("user_id", caller.id)
+      .maybeSingle()
+    if ((callerRole?.role_id ?? 0) !== 1) {
+      return json({ success: false, message: "Only an admin can sync a verification avatar." }, 403)
+    }
+
     // Only ever act on an APPROVED submission, and take its path from the DB —
     // never a client-supplied path.
     const { data: sub } = await supabase

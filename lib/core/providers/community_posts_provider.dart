@@ -374,6 +374,29 @@ class CommunityPostsProvider extends ChangeNotifier {
   /// debounce alone does not bound the work — this does.
   static const Duration _realtimeRefreshFloor = Duration(seconds: 3);
 
+  /// Ceiling on how many approved posts one feed load will pull.
+  ///
+  /// Both feed reads were previously UNBOUNDED — no `.limit()`, no `.range()` —
+  /// and each one is followed by [_fetchCommentsForPosts], which loads every
+  /// comment on every post returned. So the cost of opening the citizen home
+  /// feed grew with the lifetime size of the community table, on the app's
+  /// most-opened screen, and [_silentRefresh] re-ran the whole thing on every
+  /// realtime change (rate-limited to once per 3s, which bounds the FREQUENCY
+  /// but not the SIZE).
+  ///
+  /// This is a safety cap, NOT pagination. Real pagination here means an
+  /// infinite-scroll UI plus reconciling optimistic comments and pinned posts
+  /// across page boundaries — a feature change, and one that would risk the
+  /// working feed. The cap makes the worst case bounded and constant today;
+  /// swap it for `.range()` when the scroll UI is actually built.
+  ///
+  /// Ordering is applied server-side BEFORE the limit (pinned first, then
+  /// newest), so this keeps the posts a citizen actually wants to see and drops
+  /// only the oldest tail. At the app's current volume nothing is dropped at
+  /// all — this only engages once the table outgrows a single screenful of
+  /// history.
+  static const int _feedFetchLimit = 200;
+
   void subscribeRealtime() {
     if (_guestMode) return; // guests can't read comment/like tables
     if (_realtimeChannel != null) return;
@@ -458,9 +481,12 @@ class CommunityPostsProvider extends ChangeNotifier {
           .select()
           .eq('status', 'approved');
 
+      // Bounded — see [_feedFetchLimit]. Order is applied server-side before the
+      // limit, so this keeps pinned + newest and drops only the oldest tail.
       final rows = await query
           .order('pinned', ascending: false)
-          .order('created_at', ascending: false);
+          .order('created_at', ascending: false)
+          .limit(_feedFetchLimit);
 
       final postIds = rows.map((r) => r['id'] as String).toList();
       final commentsByPost = postIds.isEmpty
@@ -622,9 +648,12 @@ class CommunityPostsProvider extends ChangeNotifier {
             .select()
             .eq('status', 'approved');
 
+        // Bounded — see [_feedFetchLimit]. Same cap as _silentRefresh() so the
+        // two paths cannot disagree about how much of the feed exists.
         final rows = await query
             .order('pinned', ascending: false)
-            .order('created_at', ascending: false);
+            .order('created_at', ascending: false)
+            .limit(_feedFetchLimit);
 
         final postIds = rows.map((r) => r['id'] as String).toList();
         final commentsByPost = postIds.isEmpty

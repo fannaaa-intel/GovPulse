@@ -400,6 +400,13 @@ entrypoint = "./functions/send-email-otp/index.ts"
 enabled = true
 # Requires a signed-in caller (the admin approving the submission). The function
 # uses the service role internally and derives all paths from the DB.
+#
+# 2026-08-27: the gate above is NOT sufficient on its own — verify_jwt is
+# satisfied by the public anon key — so the function now ALSO checks the caller
+# is role_id = 1 in its own body. Until that check was added, this comment
+# described an admin-only endpoint that was in fact open to any caller holding
+# the anon key. Keep both: the gate stops unauthenticated traffic, the in-body
+# role check is what actually makes it admin-only.
 verify_jwt = true
 entrypoint = "./functions/sync-verification-avatar/index.ts"
 
