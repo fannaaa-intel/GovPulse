@@ -1147,12 +1147,49 @@ class ChatService extends ChangeNotifier {
       debugPrint('ChatService: unexpected edge function response: $data');
       return _offlineReply(latest.text);
     } catch (e) {
-      // AI unavailable (offline / rate-limited / usage exhausted) → fall back to
-      // the on-device brain so the assistant stays useful (hybrid).
-      debugPrint('ChatService: edge function error: $e');
+      // AI unavailable → fall back to the on-device brain so the assistant
+      // stays useful (hybrid).
+      //
+      // TWO DIFFERENT CAUSES, TWO DIFFERENT MESSAGES. chat-agent deliberately
+      // returns a NON-2xx on a Groq 429 so functions.invoke throws and we land
+      // here — that is by design (see the comment at chat-agent/index.ts:968).
+      // But it is NOT the same situation as a dead connection:
+      //
+      //   • 429  → the AI is BUSY. The citizen's internet is fine. Telling them
+      //            "offline mode" sends them off to check their wifi for a
+      //            problem that isn't theirs, and the wait is usually seconds.
+      //   • else → genuinely unreachable (no signal, function down).
+      //
+      // The server also hands us Retry-After / retryAfterSeconds, which the
+      // client used to discard. We surface it so the message can say how long.
+      final busy = _isRateLimited(e);
+      debugPrint('ChatService: edge function error (busy=$busy): $e');
       if (session != _sessionId) return '';
-      return _offlineReply(latest.text);
+      return _offlineReply(latest.text, busy: busy, retryAfter: _retryAfterOf(e));
     }
+  }
+
+  /// True when [e] is chat-agent's Groq-throttle 429 rather than a transport
+  /// failure. FunctionException carries the status; the string check is a
+  /// backstop for wrapped/rethrown errors so a shape change degrades to the
+  /// generic offline copy rather than mislabelling a real outage as "busy".
+  static bool _isRateLimited(Object e) {
+    if (e is FunctionException && e.status == 429) return true;
+    return e.toString().contains('rate_limited');
+  }
+
+  /// Seconds chat-agent asked us to wait, when it said. Null when absent or
+  /// unparseable — the caller then omits the duration rather than inventing one.
+  static int? _retryAfterOf(Object e) {
+    if (e is! FunctionException) return null;
+    final details = e.details;
+    if (details is Map && details['retryAfterSeconds'] != null) {
+      final v = details['retryAfterSeconds'];
+      if (v is int) return v;
+      if (v is num) return v.ceil();
+      return int.tryParse(v.toString());
+    }
+    return null;
   }
 
   /// Drops an event row down to what Kuya Gov actually reads out. The full row
@@ -1182,7 +1219,12 @@ class ChatService extends ChangeNotifier {
   }
 
   /// On-device fallback answer for [userText], tagged with [_lastReplyOffline].
-  String _offlineReply(String userText) {
+  ///
+  /// [busy] selects the wording for a Groq throttle ("lots of people are asking
+  /// right now, try again shortly") over the connection wording. [retryAfter] is
+  /// the server's own hint in seconds, shown when it sent one. The answer itself
+  /// is identical either way — only the apology differs.
+  String _offlineReply(String userText, {bool busy = false, int? retryAfter}) {
     _lastReplyOffline = true;
     return LocalAssistant.reply(
       userText,
@@ -1190,6 +1232,8 @@ class ChatService extends ChangeNotifier {
       reportRef: _followUpReportRef,
       reportStatus: _followUpReportStatus,
       reportCategory: _followUpReportCategory,
+      busy: busy,
+      retryAfterSeconds: retryAfter,
     );
   }
 

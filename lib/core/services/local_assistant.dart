@@ -19,12 +19,19 @@ class LocalAssistant {
   /// Produces a reply for [userMessage]. [followUp] tailors the generic
   /// fallback to the report-follow-up screen (using [reportRef]/[reportStatus]/
   /// [reportCategory] when known).
+  /// [busy] means the AI was reachable but THROTTLED (chat-agent surfaced a Groq
+  /// 429), not that the device is offline — the citizen's connection is fine and
+  /// the wait is usually seconds. [retryAfterSeconds] is the server's own hint,
+  /// shown when it sent one. They only affect the no-match apology below; every
+  /// answer this class actually knows is returned unchanged either way.
   static String reply(
     String userMessage, {
     bool followUp = false,
     String? reportRef,
     String? reportStatus,
     String? reportCategory,
+    bool busy = false,
+    int? retryAfterSeconds,
   }) {
     final t = _norm(userMessage);
     // Mirror the citizen's language (Ybanag → Ilocano, the AI's safe rule).
@@ -63,8 +70,28 @@ class LocalAssistant {
     final answer = _knowledge(t);
     if (answer != null) return answer;
 
-    // Nothing matched — an honest, still-helpful main-chat fallback.
+    // Nothing matched — an honest, still-helpful main-chat fallback. When the
+    // cause was throttling rather than a dead connection, say so: "offline mode"
+    // sends the citizen to check a connection that was never the problem.
+    if (busy) {
+      return _pick(lang, _mBusyHelp) + _retrySuffix(lang, retryAfterSeconds);
+    }
     return _pick(lang, _mGenericHelp);
+  }
+
+  /// " Subukan ulit sa ~7 segundo." — appended only when chat-agent actually
+  /// sent a Retry-After. Rounded up and capped in words, never a countdown: the
+  /// number is a hint from the upstream provider, not a guarantee.
+  static String _retrySuffix(_Lang lang, int? seconds) {
+    if (seconds == null || seconds <= 0) return '';
+    final s = seconds > 60 ? 60 : seconds;
+    // Ybanag → Ilocano, the same rule _pick applies (never fabricate Ybanag).
+    return switch (lang) {
+      _Lang.tagalog => '\n\nSubukan po ulit sa mga $s segundo. ⏱️',
+      _Lang.ilocano ||
+      _Lang.ybanag => '\n\nPadasenyo manen kalpasan ti agarup $s a segundo. ⏱️',
+      _Lang.english => '\n\nPlease try again in about $s seconds. ⏱️',
+    };
   }
 
   // ── Language detection + localisation ────────────────────────────────────────
@@ -127,6 +154,34 @@ class LocalAssistant {
         'To report a concern po, use "Report Issue" in Quick Actions on the '
         'Home screen — it goes straight to the right office. 📋',
   };
+  /// Shown when the AI was reachable but THROTTLED (Groq 429), not when the
+  /// device is offline. Deliberately does NOT say "offline" or mention the
+  /// connection: the citizen's internet is working, and pointing them at it
+  /// sends them to debug a problem that is ours, not theirs. It also does not
+  /// blame citizen traffic ("marami pong gumagamit") — the quota is our own
+  /// key's, which is the mistake chat-agent's v4 branch already documents.
+  /// Same service list as [_mGenericHelp] so the fallback stays equally useful.
+  static const _mBusyHelp = {
+    _Lang.tagalog:
+        'Sandali lang po — abala ang AI assistant ngayon, kaya limitado muna '
+        'ang masasagot ko. ⏳ Pero matutulungan pa rin po kita sa mga karaniwang '
+        'serbisyo: barangay clearance, cedula, business permit, PSA documents, '
+        'National ID, passport, voter registration, senior/PWD ID.\n\n'
+        'I-type po ang paksa, o piliin ang "Talk to a person" para sa live na staff.',
+    _Lang.ilocano:
+        'Saan nga agbayag po — okupado ti AI assistant ita, isu a limitado pay '
+        'ti masungbatak. ⏳ Ngem matulongan pa rin kayo iti gagangay a serbisio: '
+        'barangay clearance, cedula, business permit, PSA documents, National ID, '
+        'passport, voter registration, senior/PWD ID.\n\n'
+        'I-type po ti paksa, wenno pilien ti "Talk to a person" para iti live nga staff.',
+    _Lang.english:
+        'One moment po — the AI assistant is busy right now, so what I can '
+        'answer is limited. ⏳ But I can still help with common services: '
+        'barangay clearance, cedula, business permit, PSA documents, National '
+        'ID, passport, voter registration, senior/PWD ID.\n\n'
+        'Type the topic, or choose "Talk to a person" for live staff.',
+  };
+
   static const _mGenericHelp = {
     _Lang.tagalog:
         'Pasensya na po — offline mode muna ako ngayon, kaya limitado ang '
