@@ -270,6 +270,32 @@ class _VerificationScanScreenState extends State<VerificationScanScreen>
     }
   }
 
+  /// WEB only: drops the live stream while this screen sits behind another.
+  ///
+  /// Clears the controller so [build] falls back to its "starting" state
+  /// rather than handing a disposed controller to [CameraPreview].
+  Future<void> _releaseCameraForPush() async {
+    final controller = _controller;
+    if (controller == null) return;
+    _controller = null;
+    _initializeControllerFuture = null;
+    if (mounted) setState(() {});
+    await _releaseController(controller);
+  }
+
+  /// WEB only: reopens the camera when the user comes BACK to this screen.
+  ///
+  /// Guarded on `_controller == null` so a normal rebuild never reopens a
+  /// stream that is already running.
+  Future<void> _ensureCameraForResume() async {
+    if (!kIsWeb || _controller != null) return;
+    setState(() {
+      _webCameraFailed = false;
+      _webCameraErrorCode = null;
+    });
+    await _initCamera();
+  }
+
   @override
   void dispose() {
     _controller?.dispose();
@@ -910,7 +936,24 @@ class _VerificationScanScreenState extends State<VerificationScanScreen>
       } else {
         backImage = fixed;
         if (!mounted) return;
-        pushLegacy(
+        // WEB: this is a PUSH, not a replacement - the scan screen stays alive
+        // underneath the rest of the wizard, and on web an undisposed
+        // CameraController is a live getUserMedia stream. It stayed open for
+        // every screen that followed, so the face-scan step asked the browser
+        // for the same webcam and got `notReadable` - surfaced to the user as
+        // "another app or browser tab is already using the camera", with no
+        // other tab in sight.
+        //
+        // Awaited, unlike the fire-and-forget call in [dispose]: the tracks
+        // must actually be stopped before the next screen asks for the device,
+        // and on web dispose() stops them inside its async body.
+        //
+        // Mobile is deliberately untouched - `kIsWeb` is a compile-time false
+        // there, so the phone's controller keeps the lifecycle it always had.
+        if (kIsWeb) await _releaseCameraForPush();
+        if (!mounted) return;
+
+        final push = pushLegacy(
           context,
           '/verification_review',
           arguments: {
@@ -921,6 +964,32 @@ class _VerificationScanScreenState extends State<VerificationScanScreen>
             'extractedData': _extractedData,
           },
         );
+
+        // MOBILE keeps its original control flow exactly: the push is NOT
+        // awaited, so nothing after it runs, `_isCapturing` stays true on a
+        // screen that is never coming back, and a failure inside the pushed
+        // route cannot fall into this method's catch.
+        //
+        // WEB has to await, because the camera released above must be reopened
+        // when the user comes back - and coming back is a normal thing to do
+        // here, since this screen stays on the stack either way.
+        if (!kIsWeb) return;
+        await push;
+        if (!mounted) return;
+
+        // Back on this screen. Restart from the FRONT: both stills were handed
+        // to the review step, and a screen showing "Back" with no front image
+        // behind it cannot produce a valid pair. `_isCapturing` is cleared with
+        // them - it is set for the duration of a capture and was only ever left
+        // true here because this screen used to be abandoned at this point.
+        setState(() {
+          isFront = true;
+          frontImage = null;
+          backImage = null;
+          _extractedData = {};
+          _isCapturing = false;
+        });
+        await _ensureCameraForResume();
       }
     } catch (e) {
       debugPrint('Capture error: $e');

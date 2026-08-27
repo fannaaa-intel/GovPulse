@@ -3,8 +3,9 @@ import 'dart:io';
 import '../../core/network/network_wrapper.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import '../../core/widgets/Home/Account/account_web_kit.dart'
-    show kVerificationCameraMaxWidth;
+import 'package:dotted_border/dotted_border.dart';
+import '../../core/widgets/Home/Account/account_web_kit.dart';
+import '../../core/theme/citizen_ui.dart';
 import '../../core/widgets/app_dialog.dart' show kWebDialogMaxWidth;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -22,19 +23,6 @@ import '../home/screen/notification_popup.dart';
 // success handler. Web-only in effect; the import itself is inert off web.
 import '../home/shell/citizen_shell_router.dart' show CitizenTab;
 import '../../core/theme/mobile_metrics.dart';
-
-/// Width at which this screen's action buttons stop stretching on web.
-///
-/// [_AnimatedButton] and [_OutlineButton] are `width: double.infinity` inside a
-/// `Positioned(left: 24, right: 24)`, which pins both edges — so on a desktop
-/// browser they span the whole viewport. Both of those are shared with the
-/// mobile camera flow, so the cap is applied at the CALL SITES instead.
-///
-/// 480 is not invented: it is `MobileFormShell`'s default and the content cap
-/// four of the other wizard screens already render through. It is a local const
-/// only because that 480 is a widget-parameter default rather than an
-/// exported constant.
-const double _kFaceButtonMaxWidth = 480;
 
 class VerificationFaceScanScreen extends StatefulWidget {
   final String username;
@@ -684,12 +672,6 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
   }
 
   String get _statusText {
-    // Web never DETECTS, so the progress wording would be a lie either way -
-    // there is no "Get Closer" because nothing is measuring how close you are.
-    if (kIsWeb) {
-      if (_scanState == _ScanState.done) return "Selfie Added";
-      return _webUsesCamera ? "Position Your Face" : "Add a Selfie";
-    }
     switch (_scanState) {
       case _ScanState.initializing:
         return "Starting Camera...";
@@ -722,9 +704,369 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
     }
   }
 
+  // ==========================================================================
+  //  WEB SCAFFOLD
+  // ==========================================================================
+  //
+  // This was the ONE step of the eight-screen wizard that rendered its PHONE
+  // layout on a desktop browser: a full-bleed white Stack with a ~700px oval
+  // floating in a 1920px viewport, a status line pinned at 12% of the window
+  // height and a footer at 6%, with nothing anchoring either. Every sibling
+  // step - id_selection, photo_instruction, upload_id, review, identity -
+  // already renders through [AccountPageBody] with a title, a stepper and
+  // cards; arriving here dropped all of it, which is why the page read as
+  // broken rather than merely plain. It is also why the "Selfie Added" state
+  // looked empty: the picked image was drawn INSIDE the oval clip, so on a
+  // desktop the visible result was a bare green outline.
+  //
+  // The oval survives, because it is still the right framing guide for a
+  // selfie. It is just no longer the whole page - it lives in a card, at a
+  // size the card gives it.
+  //
+  // Nothing below runs off the web: [build] returns this only under `kIsWeb`,
+  // which is a compile-time false on mobile, so the phone's camera Stack is
+  // byte-identical to what it was.
+  Widget _buildWebScaffold() {
+    return Scaffold(
+      backgroundColor: CitizenUi.pageBg,
+      body: SafeArea(
+        child: AccountPageBody(
+          builder: (context, stack) => Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AccountPageTitle(
+                title: 'Add a selfie',
+                subtitle: _webUsesCamera
+                    ? 'Take a photo of your face so we can match it to your ID.'
+                    : 'Choose a clear photo of your face so we can match it to '
+                          'your ID.',
+                onBack: _isUploading ? null : () => Navigator.pop(context),
+                backLabel: 'Back to identity verification',
+              ),
+              const AccountStepper(step: 2, labels: kVerificationSteps),
+
+              const AccountSectionLabel('Your selfie'),
+              AccountCard(child: _webSelfieRow(stack)),
+              const SizedBox(height: kAccountSectionGap),
+
+              const AccountSectionLabel('Note'),
+              AccountCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const _WebFaceNote(
+                      icon: Icons.lightbulb_outline,
+                      text:
+                          'Please ensure you are in a well-lit area, facing '
+                          'the light.',
+                    ),
+                    const SizedBox(height: 12),
+                    const _WebFaceNote(
+                      icon: Icons.visibility_outlined,
+                      text:
+                          'Look straight ahead with your whole face visible - '
+                          'no hats, masks or sunglasses.',
+                    ),
+                    const SizedBox(height: 12),
+                    _WebFaceNote(
+                      icon: Icons.verified_user_outlined,
+                      // Web has no ML Kit, so nothing on this screen checks the
+                      // photo. A person does, and saying so is both honest and
+                      // what actually happens.
+                      text: _capturedImageBytes == null
+                          ? 'Our team checks every selfie against the ID you '
+                                'uploaded.'
+                          : 'Submitting sends your ID and selfie for review. '
+                                'This usually takes a few business days.',
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: kAccountSectionGap),
+
+              if (_uploadError != null) ...[
+                AccountErrorStrip(_uploadError!),
+                const SizedBox(height: kAccountSectionGap),
+              ],
+
+              // Submit appears only once there is something to submit, so the
+              // page never shows a dead primary control. Until then the card's
+              // own button is the single call to action.
+              if (_capturedImageBytes != null)
+                AccountActions(
+                  stack: stack,
+                  primaryLabel: 'Submit for review',
+                  onPrimary: _isUploading ? null : _submitAndGoHome,
+                  secondaryLabel: _webUsesCamera
+                      ? 'Retake photo'
+                      : 'Choose another',
+                  onSecondary: _isUploading ? null : _retry,
+                  busy: _isUploading,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The capture control beside the preview, stacking when there is no room.
+  Widget _webSelfieRow(bool stack) {
+    final capture = _webCaptureColumn();
+    final preview = _webPreview();
+
+    if (stack) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          preview,
+          const SizedBox(height: kAccountSectionGap),
+          capture,
+        ],
+      );
+    }
+
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(flex: 3, child: capture),
+          const SizedBox(width: kAccountSectionGap),
+          Expanded(flex: 2, child: preview),
+        ],
+      ),
+    );
+  }
+
+  /// The dropzone / shutter, plus a way to reach the OTHER capture method.
+  ///
+  /// Mirrors [verification_upload_id_screen]'s dropzone on purpose: the two
+  /// screens are one step apart and were asking for the same thing in two
+  /// completely different visual languages.
+  Widget _webCaptureColumn() {
+    final done = _capturedImageBytes != null;
+    final accent = done ? AppColors.green : CitizenUi.accent;
+
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(CitizenUi.controlRadius),
+          child: InkWell(
+            onTap: _isUploading
+                ? null
+                : (_webUsesCamera
+                      ? (_cameraReady && !_isCapturing ? _webCapture : null)
+                      : _pickSelfieForWeb),
+            borderRadius: BorderRadius.circular(CitizenUi.controlRadius),
+            child: DottedBorder(
+              color: accent,
+              strokeWidth: 1.4,
+              dashPattern: const [8, 5],
+              borderType: BorderType.RRect,
+              radius: Radius.circular(CitizenUi.controlRadius),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 34),
+                decoration: BoxDecoration(
+                  color: done
+                      ? AppColors.green.withValues(alpha: 0.06)
+                      : CitizenUi.accentWash,
+                  borderRadius: BorderRadius.circular(CitizenUi.controlRadius),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircleAvatar(
+                      radius: 28,
+                      backgroundColor: accent,
+                      child: Icon(
+                        done
+                            ? Icons.check_rounded
+                            : (_webUsesCamera
+                                  ? Icons.camera_alt_outlined
+                                  : Icons.upload_file_outlined),
+                        color: Colors.white,
+                        size: 28,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      done
+                          ? 'Selfie added'
+                          : (_webUsesCamera
+                                ? (_isCapturing ? 'Taking photo...' : 'Take photo')
+                                : 'Choose a selfie'),
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: accent,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      done
+                          ? 'Submit below, or pick a different photo'
+                          : (_webCamFailed
+                                ? "We couldn't open your camera - upload a "
+                                      'photo instead'
+                                : (_webUsesCamera
+                                      ? 'Centre your face in the oval, then '
+                                            'take the photo'
+                                      : 'Pick a clear photo of your face from '
+                                            'your computer')),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: CitizenUi.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        // Whichever method the window picked, the other stays one click away.
+        // The width test is a guess about hardware - a narrow desktop window
+        // has no usable camera, a tablet can have it blocked - so it decides
+        // the DEFAULT and never the only way through.
+        const SizedBox(height: 10),
+        TextButton(
+          onPressed: _isUploading
+              ? null
+              : (_webUsesCamera ? _pickSelfieForWeb : _webEnableCamera),
+          style: TextButton.styleFrom(
+            foregroundColor: CitizenUi.textSecondary,
+            textStyle: const TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          child: Text(
+            _webUsesCamera ? 'Upload a file instead' : 'Use my camera instead',
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Switches a desktop-width browser over to the live camera on request.
+  ///
+  /// The width test only chooses a default, so a laptop webcam has to stay
+  /// reachable. [_webCamFailed] is cleared so a second attempt is not
+  /// pre-judged by the first - the user may have just granted the permission
+  /// they denied, or closed the tab that held the device.
+  Future<void> _webEnableCamera() async {
+    setState(() {
+      _webUsesCamera = true;
+      _webCamFailed = false;
+      _uploadError = null;
+    });
+    await _initWebCamera();
+  }
+
+  /// The oval, at a size the CARD gives it rather than the viewport.
+  ///
+  /// Same framing guide the phone shows, kept because it is the right shape
+  /// for a selfie - but bounded, so it can no longer grow to 700px tall on a
+  /// desktop and push the rest of the page off screen.
+  Widget _webPreview() {
+    const double previewW = 168;
+    const double previewH = previewW * 1.36;
+    final bytes = _capturedImageBytes;
+    final live = _webUsesCamera && _cameraReady && _cameraController != null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: CitizenUi.surface,
+            border: Border.all(color: CitizenUi.border),
+            borderRadius: BorderRadius.circular(CitizenUi.controlRadius),
+          ),
+          child: Center(
+            child: SizedBox(
+              width: previewW,
+              height: previewH,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  ClipPath(
+                    clipper: _OvalPathClipper(),
+                    child: bytes != null
+                        // A picked FILE is not mirrored, so it is shown as-is.
+                        // A frame from the FRONT camera is, so it is flipped
+                        // back - otherwise the still does not match the live
+                        // preview the user just framed themselves in.
+                        ? (_webUsesCamera
+                              ? Transform(
+                                  alignment: Alignment.center,
+                                  transform: Matrix4.identity()
+                                    ..scaleByDouble(-1.0, 1.0, 1.0, 1.0),
+                                  child: Image.memory(
+                                    bytes,
+                                    fit: BoxFit.cover,
+                                    width: previewW,
+                                    height: previewH,
+                                  ),
+                                )
+                              : Image.memory(
+                                  bytes,
+                                  fit: BoxFit.cover,
+                                  width: previewW,
+                                  height: previewH,
+                                ))
+                        : live
+                        ? CameraPreview(_cameraController!)
+                        : Container(color: CitizenUi.pageBg),
+                  ),
+                  // Painted OVER the clip so the stroke is not eaten by it.
+                  IgnorePointer(
+                    child: CustomPaint(
+                      painter: _OvalBorderPainter(
+                        color: bytes != null
+                            ? AppColors.green
+                            : CitizenUi.border,
+                        strokeWidth: 2.0,
+                        progress: 0.0,
+                        showProgress: false,
+                      ),
+                    ),
+                  ),
+                  if (bytes == null && !live)
+                    Center(
+                      child: Icon(
+                        Icons.person_outline,
+                        size: 44,
+                        color: CitizenUi.textMuted.withValues(alpha: 0.5),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          bytes != null
+              ? 'Your selfie'
+              : (live ? 'Live preview' : 'Preview appears here'),
+          style: const TextStyle(fontSize: 12, color: CitizenUi.textMuted),
+        ),
+      ],
+    );
+  }
+
   // ── Build ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
+    if (kIsWeb) return _buildWebScaffold();
+
     SystemChrome.setSystemUIOverlayStyle(
       const SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
@@ -734,35 +1076,11 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
 
     final size = MediaQuery.of(context).size;
 
-    // The oval is sized off viewport WIDTH, which is right on a phone (narrow
-    // and tall) but wrong on web: at 1440 wide the height works out to ~1214px
-    // and runs off a ~700px viewport. It never striped — the Stack clips — it
-    // just rendered broken, with the status text and footer overlapping it.
-    //
-    // On web, clamp the HEIGHT against the viewport and back-compute the width
-    // so the 1.36 aspect ratio is preserved. The clamp only engages when the
-    // width-derived height would not fit, so a narrow browser window still
-    // gets the original width-based sizing.
-    final double ovalW;
-    final double ovalH;
-    if (kIsWeb) {
-      const aspect = 1.36;
-      // Leaves room for the status text (top: height * 0.12) above and the
-      // footer (bottom: height * 0.06 plus its content) below, including the
-      // +32 the progress ring adds around the oval.
-      final maxOvalH = size.height * 0.46;
-      final widthBasedH = size.width * 0.62 * aspect;
-      if (widthBasedH > maxOvalH) {
-        ovalH = maxOvalH;
-        ovalW = maxOvalH / aspect;
-      } else {
-        ovalW = size.width * 0.62;
-        ovalH = widthBasedH;
-      }
-    } else {
-      ovalW = size.width * 0.62;
-      ovalH = ovalW * 1.36;
-    }
+    // Sized off viewport WIDTH, which is right on a phone: narrow and tall.
+    // The web clamp that used to live here is gone with the rest of the web
+    // arm - web returns [_buildWebScaffold] above and never reaches this.
+    final double ovalW = size.width * 0.62;
+    final double ovalH = ovalW * 1.36;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -772,10 +1090,7 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
           Container(color: Colors.white),
 
           // ── Camera preview / frozen still ─────────────────────────────
-          // On web there is no camera, so the oval shows the picked selfie once
-          // there is one — CameraPreview is never reachable.
-          if ((_cameraReady && _cameraController != null) ||
-              (kIsWeb && _capturedImageBytes != null))
+          if (_cameraReady && _cameraController != null)
             Center(
               child: SizedBox(
                 width: ovalW,
@@ -785,27 +1100,19 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
                   child:
                       (_capturedImageBytes != null &&
                           _scanState == _ScanState.done)
-                      ? (kIsWeb
-                            // No mirroring on web. The flip below un-mirrors a
-                            // front-camera selfie; a picked file is not
-                            // mirrored, so flipping it would be wrong.
-                            ? Image.memory(
-                                _capturedImageBytes!,
-                                fit: BoxFit.cover,
-                                width: ovalW,
-                                height: ovalH,
-                              )
-                            : Transform(
-                                alignment: Alignment.center,
-                                transform: Matrix4.identity()
-                                  ..scaleByDouble(-1.0, 1.0, 1.0, 1.0),
-                                child: Image.memory(
-                                  _capturedImageBytes!,
-                                  fit: BoxFit.cover,
-                                  width: ovalW,
-                                  height: ovalH,
-                                ),
-                              ))
+                      // Un-mirrors the front-camera still so it matches the
+                      // preview the user was just looking at.
+                      ? Transform(
+                          alignment: Alignment.center,
+                          transform: Matrix4.identity()
+                            ..scaleByDouble(-1.0, 1.0, 1.0, 1.0),
+                          child: Image.memory(
+                            _capturedImageBytes!,
+                            fit: BoxFit.cover,
+                            width: ovalW,
+                            height: ovalH,
+                          ),
+                        )
                       : CameraPreview(_cameraController!),
                 ),
               ),
@@ -961,79 +1268,6 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
   }
 
   Widget _buildScanningFooter() {
-    // WEB: nothing is scanning, so there are no dots to animate — the footer is
-    // the call to action, which is a shutter when there is a live preview and
-    // a file picker otherwise.
-    if (kIsWeb) {
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            _webUsesCamera
-                ? "Centre your face in the oval, then take the photo.\n"
-                      "Our team will check it against your ID."
-                : _webCamFailed
-                ? "We couldn't open your camera.\n"
-                      "Upload a clear photo of your face instead."
-                : "Upload a clear photo of your face.\n"
-                      "Our team will check it against your ID.",
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 13,
-              color: AppColors.hint,
-              height: 1.5,
-            ),
-          ),
-          if (_uploadError != null) ...[
-            const SizedBox(height: 8),
-            Text(
-              _uploadError!,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 11,
-                color: AppColors.red,
-                height: 1.4,
-              ),
-            ),
-          ],
-          const SizedBox(height: 24),
-          // No kIsWeb guard: this whole branch only ever runs on web, so the
-          // cap cannot reach the mobile footer (which renders scanning dots).
-          // The Column centres by default, so this needs no Center wrapper.
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: _kFaceButtonMaxWidth),
-            child: _AnimatedButton(
-              label: _webUsesCamera
-                  ? (_isCapturing ? "Taking photo…" : "Take photo")
-                  : "Choose a selfie",
-              color: AppColors.primaryBlue,
-              onPressed: _webUsesCamera
-                  ? (_cameraReady && !_isCapturing ? _webCapture : () {})
-                  : _pickSelfieForWeb,
-            ),
-          ),
-          // Whichever method the window chose, the other one stays one tap
-          // away. The width test is a guess about hardware — a narrow desktop
-          // window has no usable camera, a tablet can have it blocked — so it
-          // decides the DEFAULT and never the only way through.
-          if (_webUsesCamera) ...[
-            const SizedBox(height: 6),
-            TextButton(
-              onPressed: _pickSelfieForWeb,
-              style: TextButton.styleFrom(
-                foregroundColor: AppColors.hint,
-                textStyle: const TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              child: const Text('Upload a file instead'),
-            ),
-          ],
-        ],
-      );
-    }
-
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -1061,12 +1295,10 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
   Widget _buildResultButtons() => Column(
     mainAxisSize: MainAxisSize.min,
     children: [
-      Text(
-        kIsWeb
-            ? "Selfie added. Our team will check it against your ID."
-            : "Your face has been scanned successfully.",
+      const Text(
+        "Your face has been scanned successfully.",
         textAlign: TextAlign.center,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 13,
           color: AppColors.hint,
           height: 1.5,
@@ -1098,32 +1330,16 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
       const SizedBox(height: 24),
 
       // ── Go to Home → triggers upload then navigate ────────────────────
-      //
-      // Unlike the scanning footer above, this method is SHARED — its only
-      // other kIsWeb use is a caption ternary — so both buttons render on
-      // mobile too. maxWidth is infinity off the web, which enforces to the
-      // parent's own constraints unchanged, leaving the mobile layout
-      // byte-identical.
-      ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: kIsWeb ? _kFaceButtonMaxWidth : double.infinity,
-        ),
-        child: _AnimatedButton(
-          label: "Go to Home",
-          color: AppColors.green,
-          onPressed: _isUploading ? () {} : _submitAndGoHome,
-        ),
+      _AnimatedButton(
+        label: "Go to Home",
+        color: AppColors.green,
+        onPressed: _isUploading ? () {} : _submitAndGoHome,
       ),
       const SizedBox(height: 12),
-      ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: kIsWeb ? _kFaceButtonMaxWidth : double.infinity,
-        ),
-        child: _OutlineButton(
-          label: "Retry",
-          color: AppColors.primaryBlue,
-          onPressed: _isUploading ? () {} : _retry,
-        ),
+      _OutlineButton(
+        label: "Retry",
+        color: AppColors.primaryBlue,
+        onPressed: _isUploading ? () {} : _retry,
       ),
     ],
   );
@@ -1545,5 +1761,35 @@ class _OutlineButtonState extends State<_OutlineButton> {
         ),
       ),
     ),
+  );
+}
+
+/// One bullet in the web "Note" card.
+///
+/// A local twin of `verification_upload_id_screen`'s `_WebUploadNote`, which is
+/// private to that file. Same shape, so the two consecutive wizard steps read
+/// as one page.
+class _WebFaceNote extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  const _WebFaceNote({required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) => Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Icon(icon, size: 16, color: CitizenUi.accent),
+      const SizedBox(width: 10),
+      Expanded(
+        child: Text(
+          text,
+          style: const TextStyle(
+            fontSize: 12,
+            height: 1.45,
+            color: CitizenUi.textSecondary,
+          ),
+        ),
+      ),
+    ],
   );
 }
