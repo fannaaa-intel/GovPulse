@@ -1,7 +1,9 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/app_dialog.dart';
 import '../providers/admin_activity_provider.dart';
 import '../theme/admin_ui.dart';
 import '../widgets/admin_dialog_back.dart';
@@ -11,24 +13,99 @@ import '../widgets/admin_skeleton.dart';
 //  Admin → Settings → Activity log → "View all"
 //
 //  Full, scrollable history of every logged admin action (Settings only shows
-//  the newest 15 inline). Adds a date-range filter — quick presets plus a
+//  the newest 5 inline). Adds a date-range filter — quick presets plus a
 //  custom range — and shows the exact timestamp on each row, grouped by day.
 // ════════════════════════════════════════════════════════════════════════════
 
-/// Opens the full activity-log history as a pushed page (full-screen on phones,
-/// a centred column on web/desktop). Uses the app-wide sub-screen motion:
+/// Width at or above which the history opens as a centred pop-up modal rather
+/// than a pushed screen. Below it — a phone-width browser window, and the
+/// mobile app at any size — a modal would be a near-full-bleed panel with a
+/// useless sliver of scrim, so the history takes over the screen instead.
+const double _kModalMinWidth = 760;
+
+/// Opens the full activity-log history.
+///
+/// Medium and large screens (web/desktop) get a centred pop-up modal over a
+/// frosted console, matching every other admin pop-up. Small screens and the
+/// mobile app get a pushed full screen, using the app-wide sub-screen motion:
 /// instant on entry (the content does its own slide-up + fade-in), fade-out on
 /// the way back — matching the citizen settings sub-screens.
 void showAdminActivityLog(BuildContext context) {
-  Navigator.of(context).push(
-    PageRouteBuilder(
-      transitionDuration: Duration.zero,
-      reverseTransitionDuration: const Duration(milliseconds: 220),
-      pageBuilder: (_, _, _) => const _ActivityLogScreen(),
-      transitionsBuilder: (_, anim, _, child) =>
-          FadeTransition(opacity: anim, child: child),
-    ),
+  // Decided once, at the tap: an already-open modal keeps its own layout, and
+  // a resize past the breakpoint is not worth tearing the route down for. The
+  // mobile app always pushes — a tablet clears the width breakpoint, but a
+  // dialog is the wrong idiom for a touch shell.
+  final asModal =
+      kIsWeb && MediaQuery.of(context).size.width >= _kModalMinWidth;
+
+  if (!asModal) {
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: const Duration(milliseconds: 220),
+        pageBuilder: (_, _, _) => const _ActivityLogScreen(),
+        transitionsBuilder: (_, anim, _, child) =>
+            FadeTransition(opacity: anim, child: child),
+      ),
+    );
+    return;
+  }
+
+  showGeneralDialog(
+    context: context,
+    barrierDismissible: true,
+    barrierLabel: 'Activity log',
+    barrierColor: Colors.black.withValues(alpha: 0.12),
+    transitionDuration: const Duration(milliseconds: 180),
+    pageBuilder: (_, _, _) => const _ActivityLogModal(),
+    transitionBuilder: (_, anim, _, child) {
+      final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
+      final content = FadeTransition(
+        opacity: curved,
+        child: SlideTransition(
+          position: Tween(
+            begin: const Offset(0, -0.03),
+            end: Offset.zero,
+          ).animate(curved),
+          child: child,
+        ),
+      );
+      // Frost the console behind the panel, ramping with the same animation so
+      // it grows on open and clears on close — matching every other pop-up.
+      return withDialogBlur(anim, content);
+    },
   );
+}
+
+/// The modal shell: a rounded, height-capped card holding the same history
+/// content the pushed screen shows.
+class _ActivityLogModal extends StatelessWidget {
+  const _ActivityLogModal();
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    // Leave breathing room on every side so the scrim and blur stay visible;
+    // the card never outgrows the viewport on a short laptop screen.
+    final maxH = (size.height - 96).clamp(360.0, 720.0);
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: 720, maxHeight: maxH),
+          child: Material(
+            color: AdminUi.pageBg,
+            borderRadius: BorderRadius.circular(18),
+            clipBehavior: Clip.antiAlias,
+            elevation: 18,
+            shadowColor: Colors.black.withValues(alpha: 0.22),
+            child: const _ActivityLogScreen(inModal: true),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 // Same visual language as the inline Settings rows.
@@ -60,7 +137,12 @@ Color _activityColor(String action) => switch (action) {
 enum _Range { all, today, days7, days30, custom }
 
 class _ActivityLogScreen extends ConsumerStatefulWidget {
-  const _ActivityLogScreen();
+  /// True when hosted inside [_ActivityLogModal] — the card already provides
+  /// the surface, rounding and inset, so the content drops the Scaffold's
+  /// page background and SafeArea and skips the entry slide (the modal's own
+  /// transition covers it).
+  final bool inModal;
+  const _ActivityLogScreen({this.inModal = false});
 
   @override
   ConsumerState<_ActivityLogScreen> createState() => _ActivityLogScreenState();
@@ -90,7 +172,7 @@ class _ActivityLogScreenState extends ConsumerState<_ActivityLogScreen>
       begin: const Offset(0, 0.06),
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOutCubic));
-    _entryCtrl.forward();
+    if (!widget.inModal) _entryCtrl.forward();
   }
 
   @override
@@ -178,57 +260,58 @@ class _ActivityLogScreenState extends ConsumerState<_ActivityLogScreen>
 
   @override
   Widget build(BuildContext context) {
+    final content = Column(
+      children: [
+        _header(),
+        _filterBar(),
+        const Divider(height: 1, color: AdminUi.border),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: _refresh,
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 760),
+                child: FutureBuilder<List<AdminActivity>>(
+                  future: _future,
+                  builder: (context, snap) {
+                    if (snap.connectionState == ConnectionState.waiting) {
+                      return const _HistorySkeleton();
+                    }
+                    if (snap.hasError) {
+                      return _message(
+                        'Could not load the activity log.',
+                        action: TextButton(
+                          onPressed: _refresh,
+                          child: const Text('Retry'),
+                        ),
+                      );
+                    }
+                    final items = snap.data ?? const <AdminActivity>[];
+                    if (items.isEmpty) {
+                      return _message(
+                        _range == _Range.all
+                            ? 'No admin actions recorded yet.'
+                            : 'No actions in this date range.',
+                      );
+                    }
+                    return _list(items);
+                  },
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+
+    if (widget.inModal) return content;
+
     return Scaffold(
       backgroundColor: AdminUi.pageBg,
       body: SafeArea(
         child: FadeTransition(
           opacity: _entryFade,
-          child: SlideTransition(
-            position: _entrySlide,
-            child: Column(
-          children: [
-            _header(),
-            _filterBar(),
-            const Divider(height: 1, color: AdminUi.border),
-            Expanded(
-              child: RefreshIndicator(
-                onRefresh: _refresh,
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 760),
-                    child: FutureBuilder<List<AdminActivity>>(
-                      future: _future,
-                      builder: (context, snap) {
-                        if (snap.connectionState == ConnectionState.waiting) {
-                          return const _HistorySkeleton();
-                        }
-                        if (snap.hasError) {
-                          return _message(
-                            'Could not load the activity log.',
-                            action: TextButton(
-                              onPressed: _refresh,
-                              child: const Text('Retry'),
-                            ),
-                          );
-                        }
-                        final items = snap.data ?? const <AdminActivity>[];
-                        if (items.isEmpty) {
-                          return _message(
-                            _range == _Range.all
-                                ? 'No admin actions recorded yet.'
-                                : 'No actions in this date range.',
-                          );
-                        }
-                        return _list(items);
-                      },
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-            ),
-          ),
+          child: SlideTransition(position: _entrySlide, child: content),
         ),
       ),
     );
@@ -241,8 +324,13 @@ class _ActivityLogScreenState extends ConsumerState<_ActivityLogScreen>
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
       child: Row(
         children: [
-          AdminDialogBack(onTap: () => Navigator.pop(context)),
-          const SizedBox(width: 12),
+          // Pushed screen → chevron back at the left, like the citizen
+          // settings sub-screens. Modal → a top-right X, the convention the
+          // other admin dialogs already use.
+          if (!widget.inModal) ...[
+            AdminDialogBack(onTap: () => Navigator.pop(context)),
+            const SizedBox(width: 12),
+          ],
           const Expanded(
             child: Text(
               'Activity log',
@@ -261,6 +349,14 @@ class _ActivityLogScreenState extends ConsumerState<_ActivityLogScreen>
             tooltip: 'Refresh',
             visualDensity: VisualDensity.compact,
           ),
+          if (widget.inModal)
+            IconButton(
+              onPressed: () => Navigator.pop(context),
+              icon: const Icon(Icons.close_rounded, size: 20),
+              color: AdminUi.textMuted,
+              tooltip: 'Close',
+              visualDensity: VisualDensity.compact,
+            ),
         ],
       ),
     );

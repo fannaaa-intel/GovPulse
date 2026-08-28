@@ -5,7 +5,6 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/theme/app_colors.dart';
 import '../providers/admin_activity_provider.dart';
 import '../providers/admin_flagged_comments_provider.dart';
-import '../providers/admin_lgu_facts_provider.dart';
 import '../providers/admin_moderation_config_provider.dart';
 import '../providers/admin_settings_provider.dart';
 import '../providers/admin_spam_watch_provider.dart';
@@ -22,7 +21,6 @@ import 'admin_spam_watch_page.dart';
 //  System/app-level configuration (account actions live in the topbar chip):
 //   • Notifications  — mute which topics count toward the bell badge
 //   • Data refresh   — how often the dashboard auto-refreshes (device-local)
-//   • Kuya Gov       — the verified Aparri facts the chat assistant answers with
 //   • Activity log   — recent admin actions (from admin_activity_log)
 //   • About          — version + support contact
 //   • Log out        — mirrors the topbar/sidebar logout
@@ -86,9 +84,6 @@ class AdminSettingsPage extends ConsumerWidget {
                       const SizedBox(height: 22),
                       const _SectionTitle('Data refresh'),
                       const _RefreshCard(),
-                      const SizedBox(height: 22),
-                      const _SectionTitle('Kuya Gov knowledge'),
-                      const _LguFactsCard(),
                       const SizedBox(height: 22),
                       const _SectionTitle('Content moderation'),
                       const _ModerationCard(),
@@ -857,9 +852,10 @@ class _ActivityCard extends ConsumerWidget {
                   message: 'No admin actions recorded yet.',
                 );
               }
-              // Cap the inline list; the page itself is the scroll surface.
-              // The full, date-filterable history lives behind "View all".
-              final shown = items.take(15).toList();
+              // Settings is a summary surface, so only the 5 newest actions
+              // are inlined; the full, date-filterable history lives behind
+              // "View all".
+              final shown = items.take(5).toList();
               return Column(
                 children: [
                   for (int i = 0; i < shown.length; i++) ...[
@@ -1151,261 +1147,6 @@ class _LogoutButton extends StatelessWidget {
             borderRadius: BorderRadius.circular(14),
           ),
         ),
-      ),
-    );
-  }
-}
-
-// ── Kuya Gov knowledge (public.lgu_facts) ────────────────────────────────────
-// These rows ARE what the chat assistant knows about Aparri specifically. Until
-// a value is filled the assistant answers "hindi po ako sigurado, i-confirm sa
-// munisipyo" — which is correct behaviour, not a bug, and is why this card
-// leads with how many are still blank rather than hiding the empty rows.
-//
-// Nothing here is seeded with a guess: a wrong mayor in a government app is
-// worse than an honest "I am not sure", so the values must come from the LGU.
-class _LguFactsCard extends ConsumerWidget {
-  const _LguFactsCard();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final async = ref.watch(adminLguFactsProvider);
-
-    return async.when(
-      loading: () => const _Card(
-        padding: EdgeInsets.all(14),
-        child: AdminShimmer(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SkeletonBox(width: 220, height: 12),
-              SizedBox(height: 10),
-              SkeletonBox(height: 36, radius: 10),
-              SizedBox(height: 10),
-              SkeletonBox(height: 36, radius: 10),
-            ],
-          ),
-        ),
-      ),
-      error: (_, _) => const _Card(
-        padding: EdgeInsets.all(14),
-        child: Text(
-          'Could not load the Kuya Gov knowledge list.',
-          style: TextStyle(fontSize: 12.5, color: AdminUi.textMuted),
-        ),
-      ),
-      data: (state) {
-        if (!state.available) {
-          return const _Card(
-            padding: EdgeInsets.all(14),
-            child: Text(
-              'Not set up yet. Apply the lgu_facts migration to let Kuya Gov '
-              'answer questions about Aparri (officials, hotlines, offices).',
-              style: TextStyle(fontSize: 12.5, color: AdminUi.textMuted),
-            ),
-          );
-        }
-
-        final total = state.facts.length;
-        final filled = state.filledCount;
-
-        return _Card(
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(14, 14, 14, 6),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'What Kuya Gov knows about Aparri. Blank facts are never '
-                      'guessed — the assistant tells citizens to confirm at the '
-                      'municipio instead. Fill these in from official sources.',
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        color: AdminUi.textMuted,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      '$filled of $total filled',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: filled == total
-                            ? const Color(0xFF16A34A)
-                            : const Color(0xFFF59E0B),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              for (int i = 0; i < state.facts.length; i++) ...[
-                const Divider(height: 1, color: AdminUi.subtle),
-                _FactRow(fact: state.facts[i]),
-              ],
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _FactRow extends ConsumerStatefulWidget {
-  final LguFact fact;
-  const _FactRow({required this.fact});
-
-  @override
-  ConsumerState<_FactRow> createState() => _FactRowState();
-}
-
-class _FactRowState extends ConsumerState<_FactRow> {
-  late final TextEditingController _c =
-      TextEditingController(text: widget.fact.value);
-  bool _saving = false;
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  bool get _dirty => _c.text.trim() != widget.fact.value.trim();
-
-  Future<void> _save() async {
-    if (_saving) return;
-    setState(() => _saving = true);
-    try {
-      await ref
-          .read(adminLguFactsProvider.notifier)
-          .setValue(widget.fact.key, _c.text);
-      if (!mounted) return;
-      showAdminSnackBar(
-        context,
-        'Saved. Kuya Gov will use this right away.',
-        type: AdminSnackType.success,
-      );
-    } catch (e) {
-      if (!mounted) return;
-      showAdminSnackBar(
-        context,
-        'Could not save: $e',
-        type: AdminSnackType.error,
-      );
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final f = widget.fact;
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  f.label,
-                  style: const TextStyle(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w600,
-                    color: AdminUi.textPrimary,
-                  ),
-                ),
-              ),
-              if (f.isEmpty)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF59E0B).withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: const Text(
-                    'Not set',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFFB45309),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          // Multi-line: some facts are genuinely long (the barangay list, the
-          // Sangguniang Bayan roster). The server collapses newlines before the
-          // value reaches the prompt, so wrapping here is purely cosmetic.
-          TextField(
-            controller: _c,
-            minLines: 1,
-            maxLines: 4,
-            onChanged: (_) => setState(() {}),
-            style: const TextStyle(fontSize: 13),
-            decoration: InputDecoration(
-              isDense: true,
-              hintText: 'Leave blank until verified',
-              hintStyle: const TextStyle(
-                fontSize: 12.5,
-                color: AdminUi.textMuted,
-              ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 10,
-                vertical: 10,
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(AdminUi.controlRadius),
-                borderSide: const BorderSide(color: AdminUi.border),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(AdminUi.controlRadius),
-                borderSide: const BorderSide(color: AdminUi.border),
-              ),
-            ),
-          ),
-          if (_dirty) ...[
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerRight,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextButton(
-                    onPressed: _saving
-                        ? null
-                        : () => setState(() => _c.text = f.value),
-                    child: const Text('Cancel'),
-                  ),
-                  const SizedBox(width: 6),
-                  FilledButton(
-                    onPressed: _saving ? null : _save,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.primaryBlue,
-                    ),
-                    child: _saving
-                        ? const SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Text('Save'),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ],
       ),
     );
   }
