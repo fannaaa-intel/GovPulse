@@ -154,8 +154,9 @@ class _PreviewApp extends StatefulWidget {
 }
 
 class _PreviewAppState extends State<_PreviewApp> {
-  // The widths the launcher switches on: 420 and 700 must push a screen, 900
-  // and 1280 must open the modal.
+  // The widths the launcher switches on: 360, 420 and 700 must push a screen,
+  // 900 and 1280 must open the modal. 360 is the tightest phone worth
+  // supporting — the filter chips must still fit without clipping there.
   double _width = 1280;
 
   @override
@@ -173,7 +174,7 @@ class _PreviewAppState extends State<_PreviewApp> {
                 child: Wrap(
                   spacing: 8,
                   children: [
-                    for (final w in const [420.0, 700.0, 900.0, 1280.0])
+                    for (final w in const [360.0, 420.0, 700.0, 900.0, 1280.0])
                       FilledButton(
                         onPressed: () => setState(() => _width = w),
                         style: FilledButton.styleFrom(

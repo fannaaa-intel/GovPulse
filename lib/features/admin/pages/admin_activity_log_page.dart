@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_dialog.dart';
@@ -77,6 +79,31 @@ void showAdminActivityLog(BuildContext context) {
   );
 }
 
+/// [MaterialScrollBehavior] that scrolls exactly as the default does but paints
+/// no scrollbar — the same trick the citizen shell uses, scoped here to the
+/// activity log so it cannot restyle the rest of the console.
+///
+/// Only [buildScrollbar] is overridden, so wheel, trackpad, drag and keyboard
+/// scrolling all still work: the bar goes, the scrolling stays. [dragDevices]
+/// adds the mouse so click-and-drag keeps working on the web once there is no
+/// visible bar to grab.
+class _NoScrollbarBehavior extends MaterialScrollBehavior {
+  const _NoScrollbarBehavior();
+
+  @override
+  Widget buildScrollbar(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) => child;
+
+  @override
+  Set<PointerDeviceKind> get dragDevices => {
+    ...super.dragDevices,
+    PointerDeviceKind.mouse,
+  };
+}
+
 /// The modal shell: a rounded, height-capped card holding the same history
 /// content the pushed screen shows.
 class _ActivityLogModal extends StatelessWidget {
@@ -87,19 +114,19 @@ class _ActivityLogModal extends StatelessWidget {
     final size = MediaQuery.of(context).size;
     // Leave breathing room on every side so the scrim and blur stay visible;
     // the card never outgrows the viewport on a short laptop screen.
-    final maxH = (size.height - 96).clamp(360.0, 720.0);
+    final maxH = (size.height - 112).clamp(400.0, 760.0);
 
     return Center(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 56),
         child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: 720, maxHeight: maxH),
+          constraints: BoxConstraints(maxWidth: 680, maxHeight: maxH),
           child: Material(
-            color: AdminUi.pageBg,
-            borderRadius: BorderRadius.circular(18),
+            color: AdminUi.surface,
+            borderRadius: BorderRadius.circular(20),
             clipBehavior: Clip.antiAlias,
-            elevation: 18,
-            shadowColor: Colors.black.withValues(alpha: 0.22),
+            elevation: 24,
+            shadowColor: Colors.black.withValues(alpha: 0.28),
             child: const _ActivityLogScreen(inModal: true),
           ),
         ),
@@ -253,33 +280,97 @@ class _ActivityLogScreenState extends ConsumerState<_ActivityLogScreen>
             primary: AppColors.primaryBlue,
           ),
           // Full-screen mode paints square corners by design; once the picker
-          // is a card, it needs the rounding the other admin pop-ups use.
+          // is a card (desktop) or a bottom sheet (phone), it needs rounding.
           // Rounding the dialog is not enough on its own: the inner
           // _CalendarRangePickerDialog paints an opaque square canvas over the
           // whole box, so that surface has to go transparent for the rounded
-          // card underneath to be the thing you see.
+          // shape underneath to be the thing you see. Both branches are
+          // rounded now, so both need it.
           datePickerTheme: base.datePickerTheme.copyWith(
             rangePickerShape: asModal
                 ? RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(18),
+                    borderRadius: BorderRadius.circular(20),
                   )
-                : null,
-            rangePickerBackgroundColor: asModal ? Colors.transparent : null,
+                : const RoundedRectangleBorder(
+                    borderRadius: BorderRadius.vertical(
+                      top: Radius.circular(22),
+                    ),
+                  ),
+            rangePickerBackgroundColor: Colors.transparent,
           ),
         );
         final themed = Theme(data: theme, child: child!);
-        if (!asModal) return themed;
+
+        if (!asModal) {
+          // Phones and the mobile app: the picker still owns the screen, but
+          // it is pinned to the BOTTOM and sized to its content rather than
+          // stretched to the viewport. Full-screen left a tall band of dead
+          // space under the last week row, and put Save at the far top corner
+          // — the hardest place to reach one-handed.
+          final screen = MediaQuery.of(ctx).size;
+          final sheetH = (screen.height * 0.82).clamp(420.0, 620.0);
+          return Align(
+            alignment: Alignment.bottomCenter,
+            child: MediaQuery(
+              data: MediaQuery.of(ctx).copyWith(
+                size: Size(screen.width, sheetH),
+              ),
+              child: SizedBox(
+                width: screen.width,
+                height: sheetH,
+                // The picker's own surface is transparent (see the theme
+                // above), so the sheet supplies the opaque rounded ground.
+                child: Material(
+                  color: AdminUi.surface,
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(22),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: themed,
+                ),
+              ),
+            ),
+          );
+        }
 
         final screen = MediaQuery.of(ctx).size;
         // Sized to the calendar itself — six week rows under the header and
         // action bar — rather than to the viewport, and capped so a short
         // laptop screen still shows the whole card.
-        final w = screen.width.clamp(0.0, 460.0);
-        final h = (screen.height - 120).clamp(360.0, 540.0);
+        // 560 is measured, not guessed: the header and action bar take ~200px
+        // and six week rows at 50px each need ~300 more, so a shorter card
+        // clips the last week of a five- or six-row month.
+        final w = screen.width.clamp(0.0, 440.0);
+        final h = (screen.height - 140).clamp(360.0, 560.0);
         return Center(
           child: MediaQuery(
             data: MediaQuery.of(ctx).copyWith(size: Size(w, h)),
-            child: SizedBox(width: w, height: h, child: themed),
+            child: SizedBox(
+              width: w,
+              height: h,
+              // A shadow of its own so the picker reads as sitting ON the
+              // history modal rather than punched into it.
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  // Opaque ground: the picker's own surface is transparent
+                  // (see the theme above), and the shadow must not show
+                  // through the card it belongs to.
+                  color: AdminUi.surface,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.26),
+                      blurRadius: 34,
+                      offset: const Offset(0, 12),
+                    ),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: themed,
+                ),
+              ),
+            ),
           ),
         );
       },
@@ -300,43 +391,57 @@ class _ActivityLogScreenState extends ConsumerState<_ActivityLogScreen>
 
   @override
   Widget build(BuildContext context) {
+    // One breakpoint drives the whole layout, so the pushed screen at phone
+    // width and the modal at desktop width never disagree about spacing.
+    final compact = MediaQuery.of(context).size.width < 600;
+    final gutter = compact ? 16.0 : 20.0;
+
     final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _header(),
-        _filterBar(),
+        _header(gutter),
+        _filterBar(gutter, compact),
         const Divider(height: 1, color: AdminUi.border),
         Expanded(
-          child: RefreshIndicator(
-            onRefresh: _refresh,
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 760),
-                child: FutureBuilder<List<AdminActivity>>(
-                  future: _future,
-                  builder: (context, snap) {
-                    if (snap.connectionState == ConnectionState.waiting) {
-                      return const _HistorySkeleton();
-                    }
-                    if (snap.hasError) {
-                      return _message(
-                        'Could not load the activity log.',
-                        action: TextButton(
-                          onPressed: _refresh,
-                          child: const Text('Retry'),
+          child: ColoredBox(
+            color: AdminUi.pageBg,
+            child: RefreshIndicator(
+              onRefresh: _refresh,
+              color: AppColors.primaryBlue,
+              child: FutureBuilder<List<AdminActivity>>(
+                future: _future,
+                builder: (context, snap) {
+                  if (snap.connectionState == ConnectionState.waiting) {
+                    return _HistorySkeleton(gutter: gutter);
+                  }
+                  if (snap.hasError) {
+                    return _message(
+                      'Could not load the activity log.',
+                      icon: Icons.cloud_off_rounded,
+                      action: TextButton.icon(
+                        onPressed: _refresh,
+                        icon: const Icon(Icons.refresh_rounded, size: 18),
+                        label: const Text('Try again'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: AppColors.primaryBlue,
                         ),
-                      );
-                    }
-                    final items = snap.data ?? const <AdminActivity>[];
-                    if (items.isEmpty) {
-                      return _message(
-                        _range == _Range.all
-                            ? 'No admin actions recorded yet.'
-                            : 'No actions in this date range.',
-                      );
-                    }
-                    return _list(items);
-                  },
-                ),
+                      ),
+                    );
+                  }
+                  final items = snap.data ?? const <AdminActivity>[];
+                  if (items.isEmpty) {
+                    return _message(
+                      _range == _Range.all
+                          ? 'No admin actions recorded yet.'
+                          : 'Nothing in this date range.',
+                      icon: Icons.history_rounded,
+                      hint: _range == _Range.all
+                          ? 'Actions you take in the console show up here.'
+                          : 'Try a wider range, or pick "All".',
+                    );
+                  }
+                  return _list(items, gutter);
+                },
               ),
             ),
           ),
@@ -344,24 +449,34 @@ class _ActivityLogScreenState extends ConsumerState<_ActivityLogScreen>
       ],
     );
 
-    if (widget.inModal) return content;
+    // The bar is hidden across the whole sheet — the list, the skeleton and
+    // the empty state all scroll — so the wrapper sits above every branch.
+    final unbarred = ScrollConfiguration(
+      behavior: const _NoScrollbarBehavior(),
+      child: content,
+    );
+
+    if (widget.inModal) return unbarred;
 
     return Scaffold(
       backgroundColor: AdminUi.pageBg,
       body: SafeArea(
+        bottom: false,
         child: FadeTransition(
           opacity: _entryFade,
-          child: SlideTransition(position: _entrySlide, child: content),
+          child: SlideTransition(position: _entrySlide, child: unbarred),
         ),
       ),
     );
   }
 
   // ── Header ─────────────────────────────────────────────────────────────────
-  Widget _header() {
+  /// Title block with a live count subtitle, so the sheet says what it is
+  /// holding before you have read a single row.
+  Widget _header(double gutter) {
     return Container(
       color: AdminUi.surface,
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      padding: EdgeInsets.fromLTRB(gutter, 14, gutter - 6, 12),
       child: Row(
         children: [
           // Pushed screen → chevron back at the left, like the citizen
@@ -371,15 +486,43 @@ class _ActivityLogScreenState extends ConsumerState<_ActivityLogScreen>
             AdminDialogBack(onTap: () => Navigator.pop(context)),
             const SizedBox(width: 12),
           ],
-          const Expanded(
-            child: Text(
-              'Activity log',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-                color: AppColors.primaryBlue,
-                letterSpacing: -0.3,
-              ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Activity log',
+                  style: TextStyle(
+                    fontSize: 19,
+                    fontWeight: FontWeight.w700,
+                    color: AdminUi.textPrimary,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                // Reads off the same future the list renders, so the count and
+                // the rows can never disagree.
+                FutureBuilder<List<AdminActivity>>(
+                  future: _future,
+                  builder: (context, snap) {
+                    final n = snap.data?.length;
+                    final label = switch (n) {
+                      null => 'Loading…',
+                      0 => 'No actions',
+                      1 => '1 action',
+                      _ => '$n actions',
+                    };
+                    return Text(
+                      '$label · ${_rangeLabel()}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AdminUi.textMuted,
+                      ),
+                    );
+                  },
+                ),
+              ],
             ),
           ),
           IconButton(
@@ -402,47 +545,63 @@ class _ActivityLogScreenState extends ConsumerState<_ActivityLogScreen>
     );
   }
 
+  /// Plain-language name for the active filter, used in the header subtitle.
+  String _rangeLabel() => switch (_range) {
+    _Range.all => 'All time',
+    _Range.today => 'Today',
+    _Range.days7 => 'Last 7 days',
+    _Range.days30 => 'Last 30 days',
+    _Range.custom => _custom == null ? 'Custom range' : _customLabel(),
+  };
+
+  /// Compact label for a chosen custom range, e.g. "Aug 4 – Aug 13".
+  String _customLabel() {
+    final r = _custom!;
+    String d(DateTime t) => DateFormat('MMM d').format(t);
+    return '${d(r.start)} – ${d(r.end)}';
+  }
+
   // ── Filter bar ───────────────────────────────────────────────────────────
-  Widget _filterBar() {
-    final customLabel = _custom == null
-        ? 'Custom range'
-        : '${_custom!.start.month}/${_custom!.start.day} – '
-              '${_custom!.end.month}/${_custom!.end.day}';
+  /// The presets, laid out so nothing is ever clipped mid-word.
+  ///
+  /// A horizontally scrolling Row was the old approach and it cut "Custom
+  /// range" in half on a phone with no affordance saying it could scroll. A
+  /// [Wrap] instead lets the chips flow onto a second line when they do not
+  /// fit, which is self-evident and needs no gesture to discover.
+  Widget _filterBar(double gutter, bool compact) {
+    final customLabel = _custom == null ? 'Custom' : _customLabel();
     return Container(
       color: AdminUi.surface,
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            _filterChip('All', _range == _Range.all, () => _select(_Range.all)),
-            const SizedBox(width: 8),
-            _filterChip(
-              'Today',
-              _range == _Range.today,
-              () => _select(_Range.today),
-            ),
-            const SizedBox(width: 8),
-            _filterChip(
-              'Last 7 days',
-              _range == _Range.days7,
-              () => _select(_Range.days7),
-            ),
-            const SizedBox(width: 8),
-            _filterChip(
-              'Last 30 days',
-              _range == _Range.days30,
-              () => _select(_Range.days30),
-            ),
-            const SizedBox(width: 8),
-            _filterChip(
-              customLabel,
-              _range == _Range.custom,
-              _pickCustom,
-              icon: Icons.date_range_rounded,
-            ),
-          ],
-        ),
+      padding: EdgeInsets.fromLTRB(gutter, 0, gutter, 14),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          _filterChip('All', _range == _Range.all, () => _select(_Range.all)),
+          _filterChip(
+            'Today',
+            _range == _Range.today,
+            () => _select(_Range.today),
+          ),
+          // The full labels are long on a phone; the meaning survives the trim
+          // and the header subtitle spells the active range out in full.
+          _filterChip(
+            compact ? '7 days' : 'Last 7 days',
+            _range == _Range.days7,
+            () => _select(_Range.days7),
+          ),
+          _filterChip(
+            compact ? '30 days' : 'Last 30 days',
+            _range == _Range.days30,
+            () => _select(_Range.days30),
+          ),
+          _filterChip(
+            customLabel,
+            _range == _Range.custom,
+            _pickCustom,
+            icon: Icons.date_range_rounded,
+          ),
+        ],
       ),
     );
   }
@@ -453,105 +612,128 @@ class _ActivityLogScreenState extends ConsumerState<_ActivityLogScreen>
     VoidCallback onTap, {
     IconData? icon,
   }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 140),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: selected ? AppColors.primaryBlue : AdminUi.subtle,
-          borderRadius: BorderRadius.circular(AdminUi.controlRadius),
-          border: Border.all(
-            color: selected ? AppColors.primaryBlue : AdminUi.border,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (icon != null) ...[
-              Icon(
-                icon,
-                size: 15,
-                color: selected ? Colors.white : AdminUi.textMuted,
-              ),
-              const SizedBox(width: 6),
-            ],
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: selected ? Colors.white : AdminUi.textSecondary,
-              ),
+    // Material + InkWell rather than a bare GestureDetector so the chips get a
+    // hover and press response on the web, which a console this dense needs.
+    return Material(
+      color: selected ? AppColors.primaryBlue : AdminUi.subtle,
+      borderRadius: BorderRadius.circular(999),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        hoverColor: selected
+            ? Colors.white.withValues(alpha: 0.08)
+            : AppColors.primaryBlue.withValues(alpha: 0.06),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: selected ? AppColors.primaryBlue : AdminUi.border,
             ),
-          ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (icon != null) ...[
+                Icon(
+                  icon,
+                  size: 15,
+                  color: selected ? Colors.white : AdminUi.textMuted,
+                ),
+                const SizedBox(width: 6),
+              ],
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: selected ? Colors.white : AdminUi.textSecondary,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
   // ── History list (grouped by day) ────────────────────────────────────────
-  Widget _list(List<AdminActivity> items) {
-    // Flatten into [day header, rows…] preserving the newest-first order.
-    final children = <Widget>[];
-    String? lastDay;
+  /// One card per day rather than one card per action.
+  ///
+  /// The old list gave every row its own bordered box, so twenty actions read
+  /// as twenty competing objects with no sense of the days they belong to.
+  /// Grouping the rows into a single card per day — with the date as a sticky
+  /// header — turns the same data into a timeline you can skim.
+  Widget _list(List<AdminActivity> items, double gutter) {
+    // Preserve the newest-first order the query returns while collecting each
+    // day's rows together.
+    final days = <String, List<AdminActivity>>{};
     for (final a in items) {
-      if (a.dayLabel != lastDay) {
-        lastDay = a.dayLabel;
-        children.add(_dayHeader(a.dayLabel));
-      }
-      children.add(_row(a));
+      days.putIfAbsent(a.dayLabel, () => []).add(a);
     }
-    return ListView(
+
+    return CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 40),
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(4, 6, 4, 10),
-          child: Text(
-            '${items.length} action${items.length == 1 ? '' : 's'}',
-            style: const TextStyle(fontSize: 12.5, color: AdminUi.textMuted),
+      slivers: [
+        for (final entry in days.entries)
+          // Each day is its own SliverMainAxisGroup so its pinned header is
+          // scoped to that group: it sticks while its own rows scroll past,
+          // then slides away as the next day arrives. A bare pinned header
+          // per day would instead stack them all at the top of the sheet.
+          SliverMainAxisGroup(
+            slivers: [
+              SliverStickyDayHeader(label: entry.key, gutter: gutter),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(gutter, 0, gutter, 14),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: AdminUi.surface,
+                      borderRadius: BorderRadius.circular(AdminUi.cardRadius),
+                      border: Border.all(color: AdminUi.border),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: Column(
+                      children: [
+                        for (int i = 0; i < entry.value.length; i++) ...[
+                          if (i > 0)
+                            const Divider(
+                              height: 1,
+                              thickness: 1,
+                              color: AdminUi.subtle,
+                              indent: 56,
+                            ),
+                          _row(entry.value[i]),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
-        ),
-        ...children,
+        const SliverToBoxAdapter(child: SizedBox(height: 28)),
       ],
     );
   }
 
-  Widget _dayHeader(String label) => Padding(
-    padding: const EdgeInsets.fromLTRB(4, 14, 4, 6),
-    child: Text(
-      label,
-      style: const TextStyle(
-        fontSize: 12,
-        fontWeight: FontWeight.w700,
-        letterSpacing: 0.2,
-        color: AdminUi.textSecondary,
-      ),
-    ),
-  );
-
   Widget _row(AdminActivity a) {
     final color = _activityColor(a.action);
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AdminUi.surface,
-        borderRadius: BorderRadius.circular(AdminUi.controlRadius),
-        border: Border.all(color: AdminUi.border),
-      ),
+    final detail = a.detail ?? '';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 32,
-            height: 32,
+            width: 30,
+            height: 30,
             decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.14),
-              borderRadius: BorderRadius.circular(9),
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(999),
             ),
-            child: Icon(_activityIcon(a.action), size: 17, color: color),
+            child: Icon(_activityIcon(a.action), size: 16, color: color),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -563,29 +745,58 @@ class _ActivityLogScreenState extends ConsumerState<_ActivityLogScreen>
                   style: const TextStyle(
                     fontSize: 13.5,
                     fontWeight: FontWeight.w600,
+                    height: 1.3,
                     color: AdminUi.textPrimary,
                   ),
                 ),
-                if ((a.detail ?? '').isNotEmpty) ...[
-                  const SizedBox(height: 2),
+                if (detail.isNotEmpty) ...[
+                  const SizedBox(height: 3),
                   Text(
-                    a.detail!,
+                    detail,
                     style: const TextStyle(
-                      fontSize: 12,
+                      fontSize: 12.5,
+                      height: 1.35,
                       color: AdminUi.textSecondary,
                     ),
                   ),
                 ],
-                const SizedBox(height: 4),
-                Text(
-                  [
-                    if ((a.actorName ?? '').isNotEmpty) a.actorName!,
-                    a.exactTime,
-                  ].join('  ·  '),
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: AdminUi.textMuted,
-                  ),
+                const SizedBox(height: 6),
+                // Actor and time were one run-on muted line; the actor is now
+                // a small chip so "who" and "when" separate at a glance.
+                Row(
+                  children: [
+                    if ((a.actorName ?? '').isNotEmpty) ...[
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AdminUi.subtle,
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: AdminUi.border),
+                        ),
+                        child: Text(
+                          a.actorName!,
+                          style: const TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w600,
+                            color: AdminUi.textSecondary,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    Flexible(
+                      child: Text(
+                        a.timeOnly,
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          color: AdminUi.textMuted,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -595,46 +806,172 @@ class _ActivityLogScreenState extends ConsumerState<_ActivityLogScreen>
     );
   }
 
-  Widget _message(String text, {Widget? action}) {
+  /// Empty and error states: an icon, a headline and an optional hint, centred
+  /// in the viewport rather than pinned 80px from the top of a blank sheet.
+  Widget _message(
+    String text, {
+    IconData? icon,
+    String? hint,
+    Widget? action,
+  }) {
     // Kept scrollable so pull-to-refresh works from the empty/error state.
-    return ListView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(24, 80, 24, 24),
-          child: Column(
-            children: [
-              Text(
-                text,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: AdminUi.textMuted,
+    return LayoutBuilder(
+      builder: (context, c) => ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          ConstrainedBox(
+            constraints: BoxConstraints(minHeight: c.maxHeight),
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(32, 40, 32, 40),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (icon != null) ...[
+                      Container(
+                        width: 52,
+                        height: 52,
+                        decoration: BoxDecoration(
+                          color: AdminUi.subtle,
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: AdminUi.border),
+                        ),
+                        child: Icon(icon, size: 24, color: AdminUi.textMuted),
+                      ),
+                      const SizedBox(height: 14),
+                    ],
+                    Text(
+                      text,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: AdminUi.textSecondary,
+                      ),
+                    ),
+                    if (hint != null) ...[
+                      const SizedBox(height: 5),
+                      Text(
+                        hint,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          height: 1.4,
+                          color: AdminUi.textMuted,
+                        ),
+                      ),
+                    ],
+                    if (action != null) ...[const SizedBox(height: 10), action],
+                  ],
                 ),
               ),
-              if (action != null) ...[const SizedBox(height: 8), action],
-            ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
 
+/// The day label, pinned to the top of the viewport while its own rows scroll
+/// past underneath — so you always know which day you are looking at.
+///
+/// [SliverPersistentHeader] is the only way to get this: a header inside the
+/// list scrolls away with the content, which is exactly the thing that made
+/// the flat list hard to read once it ran past a screenful.
+class SliverStickyDayHeader extends StatelessWidget {
+  final String label;
+  final double gutter;
+  const SliverStickyDayHeader({
+    super.key,
+    required this.label,
+    required this.gutter,
+  });
+
+  @override
+  Widget build(BuildContext context) => SliverPersistentHeader(
+    pinned: true,
+    delegate: _DayHeaderDelegate(label: label, gutter: gutter),
+  );
+}
+
+class _DayHeaderDelegate extends SliverPersistentHeaderDelegate {
+  final String label;
+  final double gutter;
+  const _DayHeaderDelegate({required this.label, required this.gutter});
+
+  static const double _height = 40;
+
+  @override
+  double get minExtent => _height;
+  @override
+  double get maxExtent => _height;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlaps) {
+    return Container(
+      height: _height,
+      // Opaque: rows scrolling underneath must not show through the label.
+      color: AdminUi.pageBg,
+      padding: EdgeInsets.fromLTRB(gutter, 12, gutter, 6),
+      alignment: Alignment.centerLeft,
+      child: Text(
+        label,
+        style: const TextStyle(
+          fontSize: 11.5,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.4,
+          color: AdminUi.textMuted,
+        ),
+      ),
+    );
+  }
+
+  @override
+  bool shouldRebuild(_DayHeaderDelegate old) =>
+      old.label != label || old.gutter != gutter;
+}
+
 class _HistorySkeleton extends StatelessWidget {
-  const _HistorySkeleton();
+  final double gutter;
+  const _HistorySkeleton({required this.gutter});
+
   @override
   Widget build(BuildContext context) => AdminShimmer(
     child: ListView(
-      padding: const EdgeInsets.fromLTRB(12, 16, 12, 12),
-      children: const [
-        SkeletonBox(width: 120, height: 12),
-        SizedBox(height: 14),
-        _SkeletonRow(),
-        _SkeletonRow(),
-        _SkeletonRow(),
-        _SkeletonRow(),
-        _SkeletonRow(),
+      padding: EdgeInsets.fromLTRB(gutter, 18, gutter, 12),
+      children: [
+        const SkeletonBox(width: 90, height: 11),
+        const SizedBox(height: 12),
+        // Mirrors the real layout: one grouped card holding several rows, so
+        // nothing jumps when the data lands.
+        _skeletonCard(3),
+        const SizedBox(height: 20),
+        const SkeletonBox(width: 90, height: 11),
+        const SizedBox(height: 12),
+        _skeletonCard(2),
+      ],
+    ),
+  );
+
+  Widget _skeletonCard(int rows) => Container(
+    decoration: BoxDecoration(
+      color: AdminUi.surface,
+      borderRadius: BorderRadius.circular(AdminUi.cardRadius),
+      border: Border.all(color: AdminUi.border),
+    ),
+    child: Column(
+      children: [
+        for (int i = 0; i < rows; i++) ...[
+          if (i > 0)
+            const Divider(
+              height: 1,
+              thickness: 1,
+              color: AdminUi.subtle,
+              indent: 56,
+            ),
+          const _SkeletonRow(),
+        ],
       ],
     ),
   );
@@ -643,25 +980,19 @@ class _HistorySkeleton extends StatelessWidget {
 class _SkeletonRow extends StatelessWidget {
   const _SkeletonRow();
   @override
-  Widget build(BuildContext context) => Container(
-    margin: const EdgeInsets.only(bottom: 8),
-    padding: const EdgeInsets.all(12),
-    decoration: BoxDecoration(
-      color: AdminUi.surface,
-      borderRadius: BorderRadius.circular(AdminUi.controlRadius),
-      border: Border.all(color: AdminUi.border),
-    ),
-    child: const Row(
+  Widget build(BuildContext context) => const Padding(
+    padding: EdgeInsets.fromLTRB(14, 12, 14, 12),
+    child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SkeletonBox(width: 32, height: 32, radius: 9),
+        SkeletonBox(width: 30, height: 30, radius: 999),
         SizedBox(width: 12),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               SkeletonBox(width: 180, height: 12),
-              SizedBox(height: 7),
+              SizedBox(height: 8),
               SkeletonBox(width: 100, height: 10),
             ],
           ),

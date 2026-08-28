@@ -72,6 +72,10 @@ class AdminActivity {
 
   /// Calendar day, e.g. "Jul 8, 2026" — used to group the history list.
   String get dayLabel => DateFormat('MMM d, y').format(createdAt);
+
+  /// Clock time only, e.g. "11:07 AM". The history groups by day already, so
+  /// repeating the date on every row inside a day is noise.
+  String get timeOnly => DateFormat('h:mm a').format(createdAt);
 }
 
 class AdminActivityNotifier extends AsyncNotifier<List<AdminActivity>> {
