@@ -9,6 +9,7 @@ import '../providers/community_posts_provider.dart';
 import '../providers/user_profile_provider.dart';
 import 'auth_ready.dart';
 import 'citizen_guard.dart';
+import 'session_cache.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  Session teardown — everything that must be dropped when a session ends.
@@ -130,6 +131,17 @@ Future<void> tearDownSession(ProviderContainer container) async {
   // sign-out into the next login and showed the previous account's status.
   // Here it runs before anything that can throw.
   container.invalidate(userProfileProvider);
+
+  // Also both platforms, and ABOVE the gate for the same reason.
+  //
+  // This sat BELOW the web gate when it was added, which meant mobile — the
+  // only platform whose cache is populated — returned before ever reaching it,
+  // so a sign-out left the account's name, photo, verification status and
+  // staff identity on the device. Every entry is uid-keyed, so the next user
+  // read a miss rather than the previous user's data; but hints that outlive
+  // their session are exactly the footgun the role cache above is cleared to
+  // avoid, and the placement plainly contradicted the comment on the call.
+  await SessionCache.instance.clear();
 
   if (!kIsWeb) return;
 

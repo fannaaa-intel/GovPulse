@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../services/session_cache.dart';
 import '../widgets/Home/home_enums.dart';
 
 class UserProfile {
@@ -52,6 +55,30 @@ class UserProfileNotifier extends AsyncNotifier<UserProfile> {
     return _fetch();
   }
 
+  /// The last known-good profile, rebuilt from [SessionCache].
+  ///
+  /// Returns null on a miss, and the caller must treat that as "unknown"
+  /// rather than as an answer — see [_fetch].
+  UserProfile? _fromCache(String uid) {
+    final cached = SessionCache.instance.profileFor(uid);
+    if (cached == null) return null;
+    return UserProfile(
+      verifStatus: _statusToEnum(cached.verifStatus),
+      fullName: cached.fullName,
+      facePhotoUrl: cached.facePhotoUrl,
+      facePhotoPath: cached.facePhotoPath,
+      email: cached.email,
+      barangay: cached.barangay,
+      username: cached.username,
+    );
+  }
+
+  static VerifStatus _statusToEnum(String status) {
+    if (status == 'approved') return VerifStatus.verified;
+    if (status == 'pending') return VerifStatus.pending;
+    return VerifStatus.none;
+  }
+
   Future<UserProfile> _fetch() async {
     final supabase = Supabase.instance.client;
     final user = supabase.auth.currentUser;
@@ -60,13 +87,32 @@ class UserProfileNotifier extends AsyncNotifier<UserProfile> {
 
     final email = user.email;
 
-    final verifRow = await supabase
-        .from('verification_submissions')
-        .select('status, face_photo_path')
-        .eq('user_id', user.id)
-        .order('created_at', ascending: false)
-        .limit(1)
-        .maybeSingle();
+    // ── Why this fetch must not fail into a default ──────────────────────────
+    // `VerifStatus.none` is not a neutral "unknown", it is the real state
+    // "unverified". So when this query threw — which is every offline start —
+    // the provider errored, every consumer fell back to
+    // `valueOrNull ?? VerifStatus.none`, and a VERIFIED citizen was shown an
+    // unverified account with no name and no photo. Nothing re-fetched when the
+    // network returned, so it persisted for the whole session.
+    //
+    // Falling back to the last known-good profile keeps the account looking
+    // like itself offline. It is a display hint only: verification is enforced
+    // server-side on every action that depends on it, so a stale 'approved'
+    // here buys nothing but the right avatar.
+    final Map<String, dynamic>? verifRow;
+    try {
+      verifRow = await supabase
+          .from('verification_submissions')
+          .select('status, face_photo_path')
+          .eq('user_id', user.id)
+          .order('created_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
+    } catch (_) {
+      final cached = _fromCache(user.id);
+      if (cached != null) return cached;
+      rethrow;
+    }
 
     final status = verifRow?['status'] as String? ?? 'none';
     String? facePath = verifRow?['face_photo_path'] as String?;
@@ -92,11 +138,21 @@ class UserProfileNotifier extends AsyncNotifier<UserProfile> {
     }
 
     if (status == 'approved') {
-      final cd = await supabase
-          .from('citizen_details')
-          .select('first_name, last_name, profile_photo_path, barangay')
-          .eq('user_id', user.id)
-          .maybeSingle();
+      // Guarded for the same reason as the status query above: an approved
+      // citizen whose details fail to load would otherwise lose their name and
+      // photo — the visible half of "my account looks logged out".
+      final Map<String, dynamic>? cd;
+      try {
+        cd = await supabase
+            .from('citizen_details')
+            .select('first_name, last_name, profile_photo_path, barangay')
+            .eq('user_id', user.id)
+            .maybeSingle();
+      } catch (_) {
+        final cached = _fromCache(user.id);
+        if (cached != null) return cached;
+        rethrow;
+      }
 
       if (cd != null) {
         final first = cd['first_name'] as String? ?? '';
@@ -124,6 +180,24 @@ class UserProfileNotifier extends AsyncNotifier<UserProfile> {
     VerifStatus verifStatus = VerifStatus.none;
     if (status == 'approved') verifStatus = VerifStatus.verified;
     if (status == 'pending') verifStatus = VerifStatus.pending;
+
+    // Persist this known-good answer so the next offline start renders the
+    // account as itself instead of falling back to an unverified default.
+    // Only reached when every query above succeeded.
+    unawaited(
+      SessionCache.instance.saveProfile(
+        uid: user.id,
+        profile: CachedProfile(
+          verifStatus: status,
+          fullName: fullName,
+          facePhotoUrl: photoUrl,
+          facePhotoPath: facePath,
+          barangay: barangay,
+          email: email,
+          username: username,
+        ),
+      ),
+    );
 
     return UserProfile(
       verifStatus: verifStatus,

@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart' show XFile;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../admin/providers/admin_reports_provider.dart' show ReportStatus;
+import '../../../core/services/session_cache.dart';
 import '../data/staff_repository.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -23,11 +24,77 @@ class StaffIdentityNotifier extends AsyncNotifier<StaffIdentity> {
   StaffRepository get _repo => ref.read(staffRepoProvider);
 
   @override
-  Future<StaffIdentity> build() => _repo.fetchIdentity();
+  Future<StaffIdentity> build() => _fetchWithCache();
+
+  /// Fetches identity, falling back to the last known-good copy when the
+  /// network does not cooperate.
+  ///
+  /// ── Why ──────────────────────────────────────────────────────────────────
+  /// A failed fetch falls through to the console's own fallbacks — a generic
+  /// 'S' avatar and the name 'Staff' — so a staff member on a weak connection
+  /// saw someone else's idea of who they are. Same class of bug as the citizen
+  /// profile falling back to 'unverified'.
+  ///
+  /// The restored copy carries NO on-duty state: it comes back `isOnline:
+  /// false`, and the staff member turns it on themselves. See
+  /// [CachedStaffIdentity].
+  Future<StaffIdentity> _fetchWithCache() async {
+    final uid = Supabase.instance.client.auth.currentUser?.id;
+    try {
+      final identity = await _repo.fetchIdentity();
+      if (uid != null) {
+        // Only on a real answer — caching a failure is what would make a wrong
+        // identity stick across restarts.
+        unawaited(
+          SessionCache.instance.saveStaffIdentity(
+            uid: uid,
+            identity: CachedStaffIdentity(
+              email: identity.email,
+              fullName: identity.fullName,
+              title: identity.title,
+              department: identity.department,
+              photoUrl: identity.photoUrl,
+              isExternal: identity.isExternal,
+            ),
+          ),
+        );
+      }
+      return identity;
+    } catch (_) {
+      final cached = uid == null ? null : SessionCache.instance.staffFor(uid);
+      if (cached == null) rethrow;
+      return StaffIdentity(
+        userId: uid!,
+        email: cached.email,
+        fullName: cached.fullName,
+        title: cached.title,
+        department: cached.department,
+        isExternal: cached.isExternal,
+        // NOT restored, deliberately. See [CachedStaffIdentity]: a remembered
+        // on-duty state could route a live citizen request to an empty desk.
+        isOnline: false,
+        photoUrl: cached.photoUrl,
+      );
+    }
+  }
 
   Future<void> refresh() async {
     state = const AsyncLoading();
-    state = await AsyncValue.guard(_repo.fetchIdentity);
+    state = await AsyncValue.guard(_fetchWithCache);
+  }
+
+  /// Re-reads identity WITHOUT flashing a loading state, keeping the current
+  /// value if the fetch fails.
+  ///
+  /// For the reconnect path: a console opened offline holds a failed identity
+  /// — no name, no photo, no department — and nothing re-fetched it when the
+  /// network returned. [refresh] is wrong there because it blanks the console
+  /// to a spinner first and lands on an error if the connection is still
+  /// flapping. Mirrors `UserProfileNotifier.silentRefresh`.
+  Future<void> silentRefresh() async {
+    final previous = state;
+    final next = await AsyncValue.guard(_fetchWithCache);
+    state = next.hasValue ? next : previous;
   }
 
   /// Flips the on-duty flag. Optimistic — reverts on failure. When a staff

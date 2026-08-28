@@ -2,21 +2,25 @@ import 'dart:async';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../features/staff/providers/staff_providers.dart';
+import '../providers/user_profile_provider.dart';
 import '../services/connectivity_service.dart';
 import 'no_internet_screen.dart';
 
 bool? cachedInternetStatus;
 
-class NetworkWrapper extends StatefulWidget {
+class NetworkWrapper extends ConsumerStatefulWidget {
   final Widget child;
   const NetworkWrapper({super.key, required this.child});
 
   @override
-  State<NetworkWrapper> createState() => _NetworkWrapperState();
+  ConsumerState<NetworkWrapper> createState() => _NetworkWrapperState();
 }
 
-class _NetworkWrapperState extends State<NetworkWrapper> {
+class _NetworkWrapperState extends ConsumerState<NetworkWrapper> {
   bool? _hasInternet;
   StreamSubscription? _subscription;
   Timer? _offlineDebounce;
@@ -61,6 +65,7 @@ class _NetworkWrapperState extends State<NetworkWrapper> {
             _webOffline = false;
             _showReconnected = true;
           });
+          _refreshAfterReconnect();
           // Auto-dismiss the "Reconnected" pill after a moment.
           _reconnectedTimer?.cancel();
           _reconnectedTimer = Timer(const Duration(seconds: 3), () {
@@ -106,6 +111,7 @@ class _NetworkWrapperState extends State<NetworkWrapper> {
           if (mounted && reallyOnline) {
             cachedInternetStatus = true;
             setState(() => _hasInternet = true);
+            _refreshAfterReconnect();
           }
         });
       }
@@ -116,7 +122,48 @@ class _NetworkWrapperState extends State<NetworkWrapper> {
     final result = await hasRealInternet();
     cachedInternetStatus = result;
     if (mounted) setState(() => _hasInternet = result);
+    if (result) _refreshAfterReconnect();
   }
+
+  /// Re-reads the signed-in account's profile once the connection returns.
+  ///
+  /// ── Why this is needed ────────────────────────────────────────────────────
+  /// A cold start with no internet renders the profile from
+  /// [SessionCache] — or, before that cache existed, from a default that read
+  /// as "unverified with no data". Either way the answer on screen was decided
+  /// while offline, and NOTHING re-fetched it afterwards: every existing
+  /// invalidation of `userProfileProvider` hangs off a login, a sign-out, or a
+  /// manual profile edit. So a user who opened the app offline kept a stale or
+  /// wrong account view for the entire session, even after reconnecting.
+  ///
+  /// [UserProfileNotifier.silentRefresh] keeps the current value when the
+  /// re-fetch fails, so a flapping connection can never blank the account out.
+  void _refreshAfterReconnect() {
+    if (!mounted) return;
+
+    // `Supabase.instance` ASSERTS when the client was never initialized, so a
+    // bare read crashes anywhere the app is not fully booted — widget tests
+    // that pump a screen in isolation being the common case. A reconnect
+    // refresh is a nicety; it must never be the thing that brings a screen
+    // down. Same reasoning for the provider reads below.
+    try {
+      if (Supabase.instance.client.auth.currentUser == null) return;
+    } catch (_) {
+      return;
+    }
+
+    ref.read(userProfileProvider.notifier).silentRefresh();
+
+    // Staff and admin consoles carry their own identity — name, photo,
+    // department — and lose it offline exactly the same way. Only refreshed
+    // when that provider is already alive, so a citizen never triggers a staff
+    // query: reading it unconditionally would CREATE the provider and fetch an
+    // identity the signed-in user has no rows for.
+    if (ref.exists(staffIdentityProvider)) {
+      ref.read(staffIdentityProvider.notifier).silentRefresh();
+    }
+  }
+
 
   @override
   void dispose() {
