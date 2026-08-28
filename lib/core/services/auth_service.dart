@@ -1,4 +1,8 @@
+import 'dart:async';
+
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'session_cache.dart';
 
 class AuthService {
   static final _client = Supabase.instance.client;
@@ -194,6 +198,21 @@ class AuthService {
         .maybeSingle();
 
     final roleId = roleData?['role_id'] as int?;
+
+    // Seed the mobile splash's offline routing hints while both answers are in
+    // hand. Doing it here rather than only on the next splash query means the
+    // fast path works from the FIRST cold start after signing in, instead of
+    // needing one more online launch to warm itself.
+    //
+    // Fire-and-forget, and a no-op on web: nothing about login should wait on
+    // a SharedPreferences write.
+    unawaited(
+      SessionCache.instance.save(
+        uid: userId,
+        username: cleanUsername,
+        roleId: roleId,
+      ),
+    );
 
     // The Edge Function returns only a session, not the account's canonical
     // username, so echo the (trimmed) input. Previously this was the DB's

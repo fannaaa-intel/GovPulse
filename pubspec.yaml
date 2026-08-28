@@ -74,6 +74,11 @@ dev_dependencies:
   # directly. Declared rather than relied on transitively for the same reason
   # `barcode` is declared above: it breaks the moment image_picker drops it.
   image_picker_platform_interface: ^2.11.1
+  # Test-only, and declared for the same reason as the interface above: it
+  # arrives transitively through flutter_test today, so relying on that would
+  # break silently if that ever changes. Used to drive the splash loader's
+  # grace-period timer without sleeping in real time.
+  fake_async: ^1.3.1
    
 
 flutter:

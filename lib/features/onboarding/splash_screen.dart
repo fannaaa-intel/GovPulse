@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../core/services/auth_ready.dart' show awaitAuthReady;
 import '../../core/services/connectivity_service.dart';
+import '../../core/services/session_cache.dart';
 import '../../core/network/network_wrapper.dart';
 import '../../core/network/no_internet_screen.dart';
 import '../../core/router/app_router.dart';
@@ -34,6 +36,7 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
   late final Animation<double> _floodProgress;
 
   bool _showLoader = false;
+  Timer? _loaderArmTimer;
   bool _goOffline = false;
   bool _navigated = false; // ensures we only navigate away from splash once
 
@@ -92,6 +95,101 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
     precacheImage(const AssetImage('assets/images/applogo.webp'), context);
   }
 
+  /// Re-reads `profiles` / `user_roles` after an offline-cached route has
+  /// already landed, so a role or username that changed while this device was
+  /// offline is corrected on the next start rather than never.
+  ///
+  /// Also catches the one case the cache must not paper over: an account
+  /// soft-deactivated while offline. The cached hints would happily route it
+  /// into Home, so when the refresh reports `is_deactivated` we sign out and
+  /// send them to /login, where the next sign-in surfaces the message.
+  Future<void> _refreshSessionBehindDestination() async {
+    final deactivated =
+        await SessionCache.instance.refreshInBackground();
+    if (deactivated != true) return;
+
+    try {
+      await Supabase.instance.client.auth.signOut();
+    } catch (_) {}
+    await SessionCache.instance.clear();
+    if (!mounted) return;
+
+    final route = onGenerateRoute(const RouteSettings(name: '/login'));
+    if (route == null) return;
+    Navigator.of(context).pushAndRemoveUntil(route, (r) => false);
+  }
+
+  /// Whether this cold start can route from local state alone — no network.
+  ///
+  /// The SINGLE source of truth for that question, consulted by both
+  /// [_start] (to decide whether the no-internet screen may be skipped) and
+  /// [_navigateNext] (to decide whether to route from the cache). They must
+  /// answer identically: when they disagreed, the splash skipped the offline
+  /// screen and then declined to resume, stranding the user on a login form
+  /// with no connection.
+  ///
+  /// Mobile only — web routes through the go_router guard instead.
+  Future<bool> _canResumeFromCache() async {
+    if (kIsWeb) return false;
+
+    // Session restoration is ASYNCHRONOUS — it lands via `onAuthStateChange`,
+    // which is the whole premise [AuthRestoration] exists for. Reading
+    // `currentUser` without waiting therefore raced it, and a restored user
+    // whose session had not yet landed read as signed-out: no cache hit, so the
+    // no-internet screen appeared instead of Home. Returns instantly when the
+    // session is already restored, and is bounded and non-throwing when there
+    // is genuinely nobody to wait for.
+    await awaitAuthReady(timeout: const Duration(seconds: 2));
+
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) return false;
+    if (!SessionCache.instance.hasEntryFor(user.id)) return false;
+
+    // A user who has never finished onboarding is not resumable, however good
+    // their cache: [_navigateNext] sends them to /intro, which leads to a
+    // login form that needs the network.
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool('seenOnboarding') ?? false;
+    } catch (_) {
+      // Unreadable prefs means the intro flag is unknown; treat that as "not
+      // resumable" so we fall back to the connectivity-gated path rather than
+      // skipping it on a guess.
+      return false;
+    }
+  }
+
+  /// Stops the spinner at the moment the next screen is about to be pushed.
+  ///
+  /// Called from every navigation point in [_navigateNext] rather than once up
+  /// front, because the paths do different amounts of work: a cached resume
+  /// pushes immediately, while a cold start still has `profiles` and
+  /// `user_roles` to await. Tearing down at a single early point would end the
+  /// spinner while the slowest path was still working — the exact confusion
+  /// this exists to remove.
+  ///
+  /// Synchronous, and paired with no delay: the push happens on the same
+  /// frame, so the spinner is replaced by the destination rather than leaving
+  /// a bare white screen behind it.
+  void _stopLoader() {
+    _loaderArmTimer?.cancel();
+    _loaderArmTimer = null;
+    if (!_showLoader) return;
+    setState(() => _showLoader = false);
+  }
+
+  /// Shows the spinner only if the work outlasts a short grace period.
+  ///
+  /// See the note at the call site: below the threshold the spinner would be a
+  /// flicker announcing a wait that has already ended, so nothing is shown.
+  void _armLoader() {
+    _loaderArmTimer?.cancel();
+    _loaderArmTimer = Timer(const Duration(milliseconds: 120), () {
+      _loaderArmTimer = null;
+      if (mounted) setState(() => _showLoader = true);
+    });
+  }
+
   Future<void> _navigateNext() async {
     if (_navigated) return; // guard against any duplicate navigation
     _navigated = true;
@@ -107,6 +205,12 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
       goToIntro = !(prefs.getBool('seenOnboarding') ?? false);
     }
 
+    // Same restoration race as [_canResumeFromCache] guards against: without
+    // this, `currentUser` below could read null for a user whose session was
+    // still landing, dropping a signed-in citizen on /login. Instant when the
+    // session is already restored.
+    await awaitAuthReady(timeout: const Duration(seconds: 2));
+
     if (!mounted) return;
 
     // ── Session persistence ───────────────────────────────────────────────
@@ -116,6 +220,49 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
     // after sign-out this check is null and we fall through to /login.
     final user = Supabase.instance.client.auth.currentUser;
     if (!goToIntro && user != null) {
+      // ── Offline / slow-network fast path ────────────────────────────────
+      // The restored session is local, but `username` and `role_id` were not:
+      // both came from queries that hang or throw with no connection, so a
+      // signed-in user could not be ROUTED offline even though they were
+      // demonstrably still signed in.
+      //
+      // [SessionCache] persists those two answers alongside the session that
+      // proved them. On a hit we route from it immediately — no socket — and
+      // let the real queries correct anything stale from behind the
+      // destination screen. On a miss we fall through to the original
+      // query-first path below, which is still right for a first cold start.
+      // `goToIntro` is already false here, which is the other half of
+      // [_canResumeFromCache]'s answer — so this is that same condition, not a
+      // second copy of it.
+      if (!kIsWeb && SessionCache.instance.hasEntryFor(user.id)) {
+        final cachedRole = SessionCache.instance.roleFor(user.id);
+        final cachedName =
+            SessionCache.instance.usernameFor(user.id) ?? '';
+
+        // Refresh behind the destination. Deliberately NOT awaited: waiting is
+        // the exact stall this path exists to remove.
+        unawaited(_refreshSessionBehindDestination());
+
+        CommunityPostsProvider.instance.resetForAuthenticatedUser();
+
+        if (cachedRole != 1 && cachedRole != 2) {
+          _stopLoader();
+          goToCitizenHome(context, username: cachedName);
+          return;
+        }
+        _stopLoader();
+        Navigator.of(context).pushReplacement(
+          PageRouteBuilder(
+            transitionDuration: Duration.zero,
+            reverseTransitionDuration: Duration.zero,
+            pageBuilder: (_, _, _) => cachedRole == 1
+                ? const NetworkWrapper(child: AdminDashboardScreen())
+                : const NetworkWrapper(child: StaffConsoleScreen()),
+          ),
+        );
+        return;
+      }
+
       String username = '';
       int? roleId;
       bool deactivated = false;
@@ -136,6 +283,7 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
         try {
           await Supabase.instance.client.auth.signOut();
         } catch (_) {}
+        await SessionCache.instance.clear();
       } else {
         // Resolve role the same way AuthService.login does, so a restored
         // session routes by role instead of always landing on citizen Home.
@@ -146,6 +294,17 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
               .eq('user_id', user.id)
               .maybeSingle();
           roleId = roleRow?['role_id'] as int?;
+
+          // Seed the offline fast path for the NEXT cold start. Only after a
+          // real answer — caching a failed lookup is what would make a wrong
+          // role stick across restarts.
+          unawaited(
+            SessionCache.instance.save(
+              uid: user.id,
+              username: username,
+              roleId: roleId,
+            ),
+          );
         } catch (_) {}
 
         if (!mounted) return;
@@ -170,6 +329,7 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
                       user.userMetadata?['name'] ??
                       '')
                   as String;
+          _stopLoader();
           Navigator.of(context).pushReplacement(
             PageRouteBuilder(
               transitionDuration: Duration.zero,
@@ -216,10 +376,12 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
         // two consoles keep their imperative push, which works under either
         // Navigator and is outside this cutover.
         if (roleId != 1 && roleId != 2) {
+          _stopLoader();
           goToCitizenHome(context, username: username);
           return;
         }
 
+        _stopLoader();
         Navigator.of(context).pushReplacement(
           PageRouteBuilder(
             transitionDuration: Duration.zero,
@@ -238,6 +400,7 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
     final route = onGenerateRoute(RouteSettings(name: routeName));
     if (!mounted) return;
 
+    _stopLoader();
     Navigator.of(context).pushReplacement(
       route ??
           PageRouteBuilder(
@@ -269,8 +432,65 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
     await _controller.forward();
     if (!mounted) return;
 
-    // Animation's done; show the loader in case the check is still pending.
-    setState(() => _showLoader = true);
+    // ── Spinner: armed when the background turns white ─────────────────────
+    // It used to be armed AFTER the resume check and torn down as soon as the
+    // internet probe answered — which is not when the next screen is ready.
+    // Online with no session that read as: ~1s of spinner, then a second of
+    // nothing while /login was still being resolved and pushed. A spinner that
+    // stops before the wait does is worse than no spinner, because it says
+    // "done" when nothing is.
+    //
+    // Now its lifetime is the WORK: armed here, cleared in [_navigateNext] at
+    // the moment of the push.
+    //
+    // ── Why armed rather than shown ────────────────────────────────────────
+    // Through a 120ms grace period, not immediately. A cached resume finishes
+    // in a few frames, and a spinner that appears and vanishes inside 100ms is
+    // a flicker — it draws the eye to report a wait that already ended. Under
+    // the grace period nothing is shown at all and the handover looks clean;
+    // past it the wait is real and the spinner is genuinely useful.
+    _armLoader();
+
+    // ── Destination first, connectivity second ────────────────────────────
+    // The old order gated EVERYTHING on the internet check, so an offline
+    // start showed the no-internet screen even to a user whose session was
+    // sitting right there in local storage and who only wanted to look at
+    // cached content. Now a cached session lands on its own screen and the
+    // connectivity story is told from there (the NetworkWrapper each
+    // destination is already wrapped in owns that), while a start with NO
+    // session still can't do anything useful offline — login needs the
+    // network — so that one keeps the blocking screen.
+    //
+    // Computed BEFORE the check is awaited, and that ordering is the whole
+    // point: `hasRealInternet()` waits up to 8s on a dead connection, and the
+    // animation only covers 3.4s of that. Awaiting it first therefore parked a
+    // resumable user on the splash for seconds waiting on an answer their
+    // route never consults. Reading local state first means the offline
+    // resume costs nothing.
+    // Must agree with the fast-path condition in [_navigateNext], INCLUDING
+    // the onboarding flag. A user can hold a cached session while
+    // `seenOnboarding` is still false — the flag is only written when someone
+    // taps through the intro, and it lives in SharedPreferences while the
+    // session lives in Supabase's own store, so the two can desynchronize.
+    // When they disagreed, this skipped the no-internet screen and
+    // [_navigateNext] then declined to resume, dropping the user on an intro →
+    // login form with no connection to submit it to.
+    final canResumeOffline = !kIsWeb && await _canResumeFromCache();
+    if (!mounted) return;
+
+    if (canResumeOffline) {
+      // Don't await the probe — let it settle `cachedInternetStatus` in the
+      // background so the destination's NetworkWrapper inherits a real answer
+      // instead of re-probing from scratch.
+      unawaited(
+        internetCheck
+            .then((v) => cachedInternetStatus = v)
+            .catchError((_) => cachedInternetStatus = false),
+      );
+
+      await _navigateNext();
+      return;
+    }
 
     bool online;
     try {
@@ -287,6 +507,8 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
       // animation's final frame.
       await Future.delayed(const Duration(milliseconds: 250));
       if (!mounted) return;
+      _loaderArmTimer?.cancel();
+      _loaderArmTimer = null;
       setState(() {
         _showLoader = false;
         _goOffline = true;
@@ -295,11 +517,6 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
       return;
     }
 
-    await Future.delayed(const Duration(milliseconds: 400));
-    if (!mounted) return;
-    setState(() => _showLoader = false);
-    await Future.delayed(const Duration(milliseconds: 300));
-    if (!mounted) return;
     await _navigateNext();
   }
 
@@ -317,6 +534,7 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
 
   @override
   void dispose() {
+    _loaderArmTimer?.cancel();
     _controller.dispose();
     super.dispose();
   }
@@ -525,9 +743,17 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
                 ),
 
                 // ── Loader — kept in tree so AnimatedOpacity can fade it out ──
+                //
+                // Asymmetric on purpose. It appears INSTANTLY (0ms) the moment
+                // the background finishes turning white, so the wait is
+                // acknowledged the frame it begins rather than ramping in over
+                // 300ms — on the fastest paths the push landed before a 300ms
+                // fade-in even finished, which read as a flicker. It still
+                // fades OUT over 300ms, so handing over to the next screen
+                // stays soft.
                 AnimatedOpacity(
                   opacity: _showLoader ? 1.0 : 0.0,
-                  duration: const Duration(milliseconds: 300),
+                  duration: Duration(milliseconds: _showLoader ? 0 : 300),
                   curve: Curves.easeOut,
                   child: Align(
                     alignment: Alignment.bottomCenter,
