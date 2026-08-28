@@ -59,7 +59,10 @@ void main() {
       // Inline means "on the name's line". Vertical overlap with the name is
       // the assertion that actually distinguishes this from the old strip,
       // which cleared the name by the better part of a card.
-      final nameRect = tester.getRect(find.text('Mark Reduca'));
+      // 'Mark Reduca' does not fit beside the seal at this width, so the card
+      // shows the first name — see the shortening group below. This test is
+      // about PLACEMENT, so it finds whichever form rendered.
+      final nameRect = tester.getRect(find.text('Mark'));
       final sealRect = tester.getRect(seal);
       expect(
         sealRect.left,
@@ -183,6 +186,98 @@ void main() {
         reason: 'seal pushed off-screen by a long name',
       );
     });
+  });
+
+  // ── Name shortening, and the gap it exists to close ─────────────────────
+  //
+  // `Flexible` alone does not keep the seal beside the name: a Text that
+  // ellipsizes still OCCUPIES its full allotted width — the glyphs stop at the
+  // ellipsis but the box does not — so the seal was pushed out to the
+  // truncation point and floated at the far right, visibly detached from the
+  // word it certifies. "Chanzelyn Sa… ✓" put the seal a third of a card away.
+  //
+  // The row now measures the name and picks the longest form that fits: the
+  // full name, else the FIRST name, else an ellipsis. Step two is the point —
+  // an ellipsis is a failure state, and a person's first name is a legitimate
+  // way to address them.
+  group('a long name falls back to the first name', () {
+    testWidgets('a name that does not fit shows the first name only', (
+      tester,
+    ) async {
+      await pumpAt(
+        tester,
+        kModernPhone,
+        () =>
+            _card(status: VerifStatus.verified, fullName: 'Chanzelyn Salvador'),
+      );
+
+      expect(find.text('Chanzelyn'), findsOneWidget);
+      expect(
+        find.text('Chanzelyn Salvador'),
+        findsNothing,
+        reason: 'the full name did not fit; it should not be ellipsized',
+      );
+    });
+
+    testWidgets('a short name keeps its full form', (tester) async {
+      await pumpAt(
+        tester,
+        kModernPhone,
+        () => _card(status: VerifStatus.verified, fullName: 'Ana Cruz'),
+      );
+
+      // Shortening is a fallback, not the default.
+      expect(find.text('Ana Cruz'), findsOneWidget);
+    });
+
+    testWidgets('a single-word name is left alone', (tester) async {
+      await pumpAt(
+        tester,
+        kModernPhone,
+        () => _card(
+          status: VerifStatus.verified,
+          fullName: 'Bartholomewlongname',
+        ),
+      );
+
+      // No first name to fall back TO, so the ellipsis is correct here — the
+      // last rung of the ladder.
+      expect(find.textContaining('Bartholomew'), findsOneWidget);
+    });
+
+    // The complaint that started this: dead space between the name and the
+    // seal. Measured, not eyeballed — 2.6-3.4dp across the phone range, which
+    // is the hairline Facebook and X set their verified marks at. A verified
+    // mark reads as part of the NAME; any daylight makes it look like a
+    // separate item sitting next to one.
+    for (final probe in const <({String name, String shown})>[
+      (name: 'Mark Reduca', shown: 'Mark'),
+      (name: 'Chanzelyn Salvador', shown: 'Chanzelyn'),
+      (name: 'Ana Cruz', shown: 'Ana Cruz'),
+    ]) {
+      testWidgets('no dead space after "${probe.shown}"', (tester) async {
+        await pumpAt(
+          tester,
+          kModernPhone,
+          () => _card(status: VerifStatus.verified, fullName: probe.name),
+        );
+
+        final nameRect = tester.getRect(find.text(probe.shown));
+        final sealRect = tester.getRect(find.byIcon(Icons.verified_rounded));
+        final gap = sealRect.left - nameRect.right;
+
+        // The seal's 44dp touch box is LEFT-aligned around its glyph, so the
+        // box's trailing space overhangs into the card's own padding instead
+        // of wedging itself between the text and the mark. Only the row's
+        // deliberate `width * 0.014` should separate them.
+        expect(
+          gap,
+          lessThan(5.0),
+          reason: 'dead space crept back in: ${gap.toStringAsFixed(1)}dp',
+        );
+        expect(gap, greaterThan(0.0), reason: 'the seal should not overlap');
+      });
+    }
   });
 
   // ── Touch target ────────────────────────────────────────────────────────

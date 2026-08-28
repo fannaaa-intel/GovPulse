@@ -272,31 +272,10 @@ class HomeProfileCard extends StatelessWidget {
                               // rise into view without a scroll, and the
                               // sentence it replaced is one tap (or hover)
                               // away on the seal itself.
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  // Flexible, not Expanded: a short name should
-                                  // let the seal sit right beside it rather
-                                  // than be pushed to the far edge, and a long
-                                  // one still ellipsizes instead of shoving the
-                                  // seal off the row.
-                                  Flexible(
-                                    child: Text(
-                                      fullName ?? username,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        fontSize: width * 0.052,
-                                        fontWeight: FontWeight.w700,
-                                        color: const Color(0xFF1F2937),
-                                      ),
-                                    ),
-                                  ),
-                                  if (isVerified) ...[
-                                    SizedBox(width: width * 0.014),
-                                    _VerifiedNameBadge(width: width),
-                                  ],
-                                ],
+                              _NameWithSeal(
+                                name: fullName ?? username,
+                                width: width,
+                                showSeal: isVerified,
                               ),
                               if (fullName != null) ...[
                                 SizedBox(height: width * 0.004),
@@ -524,6 +503,130 @@ class _VerifiedAvatarRingState extends State<_VerifiedAvatarRing>
   }
 }
 
+// ── Name + seal ──────────────────────────────────────────────────────────────
+/// A verified citizen's name with the seal tucked against its last letter.
+///
+/// ── Why this is measured rather than laid out ────────────────────────────
+/// `Flexible` alone does not do it. A Text that ellipsizes still OCCUPIES its
+/// full allotted width — the glyphs stop at the ellipsis but the box does not —
+/// so the seal was pushed out to the truncation point and ended up floating at
+/// the far right, visibly detached from the name it belongs to. "Chanzelyn
+/// Sa… ✓" put the seal a third of the card away from the word it certifies.
+///
+/// So the name is measured first, and the row picks the longest form that fits
+/// beside the seal:
+///
+///   1. the full name, when it fits;
+///   2. the FIRST name alone, when the full one does not — a real name the
+///      citizen recognises, rather than a machine-cut fragment;
+///   3. an ellipsis, only if even the first name overflows.
+///
+/// Step 2 is the point: an ellipsis is a failure state, and one is avoidable
+/// here because a person's first name is a legitimate way to address them.
+class _NameWithSeal extends StatelessWidget {
+  final String name;
+  final double width;
+  final bool showSeal;
+
+  const _NameWithSeal({
+    required this.name,
+    required this.width,
+    required this.showSeal,
+  });
+
+  /// The leading word of [name], or the whole string when there is only one.
+  static String firstNameOf(String name) {
+    final trimmed = name.trim();
+    final cut = trimmed.indexOf(' ');
+    return cut == -1 ? trimmed : trimmed.substring(0, cut);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final style = TextStyle(
+      fontSize: width * 0.052,
+      fontWeight: FontWeight.w700,
+      color: const Color(0xFF1F2937),
+    );
+
+    if (!showSeal) {
+      return Text(
+        name,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: style,
+      );
+    }
+
+    // The space between the last letter and the seal.
+    //
+    // Deliberately tight. A verified mark reads as part of the NAME, the way
+    // Facebook and X set theirs — it is not a separate item in a row, and any
+    // daylight between the two makes it look like one. Clamped so the value
+    // stays in that hairline range across the phone widths rather than growing
+    // proportionally into a visible gap on a large screen.
+    final gap = (width * 0.008).clamp(2.0, 4.0);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // What the seal actually costs the NAME.
+        //
+        // Not the full 44dp target. That box is left-aligned around a ~19dp
+        // glyph (see [_VerifiedNameBadge]), so its trailing ~25dp is empty
+        // space the name never competes with — it simply overhangs the card's
+        // own trailing padding. Charging the name for all 44 made a name that
+        // plainly fits, the 'Mark Reduca' the tests pin, measure as too long
+        // and get cut to 'Mark'.
+        //
+        // Measured against the same scale factor the Text will be painted
+        // with, so a user at Android's Largest font size gets the decision the
+        // layout will actually produce, not one taken at 1.0x.
+        final sealCost = (width * 0.048).clamp(15.0, 23.0) + gap;
+        final available = constraints.maxWidth - sealCost;
+        final scaler = MediaQuery.textScalerOf(context);
+
+        double widthOf(String text) {
+          final painter = TextPainter(
+            text: TextSpan(text: text, style: style),
+            maxLines: 1,
+            textDirection: Directionality.of(context),
+            textScaler: scaler,
+          )..layout();
+          return painter.width;
+        }
+
+        var shown = name;
+        if (available > 0 && widthOf(shown) > available) {
+          final first = firstNameOf(name);
+          // Only worth swapping if the first name is genuinely shorter — a
+          // single-word name would otherwise be "shortened" to itself and the
+          // ellipsis below still handles it.
+          if (first.length < name.trim().length) shown = first;
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // Flexible so an over-long FIRST name still ellipsizes rather than
+            // overflowing — the last resort in the ladder above.
+            Flexible(
+              child: Text(
+                shown,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: style,
+              ),
+            ),
+            SizedBox(width: gap),
+            _VerifiedNameBadge(width: width),
+
+          ],
+        );
+      },
+    );
+  }
+}
+
 /// The minimum comfortable touch target, in logical pixels.
 ///
 /// 44dp is the floor Apple's HIG and Material's accessibility guidance both
@@ -576,18 +679,27 @@ class _VerifiedNameBadge extends StatelessWidget {
       // Tooltip and outside the Icon, so it grows what you can tap without
       // moving the glyph off the name's baseline.
       //
-      // Sized against the 44dp minimum both Apple and Google publish, rather
-      // than by a proportional guess: `w * 0.012` reached only 23–31dp across
-      // the phone range, and this seal is now the ONLY way to read the
-      // verification sentence — the strip that used to state it is gone. A
-      // target the thumb misses is a sentence the user cannot get to.
+      // ── The tap target, without pushing the seal off the name ──────────
+      // 44dp is the floor Apple's HIG and Material both publish, and it
+      // matters more here than usual: removing the strip made this seal the
+      // ONLY route to the verification sentence, so a target the thumb misses
+      // is a sentence nobody can reach.
       //
-      // Centred in a fixed box so the glyph stays on the name's baseline no
-      // matter how much padding the minimum demands.
+      // A centred 44dp box around a ~19dp glyph, though, leaves ~12dp of dead
+      // space on EACH side — which visibly detached the seal from the name it
+      // certifies. It read as an unrelated icon floating after the text.
+      //
+      // So the box is asymmetric: the full 44dp of height (free — the name's
+      // line box is already tall), and a width that reaches the minimum by
+      // extending RIGHT, into the card's own trailing space, rather than
+      // padding both sides. The glyph therefore starts immediately after the
+      // gap — tight against the name — while the thumb still gets its 44dp.
       child: SizedBox(
         width: _kMinTouchTarget,
         height: _kMinTouchTarget,
-        child: Center(
+        child: Align(
+          // Left, not centre: this is what keeps the glyph beside the name.
+          alignment: Alignment.centerLeft,
           child: Icon(
             Icons.verified_rounded,
             size: iconSize,
