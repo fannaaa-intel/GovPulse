@@ -266,15 +266,37 @@ class HomeProfileCard extends StatelessWidget {
                         : Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                fullName ?? username,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: width * 0.052,
-                                  fontWeight: FontWeight.w700,
-                                  color: const Color(0xFF1F2937),
-                                ),
+                              // Name + inline verified seal. The seal used to
+                              // live in a full-width strip below the card; it
+                              // sits next to the name now so the quick actions
+                              // rise into view without a scroll, and the
+                              // sentence it replaced is one tap (or hover)
+                              // away on the seal itself.
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  // Flexible, not Expanded: a short name should
+                                  // let the seal sit right beside it rather
+                                  // than be pushed to the far edge, and a long
+                                  // one still ellipsizes instead of shoving the
+                                  // seal off the row.
+                                  Flexible(
+                                    child: Text(
+                                      fullName ?? username,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: width * 0.052,
+                                        fontWeight: FontWeight.w700,
+                                        color: const Color(0xFF1F2937),
+                                      ),
+                                    ),
+                                  ),
+                                  if (isVerified) ...[
+                                    SizedBox(width: width * 0.014),
+                                    _VerifiedNameBadge(width: width),
+                                  ],
+                                ],
                               ),
                               if (fullName != null) ...[
                                 SizedBox(height: width * 0.004),
@@ -384,12 +406,6 @@ class HomeProfileCard extends StatelessWidget {
                   ),
                 ),
               ),
-            ],
-
-            // ── Verified shimmer strip ──
-            if (!profileLoading && isVerified) ...[
-              SizedBox(height: width * 0.038),
-              _VerifiedStripShimmer(width: width),
             ],
 
             // ── Action button (non-verified) ──
@@ -508,125 +524,77 @@ class _VerifiedAvatarRingState extends State<_VerifiedAvatarRing>
   }
 }
 
-// ── Verified Strip Shimmer ────────────────────────────────────────────────────
-class _VerifiedStripShimmer extends StatefulWidget {
+/// The minimum comfortable touch target, in logical pixels.
+///
+/// 44dp is the floor Apple's HIG and Material's accessibility guidance both
+/// land on. Named rather than inlined so the intent survives the next edit to
+/// the seal's size.
+const double _kMinTouchTarget = 44.0;
+
+// ── Verified Name Badge ───────────────────────────────────────────────────────
+/// The seal that follows a verified citizen's name, and the only place the
+/// "You're a verified Aparri citizen" sentence still lives — revealed on hover
+/// (web/desktop) or a tap (mobile) rather than occupying a permanent strip.
+///
+/// [Tooltip] carries both gestures in one widget: it opens on hover by default
+/// and [TooltipTriggerMode.tap] adds the touch path, so there is no separate
+/// mobile branch to keep in sync. [showDuration] is generous because on touch
+/// the tooltip is the only way to read the sentence — the default 1.5s is tuned
+/// for a hover the user can simply repeat.
+class _VerifiedNameBadge extends StatelessWidget {
   final double width;
-  const _VerifiedStripShimmer({required this.width});
-
-  @override
-  State<_VerifiedStripShimmer> createState() => _VerifiedStripShimmerState();
-}
-
-class _VerifiedStripShimmerState extends State<_VerifiedStripShimmer>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl;
-  late final Animation<double> _anim;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 2400),
-    )..repeat();
-    _anim = CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut);
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
+  const _VerifiedNameBadge({required this.width});
 
   @override
   Widget build(BuildContext context) {
-    final w = widget.width;
-    return AnimatedBuilder(
-      animation: _anim,
-      builder: (_, _) {
-        final t = -0.25 + (_anim.value * 1.50);
-        return Container(
-          width: double.infinity,
-          padding: EdgeInsets.symmetric(
-            vertical: w * 0.028,
-            horizontal: w * 0.04,
+    final w = width;
+    // Clamped rather than purely proportional, for the same reason the strip's
+    // seal was: the floor keeps the knocked-out check legible on a 320dp phone,
+    // and the ceiling stops it out-growing the name it sits beside at 480.
+    final iconSize = (w * 0.048).clamp(15.0, 23.0);
+
+    return Tooltip(
+      message: "You're a verified Aparri citizen",
+      triggerMode: TooltipTriggerMode.tap,
+      preferBelow: false,
+      showDuration: const Duration(seconds: 3),
+      decoration: BoxDecoration(
+        color: const Color(0xFF15803D),
+        borderRadius: BorderRadius.circular(w * 0.02),
+      ),
+      textStyle: TextStyle(
+        fontSize: w * 0.030,
+        fontWeight: FontWeight.w600,
+        color: Colors.white,
+      ),
+      padding: EdgeInsets.symmetric(
+        horizontal: w * 0.028,
+        vertical: w * 0.018,
+      ),
+      // The seal itself is smaller than a comfortable touch target, so the
+      // tooltip's gesture area is padded out to one. The padding is inside the
+      // Tooltip and outside the Icon, so it grows what you can tap without
+      // moving the glyph off the name's baseline.
+      //
+      // Sized against the 44dp minimum both Apple and Google publish, rather
+      // than by a proportional guess: `w * 0.012` reached only 23–31dp across
+      // the phone range, and this seal is now the ONLY way to read the
+      // verification sentence — the strip that used to state it is gone. A
+      // target the thumb misses is a sentence the user cannot get to.
+      //
+      // Centred in a fixed box so the glyph stays on the name's baseline no
+      // matter how much padding the minimum demands.
+      child: SizedBox(
+        width: _kMinTouchTarget,
+        height: _kMinTouchTarget,
+        child: Center(
+          child: Icon(
+            Icons.verified_rounded,
+            size: iconSize,
+            color: const Color(0xFF16A34A),
           ),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(w * 0.03),
-            border: Border.all(
-              color: const Color(0xFF22C55E).withValues(alpha: 0.40),
-            ),
-            gradient: LinearGradient(
-              begin: Alignment.centerLeft,
-              end: Alignment.centerRight,
-              colors: [
-                const Color(0xFFECFDF5),
-                const Color(0xFFECFDF5),
-                Color.lerp(const Color(0xFFECFDF5), Colors.white, 0.85)!,
-                Colors.white.withValues(alpha: 0.95),
-                Color.lerp(const Color(0xFFECFDF5), Colors.white, 0.85)!,
-                const Color(0xFFECFDF5),
-                const Color(0xFFECFDF5),
-              ],
-              stops: [
-                0.0,
-                (t - 0.12).clamp(0.0, 1.0),
-                (t - 0.04).clamp(0.0, 1.0),
-                t.clamp(0.0, 1.0),
-                (t + 0.04).clamp(0.0, 1.0),
-                (t + 0.12).clamp(0.0, 1.0),
-                1.0,
-              ],
-            ),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // A scalloped seal, not the plain circle-check this used to be.
-              // The strip states an identity claim, and a ring-and-tick outline
-              // reads as "task done" rather than "verified" — the same glyph the
-              // rest of the world uses for a verified account carries that
-              // meaning without the label having to do all the work. Material's
-              // filled variant knocks the check out of the seal, so the strip's
-              // mint fill shows through it and there is no second layer to keep
-              // aligned.
-              //
-              // Clamped rather than purely proportional: the label beside it is
-              // the widest thing in the card (see the Flexible below), and at
-              // 480 an unclamped w * 0.046 would grow past the icon's useful
-              // size and eat the margin that keeps the Tagalog string off the
-              // ellipsis. The floor keeps the seal's interior check legible on a
-              // 320dp phone, where the old 13px circle was already the smallest
-              // thing on the screen.
-              Icon(
-                Icons.verified_rounded,
-                size: (w * 0.046).clamp(14.0, 22.0),
-                color: const Color(0xFF16A34A),
-              ),
-              SizedBox(width: w * 0.020),
-              // Flexible, not bare: this label is the widest thing in the card
-              // and the Row gave it no way to yield. At 320dp with the font
-              // size at Android's Largest it clears the strip by about 5px in
-              // English, and the Tagalog rendering of the same sentence is
-              // longer than that margin — so the layout was one setting or one
-              // translation away from a striped overflow on the home screen.
-              Flexible(
-                child: Text(
-                  'You\'re a verified Aparri citizen',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: w * 0.032,
-                    fontWeight: FontWeight.w600,
-                    color: const Color(0xFF15803D),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
+        ),
+      ),
     );
   }
 }
