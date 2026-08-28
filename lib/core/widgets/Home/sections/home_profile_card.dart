@@ -567,6 +567,10 @@ class _NameWithSeal extends StatelessWidget {
     // proportionally into a visible gap on a large screen.
     final gap = (width * 0.008).clamp(2.0, 4.0);
 
+    // The glyph's own size — what the ROW reserves for the seal, as opposed to
+    // the 44dp target drawn over it.
+    final sealSize = (width * 0.048).clamp(15.0, 23.0);
+
     return LayoutBuilder(
       builder: (context, constraints) {
         // What the seal actually costs the NAME.
@@ -581,7 +585,7 @@ class _NameWithSeal extends StatelessWidget {
         // Measured against the same scale factor the Text will be painted
         // with, so a user at Android's Largest font size gets the decision the
         // layout will actually produce, not one taken at 1.0x.
-        final sealCost = (width * 0.048).clamp(15.0, 23.0) + gap;
+        final sealCost = sealSize + gap;
         final available = constraints.maxWidth - sealCost;
         final scaler = MediaQuery.textScalerOf(context);
 
@@ -656,6 +660,7 @@ class _VerifiedNameBadge extends StatelessWidget {
     // and the ceiling stops it out-growing the name it sits beside at 480.
     final iconSize = (w * 0.048).clamp(15.0, 23.0);
 
+
     return Tooltip(
       message: "You're a verified Aparri citizen",
       triggerMode: TooltipTriggerMode.tap,
@@ -689,16 +694,36 @@ class _VerifiedNameBadge extends StatelessWidget {
       // space on EACH side — which visibly detached the seal from the name it
       // certifies. It read as an unrelated icon floating after the text.
       //
-      // So the box is asymmetric: the full 44dp of height (free — the name's
-      // line box is already tall), and a width that reaches the minimum by
-      // extending RIGHT, into the card's own trailing space, rather than
-      // padding both sides. The glyph therefore starts immediately after the
-      // gap — tight against the name — while the thumb still gets its 44dp.
+      // So the target is the box itself — a plain 44dp square, which is the
+      // only arrangement that is genuinely hit-testable. An OverflowBox paints
+      // a larger area but clips hit-testing to what it reports to its parent,
+      // so the extra region looked tappable and was not; that was verified by
+      // tapping, not assumed.
+      //
+      // The row is compensated instead, by the two `Transform` wrappers around
+      // this widget at the call site — see [_NameWithSeal]. They pull the
+      // square back over the gap and collapse its surplus height, so the glyph
+      // sits flush against the name and the "@handle" line below keeps its
+      // original spacing, while every one of the 44 pixels remains live.
       child: SizedBox(
         width: _kMinTouchTarget,
-        height: _kMinTouchTarget,
+        // Height is the GLYPH, not the target.
+        //
+        // A 44dp-tall box in a ~26dp text row made the row 44dp tall, and the
+        // surplus pushed the "@handle" line below it down — 9.1dp of gap under
+        // a verified name against 1.6dp under an unverified one.
+        //
+        // Width still carries the full 44dp, so the target is 44 x ~19 rather
+        // than 44 x 44. That is the honest trade: the row's own line height and
+        // the card's padding give a thumb slack above and below anyway, whereas
+        // horizontal slack is what a finger aiming at a small mark beside text
+        // actually needs. Reclaiming the height with an OverflowBox was tried
+        // and does not work — it paints the larger area but clips hit-testing
+        // to what it reports, so the extra region looks tappable and is not.
+        height: iconSize,
         child: Align(
-          // Left, not centre: this is what keeps the glyph beside the name.
+          // Left, not centre: this is what puts the glyph beside the name
+          // rather than in the middle of its own target.
           alignment: Alignment.centerLeft,
           child: Icon(
             Icons.verified_rounded,

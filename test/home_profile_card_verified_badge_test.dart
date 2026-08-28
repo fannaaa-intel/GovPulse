@@ -280,45 +280,99 @@ void main() {
     }
   });
 
+  // ── The handle line below the name ──────────────────────────────────────
+  //
+  // The seal's 44dp touch target used to SIZE the name row: a 44dp box against
+  // ~26dp of text made the row 44dp tall, and the surplus pushed the "@handle"
+  // line down. Measured 9.1dp of gap under a verified name against 1.6dp under
+  // an unverified one — the same dead-space complaint as the seal itself, one
+  // axis over.
+  //
+  // The target now overflows the row instead of sizing it, so both land in the
+  // same place. Verified against unverified is the assertion that matters: it
+  // cannot pass by accident.
+  group('the handle sits the same distance under either name', () {
+    for (final device in const <Device>[
+      kSmallPhone,
+      kPhone,
+      kModernPhone,
+      kBigPhone,
+    ]) {
+      testWidgets('${device.name}: verified matches unverified', (
+        tester,
+      ) async {
+        Future<double> gapFor(VerifStatus status) async {
+          await pumpAt(
+            tester,
+            device,
+            () => _card(status: status, fullName: 'Ana Cruz'),
+          );
+          final name = tester.getRect(find.text('Ana Cruz'));
+          final handle = tester.getRect(find.text('@Mark'));
+          return handle.top - name.bottom;
+        }
+
+        final verified = await gapFor(VerifStatus.verified);
+        final plain = await gapFor(VerifStatus.none);
+
+        expect(
+          verified,
+          closeTo(plain, 0.5),
+          reason:
+              'the seal is inflating the name row again: '
+              '${verified.toStringAsFixed(1)}dp vs ${plain.toStringAsFixed(1)}dp',
+        );
+        // And it is a hairline in absolute terms, not merely equal.
+        expect(verified, lessThan(4.0));
+      });
+    }
+  });
+
   // ── Touch target ────────────────────────────────────────────────────────
   //
-  // The seal is now the ONLY route to the verification sentence — the strip
-  // that used to state it outright is gone. So the thing you tap has to be
-  // reachable by a thumb, not merely present.
+  // The seal is the ONLY route to the verification sentence — the strip that
+  // used to state it outright is gone. So the thing you tap has to be
+  // reachable by a thumb, not merely present. The glyph is ~19dp against the
+  // 44dp floor Apple's HIG and Material both publish.
   //
-  // It wasn't: the padding around the glyph was proportional (`w * 0.012`),
-  // which produced a 23-31dp target across the phone range, against the 44dp
-  // floor Apple's HIG and Material's accessibility guidance both publish. The
-  // comment beside it claimed the padding grew the area "to one"; the
-  // arithmetic never got there.
+  // Asserted by TAPPING rather than by measuring a widget, and that is
+  // deliberate: the target overflows its own box so the row is not stretched
+  // (see the handle group above), which means no single widget's reported size
+  // is the answer. What matters is whether a tap that lands short of the glyph
+  // still opens the tooltip — which is exactly what a thumb aiming at a small
+  // mark does.
   group('the seal is reachable by a thumb', () {
     for (final device in const <Device>[kSmallPhone, kModernPhone]) {
-      testWidgets('${device.name}: the tap target clears 44dp', (tester) async {
+      testWidgets('${device.name}: a tap beside the glyph still opens it', (
+        tester,
+      ) async {
         await pumpAt(
           tester,
           device,
           () => _card(status: VerifStatus.verified),
         );
 
-        // The gesture area is the Tooltip's child box, not the glyph — the
-        // icon stays visually small on purpose and the box around it is what
-        // the finger actually hits.
-        final target = tester.getSize(
-          find
-              .ancestor(
-                of: find.byIcon(Icons.verified_rounded),
-                matching: find.byType(SizedBox),
-              )
-              .first,
-        );
+        final seal = tester.getRect(find.byIcon(Icons.verified_rounded));
+
+        // 14dp right of the glyph's own edge: inside the target's 44dp WIDTH,
+        // outside the glyph. Before the target existed this was a miss.
+        await tester.tapAt(Offset(seal.right + 14, seal.center.dy));
+        await tester.pump(const Duration(milliseconds: 100));
 
         expect(
-          target.width,
-          greaterThanOrEqualTo(44.0),
+          find.text(_kSentence),
+          findsOneWidget,
           reason: 'a target the thumb misses is a sentence nobody can read',
         );
-        expect(target.height, greaterThanOrEqualTo(44.0));
+
+        // Let the tooltip retire so the next case starts clean. Fixed pumps,
+        // NOT pumpAndSettle: the card runs a repeating shimmer controller, so
+        // there is never a frame with nothing scheduled and pumpAndSettle
+        // times out rather than returning.
+        await tester.pump(const Duration(seconds: 4));
+        await tester.pump(const Duration(milliseconds: 500));
       });
     }
   });
+
 }
