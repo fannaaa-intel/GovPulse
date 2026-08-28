@@ -1,3 +1,5 @@
+import 'dart:ui' as ui show TextDirection;
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
@@ -302,31 +304,43 @@ class _ActivityLogScreenState extends ConsumerState<_ActivityLogScreen>
         final themed = Theme(data: theme, child: child!);
 
         if (!asModal) {
-          // Phones and the mobile app: the picker still owns the screen, but
-          // it is pinned to the BOTTOM and sized to its content rather than
-          // stretched to the viewport. Full-screen left a tall band of dead
-          // space under the last week row, and put Save at the far top corner
-          // — the hardest place to reach one-handed.
-          final screen = MediaQuery.of(ctx).size;
-          final sheetH = (screen.height * 0.82).clamp(420.0, 620.0);
+          // Phones and the mobile app: the picker is pinned to the BOTTOM and
+          // sized to its content rather than stretched to the viewport.
+          // Full-screen left a tall band of dead space under the last week row
+          // and put Save at the far top corner — the hardest place to reach
+          // one-handed.
+          final mq = MediaQuery.of(ctx);
+          final screen = mq.size;
+          // 520 is what the calendar actually needs: ~190 for the header and
+          // action bar plus six 50px week rows. Anything taller is the dead
+          // space this is fixing; anything shorter clips the last week.
+          final sheetH = (screen.height * 0.78).clamp(430.0, 520.0);
+          // The sheet sits ON the system navigation bar, so it carries that
+          // inset itself — otherwise the last week row hides behind it.
+          final bottomInset = mq.padding.bottom;
+
           return Align(
             alignment: Alignment.bottomCenter,
             child: MediaQuery(
-              data: MediaQuery.of(ctx).copyWith(
+              // The picker measures itself against this, so it must be the
+              // calendar's own box — the inset is added outside it.
+              data: mq.copyWith(
                 size: Size(screen.width, sheetH),
+                padding: mq.padding.copyWith(bottom: 0),
               ),
-              child: SizedBox(
-                width: screen.width,
-                height: sheetH,
-                // The picker's own surface is transparent (see the theme
-                // above), so the sheet supplies the opaque rounded ground.
-                child: Material(
-                  color: AdminUi.surface,
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(22),
+              child: Material(
+                color: AdminUi.surface,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(24),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Padding(
+                  padding: EdgeInsets.only(bottom: bottomInset),
+                  child: SizedBox(
+                    width: screen.width,
+                    height: sheetH,
+                    child: themed,
                   ),
-                  clipBehavior: Clip.antiAlias,
-                  child: themed,
                 ),
               ),
             ),
@@ -460,8 +474,12 @@ class _ActivityLogScreenState extends ConsumerState<_ActivityLogScreen>
 
     return Scaffold(
       backgroundColor: AdminUi.pageBg,
+      // SafeArea on every edge. `bottom: false` let the list run under the
+      // Android gesture/navigation bar, which is the grey band that showed up
+      // beneath the last row with a half-hidden action under it. The list's
+      // own trailing padding then reads as real breathing room instead of
+      // content trapped behind the system bar.
       body: SafeArea(
-        bottom: false,
         child: FadeTransition(
           opacity: _entryFade,
           child: SlideTransition(position: _entrySlide, child: unbarred),
@@ -476,7 +494,14 @@ class _ActivityLogScreenState extends ConsumerState<_ActivityLogScreen>
   Widget _header(double gutter) {
     return Container(
       color: AdminUi.surface,
-      padding: EdgeInsets.fromLTRB(gutter, 14, gutter - 6, 12),
+      // The modal keeps a tighter right inset for its close button; the pushed
+      // screen has no trailing control now, so it uses the full gutter.
+      padding: EdgeInsets.fromLTRB(
+        gutter,
+        14,
+        widget.inModal ? gutter - 6 : gutter,
+        12,
+      ),
       child: Row(
         children: [
           // Pushed screen → chevron back at the left, like the citizen
@@ -525,13 +550,8 @@ class _ActivityLogScreenState extends ConsumerState<_ActivityLogScreen>
               ],
             ),
           ),
-          IconButton(
-            onPressed: _refresh,
-            icon: const Icon(Icons.refresh_rounded, size: 20),
-            color: AdminUi.textMuted,
-            tooltip: 'Refresh',
-            visualDensity: VisualDensity.compact,
-          ),
+          // No refresh button: pull-to-refresh covers it on touch, and the
+          // list refetches on every filter change anyway.
           if (widget.inModal)
             IconButton(
               onPressed: () => Navigator.pop(context),
@@ -562,59 +582,141 @@ class _ActivityLogScreenState extends ConsumerState<_ActivityLogScreen>
   }
 
   // ── Filter bar ───────────────────────────────────────────────────────────
-  /// The presets, laid out so nothing is ever clipped mid-word.
+  /// The four presets on one row, with the custom-range control pinned to the
+  /// right of it.
   ///
-  /// A horizontally scrolling Row was the old approach and it cut "Custom
-  /// range" in half on a phone with no affordance saying it could scroll. A
-  /// [Wrap] instead lets the chips flow onto a second line when they do not
-  /// fit, which is self-evident and needs no gesture to discover.
+  /// Two earlier attempts were both wrong in the same way — they treated
+  /// "Custom" as a fifth preset. A scrolling Row clipped it mid-word, and a
+  /// Wrap dropped it onto a second line where it sat orphaned under "All",
+  /// looking misplaced rather than deliberate. It is not a fifth preset: the
+  /// other four toggle instantly, this one opens a picker. Giving it its own
+  /// fixed slot at the end makes the layout read the same at every width, and
+  /// the presets — which are short, and shorten further when compact — always
+  /// fit the remaining space on a single line.
   Widget _filterBar(double gutter, bool compact) {
-    final customLabel = _custom == null ? 'Custom' : _customLabel();
     return Container(
       color: AdminUi.surface,
       padding: EdgeInsets.fromLTRB(gutter, 0, gutter, 14),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          _filterChip('All', _range == _Range.all, () => _select(_Range.all)),
-          _filterChip(
-            'Today',
-            _range == _Range.today,
-            () => _select(_Range.today),
-          ),
-          // The full labels are long on a phone; the meaning survives the trim
-          // and the header subtitle spells the active range out in full.
-          _filterChip(
-            compact ? '7 days' : 'Last 7 days',
-            _range == _Range.days7,
-            () => _select(_Range.days7),
-          ),
-          _filterChip(
-            compact ? '30 days' : 'Last 30 days',
-            _range == _Range.days30,
-            () => _select(_Range.days30),
-          ),
-          _filterChip(
-            customLabel,
-            _range == _Range.custom,
-            _pickCustom,
-            icon: Icons.date_range_rounded,
-          ),
-        ],
+      // The presets must fit the space LEFT OVER after the custom control and
+      // its divider, so the width is measured rather than assumed: labels step
+      // down through three tiers until the row fits, and only if even the
+      // shortest tier overflows does it scroll. That is what stops "30 days"
+      // being sliced by the divider on a 360px phone.
+      child: LayoutBuilder(
+        builder: (context, c) {
+          // Space the custom control and its divider will take. When a range
+          // IS chosen the pill carries its dates and is much wider, so it is
+          // measured rather than assumed.
+          final customW = (_custom != null && _range == _Range.custom)
+              ? _presetsWidth([_customLabel()]) + 23 // + icon and its gap
+              : 42.0; // icon-only pill
+          const dividerBlock = 21.0; // 10 + 1 + 10
+          final presetSpace = c.maxWidth - customW - dividerBlock;
+
+          final tiers = <List<String>>[
+            ['All', 'Today', 'Last 7 days', 'Last 30 days'],
+            ['All', 'Today', '7 days', '30 days'],
+            ['All', 'Today', '7d', '30d'],
+          ];
+          final ranges = [
+            _Range.all,
+            _Range.today,
+            _Range.days7,
+            _Range.days30,
+          ];
+
+          List<String> labels = tiers.last;
+          for (final tier in tiers) {
+            if (_presetsWidth(tier) <= presetSpace) {
+              labels = tier;
+              break;
+            }
+          }
+
+          final row = Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (int i = 0; i < labels.length; i++) ...[
+                if (i > 0) const SizedBox(width: 8),
+                _filterChip(
+                  labels[i],
+                  _range == ranges[i],
+                  () => _select(ranges[i]),
+                ),
+              ],
+            ],
+          );
+
+          return Row(
+            children: [
+              Expanded(
+                child: _presetsWidth(labels) <= presetSpace
+                    ? Align(alignment: Alignment.centerLeft, child: row)
+                    : SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: row,
+                      ),
+              ),
+              const SizedBox(width: 10),
+              // A hairline keeps the picker visibly separate from the toggles,
+              // so its different behaviour is legible before you tap it.
+              Container(width: 1, height: 22, color: AdminUi.border),
+              const SizedBox(width: 10),
+              _customChip(compact),
+            ],
+          );
+        },
       ),
     );
   }
 
+  /// Laid-out width of a row of preset pills, measured with the same text
+  /// style the pills paint so the fit test matches what renders.
+  double _presetsWidth(List<String> labels) {
+    const style = TextStyle(fontSize: 13, fontWeight: FontWeight.w600);
+    var total = 8.0 * (labels.length - 1); // gaps
+    for (final l in labels) {
+      final tp = TextPainter(
+        text: TextSpan(text: l, style: style),
+        textDirection: ui.TextDirection.ltr,
+      )..layout();
+      // 14px padding each side + 1px border each side.
+      total += tp.width + 30;
+    }
+    return total;
+  }
+
+  /// The custom-range control. Collapses to an icon-only button when there is
+  /// no range chosen and space is tight, and widens to show the chosen dates
+  /// once there is something to say.
+  Widget _customChip(bool compact) {
+    final hasRange = _custom != null && _range == _Range.custom;
+    return _filterChip(
+      hasRange
+          ? _customLabel()
+          : compact
+          ? null
+          : 'Custom',
+      hasRange,
+      _pickCustom,
+      icon: Icons.date_range_rounded,
+      tooltip: 'Pick a date range',
+    );
+  }
+
+  /// One pill. [label] may be null for an icon-only control, which is how the
+  /// custom-range button collapses on a narrow phone.
   Widget _filterChip(
-    String label,
+    String? label,
     bool selected,
     VoidCallback onTap, {
     IconData? icon,
+    String? tooltip,
   }) {
+    final iconOnly = label == null;
     // Material + InkWell rather than a bare GestureDetector so the chips get a
     // hover and press response on the web, which a console this dense needs.
-    return Material(
+    Widget chip = Material(
       color: selected ? AppColors.primaryBlue : AdminUi.subtle,
       borderRadius: BorderRadius.circular(999),
       child: InkWell(
@@ -625,7 +727,12 @@ class _ActivityLogScreenState extends ConsumerState<_ActivityLogScreen>
             : AppColors.primaryBlue.withValues(alpha: 0.06),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 140),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          // An icon-only pill gets equal padding so it comes out round rather
+          // than a stubby oval, and keeps a 38px tap target either way.
+          padding: EdgeInsets.symmetric(
+            horizontal: iconOnly ? 10 : 14,
+            vertical: 9,
+          ),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(999),
             border: Border.all(
@@ -638,24 +745,28 @@ class _ActivityLogScreenState extends ConsumerState<_ActivityLogScreen>
               if (icon != null) ...[
                 Icon(
                   icon,
-                  size: 15,
+                  size: iconOnly ? 18 : 15,
                   color: selected ? Colors.white : AdminUi.textMuted,
                 ),
-                const SizedBox(width: 6),
+                if (!iconOnly) const SizedBox(width: 6),
               ],
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: selected ? Colors.white : AdminUi.textSecondary,
+              if (label != null)
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: selected ? Colors.white : AdminUi.textSecondary,
+                  ),
                 ),
-              ),
             ],
           ),
         ),
       ),
     );
+
+    if (tooltip != null) chip = Tooltip(message: tooltip, child: chip);
+    return chip;
   }
 
   // ── History list (grouped by day) ────────────────────────────────────────
