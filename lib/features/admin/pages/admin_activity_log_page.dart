@@ -225,6 +225,17 @@ class _ActivityLogScreenState extends ConsumerState<_ActivityLogScreen>
 
   Future<void> _pickCustom() async {
     final now = DateTime.now();
+    // In calendar mode the framework's range picker hardcodes its own size to
+    // MediaQuery.sizeOf(context) with zero inset padding (date_picker.dart
+    // ~1663), so it takes over the whole viewport no matter how wide the
+    // window is — which on a desktop browser left a full-screen sheet with a
+    // narrow calendar stranded in the middle of it. There is no flag for this,
+    // so the size it reads is what gets shrunk: on the same screens that get
+    // the modal history, the picker is handed a modal-sized MediaQuery and
+    // centred, and it lays itself out to fit that box instead.
+    final asModal =
+        kIsWeb && MediaQuery.of(context).size.width >= _kModalMinWidth;
+
     final picked = await showDateRangePicker(
       context: context,
       firstDate: DateTime(now.year - 3),
@@ -235,14 +246,43 @@ class _ActivityLogScreenState extends ConsumerState<_ActivityLogScreen>
             start: now.subtract(const Duration(days: 7)),
             end: now,
           ),
-      builder: (ctx, child) => Theme(
-        data: Theme.of(ctx).copyWith(
-          colorScheme: Theme.of(ctx).colorScheme.copyWith(
+      builder: (ctx, child) {
+        final base = Theme.of(ctx);
+        final theme = base.copyWith(
+          colorScheme: base.colorScheme.copyWith(
             primary: AppColors.primaryBlue,
           ),
-        ),
-        child: child!,
-      ),
+          // Full-screen mode paints square corners by design; once the picker
+          // is a card, it needs the rounding the other admin pop-ups use.
+          // Rounding the dialog is not enough on its own: the inner
+          // _CalendarRangePickerDialog paints an opaque square canvas over the
+          // whole box, so that surface has to go transparent for the rounded
+          // card underneath to be the thing you see.
+          datePickerTheme: base.datePickerTheme.copyWith(
+            rangePickerShape: asModal
+                ? RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18),
+                  )
+                : null,
+            rangePickerBackgroundColor: asModal ? Colors.transparent : null,
+          ),
+        );
+        final themed = Theme(data: theme, child: child!);
+        if (!asModal) return themed;
+
+        final screen = MediaQuery.of(ctx).size;
+        // Sized to the calendar itself — six week rows under the header and
+        // action bar — rather than to the viewport, and capped so a short
+        // laptop screen still shows the whole card.
+        final w = screen.width.clamp(0.0, 460.0);
+        final h = (screen.height - 120).clamp(360.0, 540.0);
+        return Center(
+          child: MediaQuery(
+            data: MediaQuery.of(ctx).copyWith(size: Size(w, h)),
+            child: SizedBox(width: w, height: h, child: themed),
+          ),
+        );
+      },
     );
     if (picked == null) return;
     setState(() {
