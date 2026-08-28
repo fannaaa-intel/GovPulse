@@ -17,6 +17,8 @@ import 'core/router/app_router.dart';
 import 'features/onboarding/splash_screen.dart';
 import 'features/home/shell/citizen_shell_router.dart' show GovPulseWebApp;
 import 'core/services/auth_ready.dart' show AuthRestoration;
+import 'core/network/timeout_http_client.dart';
+import 'core/services/session_cache.dart';
 import 'features/scan/scan_page.dart';
 import 'core/widgets/Home/Chat-bubbles/home_chat_bubble.dart';
 import 'core/services/chat_service.dart';
@@ -79,6 +81,13 @@ void main() async {
   await Supabase.initialize(
     url: 'https://vxvflhjbafqwehuxnmeq.supabase.co',
     anonKey: 'sb_publishable_ZBDaQPQdFyC5kOHGbce9Ig_zdtIi6Mo',
+    // Without this every query inherits Dart's default: a connection timeout,
+    // but no ceiling on how long an ESTABLISHED connection may stay silent. On
+    // a weak-but-live network the socket connects — so the reachability probe
+    // reports "online" — and the request then never answers, which is what
+    // left login, the citizen home and both consoles on a spinner or skeleton
+    // that never resolved. See [TimeoutHttpClient].
+    httpClient: TimeoutHttpClient(),
   );
 
   await Hive.initFlutter();
@@ -103,6 +112,20 @@ void main() async {
   if (kIsWeb) {
     await AuthRestoration.instance.primeRoleCache();
   }
+
+  // Both platforms, for two different reasons.
+  //
+  // MOBILE: pulls the cached username + role into memory before the first
+  // frame, so the splash can pick a destination for a restored session WITHOUT
+  // the network. Without it the splash had to query for both, which meant an
+  // offline start could not route a user who was still signed in.
+  //
+  // WEB: routing is the router guard's job and this cache stays out of it —
+  // but the DISPLAY hints (verification status, name, photo, staff identity)
+  // are read on web too, and a failed fetch there falls back to the same wrong
+  // defaults it did on mobile: 'unverified' for a citizen, 'Staff' for a staff
+  // member. They cannot be read if nothing loaded them.
+  await SessionCache.instance.prime();
 
   // Start watching for a restored session before the first frame, so the web
   // router's auth guard has something to wait on rather than reading a

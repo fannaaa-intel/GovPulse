@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:http/http.dart' show ClientException;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/router/legacy_nav.dart';
@@ -764,6 +767,30 @@ class _LoginScreenState extends State<LoginScreen>
     }
   }
 
+  /// Turns a thrown login failure into something worth reading.
+  ///
+  /// The server's own messages ("Invalid username or password") are already
+  /// written for a person and pass through untouched. What does not is a
+  /// network failure: a stalled request now fails with a `ClientException`
+  /// (see [TimeoutHttpClient]) whose text names a timeout and a URL. That is a
+  /// strictly better outcome than the spinner-forever it replaced, but it
+  /// still should not be what the user reads.
+  String _readableError(Object e) {
+    if (e is ClientException || e is TimeoutException) {
+      return 'The connection is too slow or unstable to sign in right now. '
+          'Check your internet and try again.';
+    }
+    final text = e.toString().replaceAll('Exception: ', '');
+    // Belt and braces: postgrest and gotrue wrap transport failures in their
+    // own types, so the exception may no longer BE a ClientException by the
+    // time it lands here even though a timeout is what caused it.
+    if (text.contains('timed out') || text.contains('SocketException')) {
+      return 'The connection is too slow or unstable to sign in right now. '
+          'Check your internet and try again.';
+    }
+    return text;
+  }
+
   Future<void> _handleLogin() async {
     final cleanUsername = username.trim();
     final cleanPassword = password;
@@ -783,7 +810,7 @@ class _LoginScreenState extends State<LoginScreen>
     } catch (e) {
       if (mounted) {
         setState(() {
-          errorMessage = e.toString().replaceAll("Exception: ", "");
+          errorMessage = _readableError(e);
         });
       }
     } finally {
