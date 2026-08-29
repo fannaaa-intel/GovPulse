@@ -410,6 +410,25 @@ class _SpamWatchBanner extends ConsumerWidget {
 
 // ── Toolbar ─────────────────────────────────────────────────────────────────
 
+/// Test seam for the toolbar. Lets a widget test measure the filter pills at a
+/// given width without standing up the page, its provider and a Supabase
+/// round-trip — the layout is the thing under test, not the data.
+@visibleForTesting
+Widget adminUsersToolbarForTesting({
+  required List<String> barangays,
+}) => _Toolbar(
+  searchCtrl: TextEditingController(),
+  barangay: null,
+  status: null,
+  sort: _CitizenSort.newest,
+  barangays: barangays,
+  onSearch: (_) {},
+  onClearSearch: () {},
+  onBarangay: (_) {},
+  onStatus: (_) {},
+  onSort: (_) {},
+);
+
 class _Toolbar extends StatelessWidget {
   final TextEditingController searchCtrl;
   final String? barangay;
@@ -443,65 +462,94 @@ class _Toolbar extends StatelessWidget {
       onClear: onClearSearch,
     );
 
-    final barangayPill = _FilterDropdown<String?>(
-      icon: Icons.location_city_rounded,
-      value: barangay ?? 'All Barangays',
-      current: barangay,
-      options: [
-        (null, 'All Barangays'),
-        for (final b in barangays) (b, b),
-      ],
-      onSelected: onBarangay,
-    );
-    final statusPill = _FilterDropdown<CitizenVerif?>(
-      icon: Icons.filter_alt_rounded,
-      value: status == null ? 'All Citizens' : citizenVerifLabel(status!),
-      current: status,
-      options: [
-        (null, 'All Citizens'),
-        (CitizenVerif.verified, 'Verified'),
-        (CitizenVerif.pending, 'Pending'),
-        (CitizenVerif.unverified, 'Unverified'),
-        (CitizenVerif.rejected, 'Rejected'),
-      ],
-      onSelected: onStatus,
-    );
-    final sortPill = _FilterDropdown<_CitizenSort>(
-      prefix: 'Sort by:',
-      value: _sortLabel(sort),
-      current: sort,
-      options: [
-        for (final s in _CitizenSort.values) (s, _sortLabel(s)),
-      ],
-      onSelected: onSort,
-    );
+    // Built per layout rather than once: the wide toolbar wants pills that hug
+    // their labels, the narrow grid wants them to fill their slot, and that is
+    // one flag rather than two sets of definitions.
+    _FilterDropdown<String?> barangayPill({bool fill = false}) =>
+        _FilterDropdown<String?>(
+          icon: Icons.location_city_rounded,
+          fill: fill,
+          value: barangay ?? 'All Barangays',
+          current: barangay,
+          options: [
+            (null, 'All Barangays'),
+            for (final b in barangays) (b, b),
+          ],
+          onSelected: onBarangay,
+        );
+    _FilterDropdown<CitizenVerif?> statusPill({bool fill = false}) =>
+        _FilterDropdown<CitizenVerif?>(
+          icon: Icons.filter_alt_rounded,
+          fill: fill,
+          value: status == null ? 'All Citizens' : citizenVerifLabel(status!),
+          current: status,
+          options: [
+            (null, 'All Citizens'),
+            (CitizenVerif.verified, 'Verified'),
+            (CitizenVerif.pending, 'Pending'),
+            (CitizenVerif.unverified, 'Unverified'),
+            (CitizenVerif.rejected, 'Rejected'),
+          ],
+          onSelected: onStatus,
+        );
+    _FilterDropdown<_CitizenSort> sortPill({bool fill = false}) =>
+        _FilterDropdown<_CitizenSort>(
+          prefix: 'Sort by:',
+          fill: fill,
+          value: _sortLabel(sort),
+          current: sort,
+          options: [
+            for (final s in _CitizenSort.values) (s, _sortLabel(s)),
+          ],
+          onSelected: onSort,
+        );
 
     return LayoutBuilder(
       builder: (context, c) {
         // Wide: search on the left, filters grouped, sort pushed to the right —
-        // matching the design. Narrow: search stacks above a wrapping pill row.
+        // matching the design.
         if (c.maxWidth >= 720) {
           return Row(
             children: [
               SizedBox(width: 320, child: search),
               const Spacer(),
-              barangayPill,
+              barangayPill(),
               const SizedBox(width: 10),
-              statusPill,
+              statusPill(),
               const SizedBox(width: 10),
-              sortPill,
+              sortPill(),
             ],
           );
         }
+
+        // Narrow: search over a two-column GRID of pills, not a Wrap.
+        //
+        // A Wrap sizes each pill to its own text, so on a phone the first two
+        // fitted one row and "Sort by: Newest" dropped to a second — three
+        // controls staggered across two rows with a ragged right edge and two
+        // different pill widths. They are one group of equals, so they are laid
+        // out as one: equal halves, and the odd third takes a half-width slot
+        // on the next row directly under the first. Nothing is centred or
+        // stretched to fill, which would make the lone pill look like a
+        // different kind of control.
+        const gap = 10.0;
+        final half = (c.maxWidth - gap) / 2;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             search,
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [barangayPill, statusPill, sortPill],
+            const SizedBox(height: gap),
+            Row(
+              children: [
+                SizedBox(width: half, child: barangayPill(fill: true)),
+                const SizedBox(width: gap),
+                SizedBox(width: half, child: statusPill(fill: true)),
+              ],
+            ),
+            const SizedBox(height: gap),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: SizedBox(width: half, child: sortPill(fill: true)),
             ),
           ],
         );
@@ -519,9 +567,21 @@ class _FilterDropdown<T> extends StatelessWidget {
   final T current;
   final List<(T, String)> options;
   final ValueChanged<T> onSelected;
+
+  /// Fills the width it is given instead of hugging its label.
+  ///
+  /// The wide toolbar lays these out in a Row where each pill should be as
+  /// small as its text; the narrow one puts them in equal grid slots, where a
+  /// content-sized pill would leave a ragged gap in its own column. The cap and
+  /// the Row's mainAxisSize both have to move together — capping at 220 while
+  /// being handed a 180-wide slot is fine, but capping at 220 in a 300 slot is
+  /// what would silently leave the pill short.
+  final bool fill;
+
   const _FilterDropdown({
     this.icon,
     this.prefix,
+    this.fill = false,
     required this.value,
     required this.current,
     required this.options,
@@ -575,7 +635,9 @@ class _FilterDropdown<T> extends StatelessWidget {
       ],
       child: Container(
         height: 42,
-        constraints: const BoxConstraints(maxWidth: 220),
+        constraints: fill
+            ? const BoxConstraints()
+            : const BoxConstraints(maxWidth: 220),
         padding: const EdgeInsets.symmetric(horizontal: 12),
         decoration: BoxDecoration(
           color: AdminUi.surface,
@@ -583,7 +645,7 @@ class _FilterDropdown<T> extends StatelessWidget {
           border: Border.all(color: AdminUi.border),
         ),
         child: Row(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisSize: fill ? MainAxisSize.max : MainAxisSize.min,
           children: [
             if (icon != null) ...[
               Icon(icon, size: 16, color: AdminUi.textSecondary),
@@ -607,6 +669,11 @@ class _FilterDropdown<T> extends StatelessWidget {
                 ),
               ),
             ),
+            // A fixed gap in BOTH modes. A Spacer here (to line the chevrons
+            // up on the trailing edge) takes its width before Flexible gets to
+            // measure the label, so at a phone width every pill ellipsised to
+            // "All Bar…" — a tidier right edge bought by making the labels
+            // unreadable, which is the wrong trade.
             const SizedBox(width: 4),
             const Icon(Icons.keyboard_arrow_down_rounded,
                 size: 18, color: AdminUi.textMuted),
