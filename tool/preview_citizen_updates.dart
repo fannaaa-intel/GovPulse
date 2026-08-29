@@ -24,6 +24,17 @@ class _MockApi extends http.BaseClient {
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
     final body = [
       {
+        'id': '00000000-0000-0000-0000-000000000000',
+        'body': 'Patching completed, curing overnight.',
+        'kind': 'progress',
+        'status': 'approved',
+        'rejected_reason': null,
+        'author_role': 'staff',
+        'author_name': 'Engineering Office',
+        'created_at': '2026-08-29T13:05:00Z',
+        'report_update_media': [],
+      },
+      {
         'id': '11111111-1111-1111-1111-111111111111',
         'body': 'Hi citizen, thank you for your understanding.',
         'kind': 'progress',
@@ -95,12 +106,13 @@ class _App extends StatelessWidget {
                       reportId: '3f2a1b6c-8d4e-4f7a-9b1c-2e5d6a7b8c9d',
                       mode: ReportUpdatesMode.citizen,
                       chrome: false,
+                      maxVisible: 2,
                       heading: Padding(
                         padding: EdgeInsets.only(
                           top: w * .045,
                           bottom: w * .03,
                         ),
-                        child: _label(w, 'Progress updates'),
+                        child: _label(w, 'Latest updates'),
                       ),
                     ),
                     SizedBox(height: w * .045),

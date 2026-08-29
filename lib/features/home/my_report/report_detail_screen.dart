@@ -545,39 +545,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
                       ),
                       SizedBox(height: w * .03),
                       _fadeSlide(2, _buildTimeline(w)),
-                      // The running account UNDER the four milestones: what the
-                      // office actually did, and when. Placed directly beneath
-                      // the tracker because it is the same question at finer
-                      // grain — "where has my report got to".
-                      //
-                      // Only APPROVED updates arrive here: the citizen's RLS
-                      // policy binds owns_report to status = 'approved'. The
-                      // widget renders nothing at all until there is one, so a
-                      // report nobody has written about looks unchanged.
-                      // The heading is passed IN rather than written here,
-                      // because the widget hides itself entirely when the
-                      // citizen has no approved updates — a label emitted at
-                      // this level would be left stranded above nothing.
-                      _fadeSlide(
-                        3,
-                        ReportProgressUpdates(
-                          reportId: _report.fullId,
-                          mode: ReportUpdatesMode.citizen,
-                          // No card of its own: a blue heading OUTSIDE the
-                          // content is this screen's section marker, exactly as
-                          // for Processing timeline and Report details. A
-                          // self-titled bordered box was the one element framed
-                          // unlike its neighbours.
-                          chrome: false,
-                          heading: Padding(
-                            padding: EdgeInsets.only(
-                              top: w * .045,
-                              bottom: w * .03,
-                            ),
-                            child: _buildSectionLabel(w, 'Progress updates'),
-                          ),
-                        ),
-                      ),
                       SizedBox(height: w * .045),
                       _fadeSlide(3, _buildSectionLabel(w, 'Report details')),
                       SizedBox(height: w * .03),
@@ -1554,6 +1521,47 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
                   _buildTimelineStep(w, steps[i], i, steps.length, i),
               ],
             ),
+          ),
+
+          // ── What the office actually did, inside the same card ──
+          //
+          // The four steps say WHICH stage the report is at; these say what
+          // happened within it. They were a separate section directly below
+          // this card, which meant the screen answered "where is my report"
+          // twice, in two boxes, and pushed everything else down a full screen.
+          //
+          // Capped at two, with the rest in a sheet: a report worked for a
+          // fortnight can carry a dozen updates, and the newest two are what
+          // the citizen opened the screen for.
+          //
+          // Renders NOTHING when there is nothing approved — the widget hides
+          // itself, so the divider and padding below go with it rather than
+          // leaving an empty strip under the steps.
+          ReportProgressUpdates(
+            reportId: _report.fullId,
+            mode: ReportUpdatesMode.citizen,
+            chrome: false,
+            maxVisible: 2,
+            heading: Padding(
+              padding: EdgeInsets.fromLTRB(w * .04, 0, w * .04, w * .03),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Divider(height: 1, color: const Color(0xFFF3F4F6)),
+                  SizedBox(height: w * .035),
+                  Text(
+                    'LATEST UPDATES',
+                    style: TextStyle(
+                      fontSize: w * .026,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.7,
+                      color: const Color(0xFF9CA3AF),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            padding: EdgeInsets.fromLTRB(w * .04, 0, w * .04, w * .04),
           ),
         ],
       ),

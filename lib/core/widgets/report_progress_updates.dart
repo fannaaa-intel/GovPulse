@@ -130,6 +130,22 @@ class ReportProgressUpdates extends StatefulWidget {
   /// element on that page framed differently from everything around it.
   final bool chrome;
 
+  /// Show at most this many updates, with a "View all" opening the rest in a
+  /// sheet. Null means show everything.
+  ///
+  /// The citizen screen sets it to 2: that screen already carries a status
+  /// tracker, a details card, attachments and a completion gallery, and an
+  /// unbounded timeline turned it into a page nobody reaches the bottom of. The
+  /// consoles leave it null — an office reviewing work wants the whole history
+  /// in front of it.
+  final int? maxVisible;
+
+  /// Padding around the CONTENT, applied inside this widget so a caller that
+  /// also supplies [heading] can pad the two differently — the citizen screen
+  /// runs its heading's divider to the card edge while insetting the cards
+  /// beneath it. Defaults to none.
+  final EdgeInsetsGeometry? padding;
+
   /// Rendered above the content, INSIDE this widget's own build.
   ///
   /// Passed in rather than written by the caller because this widget hides
@@ -145,6 +161,8 @@ class ReportProgressUpdates extends StatefulWidget {
     this.authorName = '',
     this.chrome = true,
     this.heading,
+    this.maxVisible,
+    this.padding,
   });
 
   @override
@@ -172,6 +190,31 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
       _updates.where((u) => u.isPending).toList(growable: false);
   List<_Update> get _decided =>
       _updates.where((u) => !u.isPending).toList(growable: false);
+
+  /// What the inline list actually renders when [maxVisible] caps it.
+  List<_Update> get _visible {
+    final cap = widget.maxVisible;
+    if (cap == null || _updates.length <= cap) return _updates;
+    return _updates.take(cap).toList(growable: false);
+  }
+
+  int get _hiddenCount {
+    final cap = widget.maxVisible;
+    if (cap == null) return 0;
+    return _updates.length - _visible.length;
+  }
+
+  /// Opens the full history. A sheet rather than a route: the citizen is one
+  /// tap from where they were, and the report screen behind it keeps its scroll
+  /// position — which a push/pop would lose on the way back.
+  void _openAll() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _AllUpdatesSheet(updates: _updates, tile: _updateTile),
+    );
+  }
 
   @override
   void initState() {
@@ -441,10 +484,9 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
       return const SizedBox.shrink();
     }
 
-    final body = Column(
+    final content = Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (widget.heading != null) widget.heading!,
           if (widget.chrome) ...[
             Row(
               children: [
@@ -518,10 +560,27 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
               _allClearBanner(),
               const SizedBox(height: 12),
             ],
-            for (final u in _updates) _updateTile(u),
+            for (final u in _visible) _updateTile(u),
+            if (_hiddenCount > 0) _viewAllButton(),
           ],
         ],
       );
+
+    // The heading sits OUTSIDE the padded content on purpose: the citizen
+    // screen runs a divider across the full card width and then insets the
+    // update cards under it, which one shared padding could not express.
+    final body = widget.heading == null && widget.padding == null
+        ? content
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (widget.heading != null) widget.heading!,
+              if (widget.padding != null)
+                Padding(padding: widget.padding!, child: content)
+              else
+                content,
+            ],
+          );
 
     if (!widget.chrome) return body;
 
@@ -744,6 +803,27 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
         borderSide: BorderSide(color: c, width: w),
       );
 
+  /// "View all" — shown only when the cap actually hid something, and it says
+  /// HOW MANY, because "View all" alone gives no sense of whether one update is
+  /// hidden or a dozen.
+  Widget _viewAllButton() => Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton.icon(
+          onPressed: _openAll,
+          style: TextButton.styleFrom(
+            foregroundColor: AppColors.primaryBlue,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            visualDensity: VisualDensity.compact,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          icon: const Icon(Icons.unfold_more_rounded, size: 16),
+          label: Text(
+            'View all ${_updates.length} updates',
+            style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+          ),
+        ),
+      );
+
   Widget _sectionLabel(String text, {required int count, Color? color}) => Row(
         children: [
           Text(
@@ -801,6 +881,11 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
 
   Widget _updateTile(_Update u) {
     return Container(
+      // Fills its parent rather than shrink-wrapping the text. Without this a
+      // card is only as wide as its longest line, so on a tablet or a desktop
+      // browser the updates sat as narrow slips beside full-width neighbours —
+      // invisible on a phone, where every line already runs to the edge.
+      width: double.infinity,
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(11),
       decoration: BoxDecoration(
@@ -933,5 +1018,111 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
     if (diff.inHours < 24) return '${diff.inHours}h ago';
     if (diff.inDays < 7) return '${diff.inDays}d ago';
     return '${d.day}/${d.month}/${d.year}';
+  }
+}
+
+/// The full update history, over the screen it was opened from.
+///
+/// ── Responsiveness ────────────────────────────────────────────────────────
+/// One sheet serves a 320px phone, a tablet and a desktop browser, and the
+/// three want different things from it:
+///
+///   * phone   — nearly full height, corners only at the top, edge to edge;
+///   * medium  — the same, but capped so it does not become a wall of text;
+///   * large   — centred and width-capped, because a line of body text running
+///     the width of a 1600px monitor is unreadable regardless of how much room
+///     there is.
+///
+/// The height is a FRACTION of the viewport rather than a constant: a fixed
+/// 600px sheet is most of a phone and a third of a desktop.
+class _AllUpdatesSheet extends StatelessWidget {
+  final List<_Update> updates;
+
+  /// The row renderer from the parent, reused verbatim so a card looks
+  /// identical inline and in here.
+  final Widget Function(_Update) tile;
+
+  const _AllUpdatesSheet({required this.updates, required this.tile});
+
+  @override
+  Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final w = media.size.width;
+    final wide = w >= 720;
+
+    return SafeArea(
+      top: false,
+      child: Align(
+        alignment: Alignment.bottomCenter,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: wide ? 620 : double.infinity,
+            maxHeight: media.size.height * (wide ? 0.8 : 0.88),
+          ),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(
+                top: const Radius.circular(18),
+                // Rounded all round only when it floats clear of the bottom
+                // edge; on a phone it meets the edge and a rounded bottom
+                // would show the page through the corners.
+                bottom: Radius.circular(wide ? 18 : 0),
+              ),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 10),
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.black12,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 8, 10),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.timeline_rounded,
+                          size: 18, color: AppColors.primaryBlue),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Progress updates (${updates.length})',
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.close_rounded),
+                        color: Colors.black45,
+                        splashRadius: 20,
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                // Flexible + a scrolling list, so a short history sizes to its
+                // content and a long one scrolls instead of overflowing.
+                Flexible(
+                  child: ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(14, 12, 14, 18),
+                    itemCount: updates.length,
+                    itemBuilder: (_, i) => tile(updates[i]),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

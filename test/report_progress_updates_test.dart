@@ -13,6 +13,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:govpulse/core/widgets/report_progress_updates.dart';
+import 'dart:convert';
+
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -26,6 +29,58 @@ import '_responsive_matrix.dart';
 // admin_settings_per_admin_test.dart.
 const _url = 'https://vxvflhjbafqwehuxnmeq.supabase.co';
 const _anon = 'sb_publishable_ZBDaQPQdFyC5kOHGbce9Ig_zdtIi6Mo';
+
+/// Returns [count] approved updates, newest first, so the maxVisible cap and
+/// the "View all" sheet can be exercised. Without a client that answers, the
+/// widget settles into its empty state and neither is reachable.
+class _ListApi extends http.BaseClient {
+  final int count;
+  _ListApi(this.count);
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    final rows = [
+      for (var i = 0; i < count; i++)
+        {
+          'id': 'row-$i',
+          'body': 'Update number $i.',
+          'kind': 'progress',
+          'status': 'approved',
+          'rejected_reason': null,
+          'author_role': 'staff',
+          'author_name': 'Engineering Office',
+          'created_at': '2026-08-29T12:0$i:00Z',
+          'report_update_media': const [],
+        },
+    ];
+    return http.StreamedResponse(
+      Stream.value(utf8.encode(jsonEncode(rows))),
+      200,
+      headers: {'content-type': 'application/json'},
+      request: request,
+    );
+  }
+}
+
+/// Re-initialises Supabase with a client that answers the list query.
+Future<void> _bootWith(http.BaseClient api) async {
+  try {
+    await Supabase.instance.dispose();
+  } catch (_) {
+    // Not initialized yet.
+  }
+  await Supabase.initialize(
+    url: 'https://preview.invalid',
+    anonKey: 'test-not-a-real-key',
+    httpClient: api,
+    authOptions: const FlutterAuthClientOptions(
+      localStorage: EmptyLocalStorage(),
+      detectSessionInUri: false,
+      autoRefreshToken: false,
+    ),
+    debug: false,
+  );
+}
 
 /// The widget talks to Supabase in initState. There is no client in a widget
 /// test, so the load throws and the widget settles into its "unavailable"
@@ -138,6 +193,118 @@ void main() {
       expect(find.text('Progress updates'), findsNothing,
           reason: 'the self-title must not double up with the parent one');
       expect(find.text('Passed-in heading'), findsOneWidget);
+    });
+  });
+
+  // The citizen screen caps the inline list at two and moves the rest into a
+  // sheet, because that screen already carries a tracker, a details card,
+  // attachments and a completion gallery — an unbounded history turned it into
+  // a page nobody reaches the bottom of.
+  group('maxVisible', () {
+    Widget capped(int cap) => MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: ReportProgressUpdates(
+                reportId: '3f2a1b6c-8d4e-4f7a-9b1c-2e5d6a7b8c9d',
+                mode: ReportUpdatesMode.citizen,
+                chrome: false,
+                maxVisible: cap,
+              ),
+            ),
+          ),
+        );
+
+    testWidgets('shows only the cap, and says how many are hidden',
+        (tester) async {
+      await _bootWith(_ListApi(5));
+      await tester.pumpWidget(capped(2));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Update number 0.'), findsOneWidget);
+      expect(find.text('Update number 1.'), findsOneWidget);
+      expect(find.text('Update number 2.'), findsNothing,
+          reason: 'the third is past the cap');
+      expect(find.text('View all 5 updates'), findsOneWidget);
+    });
+
+    testWidgets('no View all when nothing is hidden', (tester) async {
+      await _bootWith(_ListApi(2));
+      await tester.pumpWidget(capped(2));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Update number 1.'), findsOneWidget);
+      expect(find.textContaining('View all'), findsNothing,
+          reason: 'a cap that hid nothing must not offer to reveal it');
+    });
+
+    testWidgets('the sheet carries every update', (tester) async {
+      await _bootWith(_ListApi(5));
+      await tester.pumpWidget(capped(2));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('View all 5 updates'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Progress updates (5)'), findsOneWidget);
+      // The one the inline list withheld.
+      expect(find.text('Update number 4.'), findsOneWidget);
+    });
+  });
+
+  // The sheet serves a 320px phone, a tablet and a desktop browser from one
+  // widget, and the three want different things: edge to edge on a phone,
+  // width-capped and floating on a wide screen. These pin the two properties
+  // that a screenshot at one size cannot.
+  group('the sheet is responsive', () {
+    Future<void> openAt(WidgetTester tester, Size size) async {
+      await _bootWith(_ListApi(4));
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: ReportProgressUpdates(
+                reportId: '3f2a1b6c-8d4e-4f7a-9b1c-2e5d6a7b8c9d',
+                mode: ReportUpdatesMode.citizen,
+                chrome: false,
+                maxVisible: 2,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('View all 4 updates'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('fills the width on a phone', (tester) async {
+      await openAt(tester, const Size(360, 720));
+
+      final box = tester.getSize(
+        find.ancestor(
+          of: find.text('Progress updates (4)'),
+          matching: find.byType(ConstrainedBox),
+        ).first,
+      );
+      expect(box.width, 360,
+          reason: 'a phone sheet runs edge to edge');
+    });
+
+    testWidgets('caps its width on a wide screen', (tester) async {
+      await openAt(tester, const Size(1400, 900));
+
+      final box = tester.getSize(
+        find.ancestor(
+          of: find.text('Progress updates (4)'),
+          matching: find.byType(ConstrainedBox),
+        ).first,
+      );
+      expect(box.width, lessThanOrEqualTo(620),
+          reason: 'body text running 1400px wide is unreadable');
     });
   });
 
