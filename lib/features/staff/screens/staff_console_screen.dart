@@ -129,6 +129,12 @@ class _StaffConsoleScreenState extends ConsumerState<StaffConsoleScreen>
       'post_heart', 'comment_heart', 'comment',
       'post_like', 'comment_like', 'post_comment', 'comment_reply',
     };
+    // An office's own progress update was approved or returned. It belongs to
+    // whichever list holds that report — Reports for an internal office,
+    // Endorsements for an external agency, which are different nav entries
+    // (see _navFor). Resolved below, once isExternal is known.
+    final isUpdateDecision = topic == 'report_update';
+
     final key = switch (topic) {
       'report' => 'reports',
       'endorsement' => 'endorsements',
@@ -139,11 +145,13 @@ class _StaffConsoleScreenState extends ConsumerState<StaffConsoleScreen>
       _ when engagementTopics.contains(topic) => 'community',
       _ => null,
     };
-    if (key == null || !mounted) return;
+    if ((key == null && !isUpdateDecision) || !mounted) return;
     final isExternal =
         ref.read(staffIdentityProvider).valueOrNull?.isExternal ?? false;
+    final resolvedKey =
+        key ?? (isExternal ? 'endorsements' : 'reports');
 
-    if (key == 'community') {
+    if (resolvedKey == 'community') {
       // Approvals/rejections/deletions changed the submissions behind our back
       // — refetch so the list reflects it (a deleted post must actually be
       // gone). Engagement (likes/comments) belongs to the published feed tab.
@@ -159,7 +167,8 @@ class _StaffConsoleScreenState extends ConsumerState<StaffConsoleScreen>
     // The referenceId rides along so the feed scrolls to — and flashes — the
     // post (or the submission row for approvals). Blue highlight on likes is
     // intentional on the staff side.
-    _goToKey(_navFor(isExternal), key, highlightId: target.referenceId);
+    _goToKey(_navFor(isExternal), resolvedKey,
+        highlightId: target.referenceId);
   }
 
   void _openPalette(List<_NavItem> nav) {

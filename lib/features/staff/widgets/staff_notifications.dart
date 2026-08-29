@@ -22,6 +22,8 @@ IconData _iconForTopic(String topic) {
       return Icons.report_gmailerrorred_rounded;
     case 'endorsement':
       return Icons.forward_to_inbox_rounded;
+    case 'report_update':
+      return Icons.rate_review_outlined;
     case 'chat':
     case 'ticket':
     case 'message':
@@ -49,6 +51,7 @@ IconData _iconForTopic(String topic) {
 // stray actor photo is attached. Same rule the admin panel uses.
 const _iconOnlyTopics = {
   'report',
+  'report_update',
   'endorsement',
   'chat',
   'ticket',
@@ -92,7 +95,7 @@ class StaffNotif {
   /// Topics the staff console can route a tap to (staff_console_screen's
   /// _onNotifNavigate switch). Anything else dead-ends on 'general'.
   static const _routable = {
-    'report', 'endorsement', 'chat', 'ticket', 'message',
+    'report', 'report_update', 'endorsement', 'chat', 'ticket', 'message',
     'post_approved', 'post_rejected', 'community',
     // Two vocabularies for the SAME engagement events: the staff/admin
     // 'post_heart'/'comment_heart' names, and the citizen-side type values the

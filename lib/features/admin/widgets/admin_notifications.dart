@@ -43,6 +43,11 @@ class AdminNotifTab {
 // LGU post can arrive under either, so both must count and be fetchable.
 const List<String> kAllAdminTopics = [
   'report',
+  // A progress update from an office or an agency, waiting on a decision. Same
+  // trap as community_request below: every tab filters server-side on
+  // `topic IN kAllAdminTopics`, so leaving it out writes the row and never
+  // shows it, and the badge never counts it.
+  'report_update',
   'verification',
   // A staff member's post awaiting review (trg_notify_admins_community_request).
   // Omitting it here silently swallowed the notification entirely: every tab
@@ -77,7 +82,12 @@ const List<String> kOtherTopics = [
 // Primary row — always visible.
 const List<AdminNotifTab> kPrimaryTabs = [
   AdminNotifTab('all', 'All', kAllAdminTopics, Color(0xFF2563EB)),
-  AdminNotifTab('report', 'Reports', ['report'], Color(0xFFF59E0B)),
+  AdminNotifTab(
+    'report',
+    'Reports',
+    ['report', 'report_update'],
+    Color(0xFFF59E0B),
+  ),
   AdminNotifTab('verification', 'Verifications', [
     'verification',
   ], Color(0xFF6366F1)),
@@ -110,6 +120,8 @@ IconData _iconForTopic(String topic) {
   switch (topic) {
     case 'report':
       return Icons.report_gmailerrorred_rounded;
+    case 'report_update':
+      return Icons.rate_review_outlined;
     case 'verification':
       return Icons.verified_user_outlined;
     case 'post_heart':

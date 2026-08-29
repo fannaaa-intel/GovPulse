@@ -188,6 +188,8 @@ class AppNotification {
         return Icons.mode_comment_rounded;
       case 'comment_reply':
         return Icons.reply_rounded;
+      case 'report_update':
+        return Icons.timeline_rounded;
       default:
         return Icons.notifications_rounded;
     }
@@ -687,6 +689,11 @@ void routeCitizenNotificationTap(
       pushLegacy(context, '/chat', arguments: username);
       break;
     case 'report_decision':
+    // An approved progress update on the citizen's own report
+    // (notify_report_update_decision). Same destination as a status change —
+    // the updates now live inside the processing timeline on that screen — and
+    // reference_id likewise carries the REPORT id, not the update id.
+    case 'report_update':
       // LGU changed a report's status → open that report's detail. Needs the
       // report id from reference_id (report_notification_deeplink.sql); older
       // rows without it fall through to no navigation.

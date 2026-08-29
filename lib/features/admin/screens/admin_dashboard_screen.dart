@@ -224,6 +224,11 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
   int? _tabIndexForTopic(String topic) {
     final label = switch (topic) {
       'report' => 'Reports',
+      // A progress update awaiting review. reference_id is the REPORT id (see
+      // notify_admins_of_pending_update), so this lands on Reports and flashes
+      // the report the update belongs to — the admin opens it and the review
+      // queue is right there in the Work log tab.
+      'report_update' => 'Reports',
       'suggestion' => 'Suggestions',
       'feedback' => 'Feedback',
       'verification' => 'Verification',
