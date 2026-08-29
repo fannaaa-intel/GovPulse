@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../theme/admin_ui.dart';
+import '../../../core/widgets/app_back_chevron.dart';
 
 /// Back control for admin dialogs / full-screen forms — a chevron button placed
 /// at the LEFT of the header title. Web/desktop dialogs use a top-right X close
@@ -48,22 +48,18 @@ class AdminDialogBack extends StatelessWidget {
             alignment: Alignment.center,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(radius),
-              // AdminUi.border is #CBD3DF — the same value CitizenUi.border
-              // carries, so the console's own token is the right one to name
-              // here rather than importing the citizen theme.
+              // The shared palette, not AdminUi.border: three theme lookups
+              // that happen to agree today is exactly how they drift apart.
               border: const Border.fromBorderSide(
-                BorderSide(color: AdminUi.border),
+                BorderSide(color: kBackChevronBorder),
               ),
             ),
             child: const Icon(
               Icons.arrow_back_ios_new_rounded,
               size: 18,
-              // Neutral, not blue: the glyph is chrome, and the reference keeps
-              // the accent for things that are actually actionable content.
-              // Spelled out rather than AdminUi.textSecondary (#4B5563) — the
-              // reference is CitizenUi.textSecondary, one step darker, and a
-              // near-miss is exactly what this rewrite is correcting.
-              color: Color(0xFF374151),
+              // Neutral, not blue: the glyph is chrome, and the accent stays
+              // with things that are actually actionable content.
+              color: kBackChevronGlyph,
             ),
           ),
         ),

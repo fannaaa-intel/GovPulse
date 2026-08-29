@@ -16,6 +16,7 @@ import '../../../../core/services/gps_stamp_service.dart';
 import '../../../../core/widgets/reveal_loading.dart';
 import '../../../../core/widgets/app_dialog.dart';
 import '../../../../core/theme/mobile_metrics.dart';
+import '../../../../core/widgets/app_back_chevron.dart';
 
 /// Standalone Send Feedback page — the full-screen route the mobile app and the
 /// live web route open. Chrome only; the form itself is [FeedbackForm].
@@ -2286,13 +2287,12 @@ class _FeedbackScreenState extends State<FeedbackForm>
               width: width * 0.09,
               height: width * 0.09,
               decoration: BoxDecoration(
-                color: const Color(0xFFF3F4F6),
                 borderRadius: BorderRadius.circular(width * 0.025),
               ),
               child: Icon(
                 Icons.arrow_back_ios_new_rounded,
-                size: width * 0.045,
-                color: AppColors.primaryBlue,
+                size: width * 0.046,
+                color: kBackChevronGlyph,
               ),
             ),
           ),

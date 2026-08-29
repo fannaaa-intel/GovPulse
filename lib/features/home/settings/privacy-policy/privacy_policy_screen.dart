@@ -5,6 +5,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/citizen_ui.dart';
 import '../../../../core/widgets/Home/Account/account_web_kit.dart';
 import '../../../../core/theme/mobile_metrics.dart';
+import '../../../../core/widgets/app_back_chevron.dart';
 
 class PrivacyPolicyScreen extends StatefulWidget {
   const PrivacyPolicyScreen({super.key});
@@ -324,14 +325,13 @@ class _PrivacyPolicyScreenState extends State<PrivacyPolicyScreen>
               width: w * 0.09,
               height: w * 0.09,
               decoration: BoxDecoration(
-                color: const Color(0xFFF3F4F6),
                 borderRadius: BorderRadius.circular(w * 0.025),
-                border: Border.all(color: CitizenUi.sharedStroke),
+                border: Border.all(color: kBackChevronBorder),
               ),
               child: Icon(
-                Icons.arrow_back_ios_rounded,
-                size: w * 0.04,
-                color: AppColors.primaryBlue,
+                Icons.arrow_back_ios_new_rounded,
+                size: w * 0.046,
+                color: kBackChevronGlyph,
               ),
             ),
           ),
@@ -341,7 +341,7 @@ class _PrivacyPolicyScreenState extends State<PrivacyPolicyScreen>
             style: TextStyle(
               fontSize: w * 0.052,
               fontWeight: FontWeight.w700,
-              color: AppColors.primaryBlue,
+              color: kScreenTitleColor,
               letterSpacing: -0.3,
             ),
           ),

@@ -8,6 +8,7 @@ import 'package:flutter/services.dart'
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/widgets/app_back_chevron.dart';
 import '../../../core/widgets/app_snackbar.dart';
 import '../data/staff_repository.dart';
 import '../providers/staff_providers.dart';
@@ -1078,21 +1079,23 @@ class _Header extends StatelessWidget {
       child: Row(
         children: [
           if (onBack != null) ...[
-            // Mirrors the citizen chat header chevron: rounded square, subtle
-            // fill + border, accent-coloured chevron.
+            // The app-wide back chip: an OUTLINE with a neutral glyph, the
+            // same control the citizen screens and the admin console show for
+            // the same gesture. It used to be a 40px filled chip with an
+            // accent-coloured arrow, which read as a primary action parked in
+            // the corner of the thread.
             GestureDetector(
               onTap: onBack,
               child: Container(
-                width: 40,
-                height: 40,
+                width: 32,
+                height: 32,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: StaffUi.subtle,
-                  borderRadius: BorderRadius.circular(11),
-                  border: Border.all(color: StaffUi.border),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: kBackChevronBorder),
                 ),
                 child: const Icon(Icons.arrow_back_ios_new_rounded,
-                    size: 18, color: StaffUi.accent),
+                    size: 18, color: kBackChevronGlyph),
               ),
             ),
             const SizedBox(width: 12),

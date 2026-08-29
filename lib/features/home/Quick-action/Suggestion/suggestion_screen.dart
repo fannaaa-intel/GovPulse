@@ -23,6 +23,7 @@ import '../../../../core/utils/submission_id.dart';
 import '../../../../core/utils/picked_media.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../../../../core/theme/mobile_metrics.dart';
+import '../../../../core/widgets/app_back_chevron.dart';
 
 // ── Video preview dialog (same as Report) ─────────────────────────────────────
 class _VideoPreviewDialog extends StatefulWidget {
@@ -1735,13 +1736,12 @@ class _SuggestionScreenState extends State<SuggestionForm>
               width: width * 0.09,
               height: width * 0.09,
               decoration: BoxDecoration(
-                color: const Color(0xFFF3F4F6),
                 borderRadius: BorderRadius.circular(width * 0.025),
               ),
               child: Icon(
                 Icons.arrow_back_ios_new_rounded,
-                size: width * 0.045,
-                color: AppColors.primaryBlue,
+                size: width * 0.046,
+                color: kBackChevronGlyph,
               ),
             ),
           ),

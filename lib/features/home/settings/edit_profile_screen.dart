@@ -15,6 +15,7 @@ import '../../../core/widgets/app_snackbar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/providers/user_profile_provider.dart';
 import '../../../core/theme/mobile_metrics.dart';
+import '../../../core/widgets/app_back_chevron.dart';
 
 class EditProfileScreen extends ConsumerStatefulWidget {
   final String username;
@@ -464,14 +465,13 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
               width: width * 0.09,
               height: width * 0.09,
               decoration: BoxDecoration(
-                color: const Color(0xFFF3F4F6),
                 borderRadius: BorderRadius.circular(width * 0.025),
-                border: Border.all(color: CitizenUi.sharedStroke),
+                border: Border.all(color: kBackChevronBorder),
               ),
               child: Icon(
-                Icons.arrow_back_ios_rounded,
-                size: width * 0.04,
-                color: AppColors.primaryBlue,
+                Icons.arrow_back_ios_new_rounded,
+                size: width * 0.046,
+                color: kBackChevronGlyph,
               ),
             ),
           ),
@@ -481,7 +481,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
             style: TextStyle(
               fontSize: width * 0.055,
               fontWeight: FontWeight.w700,
-              color: AppColors.primaryBlue,
+              color: kScreenTitleColor,
               letterSpacing: -0.3,
             ),
           ),

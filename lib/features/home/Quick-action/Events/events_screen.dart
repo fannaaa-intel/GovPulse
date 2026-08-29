@@ -14,6 +14,7 @@ import '../../shell/citizen_shell_dialogs.dart'
 import '../../../../core/widgets/Home/Quick-action/Web/quick_action_split_panel.dart';
 import '../../../../core/theme/citizen_ui.dart';
 import '../../../../core/theme/mobile_metrics.dart';
+import '../../../../core/widgets/app_back_chevron.dart';
 
 class EventItem {
   final String id;
@@ -1603,13 +1604,12 @@ class _EventsScreenState extends State<EventsScreen>
               width: w * 0.09,
               height: w * 0.09,
               decoration: BoxDecoration(
-                color: const Color(0xFFF3F4F6),
                 borderRadius: BorderRadius.circular(w * 0.025),
               ),
               child: Icon(
                 Icons.arrow_back_ios_new_rounded,
-                size: w * 0.045,
-                color: AppColors.primaryBlue,
+                size: w * 0.046,
+                color: kBackChevronGlyph,
               ),
             ),
           ),

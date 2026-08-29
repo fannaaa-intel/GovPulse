@@ -14,6 +14,7 @@ import '../../../../core/widgets/app_dialog.dart';
 import '../../../../core/theme/citizen_ui.dart';
 import '../../../../core/widgets/Home/Account/account_web_kit.dart';
 import '../../../../core/theme/mobile_metrics.dart';
+import '../../../../core/widgets/app_back_chevron.dart';
 
 // ── Aparri bounding box (expanded to cover all 42 official barangays) ─────
 const double _aparriMinLat = 18.2750;
@@ -1445,13 +1446,12 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
               width: w * 0.09,
               height: w * 0.09,
               decoration: BoxDecoration(
-                color: const Color(0xFFF3F4F6),
                 borderRadius: BorderRadius.circular(w * 0.025),
               ),
               child: Icon(
                 Icons.arrow_back_ios_new_rounded,
-                size: w * 0.045,
-                color: AppColors.primaryBlue,
+                size: w * 0.046,
+                color: kBackChevronGlyph,
               ),
             ),
           ),

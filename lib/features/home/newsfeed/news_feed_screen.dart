@@ -28,6 +28,7 @@ import '../../../core/widgets/loading/loading_overlay.dart';
 import '../../../core/widgets/app_snackbar.dart';
 import '../../../core/widgets/Home/nav/responsive_nav_scaffold.dart';
 import '../../../core/theme/mobile_metrics.dart';
+import '../../../core/widgets/app_back_chevron.dart';
 
 enum PostFilter {
   latest('Latest', null),
@@ -1383,10 +1384,10 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
-                      Icons.arrow_back_ios_new_rounded,
-                      size: width * 0.045,
-                      color: AppColors.primaryBlue,
-                    ),
+                Icons.arrow_back_ios_new_rounded,
+                size: width * 0.046,
+                color: kBackChevronGlyph,
+              ),
                     SizedBox(width: width * 0.015),
                     Text(
                       'Back',

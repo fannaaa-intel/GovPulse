@@ -1,26 +1,29 @@
-// Pins AppBackChevron to the Settings look it was transcribed from.
+// Pins AppBackChevron to the ONE back chevron all three portals now share.
 //
-// The widget exists because the Profile Verification wizard had drifted into
-// four different back chevrons — a bare AppBar arrow, a 38px blue circle, a
-// white IconButton, and nothing at all. Consolidating them only helps if the
-// consolidated version keeps matching Settings, so these are the exact numbers
-// used by About / Privacy Policy / Terms / Contact Support / Edit Profile /
-// My Submissions / the three Change Password steps:
+// The widget exists because the app had drifted into many answers to one
+// question — a bare AppBar arrow, a blue circle, a white IconButton, filled
+// chips at 38 and 40px, and screens with no affordance at all. Consolidating
+// only helps if the consolidated version stays put, so these are its numbers:
 //
 //   box     w * 0.09 square
-//   fill    0xFFF3F4F6
+//   fill    none — it is an OUTLINE, not a filled chip
 //   radius  w * 0.025
-//   border  AppColors.stroke
-//   icon    Icons.arrow_back_ios_rounded, w * 0.04, AppColors.primaryBlue
+//   border  kBackChevronBorder
+//   icon    Icons.arrow_back_ios_new_rounded, w * 0.046, kBackChevronGlyph
 //
-// If a case here fails, the question is whether SETTINGS moved. If it did,
-// update both together; if it did not, the widget drifted and should be put
-// back. Do not simply retune the expectation to whatever the widget now does —
-// that is how the four variants happened in the first place.
+// The fill and the blue glyph are gone deliberately: back is chrome, shown
+// identically on every screen and never the thing you came to press, so it
+// recedes and lets the title lead. A filled chip with an accent arrow read as
+// a primary action parked in the corner of every page.
+//
+// If a case here fails, the question is whether the DESIGN moved. If it did,
+// update the admin (AdminDialogBack) and staff copies together with this one;
+// if it did not, the widget drifted and should be put back. Do not simply
+// retune the expectation to whatever the widget now does — that is how the
+// variants happened in the first place.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:govpulse/core/theme/app_colors.dart';
 import 'package:govpulse/core/widgets/app_back_chevron.dart';
 
 const double _w = 390; // a phone width, below the 480 clamp
@@ -42,7 +45,7 @@ BoxDecoration _decoration(WidgetTester tester) {
 }
 
 void main() {
-  testWidgets('matches the Settings chevron exactly', (tester) async {
+  testWidgets('is an outlined chip with a neutral glyph', (tester) async {
     await _pump(tester, const AppBackChevron(width: _w));
 
     final box = tester.getSize(find.byType(Container).first);
@@ -50,16 +53,27 @@ void main() {
     expect(box.height, _w * 0.09);
 
     final d = _decoration(tester);
-    expect(d.color, const Color(0xFFF3F4F6));
+    expect(d.color, isNull,
+        reason: 'an OUTLINE, not a filled chip — a fill is what made this read '
+            'as a primary action in the corner of every screen');
     expect(d.borderRadius, BorderRadius.circular(_w * 0.025));
-    expect((d.border! as Border).top.color, AppColors.stroke);
+    expect((d.border! as Border).top.color, kBackChevronBorder);
 
     final icon = tester.widget<Icon>(find.byType(Icon));
-    expect(icon.icon, Icons.arrow_back_ios_rounded,
-        reason: 'Settings uses the _ios_rounded glyph, not _ios_new_rounded '
-            'and not the Material arrow_back');
-    expect(icon.size, _w * 0.04);
-    expect(icon.color, AppColors.primaryBlue);
+    expect(icon.icon, Icons.arrow_back_ios_new_rounded);
+    expect(icon.size, _w * 0.046);
+    expect(icon.color, kBackChevronGlyph,
+        reason: 'neutral, not the brand blue: the accent belongs to controls '
+            'that actually do something');
+  });
+
+  testWidgets('the shared palette is the one the consoles mirror',
+      (tester) async {
+    // Admin (AdminDialogBack) and staff both read these two constants rather
+    // than their own theme tokens. Three lookups that happen to agree today is
+    // exactly how the portals drifted apart before.
+    expect(kBackChevronBorder, const Color(0xFFCBD3DF));
+    expect(kBackChevronGlyph, const Color(0xFF374151));
   });
 
   testWidgets('the dark variant keeps the shape and inverts the colours',
@@ -76,7 +90,9 @@ void main() {
         reason: 'the old face-scan chevron was a circle — that is the drift '
             'this widget removed, and the dark variant must not reintroduce it');
 
-    expect(d.color, isNot(const Color(0xFFF3F4F6)));
+    expect(d.color, isNotNull,
+        reason: 'the dark variant DOES take a scrim — without one the glyph '
+            'floats on the camera preview');
     expect(tester.widget<Icon>(find.byType(Icon)).color, Colors.white);
   });
 

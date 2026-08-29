@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 
-import '../theme/app_colors.dart';
 import 'app_back_chevron.dart';
 import '../theme/mobile_metrics.dart';
 
 /// The app's pinned screen header: a white bar carrying [AppBackChevron] and a
-/// blue title, with a soft shadow separating it from the page beneath.
+/// near-black title, with a soft shadow separating it from the page beneath.
+///
+/// Neither the chevron nor the title is blue. Back is chrome and the title is
+/// the page's name; neither is an action, so neither takes the accent. Blue is
+/// reserved for things that actually do something.
 ///
 /// ── TRANSCRIBED FROM SETTINGS, LIKE THE CHEVRON IT CONTAINS ────────────────
 /// Every value comes from the Settings sub-screens, where this exact block is
@@ -70,7 +73,7 @@ class AppScreenHeader extends StatelessWidget {
               style: TextStyle(
                 fontSize: w * 0.052,
                 fontWeight: FontWeight.w700,
-                color: AppColors.primaryBlue,
+                color: kScreenTitleColor,
                 letterSpacing: -0.3,
               ),
             ),

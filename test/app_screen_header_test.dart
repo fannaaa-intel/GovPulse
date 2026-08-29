@@ -1,6 +1,5 @@
-// Pins AppScreenHeader to the Settings sub-screen header it was transcribed
-// from — the one in the Terms of Service screenshot: white bar, chevron chip,
-// blue w700 title.
+// Pins AppScreenHeader to the header all three portals now share: white bar,
+// outlined chevron, near-black w700 title.
 //
 // Companion to app_back_chevron_test.dart. That file pins the chip; this one
 // pins the bar around it, because the Profile Verification screen differed in
@@ -12,14 +11,18 @@
 //   bar       white, padding LTRB(w*.04, w*.04, w*.04, w*.035)
 //   shadow    black @ 5%, blur 8, offset (0, 2)
 //   gap       w * 0.035 between chip and title
-//   title     w * 0.052, w700, AppColors.primaryBlue, letterSpacing -0.3
+//   title     w * 0.052, w700, kScreenTitleColor, letterSpacing -0.3
 //
-// If a case fails, check whether SETTINGS moved. If it did, update both
-// together; if it did not, this widget drifted and should be put back.
+// The title is near-black rather than the brand blue. With the chevron reduced
+// to a neutral outline, a blue title left the header reading as two competing
+// accents; neither the back control nor the page's own name is an action.
+//
+// If a case fails, check whether the DESIGN moved. If it did, update the admin
+// (AdminChevronHeader) and staff headers together with this one; if it did
+// not, this widget drifted and should be put back.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:govpulse/core/theme/app_colors.dart';
 import 'package:govpulse/core/widgets/app_back_chevron.dart';
 import 'package:govpulse/core/widgets/app_screen_header.dart';
 
@@ -45,13 +48,13 @@ void main() {
     expect(find.byType(AppBackChevron), findsOneWidget);
   });
 
-  testWidgets('title matches the Settings title style', (tester) async {
+  testWidgets('the title is near-black, not the brand blue', (tester) async {
     await _pump(tester);
 
     final style = tester.widget<Text>(find.text('Terms of Service')).style!;
     expect(style.fontSize, _w * 0.052);
     expect(style.fontWeight, FontWeight.w700);
-    expect(style.color, AppColors.primaryBlue);
+    expect(style.color, kScreenTitleColor);
     expect(style.letterSpacing, -0.3);
   });
 

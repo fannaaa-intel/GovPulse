@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../theme/admin_ui.dart';
 import 'admin_dialog_back.dart';
@@ -126,10 +125,14 @@ class AdminChevronHeader extends StatelessWidget {
               title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
+              // Near-black, not the brand blue: with the chevron receding to
+              // an outline, a blue title left the header reading as two
+              // competing accents. Matches the Activity log / Recent activity
+              // sheets, which already used AdminUi.textPrimary.
               style: const TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
-                color: AppColors.primaryBlue,
+                color: AdminUi.textPrimary,
                 letterSpacing: -0.3,
               ),
             ),

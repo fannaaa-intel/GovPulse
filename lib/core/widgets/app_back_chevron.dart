@@ -1,19 +1,39 @@
 import 'package:flutter/material.dart';
 
-import '../theme/app_colors.dart';
 import '../theme/mobile_metrics.dart';
 
-/// The app's back chevron: a rounded-square chip with a light fill, a hairline
-/// border and a blue `arrow_back_ios_rounded`.
+/// The one back-chevron palette, shared by the citizen chip below, the admin
+/// console's AdminDialogBack and the staff thread header.
 ///
-/// ── THIS IS A TRANSCRIPTION, NOT A NEW DESIGN ──────────────────────────────
-/// Every number here is lifted from the Settings screens, which have used the
-/// same block — About, Privacy Policy, Terms, Contact Support, Edit Profile,
-/// My Submissions and the three Change Password steps — long enough that it is
-/// what "back" looks like in this app. It exists because the Profile
-/// Verification wizard had drifted into FOUR different answers to the same
-/// question: a bare Material AppBar arrow, a blue-tinted 38px circle, a plain
-/// white IconButton, and several steps with no affordance at all.
+/// Named here rather than pulled from AppColors/AdminUi/StaffUi because the
+/// point is that all three portals use the SAME two values — three theme
+/// lookups that happen to agree today is exactly how they drift apart.
+const Color kBackChevronBorder = Color(0xFFCBD3DF);
+const Color kBackChevronGlyph = Color(0xFF374151);
+
+/// Title colour for a screen header carrying [AppBackChevron]. Near-black, not
+/// the brand blue: with the chevron receding, a blue title made the header read
+/// as two competing accents.
+const Color kScreenTitleColor = Color(0xFF1F2937);
+
+/// The app's back chevron: an outlined rounded square with a neutral
+/// `arrow_back_ios_new_rounded`.
+///
+/// ── ONE CHEVRON, THREE PORTALS ─────────────────────────────────────────────
+/// Citizen, admin and staff all show the same control for the same gesture, so
+/// they draw the same chip. The reference is the fullscreen "Report an Issue"
+/// panel: an OUTLINE, not a filled chip, with a neutral glyph rather than an
+/// accent one. Back is chrome — it is the same affordance on every screen and
+/// never the thing you came to the screen to press — so it recedes and lets the
+/// title lead. The filled grey chip with a blue glyph that preceded this read
+/// as a primary action sitting in the corner of every page.
+///
+/// It exists because the app had drifted into many answers to one question: a
+/// bare Material AppBar arrow, a blue-tinted circle, a plain white IconButton,
+/// filled chips at 38 and 40px, and several screens with no affordance at all.
+///
+/// The admin console mirrors this in AdminDialogBack (fixed sizes rather than
+/// proportional ones — see that file); staff mirrors it in its thread header.
 ///
 /// Change the look HERE, not at a call site. A call site that needs something
 /// different is the drift this widget was written to end — the whole reason
@@ -56,20 +76,20 @@ class AppBackChevron extends StatelessWidget {
         height: size,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: onDark
-              ? Colors.black.withValues(alpha: 0.35)
-              : const Color(0xFFF3F4F6),
+          // Transparent on light: the chip is an outline. On a dark backdrop it
+          // still needs a scrim, or the glyph floats on the camera preview.
+          color: onDark ? Colors.black.withValues(alpha: 0.35) : null,
           borderRadius: BorderRadius.circular(w * 0.025),
           border: Border.all(
             color: onDark
                 ? Colors.white.withValues(alpha: 0.45)
-                : AppColors.stroke,
+                : kBackChevronBorder,
           ),
         ),
         child: Icon(
-          Icons.arrow_back_ios_rounded,
-          size: w * 0.04,
-          color: onDark ? Colors.white : AppColors.primaryBlue,
+          Icons.arrow_back_ios_new_rounded,
+          size: w * 0.046,
+          color: onDark ? Colors.white : kBackChevronGlyph,
         ),
       ),
     );

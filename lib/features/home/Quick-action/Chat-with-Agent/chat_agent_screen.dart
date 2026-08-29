@@ -11,6 +11,7 @@ import '../../../../core/widgets/Home/Chat-agent/chat_message_bubble.dart';
 import '../../../../core/widgets/Home/Chat-agent/chat_models.dart' as cm;
 import '../../../../core/theme/citizen_ui.dart';
 import '../../../../core/theme/mobile_metrics.dart';
+import '../../../../core/widgets/app_back_chevron.dart';
 
 /// Full-screen chat with the LGU agent.
 ///
@@ -812,14 +813,13 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
               width: width * 0.088,
               height: width * 0.088,
               decoration: BoxDecoration(
-                color: AppColors.inputBg,
                 borderRadius: BorderRadius.circular(width * 0.022),
-                border: Border.all(color: CitizenUi.sharedStroke, width: 1),
+                border: Border.all(color: kBackChevronBorder, width: 1),
               ),
               child: Icon(
                 Icons.arrow_back_ios_new_rounded,
-                size: width * 0.040,
-                color: AppColors.primaryBlue,
+                size: width * 0.046,
+                color: kBackChevronGlyph,
               ),
             ),
           ),
