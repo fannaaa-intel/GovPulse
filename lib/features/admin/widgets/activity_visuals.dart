@@ -24,6 +24,10 @@ IconData activityKindIcon(ActivityKind kind) => switch (kind) {
   ActivityKind.verifPending => Icons.how_to_reg_rounded,
   ActivityKind.verifApproved => Icons.verified_user_rounded,
   ActivityKind.verifRejected => Icons.cancel_rounded,
+  ActivityKind.suggestionNew => Icons.lightbulb_rounded,
+  ActivityKind.suggestionResponded => Icons.mark_chat_read_rounded,
+  ActivityKind.feedbackNew => Icons.reviews_rounded,
+  ActivityKind.feedbackResponded => Icons.mark_chat_read_rounded,
 };
 
 Color activityKindColor(ActivityKind kind) => switch (kind) {
@@ -34,4 +38,11 @@ Color activityKindColor(ActivityKind kind) => switch (kind) {
   ActivityKind.verifPending => AppColors.orange,
   ActivityKind.verifApproved => AppColors.green,
   ActivityKind.verifRejected => AppColors.red,
+  // Both "answered" states are green for the same reason a resolved report is:
+  // the loop with the citizen is closed. The arrival states keep their console's
+  // own accent, matching the nav icons an admin already associates with them.
+  ActivityKind.suggestionNew => AppColors.orange,
+  ActivityKind.suggestionResponded => AppColors.green,
+  ActivityKind.feedbackNew => AppColors.primaryBlue,
+  ActivityKind.feedbackResponded => AppColors.green,
 };

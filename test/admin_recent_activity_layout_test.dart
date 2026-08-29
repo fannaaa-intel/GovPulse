@@ -67,6 +67,20 @@ List<ActivityItem> _activity() => [
     timestamp: DateTime.now().subtract(const Duration(days: 2)),
     kind: ActivityKind.reportResolved,
   ),
+  ActivityItem(
+    id: 'sug-1',
+    title: 'New suggestion submitted',
+    subtitle: 'Environment & Cleanliness — Barangay San Isidro',
+    timestamp: DateTime.now().subtract(const Duration(hours: 5)),
+    kind: ActivityKind.suggestionNew,
+  ),
+  ActivityItem(
+    id: 'fbk-1',
+    title: 'New feedback received',
+    subtitle: 'Office of the Municipal Registrar — 2★',
+    timestamp: DateTime.now().subtract(const Duration(hours: 9)),
+    kind: ActivityKind.feedbackNew,
+  ),
 ];
 
 AdminDashboardData _data({List<ActivityItem>? activity}) => AdminDashboardData(
@@ -199,7 +213,7 @@ void main() {
       // there, and choosing it must say why the list is empty.
       final reportsOnly = [
         for (final a in _activity())
-          if (!a.isVerification) a,
+          if (a.source == ActivitySource.reports) a,
       ];
       await pumpAt(
         tester,
@@ -210,6 +224,7 @@ void main() {
 
       final chip = find.textContaining('Verifications');
       await tester.ensureVisible(chip);
+      await tester.pumpAndSettle();
       await tester.pumpAndSettle();
       await tester.tap(chip);
       await tester.pumpAndSettle();

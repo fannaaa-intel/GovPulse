@@ -15,11 +15,12 @@
 // canned AdminDashboardData — the card and the feed both read from it.
 //
 // ── What to look at ────────────────────────────────────────────────────────
-//  * The card's feed is MIXED: report rows and verification rows interleaved.
-//    That mix is the bug's origin — "View all" used to jump to Reports, which
-//    cannot contain the verification rows on screen.
+//  * The card's feed MERGES four sources: reports, suggestions, feedback and
+//    ID verifications, interleaved. That mix is the bug's origin — "View all"
+//    used to jump to Reports, which cannot contain most of the rows on screen.
 //  * Tapping any row logs the (tab, highlightId) it asked the shell to open:
-//    report rows -> tab 3 (Reports), verification rows -> tab 6 (Verification).
+//    reports -> 3, suggestions -> 4, feedback -> 5, verifications -> 6. Every
+//    row carries a highlightId, which is what makes the destination flash it.
 //  * "View all" at >= 760 CSS px opens a centred pop-up modal over a frosted
 //    console, X at the top right.
 //  * "View all" below 760 pushes a full screen with the chevron back control.
@@ -109,6 +110,34 @@ final _activity = <ActivityItem>[
     subtitle: 'Maria Clara — awaiting review',
     timestamp: _ago(const Duration(days: 4)),
     kind: ActivityKind.verifPending,
+  ),
+  ActivityItem(
+    id: 'sug-1',
+    title: 'New suggestion submitted',
+    subtitle: 'Environment & Cleanliness — San Isidro',
+    timestamp: _ago(const Duration(hours: 5)),
+    kind: ActivityKind.suggestionNew,
+  ),
+  ActivityItem(
+    id: 'sug-2',
+    title: 'Suggestion answered',
+    subtitle: 'Public Service — Poblacion',
+    timestamp: _ago(const Duration(days: 1, hours: 9)),
+    kind: ActivityKind.suggestionResponded,
+  ),
+  ActivityItem(
+    id: 'fbk-1',
+    title: 'New feedback received',
+    subtitle: 'Office of the Municipal Registrar — 2★',
+    timestamp: _ago(const Duration(hours: 9)),
+    kind: ActivityKind.feedbackNew,
+  ),
+  ActivityItem(
+    id: 'fbk-2',
+    title: 'Feedback answered',
+    subtitle: 'Health Center — 5★',
+    timestamp: _ago(const Duration(days: 2, hours: 4)),
+    kind: ActivityKind.feedbackResponded,
   ),
 ];
 

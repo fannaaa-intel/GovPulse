@@ -76,7 +76,7 @@ AdminDashboardData _data() => AdminDashboardData(
       timestamp: DateTime.now().subtract(const Duration(days: 7)),
       kind: ActivityKind.reportNew,
     ),
-    // A verification event, because the feed mixes both sources — that mix is
+    // One event per source, because the feed merges four of them — that mix is
     // the whole reason the row taps below have to resolve per row.
     ActivityItem(
       id: 'ver-1',
@@ -84,6 +84,20 @@ AdminDashboardData _data() => AdminDashboardData(
       subtitle: 'Juan Dela Cruz — awaiting review',
       timestamp: DateTime.now().subtract(const Duration(days: 1)),
       kind: ActivityKind.verifPending,
+    ),
+    ActivityItem(
+      id: 'sug-1',
+      title: 'New suggestion submitted',
+      subtitle: 'Environment & Cleanliness — San Isidro',
+      timestamp: DateTime.now().subtract(const Duration(hours: 5)),
+      kind: ActivityKind.suggestionNew,
+    ),
+    ActivityItem(
+      id: 'fbk-1',
+      title: 'New feedback received',
+      subtitle: 'Municipal Registrar — 2★',
+      timestamp: DateTime.now().subtract(const Duration(hours: 9)),
+      kind: ActivityKind.feedbackNew,
     ),
   ],
 );
@@ -331,18 +345,49 @@ void main() {
       expect(nav, [(index: 6, highlightId: 'ver-1')]);
     });
 
+    testWidgets('a suggestion row opens Suggestions', (tester) async {
+      final nav = <_NavCall>[];
+      await _pump(tester, const Size(1400, 2400), navLog: nav);
+
+      await tester.tap(find.text('New suggestion submitted'));
+      await tester.pumpAndSettle();
+
+      expect(nav, [(index: 4, highlightId: 'sug-1')]);
+    });
+
+    testWidgets('a feedback row opens Feedback', (tester) async {
+      final nav = <_NavCall>[];
+      await _pump(tester, const Size(1400, 2400), navLog: nav);
+
+      await tester.tap(find.text('New feedback received'));
+      await tester.pumpAndSettle();
+
+      expect(nav, [(index: 5, highlightId: 'fbk-1')]);
+    });
+
     testWidgets('every row carries a highlight id, so each one flashes',
         (tester) async {
       final nav = <_NavCall>[];
       await _pump(tester, const Size(1400, 2400), navLog: nav);
 
-      for (final label in ['New report submitted', 'ID verification submitted']) {
+      // All four sources, so no row type can quietly lose its flash — the
+      // destination pages all use DeepLinkHighlightMixin, which does nothing
+      // without an id.
+      const rows = [
+        'New report submitted',
+        'ID verification submitted',
+        'New suggestion submitted',
+        'New feedback received',
+      ];
+      for (final label in rows) {
         await tester.tap(find.text(label));
         await tester.pumpAndSettle();
       }
 
-      expect(nav.length, 2);
+      expect(nav.length, rows.length);
       expect(nav.every((c) => c.highlightId != null), isTrue);
+      // Four distinct destinations, one per source.
+      expect(nav.map((c) => c.index).toSet(), {3, 4, 5, 6});
     });
 
     testWidgets('"View all" no longer jumps straight to Reports',

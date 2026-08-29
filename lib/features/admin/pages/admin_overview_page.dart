@@ -28,12 +28,13 @@ Duration _motion(BuildContext context) => MediaQuery.disableAnimationsOf(context
     : const Duration(milliseconds: 150);
 
 // Nav tab indices owned by the shell (AdminDashboardScreen.navItems). That list
-// is private to the shell's State, so pages can't resolve it by label — these
-// mirror it. Keep in sync if the nav order ever changes.
-const int _kTabReports = 3;
-const int _kTabSuggestions = 4;
-const int _kTabFeedback = 5;
-const int _kTabVerification = 6;
+// is private to the shell's State, so pages can't resolve it by label. Aliased
+// to the activity feed's copies rather than re-declared: two independent sets
+// of the same four numbers is exactly how a nav reorder breaks one caller and
+// not the other.
+const int _kTabReports = kActivityTabReports;
+const int _kTabSuggestions = kActivityTabSuggestions;
+const int _kTabFeedback = kActivityTabFeedback;
 
 class AdminOverviewPage extends ConsumerStatefulWidget {
   final int selectedIndex;
@@ -1010,13 +1011,14 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
 
   /// A row opens the console that owns that submission and flashes the row —
   /// the same deep-link treatment a notification gets, so an event in the feed
-  /// is traceable to the exact record behind it. Verification events go to
-  /// Verification, report events to Reports; a row with no id is unlinkable and
-  /// stays inert rather than navigating somewhere arbitrary.
+  /// is traceable to the exact record behind it. A row with no id is unlinkable
+  /// and stays inert rather than navigating somewhere arbitrary.
   VoidCallback? _activityTap(ActivityItem a) {
     if (widget.onNavigate == null || a.id.isEmpty) return null;
-    final tab = a.isVerification ? _kTabVerification : _kTabReports;
-    return () => widget.onNavigate!(tab, highlightId: a.id);
+    return () => widget.onNavigate!(
+      activityTabFor(a.source),
+      highlightId: a.id,
+    );
   }
 
   // ── small helpers ──────────────────────────────────────────────────────────

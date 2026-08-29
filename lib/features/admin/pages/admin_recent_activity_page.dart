@@ -28,7 +28,19 @@ import '../widgets/admin_skeleton.dart';
 /// here so the feed can resolve a row to its destination without importing the
 /// shell (which imports this file — the cycle would be circular).
 const int kActivityTabReports = 3;
+const int kActivityTabSuggestions = 4;
+const int kActivityTabFeedback = 5;
 const int kActivityTabVerification = 6;
+
+/// The nav tab that owns [source]. One mapping, shared by the dashboard card
+/// and this sheet, so a row cannot land somewhere different depending on which
+/// of the two an admin happened to tap it from.
+int activityTabFor(ActivitySource source) => switch (source) {
+  ActivitySource.reports => kActivityTabReports,
+  ActivitySource.suggestions => kActivityTabSuggestions,
+  ActivitySource.feedback => kActivityTabFeedback,
+  ActivitySource.verifications => kActivityTabVerification,
+};
 
 /// Width at or above which the feed opens as a centred pop-up modal rather than
 /// a pushed screen. Below it — a phone-width browser window, and the mobile app
@@ -157,11 +169,43 @@ class _RecentActivityModal extends StatelessWidget {
   }
 }
 
-/// Which slice of the feed is shown. The feed mixes two sources, so the filter
-/// is by source rather than by date — "just the verifications" is the question
-/// this sheet actually gets asked, and it is also the fastest way to explain
-/// why the feed is not simply the Reports list.
-enum _Filter { all, reports, verifications }
+/// Which slice of the feed is shown. The feed merges four sources, so the
+/// filter is by source rather than by date — "just the verifications" is the
+/// question this sheet actually gets asked, and it is also the fastest way to
+/// explain why the feed is not simply the Reports list.
+///
+/// [_Filter.all] aside, these mirror [ActivitySource] one-for-one; the chip bar
+/// is generated from that enum so a fifth source cannot be added to the feed
+/// and forgotten here.
+enum _Filter { all, reports, suggestions, feedback, verifications }
+
+/// The source a chip selects, or null for "All".
+ActivitySource? _sourceOf(_Filter f) => switch (f) {
+  _Filter.all => null,
+  _Filter.reports => ActivitySource.reports,
+  _Filter.suggestions => ActivitySource.suggestions,
+  _Filter.feedback => ActivitySource.feedback,
+  _Filter.verifications => ActivitySource.verifications,
+};
+
+String _chipLabel(_Filter f) => switch (f) {
+  _Filter.all => 'All',
+  _Filter.reports => 'Reports',
+  _Filter.suggestions => 'Suggestions',
+  _Filter.feedback => 'Feedback',
+  _Filter.verifications => 'Verifications',
+};
+
+/// Singular form, for prose. The chips are plural because they count rows
+/// ("Reports · 4"), but a sentence needs "No report activity", not "No reports
+/// activity" — so the two are separate rather than one derived from the other.
+String _sourceNoun(_Filter f) => switch (f) {
+  _Filter.all => 'activity',
+  _Filter.reports => 'report',
+  _Filter.suggestions => 'suggestion',
+  _Filter.feedback => 'feedback',
+  _Filter.verifications => 'verification',
+};
 
 class _RecentActivityScreen extends ConsumerStatefulWidget {
   final void Function(ActivityOpenRequest request) onOpen;
@@ -209,25 +253,20 @@ class _RecentActivityScreenState extends ConsumerState<_RecentActivityScreen>
     super.dispose();
   }
 
-  List<ActivityItem> _visible(List<ActivityItem> all) => switch (_filter) {
-    _Filter.all => all,
-    _Filter.reports => [
+  List<ActivityItem> _visible(List<ActivityItem> all) {
+    final want = _sourceOf(_filter);
+    if (want == null) return all;
+    return [
       for (final a in all)
-        if (!a.isVerification) a,
-    ],
-    _Filter.verifications => [
-      for (final a in all)
-        if (a.isVerification) a,
-    ],
-  };
+        if (a.source == want) a,
+    ];
+  }
 
   /// Closes the sheet, then hands the target to the shell.
   void _open(ActivityItem item) {
     if (item.id.isEmpty) return; // nothing to deep-link to
     final request = (
-      tabIndex: item.isVerification
-          ? kActivityTabVerification
-          : kActivityTabReports,
+      tabIndex: activityTabFor(item.source),
       highlightId: item.id,
     );
     Navigator.of(context).pop();
@@ -251,11 +290,9 @@ class _RecentActivityScreenState extends ConsumerState<_RecentActivityScreen>
       );
     } else if (items.isEmpty) {
       list = _Empty(
-        label: switch (_filter) {
-          _Filter.all => 'No recent activity yet.',
-          _Filter.reports => 'No report activity in this feed.',
-          _Filter.verifications => 'No verification activity in this feed.',
-        },
+        label: _filter == _Filter.all
+            ? 'No recent activity yet.'
+            : 'No ${_sourceNoun(_filter)} activity in this feed.',
       );
     } else {
       list = ListView.builder(
@@ -367,20 +404,21 @@ class _RecentActivityScreenState extends ConsumerState<_RecentActivityScreen>
     );
   }
 
-  String _filterLabel() => switch (_filter) {
-    _Filter.all => 'All activity',
-    _Filter.reports => 'Reports only',
-    _Filter.verifications => 'Verifications only',
-  };
+  String _filterLabel() =>
+      _filter == _Filter.all ? 'All activity' : '${_chipLabel(_filter)} only';
 
   /// Source filter. Counts sit on the chips so the split between the two
   /// sources is visible without switching.
   Widget _filterBar(double gutter, List<ActivityItem> all) {
-    var reports = 0;
+    final counts = <ActivitySource, int>{};
     for (final a in all) {
-      if (!a.isVerification) reports++;
+      counts[a.source] = (counts[a.source] ?? 0) + 1;
     }
-    final verifs = all.length - reports;
+
+    int countFor(_Filter f) {
+      final src = _sourceOf(f);
+      return src == null ? all.length : (counts[src] ?? 0);
+    }
 
     // Scrolls horizontally rather than laying the three chips out flush. With
     // counts appended, "Verifications · 12" is a long label, and three of them
@@ -391,20 +429,24 @@ class _RecentActivityScreenState extends ConsumerState<_RecentActivityScreen>
     return Container(
       color: AdminUi.surface,
       padding: const EdgeInsets.only(bottom: 12),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        padding: EdgeInsets.symmetric(horizontal: gutter),
-        // The chips are a control strip, not content: on the web the wheel
-        // belongs to the list below, and a drag is how this is panned.
-        physics: const ClampingScrollPhysics(),
-        child: Row(
-          children: [
-            _chip('All', all.length, _Filter.all),
-            const SizedBox(width: 8),
-            _chip('Reports', reports, _Filter.reports),
-            const SizedBox(width: 8),
-            _chip('Verifications', verifs, _Filter.verifications),
-          ],
+      // ScrollConfiguration, not just physics: on the web a horizontal strip has
+      // no wheel axis of its own, so click-and-drag is the ONLY way to pan it —
+      // and Flutter excludes the mouse from dragDevices by default, which left
+      // the trailing chips unreachable on a narrow browser window.
+      child: ScrollConfiguration(
+        behavior: const _NoScrollbarBehavior(),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: EdgeInsets.symmetric(horizontal: gutter),
+          physics: const ClampingScrollPhysics(),
+          child: Row(
+            children: [
+              for (final f in _Filter.values) ...[
+                if (f != _Filter.values.first) const SizedBox(width: 8),
+                _chip(_chipLabel(f), countFor(f), f),
+              ],
+            ],
+          ),
         ),
       ),
     );

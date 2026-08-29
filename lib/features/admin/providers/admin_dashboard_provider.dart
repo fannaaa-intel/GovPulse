@@ -16,7 +16,21 @@ enum ActivityKind {
   verifPending,
   verifApproved,
   verifRejected,
+  // Suggestions and feedback are two-state — the LGU has replied or it has
+  // not (see SuggestionStatus / FeedbackStatus) — so each contributes an
+  // arrival event and a replied event rather than a workflow.
+  suggestionNew,
+  suggestionResponded,
+  feedbackNew,
+  feedbackResponded,
 }
+
+/// Which citizen-facing console an activity row belongs to.
+///
+/// The feed is a merge of four tables, and "where does a tap go" and "which
+/// filter chip is this under" are the same question — so the answer lives here
+/// once rather than in a switch at each call site.
+enum ActivitySource { reports, suggestions, feedback, verifications }
 
 /// One row in the "Recent activity" feed.
 class ActivityItem {
@@ -39,13 +53,27 @@ class ActivityItem {
     required this.kind,
   });
 
-  /// True when this row describes an ID-verification submission rather than a
-  /// citizen report. The feed mixes both, so every consumer that has to pick a
-  /// destination asks here instead of re-listing the kinds.
-  bool get isVerification =>
-      kind == ActivityKind.verifPending ||
-      kind == ActivityKind.verifApproved ||
-      kind == ActivityKind.verifRejected;
+  /// Which console owns this event. The feed mixes four sources, so every
+  /// consumer that has to pick a destination, a filter bucket or a label asks
+  /// here instead of re-listing the kinds.
+  ActivitySource get source => switch (kind) {
+    ActivityKind.reportNew ||
+    ActivityKind.reportReviewing ||
+    ActivityKind.reportResolved ||
+    ActivityKind.reportRejected => ActivitySource.reports,
+    ActivityKind.verifPending ||
+    ActivityKind.verifApproved ||
+    ActivityKind.verifRejected => ActivitySource.verifications,
+    ActivityKind.suggestionNew ||
+    ActivityKind.suggestionResponded => ActivitySource.suggestions,
+    ActivityKind.feedbackNew ||
+    ActivityKind.feedbackResponded => ActivitySource.feedback,
+  };
+
+  /// True when this row describes an ID-verification submission. Kept as a
+  /// named shorthand because the verification console is the one destination
+  /// that is neither a submission queue nor reachable from a citizen record.
+  bool get isVerification => source == ActivitySource.verifications;
 }
 
 /// One bar in the "Top reported categories" panel.
@@ -496,10 +524,17 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
         if (_parseTs(r['created_at']) != null) _parseTs(r['created_at'])!,
     ];
 
+    // Each source contributes its newest few, then the merge sorts by time and
+    // keeps the newest overall. Taking a slice per source BEFORE the sort is
+    // what stops one busy table from starving the others out of the window:
+    // reports and suggestions arrive unsorted from PostgREST, so they are
+    // ordered here first rather than sliced arbitrarily.
     final activity =
         <ActivityItem>[
           ...reportRows.take(6).map(_reportActivity),
           ...recentVerifRows.map(_verifActivity),
+          ..._newestBy(suggestionRows, 6).map(_suggestionActivity),
+          ..._newestBy(feedbackRows, 6).map(_feedbackActivity),
         ]..sort((a, b) {
           final ta = a.timestamp;
           final tb = b.timestamp;
@@ -521,7 +556,11 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
       reportDates: reportDates,
       satisfaction: _satisfaction(feedbackRows),
       nlp: _nlp(feedbackRows, reportRows, suggestionRows, aiInsight, now),
-      recentActivity: activity.take(6).toList(),
+      // Ten, not six: with four sources merged, six rows could be a single
+      // busy afternoon on one table and the card would look like it only
+      // tracks that one thing — which is exactly the confusion the feed had
+      // when it silently mixed two.
+      recentActivity: activity.take(10).toList(),
     );
   }
 
@@ -590,7 +629,10 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
   /// (spam_moderation migration), and any hard failure degrades to an empty
   /// list rather than taking the dashboard down.
   Future<List<Map<String, dynamic>>> _selectSuggestions() async {
-    const baseCols = 'id, category, category_other, barangay, created_at';
+    // `status` drives the activity feed's New-vs-Responded wording; it is in
+    // the base set because every deployment that has the table has the column.
+    const baseCols =
+        'id, category, category_other, barangay, status, created_at';
     for (final cols in ['$baseCols, dismissed_at', baseCols]) {
       try {
         // Dismissed rows filtered server-side; see _selectReports.
@@ -716,7 +758,8 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
     const baseCols =
         'id, office_label, service_name, overall_rating, '
         'aspect_staff, aspect_wait, aspect_clarity, aspect_facility, '
-        'comment, created_at';
+        // `status` drives the activity feed's New-vs-Responded wording.
+        'comment, status, created_at';
     // Prefer the AI sentiment/urgency + moderation columns, degrading gracefully
     // when a migration hasn't been applied (classify-feedback / spam_moderation).
     for (final cols in [
@@ -1720,6 +1763,65 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
     }
   }
 
+  /// A suggestion event. Two-state (see [SuggestionStatus]): it arrived, or the
+  /// LGU has replied to it.
+  ActivityItem _suggestionActivity(Map<String, dynamic> row) {
+    final id = (row['id'] ?? '').toString();
+    final category = suggestionCategoryLabel(
+      row['category'] as String?,
+      row['category_other'] as String?,
+    );
+    final barangay = (row['barangay'] as String?)?.trim();
+    final parts = <String>[
+      if (category.isNotEmpty) category,
+      if (barangay != null && barangay.isNotEmpty) barangay,
+    ];
+    final subtitle = parts.isEmpty ? 'Suggestion' : parts.join(' — ');
+    final ts = _parseTs(row['created_at']);
+    final responded = (row['status'] as String?) == 'responded';
+
+    return ActivityItem(
+      id: id,
+      title: responded ? 'Suggestion answered' : 'New suggestion submitted',
+      subtitle: subtitle,
+      timestamp: ts,
+      kind: responded
+          ? ActivityKind.suggestionResponded
+          : ActivityKind.suggestionNew,
+    );
+  }
+
+  /// A feedback event. Two-state like a suggestion, and captioned with the
+  /// office and the rating — the two things that decide whether a rating needs
+  /// looking at, without opening it.
+  ActivityItem _feedbackActivity(Map<String, dynamic> row) {
+    final id = (row['id'] ?? '').toString();
+    final office = (row['office_label'] as String?)?.trim();
+    final service = (row['service_name'] as String?)?.trim();
+    final rating = (row['overall_rating'] as num?)?.round();
+
+    final parts = <String>[
+      if (office != null && office.isNotEmpty)
+        office
+      else if (service != null && service.isNotEmpty)
+        service,
+      if (rating != null) '$rating★',
+    ];
+    final subtitle = parts.isEmpty ? 'Feedback' : parts.join(' — ');
+    final ts = _parseTs(row['created_at']);
+    final responded = (row['status'] as String?) == 'responded';
+
+    return ActivityItem(
+      id: id,
+      title: responded ? 'Feedback answered' : 'New feedback received',
+      subtitle: subtitle,
+      timestamp: ts,
+      kind: responded
+          ? ActivityKind.feedbackResponded
+          : ActivityKind.feedbackNew,
+    );
+  }
+
   ActivityItem _verifActivity(Map<String, dynamic> row) {
     final status = (row['status'] as String?) ?? 'pending';
     final id = (row['id'] ?? '').toString();
@@ -1758,6 +1860,26 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
           kind: ActivityKind.verifPending,
         );
     }
+  }
+
+  /// The [n] newest rows of [rows] by `created_at`, newest first.
+  ///
+  /// PostgREST returns suggestions and feedback unordered (neither select asks
+  /// for an order — every other consumer aggregates them), so a bare `.take`
+  /// would slice an arbitrary subset rather than the recent one.
+  static List<Map<String, dynamic>> _newestBy(
+    List<Map<String, dynamic>> rows,
+    int n,
+  ) {
+    final sorted = [...rows]..sort((a, b) {
+      final ta = _parseTs(a['created_at']);
+      final tb = _parseTs(b['created_at']);
+      if (ta == null && tb == null) return 0;
+      if (ta == null) return 1;
+      if (tb == null) return -1;
+      return tb.compareTo(ta);
+    });
+    return sorted.take(n).toList();
   }
 
   static DateTime? _parseTs(dynamic v) {
