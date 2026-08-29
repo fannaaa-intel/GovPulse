@@ -813,10 +813,11 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
           GestureDetector(
             onTap: () => Navigator.pop(context),
             child: Container(
-              width: width * 0.088,
-              height: width * 0.088,
+              width: width * 0.09,
+              height: width * 0.09,
+              alignment: Alignment.center,
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(width * 0.022),
+                borderRadius: BorderRadius.circular(width * 0.025),
                 border: Border.all(color: kBackChevronBorder, width: 1),
               ),
               child: Icon(

@@ -1735,8 +1735,10 @@ class _SuggestionScreenState extends State<SuggestionForm>
             child: Container(
               width: width * 0.09,
               height: width * 0.09,
+              alignment: Alignment.center,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(width * 0.025),
+                border: Border.all(color: kBackChevronBorder, width: 1),
               ),
               child: Icon(
                 Icons.arrow_back_ios_new_rounded,

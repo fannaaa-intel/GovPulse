@@ -1603,8 +1603,10 @@ class _EventsScreenState extends State<EventsScreen>
             child: Container(
               width: w * 0.09,
               height: w * 0.09,
+              alignment: Alignment.center,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(w * 0.025),
+                border: Border.all(color: kBackChevronBorder, width: 1),
               ),
               child: Icon(
                 Icons.arrow_back_ios_new_rounded,
