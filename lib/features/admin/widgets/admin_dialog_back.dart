@@ -1,60 +1,70 @@
 import 'package:flutter/material.dart';
 
-import '../../../core/theme/app_colors.dart';
+import '../theme/admin_ui.dart';
 
-/// Back control for admin dialogs / full-screen forms — a rounded chevron
-/// button placed at the LEFT of the header title. Web/desktop dialogs use a
-/// top-right X close instead (see the New event form), so this is only used for
-/// the full-screen header.
+/// Back control for admin dialogs / full-screen forms — a chevron button placed
+/// at the LEFT of the header title. Web/desktop dialogs use a top-right X close
+/// instead (see the New event form), so this is only used for the full-screen
+/// header.
 ///
 /// ── THIS IS A TRANSCRIPTION, NOT A NEW DESIGN ──────────────────────────────
-/// Every number and colour here comes from [AppBackChevron], the citizen app's
-/// back control. The console used to draw its own: a heavier `AdminUi.border`
-/// hairline around a `chevron_left_rounded` at 24px, which read as a chunkier
-/// control than the identical-purpose button one tap away in the citizen app.
-/// Same product, same gesture — so it is now the same chip.
+/// Every number here comes from `QaRailHeader`'s back control in
+/// quick_action_split_panel.dart — the chip on the citizen "Report an Issue"
+/// fullscreen panel. That is the button an admin sees one tap away in the same
+/// product, so the console draws the same one rather than a near-miss.
 ///
-/// The admin console is a fixed-width desktop surface rather than a
-/// proportionally-scaled phone layout, so the sizes are [AppBackChevron]'s
-/// evaluated at its own reference width instead of re-derived per screen. That
-/// keeps a dialog header from resizing its back button as the window moves.
+/// It is deliberately NOT [AppBackChevron], the Settings-screen chevron, even
+/// though the two look related. That one is a filled grey chip with a BLUE
+/// glyph, sized proportionally off the phone's layout width; this is an
+/// outlined transparent chip with a neutral glyph at a fixed 32px. The console
+/// is a fixed-width desktop surface, so a proportional size would make a dialog
+/// header resize its own back button as the window moves — and the outlined
+/// form is what the reference actually shows.
 ///
-/// Change the look in [AppBackChevron], then mirror it here.
+/// Change the look in `QaRailHeader`, then mirror it here.
 class AdminDialogBack extends StatelessWidget {
   final VoidCallback onTap;
   const AdminDialogBack({super.key, required this.onTap});
 
-  /// Chip edge. [AppBackChevron] uses `width * 0.09`; at the 420px reference
-  /// this file targets that is ~38, the size the console already used.
-  static const double size = 38;
-
-  /// Corner radius — `width * 0.025` at the same reference.
-  static const double radius = 10.5;
+  /// Chip edge and corner, straight from the reference.
+  static const double size = 32;
+  static const double radius = 10;
 
   @override
   Widget build(BuildContext context) {
     return Material(
-      // The citizen chip's flat grey, not AdminUi.subtle's blue-tinted one.
-      color: const Color(0xFFF3F4F6),
+      // Transparent, not a fill: the reference chip is an outline. A filled
+      // chip is the Settings chevron, which is a different control.
+      color: Colors.transparent,
       borderRadius: BorderRadius.circular(radius),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
-        borderRadius: BorderRadius.circular(radius),
         onTap: onTap,
-        child: Container(
-          width: size,
-          height: size,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(radius),
-            // AppColors.stroke (#E3E6EF), a genuine hairline — AdminUi.border
-            // (#CBD3DF) is nearly three shades darker and is what made this
-            // read heavy next to the citizen control.
-            border: Border.all(color: AppColors.stroke),
-          ),
-          child: const Icon(
-            Icons.arrow_back_ios_rounded,
-            size: 17,
-            color: AppColors.primaryBlue,
+        child: Tooltip(
+          message: 'Back',
+          child: Container(
+            width: size,
+            height: size,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(radius),
+              // AdminUi.border is #CBD3DF — the same value CitizenUi.border
+              // carries, so the console's own token is the right one to name
+              // here rather than importing the citizen theme.
+              border: const Border.fromBorderSide(
+                BorderSide(color: AdminUi.border),
+              ),
+            ),
+            child: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              size: 18,
+              // Neutral, not blue: the glyph is chrome, and the reference keeps
+              // the accent for things that are actually actionable content.
+              // Spelled out rather than AdminUi.textSecondary (#4B5563) — the
+              // reference is CitizenUi.textSecondary, one step darker, and a
+              // near-miss is exactly what this rewrite is correcting.
+              color: Color(0xFF374151),
+            ),
           ),
         ),
       ),
