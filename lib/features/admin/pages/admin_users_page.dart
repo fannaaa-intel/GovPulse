@@ -620,6 +620,48 @@ class _FilterDropdown<T> extends StatelessWidget {
     required this.onSelected,
   });
 
+  /// Icon + optional prefix + value, sized to hug in the wide toolbar and to
+  /// take the leftover width in a fixed grid slot.
+  Widget _labelGroup(bool fill) {
+    final row = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (icon != null) ...[
+          Icon(icon, size: 16, color: AdminUi.textSecondary),
+          const SizedBox(width: 7),
+        ],
+        if (prefix != null) ...[
+          // Flexible, not a bare Text: "Sort by:" is rigid, so in a narrow grid
+          // slot — a 320px phone, or any phone at Android's largest font size —
+          // it pushed the Row past its own box and overflowed. Only `value`
+          // could give, and it alone was not enough.
+          Flexible(
+            child: Text(
+              prefix!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 13, color: AdminUi.textMuted),
+            ),
+          ),
+          const SizedBox(width: 5),
+        ],
+        Flexible(
+          child: Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: AdminUi.textPrimary,
+            ),
+          ),
+        ),
+      ],
+    );
+    return fill ? Expanded(child: row) : Flexible(child: row);
+  }
+
   @override
   Widget build(BuildContext context) {
     // Carry the option INDEX (never null) as the menu value — PopupMenuButton
@@ -676,48 +718,25 @@ class _FilterDropdown<T> extends StatelessWidget {
           borderRadius: BorderRadius.circular(10),
           border: Border.all(color: AdminUi.border),
         ),
+        // ── Label leads, chevron sits on the trailing edge ─────────────────
+        //
+        // The label group is Expanded when filling, so it takes ALL the room
+        // the chevron does not need and the chevron lands hard against the
+        // pill's right edge — which is what a dropdown looks like.
+        //
+        // Two earlier attempts got this wrong in opposite directions. A Spacer
+        // between label and chevron takes its width BEFORE Flexible measures
+        // the label, so every pill ellipsised to "All Bar…". Removing it
+        // without replacement left the label and chevron hugging left inside a
+        // fixed-width slot, with dead space trailing off to the right — the
+        // control looked broken rather than tight. Expanded gives the label the
+        // leftover width instead of competing for it, so nothing is starved and
+        // nothing is stranded.
         child: Row(
           mainAxisSize: fill ? MainAxisSize.max : MainAxisSize.min,
           children: [
-            if (icon != null) ...[
-              Icon(icon, size: 16, color: AdminUi.textSecondary),
-              const SizedBox(width: 7),
-            ],
-            if (prefix != null) ...[
-              // Flexible, not a bare Text: "Sort by:" is rigid, so in a narrow
-              // grid slot — a 320px phone, or any phone at Android's largest
-              // font size — it pushed the Row past its own box and overflowed.
-              // Only `value` could give, and it alone was not enough.
-              Flexible(
-                child: Text(
-                  prefix!,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: AdminUi.textMuted,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 5),
-            ],
-            Flexible(
-              child: Text(
-                value,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: AdminUi.textPrimary,
-                ),
-              ),
-            ),
-            // A fixed gap in BOTH modes. A Spacer here (to line the chevrons
-            // up on the trailing edge) takes its width before Flexible gets to
-            // measure the label, so at a phone width every pill ellipsised to
-            // "All Bar…" — a tidier right edge bought by making the labels
-            // unreadable, which is the wrong trade.
-            const SizedBox(width: 4),
+            _labelGroup(fill),
+            const SizedBox(width: 8),
             const Icon(Icons.keyboard_arrow_down_rounded,
                 size: 18, color: AdminUi.textMuted),
           ],

@@ -43,7 +43,7 @@ class _PreviewApp extends StatefulWidget {
 
 class _PreviewAppState extends State<_PreviewApp> {
   // 360/420 are phones, 700 is just under the breakpoint, 900/1280 are over it.
-  double _width = 1033;
+  double _width = 497;
 
   @override
   Widget build(BuildContext context) {
@@ -60,7 +60,7 @@ class _PreviewAppState extends State<_PreviewApp> {
                 child: Wrap(
                   spacing: 8,
                   children: [
-                    for (final w in const [415.0, 587.0, 760.0, 835.0, 893.0, 1033.0, 1067.0, 1200.0])
+                    for (final w in const [415.0, 497.0, 587.0, 760.0, 835.0, 1033.0, 1200.0])
                       FilledButton(
                         onPressed: () => setState(() => _width = w),
                         style: FilledButton.styleFrom(

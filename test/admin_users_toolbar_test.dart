@@ -150,14 +150,60 @@ void main() {
     });
   });
 
-  testWidgets('no Spacer starves the label of width', (tester) async {
-    // Lining the chevrons up on the trailing edge with a Spacer took its width
-    // BEFORE Flexible measured the label, turning every pill into "All Bar…" at
-    // a phone width. A tidy right edge is not worth an unreadable filter.
-    await _pump(tester, 360);
-    expect(
-      find.descendant(of: find.byType(Row), matching: find.byType(Spacer)),
-      findsNothing,
-    );
+  group('the pill fills its slot properly', () {
+    // Three attempts got the pill's interior wrong in three different ways,
+    // which is why all three are pinned here rather than described in a
+    // comment:
+    //
+    //   1. A Spacer between label and chevron. It takes its width BEFORE
+    //      Flexible measures the label, so every pill ellipsised to "All Bar…".
+    //   2. Removing the Spacer and leaving nothing. Label and chevron then hug
+    //      the left of a fixed-width slot, with dead space trailing off to the
+    //      right — the control reads as broken rather than as tight.
+    //   3. Expanded on the label group: it takes the leftover width instead of
+    //      competing for it, so the chevron lands on the trailing edge and the
+    //      label still gets everything the chevron does not need.
+    testWidgets('no Spacer competes with the label', (tester) async {
+      await _pump(tester, 360);
+      expect(
+        find.descendant(of: find.byType(Row), matching: find.byType(Spacer)),
+        findsNothing,
+      );
+    });
+
+    testWidgets('the label group is Expanded in a filled slot',
+        (tester) async {
+      await _pump(tester, 415); // a 2-up grid, so the pills are fixed slots
+
+      // Asserted STRUCTURALLY, and this is not laziness. Measuring the gap
+      // between the chevron and the pill's right edge looks like the more
+      // honest test, but it passes with the bug present: tests run on
+      // Flutter's fallback font, where every glyph is one em wide, so these
+      // labels are wide enough to fill the slot on their own and the chevron
+      // ends up on the edge either way. The real font is narrower, which is
+      // exactly why the dead space showed up in the shipped build and not in
+      // a green test run.
+      //
+      // Expanded is the thing that makes the chevron sit on the trailing edge
+      // regardless of how wide the label happens to render, so Expanded is
+      // what gets pinned.
+      expect(
+        find.descendant(
+          of: find.byType(Wrap),
+          matching: find.byType(Expanded),
+        ),
+        findsNWidgets(3),
+        reason: 'each filled pill gives its label group the leftover width',
+      );
+    });
+
+    testWidgets('the label still starts at the leading edge', (tester) async {
+      await _pump(tester, 415);
+      final pill = _pill(tester, 'All Barangays');
+      final text = tester.getRect(find.text('All Barangays'));
+      // Icon + padding, no more: the label leads, it is not centred.
+      expect(text.left - pill.left, lessThan(48));
+    });
   });
 }
+
