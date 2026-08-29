@@ -196,6 +196,25 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
 
 // ── Summary tiles ─────────────────────────────────────────────────────────────
 
+/// How many columns the Citizens page lays out at [width].
+///
+/// ONE rule, used by both the summary tiles and the filter toolbar below them.
+/// They had separate breakpoints before — the tiles stepped 5/3/2 at 1080 and
+/// 760, the toolbar had a single 720 — so between 760 and 1080 the page showed
+/// a three-column tile grid over a filter row crammed onto the search line, and
+/// just under 1080 the pills were squeezed against the right edge. Two grids
+/// with different rhythms, stacked. Sharing the expression is what makes the
+/// columns line up down the page at every width, rather than at the widths
+/// someone happened to check.
+@visibleForTesting
+int citizensColumnsFor(double width) => width >= 1080
+    ? 5
+    : width >= 760
+        ? 3
+        : width >= 280
+            ? 2
+            : 1;
+
 class _StatTiles extends StatelessWidget {
   final AsyncValue<List<ManagedUser>> async;
   final AdminUsersNotifier notifier;
@@ -243,13 +262,7 @@ class _StatTiles extends StatelessWidget {
         final w = c.maxWidth;
         // Phones/small screens always show a 2-up grid (never a single column);
         // only drop to 1 on an extremely narrow width where two tiles can't fit.
-        final perRow = w >= 1080
-            ? 5
-            : w >= 760
-                ? 3
-                : w >= 280
-                    ? 2
-                    : 1;
+        final perRow = citizensColumnsFor(w);
         final tileW = (w - gap * (perRow - 1)) / perRow;
         return Wrap(
           spacing: gap,
@@ -506,9 +519,25 @@ class _Toolbar extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, c) {
-        // Wide: search on the left, filters grouped, sort pushed to the right —
-        // matching the design.
-        if (c.maxWidth >= 720) {
+        const gap = 12.0;
+        final w = c.maxWidth;
+
+        // ── The toolbar follows the SUMMARY TILES, not its own breakpoints ──
+        //
+        // The tiles above step 5-up / 3-up / 2-up at 1080 and 760
+        // (see [_StatTiles]). The toolbar used to have one breakpoint of its
+        // own at 720, so between 760 and 1080 the page showed a 3-up tile grid
+        // over three pills crammed onto the search row, and just under 1080 the
+        // pills were squeezed hard against the right edge. Two grids with
+        // different rhythms, stacked, on the same page.
+        //
+        // Sharing the tiles' numbers means the filter row always lines up with
+        // the block it sits under, at every width.
+        final perRow = citizensColumnsFor(w);
+
+        // 5-up: there is room for the search field AND all three pills on one
+        // row, which is the desktop design — search left, filters right.
+        if (perRow == 5) {
           return Row(
             children: [
               SizedBox(width: 320, child: search),
@@ -522,34 +551,37 @@ class _Toolbar extends StatelessWidget {
           );
         }
 
-        // Narrow: search over a two-column GRID of pills, not a Wrap.
+        // Below that the search field takes its own full-width row and the
+        // pills become a grid of equal columns, matching the tiles' column
+        // count exactly: three across on a tablet, two across on a phone with
+        // the odd third directly under the first, one per row when the window
+        // is too narrow for two.
         //
-        // A Wrap sizes each pill to its own text, so on a phone the first two
-        // fitted one row and "Sort by: Newest" dropped to a second — three
-        // controls staggered across two rows with a ragged right edge and two
-        // different pill widths. They are one group of equals, so they are laid
-        // out as one: equal halves, and the odd third takes a half-width slot
-        // on the next row directly under the first. Nothing is centred or
-        // stretched to fill, which would make the lone pill look like a
-        // different kind of control.
-        const gap = 10.0;
-        final half = (c.maxWidth - gap) / 2;
+        // Equal columns rather than a Wrap: a Wrap sizes each pill to its own
+        // label, which is what left "Sort by: Newest" dropping to a second row
+        // beneath two differently-sized neighbours and a ragged right edge.
+        final cols = perRow == 1 ? 1 : (perRow == 3 ? 3 : 2);
+        final slot = (w - gap * (cols - 1)) / cols;
+        final pills = [
+          barangayPill(fill: true),
+          statusPill(fill: true),
+          sortPill(fill: true),
+        ];
+
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             search,
             const SizedBox(height: gap),
-            Row(
+            // Wrap over a hand-built Row so the odd pill lands in a slot of the
+            // same width, left-aligned under the first, instead of stretching
+            // to fill the row and reading as a different kind of control.
+            Wrap(
+              spacing: gap,
+              runSpacing: gap,
               children: [
-                SizedBox(width: half, child: barangayPill(fill: true)),
-                const SizedBox(width: gap),
-                SizedBox(width: half, child: statusPill(fill: true)),
+                for (final pill in pills) SizedBox(width: slot, child: pill),
               ],
-            ),
-            const SizedBox(height: gap),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: SizedBox(width: half, child: sortPill(fill: true)),
             ),
           ],
         );
@@ -652,9 +684,20 @@ class _FilterDropdown<T> extends StatelessWidget {
               const SizedBox(width: 7),
             ],
             if (prefix != null) ...[
-              Text(
-                prefix!,
-                style: const TextStyle(fontSize: 13, color: AdminUi.textMuted),
+              // Flexible, not a bare Text: "Sort by:" is rigid, so in a narrow
+              // grid slot — a 320px phone, or any phone at Android's largest
+              // font size — it pushed the Row past its own box and overflowed.
+              // Only `value` could give, and it alone was not enough.
+              Flexible(
+                child: Text(
+                  prefix!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AdminUi.textMuted,
+                  ),
+                ),
               ),
               const SizedBox(width: 5),
             ],

@@ -20,8 +20,12 @@
 //    staggered across two rows with a ragged right edge.
 //  * At or above 720: unchanged. Search left, the three pills hugging their
 //    labels on the right.
-//  * 360 is the tightest phone worth supporting: "Sort by: Newest" must still
-//    read without clipping in a half-width slot.
+//  * The widths are the ones from the bug report, which is where this went
+//    wrong: 1033 and 893 had the pills crammed against the right edge, and 835
+//    and below put a 2-up pill grid under a 3-up tile grid. The toolbar now
+//    reads perRow from the same expression [_StatTiles] uses, so the two grids
+//    cannot disagree — check that the pill columns line up with the tile
+//    columns at EVERY width here.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -39,7 +43,7 @@ class _PreviewApp extends StatefulWidget {
 
 class _PreviewAppState extends State<_PreviewApp> {
   // 360/420 are phones, 700 is just under the breakpoint, 900/1280 are over it.
-  double _width = 390;
+  double _width = 1033;
 
   @override
   Widget build(BuildContext context) {
@@ -56,7 +60,7 @@ class _PreviewAppState extends State<_PreviewApp> {
                 child: Wrap(
                   spacing: 8,
                   children: [
-                    for (final w in const [360.0, 390.0, 420.0, 700.0, 900.0])
+                    for (final w in const [415.0, 587.0, 760.0, 835.0, 893.0, 1033.0, 1067.0, 1200.0])
                       FilledButton(
                         onPressed: () => setState(() => _width = w),
                         style: FilledButton.styleFrom(
