@@ -11,6 +11,7 @@ import 'package:google_maps_flutter_android/google_maps_flutter_android.dart';
 // ignore: depend_on_referenced_packages
 import 'package:google_maps_flutter_platform_interface/google_maps_flutter_platform_interface.dart';
 import 'core/services/push_service.dart';
+import 'core/theme/app_colors.dart';
 
 import 'firebase_options.dart';
 import 'core/router/app_router.dart';
@@ -193,6 +194,60 @@ Future<void> _initServices() async {
   });
 }
 
+/// The app's one theme.
+///
+/// Until this existed, `MaterialApp` was handed a bare `ThemeData()`, which in
+/// Material 3 builds a colour scheme seeded from Flutter's DEFAULT purple — not
+/// from our blue. Every widget that takes its background from a scheme role
+/// rather than an explicit colour therefore rendered lavender: `surface` came
+/// out #FEF7FF and `surfaceContainer` #F3EDF7. That is why the account menu
+/// (admin and staff), the row overflow menus and the dropdowns all looked
+/// faintly pink against otherwise white pages.
+///
+/// Seeding from [AppColors.primaryBlue] fixes the hue, but a seeded scheme is
+/// still *tinted* — M3 deliberately blends the primary into every surface. The
+/// surfaces are therefore pinned to plain white/greys afterwards, which is what
+/// the hand-built pages (AdminUi, CitizenUi) already assume. Doing it here, once,
+/// keeps every popup consistent without touching ~700 widget call sites.
+final ThemeData _appTheme = () {
+  final base = ColorScheme.fromSeed(seedColor: AppColors.primaryBlue);
+  final scheme = base.copyWith(
+    surface: Colors.white,
+    surfaceContainerLowest: Colors.white,
+    surfaceContainerLow: Colors.white,
+    surfaceContainer: Colors.white,
+    surfaceContainerHigh: Colors.white,
+    surfaceContainerHighest: const Color(0xFFF4F6FA),
+    surfaceTint: Colors.transparent, // no elevation tint over white
+  );
+
+  return ThemeData(
+    colorScheme: scheme,
+    scaffoldBackgroundColor: Colors.white,
+    canvasColor: Colors.white,
+    // M3 elevation overlays re-introduce the tint even on a white surface;
+    // these three are the widgets the tint was actually visible on.
+    popupMenuTheme: const PopupMenuThemeData(
+      color: Colors.white,
+      surfaceTintColor: Colors.transparent,
+    ),
+    dialogTheme: const DialogThemeData(
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.transparent,
+    ),
+    drawerTheme: const DrawerThemeData(
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.transparent,
+    ),
+    bottomSheetTheme: const BottomSheetThemeData(
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.transparent,
+    ),
+    cardTheme: const CardThemeData(surfaceTintColor: Colors.transparent),
+    appBarTheme: const AppBarTheme(surfaceTintColor: Colors.transparent),
+  );
+}();
+
 class GovPulseApp extends StatelessWidget {
   const GovPulseApp({super.key});
 
@@ -239,9 +294,7 @@ class GovPulseApp extends StatelessWidget {
       navigatorKey: navigatorKey,
       debugShowCheckedModeBanner: false,
       color: Colors.white, // ← add
-      theme: ThemeData(
-        scaffoldBackgroundColor: Colors.white, // ← add
-      ),
+      theme: _appTheme,
       navigatorObservers: [homeRouteObserver],
       home: scanToken != null
           ? ScanPage(token: scanToken)
