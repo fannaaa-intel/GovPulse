@@ -35,11 +35,19 @@ const Color _red = Color(0xFFB91C1C);
 const Color _canvas = Color(0xFFF3F4F6);
 
 /// Lifecycle the agency drives. Mirrors `report_endorsements.state`.
-enum _State { endorsed, received, completed }
+///
+/// `withdrawn` is terminal and NOT reachable from this page — the LGU sets it
+/// by taking the report back (migration 20260829000000), which rotates the
+/// token so a withdrawn endorsement's QR resolves to nothing. It is modelled
+/// anyway because a page already open when the withdrawal happens will see it
+/// on its next refresh, and must say so rather than offering a button that
+/// cannot work.
+enum _State { endorsed, received, completed, withdrawn }
 
 _State _stateFrom(String? s) => switch (s) {
   'received' => _State.received,
   'completed' => _State.completed,
+  'withdrawn' => _State.withdrawn,
   _ => _State.endorsed,
 };
 
@@ -53,6 +61,16 @@ class ScanPage extends StatefulWidget {
 
 class _ScanPageState extends State<ScanPage> {
   final _pin = TextEditingController();
+
+  /// The progress-update composer, and the PIN it needs. A SEPARATE PIN field
+  /// from [_pin]: the two forms sit on the page at once and share no state, so
+  /// typing a PIN to post an update must not half-fill the confirm-receipt box
+  /// (or, worse, submit the wrong one).
+  final _updateBody = TextEditingController();
+  final _updatePin = TextEditingController();
+  bool _postingUpdate = false;
+  String? _updateError;
+  bool _updatePosted = false;
 
   Map<String, dynamic>? _data;
   bool _loading = true;
@@ -78,6 +96,8 @@ class _ScanPageState extends State<ScanPage> {
   @override
   void dispose() {
     _pin.dispose();
+    _updateBody.dispose();
+    _updatePin.dispose();
     super.dispose();
   }
 
@@ -165,6 +185,88 @@ class _ScanPageState extends State<ScanPage> {
             'Could not reach the server. Check your connection and try '
             'again.';
       });
+    }
+  }
+
+  /// Posts a progress update as the agency.
+  ///
+  /// Goes to `post_endorsement_update`, which is anon-callable and authorised
+  /// by the same bcrypt PIN check and attempt limiter as advancing the state.
+  /// The update lands as `pending_approval` — an LGU admin reviews it before
+  /// the citizen sees anything — which is also what makes an anonymous write
+  /// safe here: the worst a stolen letter achieves is queuing something for a
+  /// human to reject.
+  Future<void> _postUpdate() async {
+    final body = _updateBody.text.trim();
+    final pin = _updatePin.text.trim();
+
+    if (body.isEmpty) {
+      setState(() => _updateError = 'Write what has happened before posting.');
+      return;
+    }
+    if (pin.length != 4) {
+      setState(() => _updateError = 'Enter your 4-digit PIN to post an update.');
+      return;
+    }
+
+    setState(() {
+      _postingUpdate = true;
+      _updateError = null;
+      _updatePosted = false;
+    });
+
+    try {
+      final res = await Supabase.instance.client.rpc(
+        'post_endorsement_update',
+        params: {
+          'p_token': widget.token,
+          'p_pin': pin,
+          'p_body': body,
+          // The scan page only ever posts progress notes. A completion is
+          // recorded by advancing the state, which is a different button with
+          // different consequences — conflating them would let an agency close
+          // a report by writing a sentence.
+          'p_kind': 'progress',
+        },
+      );
+      final map = Map<String, dynamic>.from(res as Map);
+      if (!mounted) return;
+
+      if (map['ok'] == true) {
+        _updateBody.clear();
+        _updatePin.clear();
+        setState(() {
+          _postingUpdate = false;
+          _updatePosted = true;
+        });
+        return;
+      }
+      setState(() {
+        _postingUpdate = false;
+        _updateError = _updateMessageFor(map);
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _postingUpdate = false;
+        _updateError =
+            'Could not reach the server. Check your connection and try again.';
+      });
+    }
+  }
+
+  String _updateMessageFor(Map<String, dynamic> map) {
+    switch (map['error'] as String?) {
+      case 'empty_body':
+        return 'Write what has happened before posting.';
+      case 'rate_limited':
+        return 'That is a lot of updates in one hour. Please try again later.';
+      case 'withdrawn':
+        return 'The Municipality has taken this report back, so updates can no '
+            'longer be posted.';
+      default:
+        // bad_pin / locked / invalid_token all read the same either way.
+        return _messageFor(map);
     }
   }
 
@@ -294,6 +396,8 @@ class _ScanPageState extends State<ScanPage> {
             children: [
               _statusPill(),
               const SizedBox(height: 16),
+              _tracker(),
+              const SizedBox(height: 18),
               Text(
                 report['category'] as String? ?? 'Citizen report',
                 style: const TextStyle(
@@ -326,6 +430,19 @@ class _ScanPageState extends State<ScanPage> {
         ),
         const SizedBox(height: 16),
         if (_justAdvanced) ...[_advancedBanner(), const SizedBox(height: 16)],
+        // ── Why the composer comes FIRST once received ────────────────────
+        // "Mark Completed" is irreversible: it closes the report and tells the
+        // citizen the work is finished. Posting an update is not. With the
+        // action card on top, an officer scrolling in to report progress meets
+        // the terminal button first and the reversible one second — the wrong
+        // way round for the thing they will do many times versus once.
+        //
+        // Before receipt there is nothing to report on, so the order only
+        // matters in this one state.
+        if (_state == _State.received) ...[
+          _updateCard(),
+          const SizedBox(height: 16),
+        ],
         _actionCard(),
         const SizedBox(height: 20),
         const Text(
@@ -374,6 +491,11 @@ class _ScanPageState extends State<ScanPage> {
         const Color(0xFF9A3412),
       ),
       _State.completed => ('Completed', const Color(0xFFECFDF5), _green),
+      _State.withdrawn => (
+        'Withdrawn by the LGU',
+        const Color(0xFFF3F4F6),
+        _muted,
+      ),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
@@ -430,6 +552,32 @@ class _ScanPageState extends State<ScanPage> {
   // ── The single action ─────────────────────────────────────────────────────
 
   Widget _actionCard() {
+    // Terminal, and not the agency's doing — say who ended it and why the
+    // buttons are gone, rather than showing a dead form.
+    if (_state == _State.withdrawn) {
+      return _shell(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: const [
+            Icon(Icons.undo_rounded, size: 22, color: _muted),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'The Municipality has taken this report back.\nNo further '
+                'action is required, and this code no longer works.',
+                style: TextStyle(
+                  fontSize: 14.5,
+                  height: 1.5,
+                  fontWeight: FontWeight.w700,
+                  color: _ink,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     if (_state == _State.completed) {
       return _shell(
         child: Row(
@@ -481,6 +629,7 @@ class _ScanPageState extends State<ScanPage> {
           ),
           const SizedBox(height: 16),
           TextField(
+            key: const Key('scan-confirm-pin'),
             controller: _pin,
             enabled: !_submitting && !locked,
             keyboardType: const TextInputType.numberWithOptions(signed: false),
@@ -515,24 +664,7 @@ class _ScanPageState extends State<ScanPage> {
           ),
           if (_error != null) ...[
             const SizedBox(height: 12),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Icon(Icons.error_outline_rounded, size: 17, color: _red),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    _error!,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      height: 1.45,
-                      color: _red,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+            _inlineError(_error!),
           ],
           const SizedBox(height: 18),
           SizedBox(
@@ -555,6 +687,283 @@ class _ScanPageState extends State<ScanPage> {
           ),
         ],
       ),
+    );
+  }
+
+  // ── Progress updates ──────────────────────────────────────────────────────
+  //
+  // Offered only in the `received` state, and that is a deliberate narrowing.
+  // Before receipt the agency has not acknowledged the letter and has nothing
+  // to report; after completion the work is done. In between is the whole
+  // window where "we are currently excavating the drainage line" is worth
+  // saying — and the only window where the LGU can pass it on to the citizen.
+  Widget _updateCard() {
+    return _shell(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Post a progress update',
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+              color: _ink,
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Tell the Municipality what has happened. They review it before it '
+            'reaches the resident who filed the report.',
+            style: TextStyle(fontSize: 13.5, height: 1.5, color: _muted),
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            key: const Key('scan-update-body'),
+            controller: _updateBody,
+            enabled: !_postingUpdate,
+            minLines: 3,
+            maxLines: 5,
+            maxLength: 600,
+            textCapitalization: TextCapitalization.sentences,
+            style: const TextStyle(fontSize: 14, height: 1.45, color: _ink),
+            decoration: InputDecoration(
+              hintText:
+                  'e.g. Crew inspected the site today. Materials are on order '
+                  'and patching begins Monday.',
+              hintStyle: const TextStyle(
+                fontSize: 13.5,
+                height: 1.45,
+                color: Color(0xFF9CA3AF),
+              ),
+              filled: true,
+              fillColor: const Color(0xFFF9FAFB),
+              counterStyle: const TextStyle(fontSize: 11, color: _muted),
+              contentPadding: const EdgeInsets.all(13),
+              border: _fieldBorder(_line),
+              enabledBorder: _fieldBorder(_updateError != null ? _red : _line),
+              focusedBorder:
+                  _fieldBorder(_updateError != null ? _red : _blue, 1.6),
+              disabledBorder: _fieldBorder(_line),
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'CONFIRM WITH YOUR PIN',
+            style: TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.8,
+              color: _muted,
+            ),
+          ),
+          const SizedBox(height: 8),
+          // Narrower than the confirm-receipt field and left-aligned, so the
+          // two PIN boxes on this page never read as the same control.
+          SizedBox(
+            width: 150,
+            child: TextField(
+              key: const Key('scan-update-pin'),
+              controller: _updatePin,
+              enabled: !_postingUpdate,
+              keyboardType:
+                  const TextInputType.numberWithOptions(signed: false),
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(4),
+              ],
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 8,
+                color: _ink,
+              ),
+              decoration: InputDecoration(
+                hintText: '••••',
+                hintStyle: const TextStyle(
+                  fontSize: 20,
+                  letterSpacing: 8,
+                  color: Color(0xFFD1D5DB),
+                ),
+                filled: true,
+                fillColor: const Color(0xFFF9FAFB),
+                contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                border: _fieldBorder(_line),
+                enabledBorder: _fieldBorder(_updateError != null ? _red : _line),
+                focusedBorder:
+                    _fieldBorder(_updateError != null ? _red : _blue, 1.6),
+                disabledBorder: _fieldBorder(_line),
+              ),
+            ),
+          ),
+          if (_updateError != null) ...[
+            const SizedBox(height: 12),
+            _inlineError(_updateError!),
+          ],
+          if (_updatePosted) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFECFDF5),
+                borderRadius: BorderRadius.circular(11),
+                border: Border.all(color: const Color(0xFFA7F3D0)),
+              ),
+              child: const Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.check_circle_rounded, size: 18, color: _green),
+                  SizedBox(width: 9),
+                  Expanded(
+                    child: Text(
+                      'Update sent to the Municipality for review.',
+                      style: TextStyle(
+                        fontSize: 13,
+                        height: 1.45,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF065F46),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: FilledButton(
+              onPressed: _postingUpdate ? null : _postUpdate,
+              style: _buttonStyle(_blue),
+              child: _postingUpdate
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.4,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Text('Post update'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Shared by both forms, so an error reads identically wherever it appears.
+  Widget _inlineError(String message) => Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.error_outline_rounded, size: 17, color: _red),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(
+                fontSize: 13,
+                height: 1.45,
+                color: _red,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      );
+
+  // ── The three-step tracker ────────────────────────────────────────────────
+  //
+  // The status pill says where this endorsement stands; this says what the
+  // whole journey is and how much of it is left. The officer holding the letter
+  // has never seen this system before and has no other way to learn that
+  // confirming receipt is step one of two.
+  //
+  // Hidden entirely once withdrawn: the journey stopped, and drawing a progress
+  // bar through it would imply otherwise.
+  Widget _tracker() {
+    if (_state == _State.withdrawn) return const SizedBox.shrink();
+
+    const steps = ['Endorsed', 'Received', 'Completed'];
+    final reached = switch (_state) {
+      _State.endorsed => 0,
+      _State.received => 1,
+      _State.completed => 2,
+      _State.withdrawn => 0,
+    };
+
+    // LayoutBuilder + fixed-width labels rather than Expanded text: the
+    // connector lines must meet the dots, and a Row of Expanded labels puts
+    // the line ends wherever the text happens to wrap.
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var i = 0; i < steps.length; i++) ...[
+          if (i > 0)
+            Expanded(
+              child: Padding(
+                // Half the dot's height, so the connector meets its centre.
+                padding: const EdgeInsets.only(top: 10, left: 2, right: 2),
+                child: Container(
+                  height: 2,
+                  color: i <= reached
+                      ? _green
+                      : const Color(0xFFE5E7EB),
+                ),
+              ),
+            ),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 22,
+                height: 22,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: i <= reached ? _green : Colors.white,
+                  border: Border.all(
+                    color: i <= reached ? _green : const Color(0xFFD1D5DB),
+                    width: 2,
+                  ),
+                ),
+                child: i < reached
+                    ? const Icon(Icons.check_rounded,
+                        size: 13, color: Colors.white)
+                    : i == reached
+                        ? const Center(
+                            child: SizedBox(
+                              width: 7,
+                              height: 7,
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          )
+                        : null,
+              ),
+              const SizedBox(height: 6),
+              SizedBox(
+                width: 66,
+                child: Text(
+                  steps[i],
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 11,
+                    height: 1.25,
+                    fontWeight:
+                        i == reached ? FontWeight.w800 : FontWeight.w600,
+                    color: i <= reached ? _ink : _muted,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
     );
   }
 
