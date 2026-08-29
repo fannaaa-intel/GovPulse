@@ -450,13 +450,23 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
   // ── Header ────────────────────────────────────────────────────────────────
   Widget _buildHeader(double width) {
     return Container(
+      width: double.infinity,
       padding: EdgeInsets.fromLTRB(
-        width * 0.02,
         width * 0.04,
         width * 0.04,
-        width * 0.03,
+        width * 0.04,
+        width * 0.035,
       ),
-      color: const Color(0xFFF3F4F6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
       child: Row(
         children: [
           GestureDetector(
@@ -475,11 +485,11 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
               ),
             ),
           ),
-          SizedBox(width: width * 0.02),
+          SizedBox(width: width * 0.035),
           Text(
             'Edit Profile',
             style: TextStyle(
-              fontSize: width * 0.055,
+              fontSize: width * 0.052,
               fontWeight: FontWeight.w700,
               color: kScreenTitleColor,
               letterSpacing: -0.3,
