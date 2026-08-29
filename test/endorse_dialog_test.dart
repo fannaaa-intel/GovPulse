@@ -140,15 +140,41 @@ void main() {
     expect(result, isNull);
   });
 
-  testWidgets('clearing an endorsement needs no reason', (tester) async {
+  // ── CHANGED 2026-08-29 ──────────────────────────────────────────────────
+  // This used to assert that clearing needed NO reason. Withdrawing voids a
+  // signed letter and revokes the agency's credential — the same decision as
+  // endorsing, in reverse — and it was leaving no record of who or why, while
+  // endorsing has demanded a written justification since 20260801000000. The
+  // reason is now recorded on the endorsement event log
+  // (migration 20260829000002).
+  testWidgets('withdrawing asks for a reason before it resolves',
+      (tester) async {
     EndorseChoice? result;
     await _open(tester, (r) => result = r, current: 'DPWH');
 
     await tester.tap(find.text('Clear endorsement'));
     await tester.pumpAndSettle();
 
+    // The dialog must not have resolved yet — a confirmation stands in between.
+    expect(result, isNull,
+        reason: 'withdrawing must not fire on the first tap');
+    expect(find.text('Withdraw this endorsement'), findsOneWidget);
+
+    // An empty reason is refused, the same way an empty endorsement reason is.
+    await tester.tap(find.text('Withdraw'));
+    await tester.pumpAndSettle();
+    expect(result, isNull, reason: 'a blank reason must not withdraw');
+
+    await tester.enterText(
+      find.byType(TextField).last,
+      'DPWH confirmed the road is municipal after all.',
+    );
+    await tester.tap(find.text('Withdraw'));
+    await tester.pumpAndSettle();
+
     expect(result, isNotNull);
     expect(result!.isClear, isTrue);
+    expect(result!.reason, 'DPWH confirmed the road is municipal after all.');
   });
 
   testWidgets('cancelling returns nothing, so nothing is endorsed',

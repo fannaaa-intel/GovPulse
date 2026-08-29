@@ -380,13 +380,18 @@ class AdminUsersNotifier extends AsyncNotifier<List<ManagedUser>> {
 
   /// Create a staff account via the admin-only Edge Function. Throws its
   /// message on failure.
+  ///
+  /// Always an INTERNAL LGU office. External agencies (DPWH, DENR, …) are not
+  /// given logins — an endorsed report reaches them as a signed letter carrying
+  /// a QR code, confirmed with a separately-transmitted PIN. `isExternal` is
+  /// still sent, pinned to false, because the Edge Function reads the field;
+  /// omitting it would leave the flag to that function's own default.
   Future<void> createStaff({
     required String email,
     required String password,
     required String username,
     required String fullName,
     required String department,
-    bool isExternal = false,
   }) async {
     final res = await _db.functions.invoke(
       'create-staff',
@@ -396,7 +401,7 @@ class AdminUsersNotifier extends AsyncNotifier<List<ManagedUser>> {
         'username': username,
         'fullName': fullName,
         'department': department,
-        'isExternal': isExternal,
+        'isExternal': false,
       },
     );
     final data = res.data;

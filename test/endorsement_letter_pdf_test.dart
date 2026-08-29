@@ -5,10 +5,13 @@
 //
 // These are not golden tests. What they pin is that the letter BUILDS for the
 // awkward inputs a real queue contains (missing address, empty description, a
-// reason long enough to push onto a second page) and that the PIN never reaches
-// the page.
+// reason long enough to push onto a second page), that it is laid out on long
+// bond paper, and that the PIN DOES reach the page (see the inverted test
+// below and the header of endorsement_letter_pdf.dart for why).
 
 import 'dart:io';
+
+import 'package:pdf/pdf.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:govpulse/features/admin/providers/admin_reports_provider.dart';
@@ -49,12 +52,26 @@ const _reason =
     'road under DPWH jurisdiction, and is outside the maintenance authority of '
     'this Municipality.';
 
-/// Every FlateDecode stream in [bytes], inflated and concatenated — i.e. the
-/// words actually printed on the page. Streams that are not zlib (embedded
-/// images) fail to inflate and are skipped.
-String _pdfText(List<int> bytes) {
+/// The inflated content of ONE page's stream, zero-indexed.
+///
+/// Content streams are written in page order, so the Nth inflatable stream is
+/// the Nth page — which is what lets a test ask "is this on page one?" rather
+/// than "does this appear before that in the whole document", a question that
+/// answers wrong whenever a word occurs twice.
+String _pdfPageText(List<int> bytes, int page) {
+  final pages = _pdfStreams(bytes);
+  return page < pages.length ? pages[page] : '';
+}
+
+/// Every page's text, concatenated — for assertions that do not care which
+/// page a string landed on.
+String _pdfText(List<int> bytes) => _pdfStreams(bytes).join();
+
+/// Every FlateDecode stream in [bytes], inflated, in page order. Streams that
+/// are not zlib (embedded images) fail to inflate and are skipped.
+List<String> _pdfStreams(List<int> bytes) {
   final raw = String.fromCharCodes(bytes);
-  final out = StringBuffer();
+  final out = <String>[];
   var i = 0;
   while (true) {
     final s = raw.indexOf('stream', i);
@@ -67,7 +84,7 @@ String _pdfText(List<int> bytes) {
       start++;
     }
     try {
-      out.write(
+      out.add(
         String.fromCharCodes(ZLibDecoder().convert(bytes.sublist(start, e))),
       );
     } catch (_) {
@@ -75,7 +92,7 @@ String _pdfText(List<int> bytes) {
     }
     i = e + 'endstream'.length;
   }
-  return out.toString();
+  return out;
 }
 
 void main() {
@@ -95,10 +112,28 @@ void main() {
     expect(bytes.length, greaterThan(2000));
   });
 
-  // THE security property of this document. The QR travels on the paper; the
-  // PIN must not, or the two factors collapse into one and a photograph of the
-  // letter is enough to close someone else's report.
-  test('the PIN never appears in the letter', () async {
+  // Long bond / Folio, not A4. The office files these on 8.5x13 stock, and a
+  // letter laid out for A4 prints short on it. Asserted on the constant rather
+  // than by parsing /MediaBox: the format is the decision, and the pdf package
+  // is what turns it into page geometry.
+  test('the letter is long bond paper, not A4', () {
+    expect(kFolioPageFormat.width, closeTo(8.5 * 72, 0.01));
+    expect(kFolioPageFormat.height, closeTo(13.0 * 72, 0.01));
+    expect(kFolioPageFormat.height, greaterThan(PdfPageFormat.a4.height));
+  });
+
+  // ── INVERTED 2026-08-29, deliberately ──────────────────────────────────
+  // This test used to assert the PIN never reached the paper, because the QR
+  // and the PIN were two factors on two channels. That second channel does not
+  // exist in this deployment (no SMS budget), and a credential nobody can
+  // deliver is not a credential — it is a letter the agency cannot act on. The
+  // PIN is now printed in a detachable box; see the header of
+  // endorsement_letter_pdf.dart for what replaces the lost secrecy.
+  //
+  // The assertion is flipped rather than deleted so the property stays PINNED
+  // in both directions: if someone later removes the PIN box without removing
+  // this test, it fails loudly instead of silently changing the document.
+  test('the PIN is printed on the letter', () async {
     final bytes = await buildEndorsementLetter(
       report: _report(),
       credentials: _credentials,
@@ -122,10 +157,70 @@ void main() {
     expect(text.contains('Maharlika'), isTrue,
         reason: 'control: printed page text must be searchable');
 
-    expect(text.contains(_credentials.pin), isFalse,
-        reason: 'the PIN must never be printed on the letter');
-    expect(String.fromCharCodes(bytes).contains(_credentials.pin), isFalse,
-        reason: 'the PIN must not leak through document metadata either');
+    // The PIN box sets the digits with letterSpacing, which the pdf package
+    // emits as one text-showing operator per glyph — so the plaintext is NOT
+    // contiguous in the inflated stream and a naive contains() would fail even
+    // though the digits are on the page. Assert each digit in order instead,
+    // which is what "the PIN is legible on the paper" actually means.
+    var cursor = 0;
+    for (final digit in _credentials.pin.split('')) {
+      final at = text.indexOf(digit, cursor);
+      expect(at, isNonNegative,
+          reason: 'PIN digit "$digit" must be printed on the letter');
+      cursor = at + 1;
+    }
+
+    expect(text.contains('CONFIRMATION'), isTrue,
+        reason: 'the PIN must be labelled, not a bare number on the page');
+  });
+
+  // Caught by LOOKING at the rendered letter, not by any assertion above: the
+  // terms still told the agency their PIN was "issued separately", a few inches
+  // above the box printing it. An official document contradicting itself is a
+  // defect, so the corrected wording is pinned here.
+  test('the terms do not claim the PIN travels separately', () async {
+    final bytes = await buildEndorsementLetter(
+      report: _report(),
+      credentials: _credentials,
+      reason: _reason,
+      now: DateTime(2026, 8, 1),
+    );
+    final text = _pdfText(bytes);
+
+    expect(text.contains('issued'), isFalse,
+        reason: 'the "issued separately to that office" term must be gone');
+    // Single word, not a phrase: the terms are JUSTIFIED, and the pdf package
+    // emits justified lines as one text-showing operator per word so it can
+    // stretch the gaps. No multi-word string survives contiguously in the
+    // stream — which is exactly how the first draft of this test failed.
+    expect(text.contains('accompanies'), isTrue,
+        reason: 'the terms must describe where the PIN actually is');
+  });
+
+  // Also a looking-not-asserting find: the signature block used to page-break
+  // away from the letter, leaving the Mayor's name alone on an otherwise blank
+  // sheet. The closing must stay with the prose it closes.
+  test('the signature stays on the page the letter ends on', () async {
+    final bytes = await buildEndorsementLetter(
+      report: _report(),
+      credentials: _credentials,
+      reason: _reason,
+      now: DateTime(2026, 8, 1),
+    );
+
+    // Per-PAGE, not by offset into the concatenated text. An offset comparison
+    // is what the first draft of this test did, and it failed for a reason
+    // worth recording: "confirm" also occurs in Term 2 ("the confirmation
+    // PIN"), on page one, so the first match was never the scan panel. Probing
+    // page one directly asks the question the defect was actually about —
+    // which page is the signature on.
+    final page1 = _pdfPageText(bytes, 0);
+
+    expect(page1.contains('Mayor'), isTrue,
+        reason: 'the signature must close the letter on page one, not orphan '
+            'onto a sheet of its own');
+    expect(page1.contains('Maharlika'), isTrue,
+        reason: 'control: page one is the page carrying the letter body');
   });
 
   test('survives the awkward reports a real queue contains', () async {

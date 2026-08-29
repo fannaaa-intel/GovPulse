@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/deeplink_highlight.dart';
 import '../../../core/widgets/report_work_log.dart';
+import '../../../core/widgets/report_progress_updates.dart';
+import '../widgets/endorsement_receipt_status.dart';
 import '../../../core/widgets/resolution_media.dart';
 import '../../staff/data/staff_departments.dart';
 import '../theme/admin_ui.dart';
@@ -1709,7 +1711,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
       if (picked.isClear) {
         await ref
             .read(adminReportsProvider.notifier)
-            .clearEndorsement(widget.report.id);
+            .clearEndorsement(widget.report.id, reason: picked.reason);
         if (!mounted) return;
         setState(() => _busy = false);
         showAdminSnackBar(
@@ -2045,6 +2047,20 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Citizen-facing, and the admin is the gate: offices submit here and
+        // nothing reaches the reporter until it is approved. Above the work log
+        // because reviewing what is waiting is the more urgent of the two.
+        // Has the agency actually picked the letter up? Reads the endorsement
+        // row admins have always been able to SELECT and nothing ever did.
+        // Renders nothing when the report was never endorsed.
+        EndorsementReceiptStatus(reportId: r.id),
+        const SizedBox(height: 6),
+        ReportProgressUpdates(
+          reportId: r.id,
+          mode: ReportUpdatesMode.reviewer,
+          authorName: 'LGU Admin',
+        ),
+        const SizedBox(height: 20),
         ReportWorkLog(
           reportId: r.id,
           authorRole: 'admin',

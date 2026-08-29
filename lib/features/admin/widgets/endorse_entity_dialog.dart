@@ -10,8 +10,8 @@ import '../theme/admin_ui.dart';
 //
 //  The sibling of the Accept & Assign dialog and built on the same rules: an
 //  illustrated card per option, a blue check on the current pick, a header that
-//  states the action can't be undone, and one dialog that reshapes itself for
-//  web, tablet, and phone. On top of that this one adds a search field (five
+//  states what sending actually commits to, and one dialog that reshapes itself
+//  for web, tablet, and phone. On top of that this one adds a search field (five
 //  agencies today, but the list is meant to grow) and the notify-banner from the
 //  design.
 //
@@ -41,8 +41,14 @@ class EndorseChoice {
 
   const EndorseChoice({required this.agency, required this.reason});
 
-  /// Drop the current endorsement and return the report to the LGU.
+  /// Drop the current endorsement and return the report to the LGU. [reason]
+  /// carries the withdrawal justification, which is recorded on the
+  /// endorsement's event log — see AdminReportsNotifier.clearEndorsement.
   static const EndorseChoice clear = EndorseChoice(agency: '', reason: '');
+
+  /// A withdrawal with the admin's stated reason.
+  static EndorseChoice clearWith(String reason) =>
+      EndorseChoice(agency: '', reason: reason);
 
   bool get isClear => agency.isEmpty;
 }
@@ -163,9 +169,9 @@ class _EndorseEntityDialogState extends State<_EndorseEntityDialog> {
   String get _reasonText => _reason.text.trim();
   bool get _reasonMissing => _reasonText.isEmpty;
 
-  /// Validates, then resolves the dialog. Endorsing is irreversible from the
-  /// citizen's point of view (ownership leaves the LGU) and mints a printed
-  /// letter, so both fields are checked here as well as on the server.
+  /// Validates, then resolves the dialog. Endorsing hands ownership out of the
+  /// LGU and mints a printed letter whose PIN is shown exactly once, so both
+  /// fields are checked here as well as on the server.
   void _submit() {
     final agency = _selected;
     if (agency == null || agency.isEmpty) return;
@@ -178,6 +184,74 @@ class _EndorseEntityDialogState extends State<_EndorseEntityDialog> {
     Navigator.of(context).pop(
       EndorseChoice(agency: agency, reason: _reasonText),
     );
+  }
+
+  /// Withdrawing voids a signed letter and revokes the agency's credential, so
+  /// it asks for a justification the same way endorsing does. The reason is
+  /// recorded on the event log against the admin who withdrew it.
+  Future<void> _confirmClear() async {
+    final ctrl = TextEditingController();
+    // showAppDialog, not a bare showDialog: house rule (see app_dialog.dart) —
+    // a plain showDialog is a pop-up that leaves differently from every other
+    // pop-up, and skips the frosted backdrop the rest of the app uses.
+    final reason = await showAppDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AdminUi.surface,
+        title: const Text(
+          'Withdraw this endorsement',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'The report returns to the LGU and the printed letter stops '
+              'working. Say why — it is recorded against your account.',
+              style: TextStyle(fontSize: 12.5, height: 1.4),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: ctrl,
+              autofocus: true,
+              minLines: 2,
+              maxLines: 4,
+              maxLength: 300,
+              decoration: const InputDecoration(
+                hintText: 'e.g. DPWH confirmed the road is municipal after all.',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.red),
+            onPressed: () {
+              final v = ctrl.text.trim();
+              if (v.isEmpty) return;
+              Navigator.pop(ctx, v);
+            },
+            child: const Text('Withdraw'),
+          ),
+        ],
+      ),
+    );
+    // Disposed AFTER the route is fully gone, not the instant `await` returns.
+    // showAppDialog resolves when the pop is REQUESTED, and the dialog keeps
+    // rebuilding through its exit transition — disposing here throws
+    // "A TextEditingController was used after being disposed" on the next
+    // frame. The post-frame callback lands after that transition.
+    WidgetsBinding.instance.addPostFrameCallback((_) => ctrl.dispose());
+    if (reason == null || !mounted) return;
+    if (context.mounted) {
+      Navigator.of(context).pop(EndorseChoice.clearWith(reason));
+    }
   }
 
   List<_AgencyData> get _filtered {
@@ -269,6 +343,12 @@ class _EndorseEntityDialogState extends State<_EndorseEntityDialog> {
                       height: 1.35,
                       color: AdminUi.textSecondary,
                     ),
+                    // The old copy read "This action cannot be undone", which
+                    // was untrue in three ways — this dialog's own Clear
+                    // button, Accept-into-an-office, and a staff bounce all
+                    // withdraw an endorsement. What IS irreversible is the
+                    // letter: sending mints a PIN shown once, and withdrawing
+                    // later voids the printed QR rather than un-sending it.
                     children: const [
                       TextSpan(
                         text:
@@ -276,7 +356,8 @@ class _EndorseEntityDialogState extends State<_EndorseEntityDialog> {
                             'agency for action and follow-up. ',
                       ),
                       TextSpan(
-                        text: 'This action cannot be undone.',
+                        text:
+                            'This issues a printed letter with a one-time PIN.',
                         style: TextStyle(
                           color: AppColors.red,
                           fontWeight: FontWeight.w700,
@@ -726,7 +807,7 @@ class _EndorseEntityDialogState extends State<_EndorseEntityDialog> {
     final canClear = (widget.currentEndorsement ?? '').isNotEmpty;
 
     final clear = TextButton.icon(
-      onPressed: () => Navigator.of(context).pop(EndorseChoice.clear),
+      onPressed: _confirmClear,
       style: TextButton.styleFrom(
         foregroundColor: AppColors.red,
         textStyle: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),

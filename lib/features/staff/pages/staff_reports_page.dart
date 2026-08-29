@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/widgets/app_snackbar.dart';
 import '../../../core/widgets/deeplink_highlight.dart';
 import '../../../core/widgets/report_work_log.dart';
+import '../../../core/widgets/report_progress_updates.dart';
 import '../../../core/widgets/resolution_media.dart';
 import '../../admin/providers/admin_reports_provider.dart'
     show ReportStatus, reportStatusLabel;
@@ -1461,6 +1462,16 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
           ),
         ),
         const SizedBox(height: 10),
+        // The citizen-facing half, first: what this office writes here reaches
+        // the reporter once an admin approves it. Deliberately above the work
+        // log, whose copy above says the citizen never sees THAT — the two sit
+        // together and the distinction has to be obvious.
+        ReportProgressUpdates(
+          reportId: widget.report.id,
+          mode: ReportUpdatesMode.author,
+          authorName: widget.department ?? 'Staff',
+        ),
+        const SizedBox(height: 20),
         ReportWorkLog(
           reportId: widget.report.id,
           authorRole: 'staff',

@@ -30,11 +30,45 @@ import 'admin_pdf.dart' show pdfSafe;
 //  string still goes through pdfSafe() to fold em dashes and smart quotes into
 //  glyphs the font actually has.
 //
-//  ⚠ THE PIN IS NEVER PRINTED HERE. The QR and the PIN are two factors and this
-//  sheet of paper is the first one; putting the second one beside it would make
-//  the pair worth exactly as much as the paper. The PIN is shown once on screen
-//  and sent to the agency separately.
+//  ── ⚠ THE PIN IS PRINTED ON THIS LETTER, AND THAT IS A DELIBERATE TRADE ────
+//  It did not used to be. The original design kept the QR and the PIN as two
+//  factors travelling by two channels, and the letter said so in as many words.
+//  That is genuinely stronger — and it assumed a delivery channel (phone, SMS,
+//  a separate email) that this deployment does not have. A second factor nobody
+//  can deliver is not a second factor; it is a letter the agency cannot act on.
+//
+//  So the PIN is printed, in a ruled "detach and retain" box that an LGU which
+//  CAN deliver it separately may simply cut off. What that costs is credential
+//  secrecy: whoever holds this sheet, or a photograph of it, can advance the
+//  endorsement. What replaces it:
+//
+//    * nothing the agency submits reaches the citizen unreviewed — every
+//      progress update is held for admin approval, so a stolen letter can
+//      submit for review but cannot publish;
+//    * the 5-attempt / 15-minute lockout in advance_endorsement still applies;
+//    * withdrawing an endorsement now REVOKES the token and PIN outright
+//      (migration 20260829000000), so a letter loses its power the moment the
+//      LGU takes the report back.
+//
+//  If a delivery channel ever exists, take the PIN box out and restore the
+//  "issued separately" line in _qrBlock — nothing else here depends on it.
 // ════════════════════════════════════════════════════════════════════════════
+
+/// Long bond / Folio — 8.5 x 13 inches, at 72pt per inch.
+///
+/// The Philippine government standard sheet, and what an endorsement letter is
+/// expected to be filed on. A4 (the previous format) is 8.27 x 11.69in, so it
+/// is both narrower and nearly an inch and a half shorter — a letter laid out
+/// for it prints short on the paper this office actually stocks.
+///
+/// Margins are carried over unchanged; the extra length becomes body room,
+/// which is what keeps the signature block and the QR panel on page one for a
+/// typical reason.
+const PdfPageFormat kFolioPageFormat = PdfPageFormat(
+  8.5 * PdfPageFormat.inch,
+  13.0 * PdfPageFormat.inch,
+  marginAll: 48,
+);
 
 /// Builds the endorsement letter for [report] and hands it to the platform's
 /// share / print sheet.
@@ -85,8 +119,8 @@ Future<Uint8List> buildEndorsementLetter({
 
   doc.addPage(
     pw.MultiPage(
-      pageFormat: PdfPageFormat.a4,
-      margin: const pw.EdgeInsets.fromLTRB(64, 48, 64, 48),
+      pageFormat: kFolioPageFormat,
+      margin: const pw.EdgeInsets.fromLTRB(64, 44, 64, 30),
       theme: pw.ThemeData.withFont(
         base: base,
         bold: bold,
@@ -97,22 +131,34 @@ Future<Uint8List> buildEndorsementLetter({
       footer: (context) => _footer(context, credentials.reference),
       build: (context) => [
         _letterhead(seal),
-        pw.SizedBox(height: 18),
+        pw.SizedBox(height: 14),
         _title(),
-        pw.SizedBox(height: 22),
+        pw.SizedBox(height: 16),
         _referenceBlock(credentials.reference, at),
-        pw.SizedBox(height: 20),
+        pw.SizedBox(height: 16),
         _addressee(credentials.agency),
-        pw.SizedBox(height: 18),
+        pw.SizedBox(height: 14),
         ..._body(report, credentials.agency),
-        pw.SizedBox(height: 14),
+        pw.SizedBox(height: 12),
         ..._reasonSection(reason),
-        pw.SizedBox(height: 14),
+        pw.SizedBox(height: 12),
         ..._termsSection(credentials.agency),
-        pw.SizedBox(height: 26),
+        pw.SizedBox(height: 18),
+        // ── Why these are two entries and not one ──────────────────────────
+        // MultiPage only breaks BETWEEN children, so wrapping the signature and
+        // the confirmation panel in one Column keeps them together — and for a
+        // typical letter that pushes BOTH onto page two, leaving page one
+        // ending a third of the way up. Measured: ~60pt free after the terms
+        // against a ~425pt closing. No amount of spacing recovers 365pt.
+        //
+        // Separate entries let the signature take the room that is actually
+        // there and the confirmation panel flow after it. Each is individually
+        // unbreakable, which is the property that matters: a signature line
+        // never splits from the Mayor's name, and the QR never splits from its
+        // PIN box.
         _signatureBlock(),
-        pw.SizedBox(height: 24),
-        _qrBlock(scanUrl, credentials.reference),
+        pw.SizedBox(height: 16),
+        _qrBlock(scanUrl, credentials.reference, credentials.pin),
       ],
     ),
   );
@@ -315,10 +361,14 @@ List<pw.Widget> _termsSection(String agency) => [
   pw.SizedBox(height: 6),
   _numbered(1, 'Primary responsibility for acting on the matter described '
       'above is hereby transferred to $agency upon acknowledgement of receipt.'),
+  // Wording follows the PIN's actual location. It used to read "issued
+  // separately to that office", which stopped being true when the PIN moved
+  // onto the letter — a term of an official document contradicting the box
+  // printed a few inches below it.
   _numbered(2, 'The receiving office is requested to acknowledge receipt of '
-      'this endorsement, and to record its completion, by scanning the code '
-      'printed below and entering the confirmation PIN issued separately to '
-      'that office by this Municipality.'),
+      'this endorsement, to record its progress, and to record its completion, '
+      'by scanning the code printed below and entering the confirmation PIN '
+      'that accompanies it.'),
   _numbered(3, 'The ${AppConfig.lguName} shall retain the original report, its '
       'supporting evidence, and the identity of the reporting citizen, and '
       'shall make these available to the receiving office upon written '
@@ -351,7 +401,7 @@ pw.Widget _signatureBlock() {
               style: const pw.TextStyle(fontSize: 11.5),
             ),
             // Room for a wet signature above the rule.
-            pw.SizedBox(height: 46),
+            pw.SizedBox(height: 32),
             pw.Container(height: 0.75, width: 220, color: PdfColors.black),
             pw.SizedBox(height: 5),
             pw.Text(
@@ -377,19 +427,19 @@ pw.Widget _signatureBlock() {
 
 // ══ QR ════════════════════════════════════════════════════════════════════════
 
-pw.Widget _qrBlock(String scanUrl, String reference) {
+pw.Widget _qrBlock(String scanUrl, String reference, String pin) {
   return pw.Column(
     crossAxisAlignment: pw.CrossAxisAlignment.center,
     children: [
       pw.Container(height: 0.5, color: PdfColors.grey600),
-      pw.SizedBox(height: 14),
+      pw.SizedBox(height: 10),
       pw.BarcodeWidget(
         barcode: pw.Barcode.qrCode(
           errorCorrectLevel: pw.BarcodeQRCorrectionLevel.medium,
         ),
         data: scanUrl,
-        width: 108,
-        height: 108,
+        width: 92,
+        height: 92,
         drawText: false,
         color: PdfColors.black,
       ),
@@ -400,8 +450,7 @@ pw.Widget _qrBlock(String scanUrl, String reference) {
       ),
       pw.SizedBox(height: 3),
       pw.Text(
-        'A confirmation PIN is required. It is issued to your office separately '
-        'and does not appear on this letter.',
+        'The confirmation PIN below is required for every update.',
         textAlign: pw.TextAlign.center,
         style: pw.TextStyle(
           fontSize: 9,
@@ -409,7 +458,9 @@ pw.Widget _qrBlock(String scanUrl, String reference) {
           fontStyle: pw.FontStyle.italic,
         ),
       ),
-      pw.SizedBox(height: 4),
+      pw.SizedBox(height: 10),
+      _pinBox(pin),
+      pw.SizedBox(height: 8),
       pw.Text(
         reference,
         style: pw.TextStyle(
@@ -419,6 +470,53 @@ pw.Widget _qrBlock(String scanUrl, String reference) {
         ),
       ),
     ],
+  );
+}
+
+/// The confirmation PIN, in a ruled box the receiving office can cut off and
+/// file separately from the letter.
+///
+/// Scissors-marked and set in wide-tracked bold at a size that survives a
+/// photocopy — the agency clerk who needs this is reading a third-generation
+/// copy in a binder, not the original. See the file header for why it is on the
+/// page at all.
+pw.Widget _pinBox(String pin) {
+  return pw.Container(
+    padding: const pw.EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+    decoration: pw.BoxDecoration(
+      border: pw.Border.all(width: 0.75, style: pw.BorderStyle.dashed),
+    ),
+    child: pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.center,
+      children: [
+        pw.Text(
+          'CONFIRMATION PIN',
+          style: pw.TextStyle(
+            fontSize: 8,
+            letterSpacing: 1.4,
+            color: PdfColors.grey700,
+          ),
+        ),
+        pw.SizedBox(height: 4),
+        pw.Text(
+          pdfSafe(pin),
+          style: pw.TextStyle(
+            fontSize: 22,
+            fontWeight: pw.FontWeight.bold,
+            letterSpacing: 6,
+          ),
+        ),
+        pw.SizedBox(height: 3),
+        pw.Text(
+          'Detach and retain. Do not file with the letter.',
+          style: pw.TextStyle(
+            fontSize: 7.5,
+            color: PdfColors.grey700,
+            fontStyle: pw.FontStyle.italic,
+          ),
+        ),
+      ],
+    ),
   );
 }
 

@@ -742,22 +742,29 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
     );
   }
 
-  /// Clears an endorsement — the report comes back into the LGU's queue.
+  /// Withdraws an endorsement — the report comes back into the LGU's queue and
+  /// the printed letter stops working.
   ///
-  /// Deliberately separate from [endorse]: this is a plain column reset with no
-  /// credentials involved. The `report_endorsements` row is left in place so the
-  /// transition history survives; a later re-endorsement overwrites it with a
-  /// new token, which is what stops a withdrawn letter's QR from still working.
-  Future<void> clearEndorsement(String id) async {
-    await _tryUpdate(
-      id,
-      {
-        'endorsed_to_department': null,
-        'endorsed_at': null,
-        'endorsed_by': null,
-      },
-      const [],
-    );
+  /// Goes through the `clear_report_endorsement` RPC rather than an UPDATE
+  /// because withdrawing is two writes that must not half-succeed: the routing
+  /// columns are cleared AND the endorsement's token + PIN are revoked. Before
+  /// migration 20260829000000 only the first half happened, so a withdrawn
+  /// letter's QR still resolved and could still drive the citizen's report to
+  /// "Resolved" — the zombie-QR defect.
+  ///
+  /// The `report_endorsements` row itself survives, moved to state 'withdrawn',
+  /// so the handoff history stays reconstructable. Re-endorsing later mints a
+  /// fresh token and PIN.
+  /// [reason] is recorded on the endorsement's event log beside the admin who
+  /// withdrew it (migration 20260829000002). Endorsing has always demanded a
+  /// written justification; taking one back is the same decision in reverse and
+  /// was leaving no trace of who or why.
+  Future<void> clearEndorsement(String id, {String? reason}) async {
+    await _db.rpc('clear_report_endorsement', params: {
+      'p_report': id,
+      'p_reason': reason,
+    });
+    await _reload();
   }
 
   /// Admin ACCEPTS a pending report INTO an internal LGU office. Sets the owning

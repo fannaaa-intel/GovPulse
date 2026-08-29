@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/app_snackbar.dart';
+import '../../../../core/widgets/report_progress_updates.dart';
 import '../../../../core/widgets/resolution_media.dart';
 import '../my_report/my_reports_screen.dart';
 import '../Quick-action/Report/location_picker_screen.dart';
@@ -544,6 +545,23 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
                       ),
                       SizedBox(height: w * .03),
                       _fadeSlide(2, _buildTimeline(w)),
+                      // The running account UNDER the four milestones: what the
+                      // office actually did, and when. Placed directly beneath
+                      // the tracker because it is the same question at finer
+                      // grain — "where has my report got to".
+                      //
+                      // Only APPROVED updates arrive here: the citizen's RLS
+                      // policy binds owns_report to status = 'approved'. The
+                      // widget renders nothing at all until there is one, so a
+                      // report nobody has written about looks unchanged.
+                      SizedBox(height: w * .03),
+                      _fadeSlide(
+                        3,
+                        ReportProgressUpdates(
+                          reportId: _report.fullId,
+                          mode: ReportUpdatesMode.citizen,
+                        ),
+                      ),
                       SizedBox(height: w * .045),
                       _fadeSlide(3, _buildSectionLabel(w, 'Report details')),
                       SizedBox(height: w * .03),

@@ -886,7 +886,11 @@ class _NewStaffFormState extends State<_NewStaffForm> {
   final _email = TextEditingController();
   final _username = TextEditingController();
   final _password = TextEditingController();
-  bool _isExternal = false;
+  // Staff accounts are LGU offices only. External agencies (DPWH, DENR, …) are
+  // NOT given logins: an endorsed report reaches them as a signed letter with a
+  // QR code, confirmed by a separately-transmitted PIN — see
+  // `endorse_report_to_agency` and the public /scan/<token> page. The staff-type
+  // toggle that used to sit here offered an account the flow does not want.
   String _department = StaffDepartments.internal.first.name;
   bool _showPassword = false;
   bool _busy = false;
@@ -923,7 +927,6 @@ class _NewStaffFormState extends State<_NewStaffForm> {
         username: username,
         fullName: _name.text.trim(),
         department: _department,
-        isExternal: _isExternal,
       );
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
@@ -950,26 +953,22 @@ class _NewStaffFormState extends State<_NewStaffForm> {
           const SizedBox(height: 6),
           _TextInput(controller: _name, hint: 'e.g. Juan Dela Cruz'),
           const SizedBox(height: 12),
-          const _FieldLabel('Staff type'),
-          const SizedBox(height: 6),
-          _StaffTypeToggle(
-            isExternal: _isExternal,
-            onChanged: (ext) => setState(() {
-              _isExternal = ext;
-              // Reset the selection to a valid option for the chosen type.
-              _department =
-                  (ext ? StaffDepartments.external : StaffDepartments.internal)
-                      .first
-                      .name;
-            }),
-          ),
-          const SizedBox(height: 12),
-          _FieldLabel(_isExternal ? 'Agency' : 'Department / category'),
+          const _FieldLabel('LGU office'),
           const SizedBox(height: 6),
           _DepartmentDropdown(
-            isExternal: _isExternal,
             value: _department,
             onChanged: (v) => setState(() => _department = v),
+          ),
+          const SizedBox(height: 8),
+          // Replaces the removed "Staff type" toggle. Without it an admin
+          // looking for the external-agency option finds only silence; this
+          // says where that path went and that it needs no account.
+          const _FormHint(
+            icon: Icons.info_outline_rounded,
+            text:
+                'Staff accounts are for LGU offices. External agencies receive '
+                'endorsed reports by letter and QR code — they do not need an '
+                'account.',
           ),
           const SizedBox(height: 12),
           const _FieldLabel('Email'),
@@ -1065,6 +1064,51 @@ class _FieldLabel extends StatelessWidget {
       color: AdminUi.textSecondary,
     ),
   );
+}
+
+/// A quiet explanatory note under a field — for saying why an option the admin
+/// might be hunting for is absent, without shouting like an error would.
+///
+/// The text is [Expanded], not a bare [Text]: a [Row] hands its non-flex
+/// children an unbounded main-axis constraint, so the sentence would refuse to
+/// wrap and overflow instead — which it does on a 360px phone, and again at
+/// large system text scales on any width.
+class _FormHint extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  const _FormHint({required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.primaryBlue.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(AdminUi.controlRadius),
+        border: Border.all(
+          color: AppColors.primaryBlue.withValues(alpha: 0.18),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 15, color: AppColors.primaryBlue),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(
+                fontSize: 11.5,
+                height: 1.4,
+                color: AdminUi.textSecondary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _TextInput extends StatelessWidget {
@@ -1187,85 +1231,19 @@ class _ReasonDropdown extends StatelessWidget {
   }
 }
 
-/// Two-way selector letting the admin decide up-front whether they're creating
-/// an internal LGU staff member or an external-entity account. The dept/agency
-/// list below adapts to this choice.
-class _StaffTypeToggle extends StatelessWidget {
-  final bool isExternal;
-  final ValueChanged<bool> onChanged;
-  const _StaffTypeToggle({required this.isExternal, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) {
-    Widget seg(String label, IconData icon, bool ext) {
-      final selected = isExternal == ext;
-      return Expanded(
-        child: InkWell(
-          onTap: () => onChanged(ext),
-          borderRadius: BorderRadius.circular(AdminUi.controlRadius),
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 11),
-            decoration: BoxDecoration(
-              color: selected
-                  ? AppColors.primaryBlue.withValues(alpha: 0.10)
-                  : Colors.transparent,
-              borderRadius: BorderRadius.circular(AdminUi.controlRadius),
-              border: Border.all(
-                color: selected ? AppColors.primaryBlue : AdminUi.border,
-                width: selected ? 1.4 : 1,
-              ),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  icon,
-                  size: 17,
-                  color: selected ? AppColors.primaryBlue : AdminUi.textMuted,
-                ),
-                const SizedBox(width: 7),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: selected
-                        ? AppColors.primaryBlue
-                        : AdminUi.textSecondary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Row(
-      children: [
-        seg('LGU office', Icons.account_balance_rounded, false),
-        const SizedBox(width: 8),
-        seg('External entity', Icons.apartment_rounded, true),
-      ],
-    );
-  }
-}
-
+/// Picks the LGU office a staff account belongs to. External agencies are
+/// deliberately absent — see the note in [_NewStaffFormState].
 class _DepartmentDropdown extends StatelessWidget {
-  final bool isExternal;
   final String value;
   final ValueChanged<String> onChanged;
   const _DepartmentDropdown({
-    required this.isExternal,
     required this.value,
     required this.onChanged,
   });
 
   @override
   Widget build(BuildContext context) {
-    final options = isExternal
-        ? StaffDepartments.external
-        : StaffDepartments.internal;
+    const options = StaffDepartments.internal;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
@@ -1283,7 +1261,7 @@ class _DepartmentDropdown extends StatelessWidget {
           ),
           borderRadius: BorderRadius.circular(12),
           style: const TextStyle(fontSize: 14, color: AdminUi.textPrimary),
-          hint: Text(isExternal ? 'Select agency' : 'Select department'),
+          hint: const Text('Select office'),
           items: [
             for (final d in options)
               DropdownMenuItem(value: d.name, child: Text(d.name)),
