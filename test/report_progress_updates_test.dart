@@ -328,6 +328,53 @@ void main() {
           reason: 'a centred modal must not hug the bottom edge');
     });
 
+    // ⚠ THE REGRESSION THIS EXISTS FOR.
+    //
+    // The citizen web shell REPLACES MediaQuery.size with its content pane's
+    // constraints, so inside the shell a 1311px browser window reported about
+    // 640px. Keyed off that, a wide desktop got a bottom sheet — the exact bug
+    // the sheet/dialog switch was added to fix. The presentation must follow
+    // the WINDOW, which is what View.of(context).physicalSize reports and no
+    // ancestor can override.
+    testWidgets('a shrunken MediaQuery does not force a bottom sheet',
+        (tester) async {
+      await _bootWith(_ListApi(4));
+      tester.view.physicalSize = const Size(1311, 904);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            // Builder, so MediaQuery.of resolves against a context that
+            // exists — reading it from tester.element before the pump is what
+            // "Bad state: No element" meant on the first draft.
+            body: Builder(
+              builder: (inner) => MediaQuery(
+                // What the shell does: a content pane far narrower than the
+                // window it sits in.
+                data: MediaQuery.of(inner).copyWith(size: const Size(640, 904)),
+                child: const SingleChildScrollView(
+                  child: ReportProgressUpdates(
+                    reportId: '3f2a1b6c-8d4e-4f7a-9b1c-2e5d6a7b8c9d',
+                    mode: ReportUpdatesMode.citizen,
+                    chrome: false,
+                    maxVisible: 2,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('View all 4 updates'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(Dialog), findsOneWidget,
+          reason: 'a 1311px window is a desktop however narrow the pane is');
+    });
+
     testWidgets('caps its width on a wide screen', (tester) async {
       await openAt(tester, const Size(1400, 900));
 

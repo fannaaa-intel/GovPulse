@@ -214,7 +214,21 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
     // foot of a 1900px window, which is a phone gesture stranded on a device
     // that has no such gesture. A centred dialog is what a wide screen expects,
     // and the same content fills both.
-    final wide = MediaQuery.of(context).size.width >= 720;
+    // ⚠ view.physicalSize, NOT MediaQuery.size.
+    //
+    // The citizen web shell REPLACES MediaQuery.size with its content pane's
+    // constraints (citizen_shell.dart ~1360), so inside the shell a 1311px
+    // browser window reports about 640px — below any sensible desktop
+    // threshold. Keying off that gave a bottom sheet on a wide desktop, which
+    // is precisely the bug this switch was added to fix.
+    //
+    // The dialog is routed on the ROOT navigator and covers the whole window,
+    // so the window is what should decide its presentation. view.physicalSize
+    // is the one measurement no ancestor can override; dividing by the pixel
+    // ratio converts it to the logical pixels the 720 threshold is expressed in.
+    final view = View.of(context);
+    final windowWidth = view.physicalSize.width / view.devicePixelRatio;
+    final wide = windowWidth >= 720;
 
     if (wide) {
       showAppDialog<void>(
@@ -236,6 +250,10 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
+      // Root navigator: the citizen web shell nests a Navigator inside its
+      // content pane, and a sheet pushed there is clipped to that pane instead
+      // of rising from the bottom of the window.
+      useRootNavigator: true,
       builder: (_) => _AllUpdatesSheet(updates: _updates, tile: _updateTile),
     );
   }
@@ -1083,7 +1101,13 @@ class _AllUpdatesSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
-    final wide = floating || media.size.width >= 720;
+    // Same window-vs-pane trap as the opener: MediaQuery.size is overridden by
+    // the citizen web shell, so it cannot decide a presentation question about
+    // a route that covers the whole window. `floating` already carries the
+    // caller's decision; the fallback measures the view, not the pane.
+    final view = View.of(context);
+    final wide =
+        floating || view.physicalSize.width / view.devicePixelRatio >= 720;
 
     return SafeArea(
       // A sheet meets the bottom edge and must clear only the home indicator;

@@ -272,8 +272,12 @@ class _ReportWorkLogState extends State<ReportWorkLog> {
   }
 
   Widget _composer() {
-    final accent =
-        widget.authorRole == 'admin' ? AppColors.primaryBlue : const Color(0xFF0EA5A4);
+    // The BUBBLES colour by author — teal for the office, blue for the admin —
+    // so a glance at the thread says who wrote what. That distinction does not
+    // belong on the composer: the same Send button rendered teal in the staff
+    // console and blue in the admin one, which reads as two different controls
+    // rather than one control used by two people. Brand blue in both.
+    const accent = AppColors.primaryBlue;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
