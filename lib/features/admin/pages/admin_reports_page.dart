@@ -2060,7 +2060,27 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
           mode: ReportUpdatesMode.reviewer,
           authorName: 'LGU Admin',
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 22),
+        const Text(
+          'INTERNAL NOTES',
+          style: TextStyle(
+            fontSize: 10.5,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.7,
+            color: AdminUi.textMuted,
+          ),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Between the admin and the owning office only. The citizen never '
+          'sees these.',
+          style: TextStyle(
+            fontSize: 12.5,
+            height: 1.45,
+            color: AdminUi.textMuted,
+          ),
+        ),
+        const SizedBox(height: 10),
         ReportWorkLog(
           reportId: r.id,
           authorRole: 'admin',

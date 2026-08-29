@@ -3,8 +3,10 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../features/admin/widgets/admin_skeleton.dart';
 import '../theme/app_colors.dart';
 import 'app_dialog.dart';
+import 'app_snackbar.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  Progress updates — the running account under a report's status
@@ -77,6 +79,40 @@ class _Update {
   bool get isCompletion => kind == 'completion';
 }
 
+/// One placeholder update card — an author line, two lines of body, and a
+/// thumbnail slot, at the sizes a real card uses.
+class _UpdateSkeleton extends StatelessWidget {
+  const _UpdateSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7F9FC),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.black12),
+      ),
+      child: const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              SkeletonBox(width: 110, height: 11),
+              SizedBox(width: 8),
+              SkeletonBox(width: 54, height: 11),
+            ],
+          ),
+          SizedBox(height: 10),
+          SkeletonBox(width: double.infinity, height: 10),
+          SizedBox(height: 6),
+          SkeletonBox(width: 180, height: 10),
+        ],
+      ),
+    );
+  }
+}
+
 class ReportProgressUpdates extends StatefulWidget {
   final String reportId;
   final ReportUpdatesMode mode;
@@ -110,6 +146,13 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
 
   bool get _canPost => widget.mode != ReportUpdatesMode.citizen;
   bool get _canReview => widget.mode == ReportUpdatesMode.reviewer;
+
+  /// Split for the reviewer's two lists. Order is preserved from the fetch
+  /// (newest first) within each half.
+  List<_Update> get _pending =>
+      _updates.where((u) => u.isPending).toList(growable: false);
+  List<_Update> get _decided =>
+      _updates.where((u) => !u.isPending).toList(growable: false);
 
   @override
   void initState() {
@@ -155,7 +198,9 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
         _unavailable = missing;
         _loading = false;
       });
-      if (!missing && mounted) _toast('Could not load updates: $e');
+      if (!missing && mounted) {
+        _toast('Could not load updates: $e', type: AppSnackType.error);
+      }
     }
   }
 
@@ -191,7 +236,7 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
       if (picked.isEmpty || !mounted) return;
       setState(() => _staged.addAll(picked));
     } catch (e) {
-      _toast('Could not pick photos: $e');
+      _toast('Could not pick photos: $e', type: AppSnackType.error);
     }
   }
 
@@ -255,14 +300,17 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
       });
       await _load();
       if (mounted) {
-        _toast(_canReview
-            ? 'Update posted.'
-            : 'Update submitted for admin approval.');
+        _toast(
+          _canReview
+              ? 'Update posted.'
+              : 'Update submitted for admin approval.',
+          type: AppSnackType.success,
+        );
       }
     } catch (e) {
       if (!mounted) return;
       setState(() => _sending = false);
-      _toast('Could not post the update: $e');
+      _toast('Could not post the update: $e', type: AppSnackType.error);
     }
   }
 
@@ -283,12 +331,17 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
       if (!mounted) return;
       await _load();
       if (mounted) {
-        _toast(approve
-            ? 'Update approved — the citizen can now see it.'
-            : 'Update returned to the author.');
+        _toast(
+          approve
+              ? 'Update approved — the citizen can now see it.'
+              : 'Update returned to the author.',
+          type: AppSnackType.success,
+        );
       }
     } catch (e) {
-      if (mounted) _toast('Could not save that decision: $e');
+      if (mounted) {
+        _toast('Could not save that decision: $e', type: AppSnackType.error);
+      }
     }
   }
 
@@ -345,10 +398,15 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
     return result;
   }
 
-  void _toast(String msg) {
+  /// The app's shared TOP toast, not a Material SnackBar.
+  ///
+  /// showAppSnackBar renders into the root overlay and is what every other
+  /// surface here uses; a bare ScaffoldMessenger call (which this used to make)
+  /// puts a differently-shaped, differently-coloured bar at the BOTTOM and
+  /// reads as a foreign control.
+  void _toast(String msg, {AppSnackType type = AppSnackType.info}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(msg)));
+    showAppSnackBar(context, msg, type: type);
   }
 
   // ── Build ─────────────────────────────────────────────────────────────────
@@ -399,14 +457,16 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
             const SizedBox(height: 14),
           ],
           if (_loading)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 18),
-              child: Center(
-                child: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
+            // Shaped placeholders, not a spinner: the list that lands has a
+            // known shape, so the layout should not jump when it arrives. Same
+            // primitives every other surface in this app loads with.
+            const AdminShimmer(
+              child: Column(
+                children: [
+                  _UpdateSkeleton(),
+                  SizedBox(height: 10),
+                  _UpdateSkeleton(),
+                ],
               ),
             )
           else if (_updates.isEmpty)
@@ -417,107 +477,300 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
                 style: TextStyle(fontSize: 13, color: Colors.black54),
               ),
             )
-          else
+          else if (_canReview && _pending.isNotEmpty) ...[
+            // -- Why the reviewer's list is split ---------------------------
+            // Approve / Return only render on a PENDING card, so a reviewer
+            // looking at a report whose updates are all decided sees a list of
+            // cards with no controls and no explanation of why -- which is
+            // exactly what the admin console showed. Separating the queue from
+            // the history makes "there is nothing waiting on you" a statement
+            // the page makes, rather than something the reader has to infer.
+            _sectionLabel(
+              'Waiting for your decision',
+              count: _pending.length,
+              color: const Color(0xFFB45309),
+            ),
+            const SizedBox(height: 8),
+            for (final u in _pending) _updateTile(u),
+            if (_decided.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              _sectionLabel('Earlier updates', count: _decided.length),
+              const SizedBox(height: 8),
+              for (final u in _decided) _updateTile(u),
+            ],
+          ] else ...[
+            if (_canReview) ...[
+              _allClearBanner(),
+              const SizedBox(height: 12),
+            ],
             for (final u in _updates) _updateTile(u),
+          ],
         ],
       ),
     );
   }
 
+  // -- Composer ---------------------------------------------------------------
+  //
+  // The old version put an unlabelled "Completion" chip between two buttons
+  // with nothing to say what it did -- a control the user had to click to find
+  // out. It is now a labelled either/or with its consequence spelled out, on
+  // its own row, above the actions rather than mixed in among them.
   Widget _composer() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7F9FC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.black12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: _body,
+            maxLines: 4,
+            minLines: 2,
+            textCapitalization: TextCapitalization.sentences,
+            style: const TextStyle(fontSize: 13.5, height: 1.45),
+            decoration: InputDecoration(
+              hintText: 'What has happened since the last update?',
+              hintStyle: const TextStyle(fontSize: 13, color: Colors.black38),
+              filled: true,
+              fillColor: Colors.white,
+              isDense: true,
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+              border: _inputBorder(Colors.black12),
+              enabledBorder: _inputBorder(Colors.black12),
+              focusedBorder: _inputBorder(AppColors.primaryBlue, 1.5),
+            ),
+          ),
+          const SizedBox(height: 10),
+          _kindPicker(),
+          if (_staged.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            _stagedStrip(),
+          ],
+          const SizedBox(height: 10),
+          // Wrap so the two controls stack rather than overflow on a 320px
+          // phone, and at large text scales on any width.
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              OutlinedButton.icon(
+                onPressed: _sending ? null : _pickPhotos,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.primaryBlue,
+                  side: BorderSide(
+                    color: AppColors.primaryBlue.withValues(alpha: 0.4),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  visualDensity: VisualDensity.compact,
+                ),
+                icon: const Icon(Icons.add_photo_alternate_outlined, size: 17),
+                label: Text(_staged.isEmpty
+                    ? 'Add photos'
+                    : 'Add more (${_staged.length})'),
+              ),
+              FilledButton.icon(
+                onPressed: _sending ? null : _submit,
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.primaryBlue,
+                  padding: const EdgeInsets.symmetric(horizontal: 18),
+                  visualDensity: VisualDensity.compact,
+                ),
+                icon: _sending
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.send_rounded, size: 16),
+                label: Text(_canReview ? 'Post update' : 'Submit for approval'),
+              ),
+            ],
+          ),
+          if (!_canReview) ...[
+            const SizedBox(height: 8),
+            const Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.visibility_off_outlined,
+                    size: 14, color: Colors.black45),
+                SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'An admin reviews this before the citizen can see it.',
+                    style: TextStyle(fontSize: 11.5, color: Colors.black54),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Progress vs completion, as a labelled either/or with its consequence
+  /// stated. Two segments rather than a lone toggle: a single unselected chip
+  /// gives no hint that an alternative exists, which is exactly how the old
+  /// "Completion" chip read.
+  Widget _kindPicker() {
+    Widget seg(String label, IconData icon, bool completion) {
+      final selected = _completion == completion;
+      return Expanded(
+        child: InkWell(
+          onTap: () => setState(() => _completion = completion),
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+            decoration: BoxDecoration(
+              color: selected
+                  ? AppColors.primaryBlue.withValues(alpha: 0.10)
+                  : Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: selected ? AppColors.primaryBlue : Colors.black12,
+                width: selected ? 1.4 : 1,
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon,
+                    size: 15,
+                    color: selected ? AppColors.primaryBlue : Colors.black45),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    label,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color:
+                          selected ? AppColors.primaryBlue : Colors.black54,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        TextField(
-          controller: _body,
-          maxLines: 3,
-          minLines: 2,
-          textCapitalization: TextCapitalization.sentences,
-          decoration: const InputDecoration(
-            hintText: 'e.g. We are currently excavating the drainage line.',
-            border: OutlineInputBorder(),
-            isDense: true,
-            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          ),
-        ),
-        if (_staged.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          // Wrap, not Row: a staged-photo strip on a 320px phone overflows the
-          // moment it holds more than three chips.
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              for (var i = 0; i < _staged.length; i++)
-                Chip(
-                  label: Text(
-                    'Photo ${i + 1}',
-                    style: const TextStyle(fontSize: 11.5),
-                  ),
-                  onDeleted: () => setState(() => _staged.removeAt(i)),
-                  visualDensity: VisualDensity.compact,
-                ),
-            ],
-          ),
-        ],
-        const SizedBox(height: 8),
-        // Wrap so the controls stack instead of overflowing on a narrow phone.
-        Wrap(
-          spacing: 8,
-          runSpacing: 4,
-          crossAxisAlignment: WrapCrossAlignment.center,
+        Row(
           children: [
-            // Colours are pinned rather than inherited. This widget is
-            // embedded in three separately-themed surfaces (admin console,
-            // staff console, citizen app), so an ambient ColorScheme would
-            // render it differently in each — and Flutter's default purple
-            // wherever a host has not themed buttons, which is exactly the
-            // regression commit 01d9351 went and fixed elsewhere.
-            OutlinedButton.icon(
-              onPressed: _sending ? null : _pickPhotos,
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.primaryBlue,
-                side: BorderSide(
-                  color: AppColors.primaryBlue.withValues(alpha: 0.4),
-                ),
-              ),
-              icon: const Icon(Icons.add_photo_alternate_outlined, size: 17),
-              label: const Text('Add photos'),
-            ),
-            FilterChip(
-              selected: _completion,
-              onSelected: (v) => setState(() => _completion = v),
-              label: const Text('Completion'),
-              selectedColor: AppColors.primaryBlue.withValues(alpha: 0.14),
-              checkmarkColor: AppColors.primaryBlue,
-              visualDensity: VisualDensity.compact,
-            ),
-            FilledButton.icon(
-              onPressed: _sending ? null : _submit,
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.primaryBlue,
-              ),
-              icon: _sending
-                  ? const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.send_rounded, size: 16),
-              label: Text(_canReview ? 'Post' : 'Submit for approval'),
-            ),
+            seg('Progress', Icons.timelapse_rounded, false),
+            const SizedBox(width: 8),
+            seg('Completion', Icons.verified_rounded, true),
           ],
         ),
-        if (!_canReview) ...[
-          const SizedBox(height: 6),
-          const Text(
-            'An admin reviews this before the citizen can see it.',
-            style: TextStyle(fontSize: 11.5, color: Colors.black54),
+        const SizedBox(height: 6),
+        Text(
+          _completion
+              ? 'Marks the work finished. Completion photos reach the citizen '
+                  'once this is approved.'
+              : 'A routine update on work in progress.',
+          style: const TextStyle(
+            fontSize: 11.5,
+            height: 1.35,
+            color: Colors.black54,
           ),
-        ],
+        ),
       ],
     );
   }
+
+  Widget _stagedStrip() => Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        children: [
+          for (var i = 0; i < _staged.length; i++)
+            Chip(
+              avatar: const Icon(Icons.image_outlined, size: 15),
+              label: Text(
+                'Photo ${i + 1}',
+                style: const TextStyle(fontSize: 11.5),
+              ),
+              onDeleted: () => setState(() => _staged.removeAt(i)),
+              visualDensity: VisualDensity.compact,
+              backgroundColor: Colors.white,
+            ),
+        ],
+      );
+
+  OutlineInputBorder _inputBorder(Color c, [double w = 1]) =>
+      OutlineInputBorder(
+        borderRadius: BorderRadius.circular(9),
+        borderSide: BorderSide(color: c, width: w),
+      );
+
+  Widget _sectionLabel(String text, {required int count, Color? color}) => Row(
+        children: [
+          Text(
+            text.toUpperCase(),
+            style: TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.7,
+              color: color ?? Colors.black45,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+            decoration: BoxDecoration(
+              color: (color ?? Colors.black45).withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              '$count',
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w800,
+                color: color ?? Colors.black54,
+              ),
+            ),
+          ),
+        ],
+      );
+
+  /// Shown to a reviewer when nothing is waiting — so an all-decided list reads
+  /// as "you are up to date" rather than as a broken queue.
+  Widget _allClearBanner() => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+        decoration: BoxDecoration(
+          color: AppColors.green.withValues(alpha: 0.07),
+          borderRadius: BorderRadius.circular(9),
+          border: Border.all(color: AppColors.green.withValues(alpha: 0.22)),
+        ),
+        child: const Row(
+          children: [
+            Icon(Icons.check_circle_outline_rounded,
+                size: 16, color: AppColors.green),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Nothing waiting for review.',
+                style: TextStyle(fontSize: 12, color: Colors.black87),
+              ),
+            ),
+          ],
+        ),
+      );
 
   Widget _updateTile(_Update u) {
     return Container(

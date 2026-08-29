@@ -95,7 +95,7 @@ void main() {
       await tester.pumpWidget(_host(ReportUpdatesMode.reviewer));
       await tester.pump();
 
-      expect(find.text('Post'), findsOneWidget);
+      expect(find.text('Post update'), findsOneWidget);
       expect(
         find.text('An admin reviews this before the citizen can see it.'),
         findsNothing,

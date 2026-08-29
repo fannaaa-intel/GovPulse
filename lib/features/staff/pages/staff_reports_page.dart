@@ -1453,8 +1453,33 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // The citizen-facing half first: what this office writes here reaches
+        // the reporter once an admin approves it.
+        //
+        // NOTE the tab used to open with "Log progress or reply to the admin.
+        // The citizen never sees this." — true of the work log, and flatly
+        // wrong about the panel that now sits under it. Each half carries its
+        // own caption instead, because the whole risk on this screen is an
+        // officer mistaking one box for the other.
+        ReportProgressUpdates(
+          reportId: widget.report.id,
+          mode: ReportUpdatesMode.author,
+          authorName: widget.department ?? 'Staff',
+        ),
+        const SizedBox(height: 22),
         const Text(
-          'Log progress or reply to the admin. The citizen never sees this.',
+          'INTERNAL NOTES',
+          style: TextStyle(
+            fontSize: 10.5,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.7,
+            color: StaffUi.textMuted,
+          ),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Between this office and the admin only. The citizen never sees '
+          'these.',
           style: TextStyle(
             fontSize: 12.5,
             height: 1.45,
@@ -1462,16 +1487,6 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
           ),
         ),
         const SizedBox(height: 10),
-        // The citizen-facing half, first: what this office writes here reaches
-        // the reporter once an admin approves it. Deliberately above the work
-        // log, whose copy above says the citizen never sees THAT — the two sit
-        // together and the distinction has to be obvious.
-        ReportProgressUpdates(
-          reportId: widget.report.id,
-          mode: ReportUpdatesMode.author,
-          authorName: widget.department ?? 'Staff',
-        ),
-        const SizedBox(height: 20),
         ReportWorkLog(
           reportId: widget.report.id,
           authorRole: 'staff',
