@@ -489,8 +489,9 @@ class _ActivityLogScreenState extends ConsumerState<_ActivityLogScreen>
   }
 
   // ── Header ─────────────────────────────────────────────────────────────────
-  /// Title block with a live count subtitle, so the sheet says what it is
-  /// holding before you have read a single row.
+  /// Title block. Header only — the active range is already named on the
+  /// selected filter chip directly below, so a subtitle restating it with a
+  /// count was saying the same thing twice a few pixels apart.
   Widget _header(double gutter) {
     return Container(
       color: AdminUi.surface,
@@ -511,43 +512,17 @@ class _ActivityLogScreenState extends ConsumerState<_ActivityLogScreen>
             AdminDialogBack(onTap: () => Navigator.pop(context)),
             const SizedBox(width: 12),
           ],
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'Activity log',
-                  style: TextStyle(
-                    fontSize: 19,
-                    fontWeight: FontWeight.w700,
-                    color: AdminUi.textPrimary,
-                    letterSpacing: -0.3,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                // Reads off the same future the list renders, so the count and
-                // the rows can never disagree.
-                FutureBuilder<List<AdminActivity>>(
-                  future: _future,
-                  builder: (context, snap) {
-                    final n = snap.data?.length;
-                    final label = switch (n) {
-                      null => 'Loading…',
-                      0 => 'No actions',
-                      1 => '1 action',
-                      _ => '$n actions',
-                    };
-                    return Text(
-                      '$label · ${_rangeLabel()}',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AdminUi.textMuted,
-                      ),
-                    );
-                  },
-                ),
-              ],
+          const Expanded(
+            child: Text(
+              'Activity log',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 19,
+                fontWeight: FontWeight.w700,
+                color: AdminUi.textPrimary,
+                letterSpacing: -0.3,
+              ),
             ),
           ),
           // No refresh button: pull-to-refresh covers it on touch, and the
@@ -564,15 +539,6 @@ class _ActivityLogScreenState extends ConsumerState<_ActivityLogScreen>
       ),
     );
   }
-
-  /// Plain-language name for the active filter, used in the header subtitle.
-  String _rangeLabel() => switch (_range) {
-    _Range.all => 'All time',
-    _Range.today => 'Today',
-    _Range.days7 => 'Last 7 days',
-    _Range.days30 => 'Last 30 days',
-    _Range.custom => _custom == null ? 'Custom range' : _customLabel(),
-  };
 
   /// Compact label for a chosen custom range, e.g. "Aug 4 – Aug 13".
   String _customLabel() {

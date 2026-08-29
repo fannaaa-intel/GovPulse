@@ -20,6 +20,7 @@ import 'package:govpulse/features/admin/pages/admin_overview_page.dart';
 import 'package:govpulse/features/admin/pages/admin_recent_activity_page.dart';
 import 'package:govpulse/features/admin/providers/admin_dashboard_provider.dart';
 import 'package:govpulse/features/admin/providers/admin_reports_provider.dart';
+import 'package:govpulse/features/admin/widgets/admin_dialog_back.dart';
 
 import '_responsive_matrix.dart';
 
@@ -200,11 +201,14 @@ void main() {
       await tester.tap(chip);
       await tester.pumpAndSettle();
 
-      // Only the two verification rows remain, and the header says so.
+      // Only the verification rows remain. The header carries no subtitle, so
+      // the selected chip is what says which slice is showing.
       expect(find.text('New report submitted'), findsNothing);
       expect(find.text('Report resolved'), findsNothing);
+      expect(find.text('New suggestion submitted'), findsNothing);
+      expect(find.text('New feedback received'), findsNothing);
       expect(find.text('ID verification submitted'), findsOneWidget);
-      expect(find.textContaining('Verifications only'), findsOneWidget);
+      expect(find.text('Verification rejected'), findsOneWidget);
     });
 
     testWidgets('an empty slice explains itself instead of going blank',
@@ -255,8 +259,10 @@ void main() {
       await _openFeed(tester);
 
       // The pushed screen wears the same chevron control as every other admin
-      // sub-screen; the modal is the one that swaps it for an X.
-      await tester.tap(find.byIcon(Icons.chevron_left_rounded));
+      // sub-screen; the modal is the one that swaps it for an X. Found by
+      // widget type, not by icon — the chip's glyph is AdminDialogBack's to
+      // change, and this test is about the screen popping, not the artwork.
+      await tester.tap(find.byType(AdminDialogBack));
       await tester.pumpAndSettle();
 
       expect(find.textContaining('All · '), findsNothing);

@@ -405,8 +405,8 @@ void main() {
       // The sheet is up: its own header, and the source filter that explains
       // why the feed is not just the Reports list.
       expect(find.text('Recent activity'), findsWidgets);
-      expect(find.textContaining('All activity'), findsOneWidget);
-      expect(find.textContaining('Verifications'), findsOneWidget);
+      expect(find.textContaining('All · '), findsOneWidget);
+      expect(find.textContaining('Verifications · '), findsOneWidget);
     });
   });
 }

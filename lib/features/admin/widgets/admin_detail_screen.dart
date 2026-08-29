@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../theme/admin_ui.dart';
+import 'admin_dialog_back.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  Admin detail presentation
@@ -115,28 +116,10 @@ class AdminChevronHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(12, 8, 16, 8),
       child: Row(
         children: [
-          Material(
-            color: AdminUi.subtle,
-            borderRadius: BorderRadius.circular(10),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(10),
-              onTap: () => Navigator.of(context).maybePop(),
-              child: Container(
-                width: 38,
-                height: 38,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: AdminUi.border),
-                ),
-                child: const Icon(
-                  Icons.chevron_left_rounded,
-                  size: 24,
-                  color: AppColors.primaryBlue,
-                ),
-              ),
-            ),
-          ),
+          // The one back chip, not a second copy of it: this header used to
+          // redraw AdminDialogBack's Material/InkWell/Container by hand, so
+          // restyling "back" meant finding both.
+          AdminDialogBack(onTap: () => Navigator.of(context).maybePop()),
           const SizedBox(width: 12),
           Expanded(
             child: Text(

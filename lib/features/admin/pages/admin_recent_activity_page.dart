@@ -307,7 +307,7 @@ class _RecentActivityScreenState extends ConsumerState<_RecentActivityScreen>
 
     final unbarred = Column(
       children: [
-        _header(gutter, all),
+        _header(gutter),
         _filterBar(gutter, all),
         const Divider(height: 1, thickness: 1, color: AdminUi.border),
         Expanded(
@@ -337,16 +337,10 @@ class _RecentActivityScreenState extends ConsumerState<_RecentActivityScreen>
   }
 
   // ── Header ─────────────────────────────────────────────────────────────────
-  /// Title block with a live count subtitle, so the sheet says what it is
-  /// holding before you have read a single row.
-  Widget _header(double gutter, List<ActivityItem> all) {
-    final n = _visible(all).length;
-    final label = switch (n) {
-      0 => 'No events',
-      1 => '1 event',
-      _ => '$n events',
-    };
-
+  /// Title block. Header only — the counts live on the filter chips directly
+  /// below it, so a subtitle restating them was saying the same thing twice a
+  /// few pixels apart.
+  Widget _header(double gutter) {
     return Container(
       color: AdminUi.surface,
       // The modal keeps a tighter right inset for its close button; the pushed
@@ -366,29 +360,17 @@ class _RecentActivityScreenState extends ConsumerState<_RecentActivityScreen>
             AdminDialogBack(onTap: () => Navigator.pop(context)),
             const SizedBox(width: 12),
           ],
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'Recent activity',
-                  style: TextStyle(
-                    fontSize: 19,
-                    fontWeight: FontWeight.w700,
-                    color: AdminUi.textPrimary,
-                    letterSpacing: -0.3,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '$label · ${_filterLabel()}',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AdminUi.textMuted,
-                  ),
-                ),
-              ],
+          const Expanded(
+            child: Text(
+              'Recent activity',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 19,
+                fontWeight: FontWeight.w700,
+                color: AdminUi.textPrimary,
+                letterSpacing: -0.3,
+              ),
             ),
           ),
           if (widget.inModal)
@@ -403,9 +385,6 @@ class _RecentActivityScreenState extends ConsumerState<_RecentActivityScreen>
       ),
     );
   }
-
-  String _filterLabel() =>
-      _filter == _Filter.all ? 'All activity' : '${_chipLabel(_filter)} only';
 
   /// Source filter. Counts sit on the chips so the split between the two
   /// sources is visible without switching.
