@@ -309,6 +309,25 @@ void main() {
               'gesture');
     });
 
+    // ⚠ Asserting "a Dialog exists" was NOT enough, and shipped a modal that
+    // sat low on the page: Dialog hands its child the full screen minus
+    // insetPadding, so the CHILD's alignment decides where it lands — and the
+    // child was still using the sheet's Alignment.bottomCenter. Assert the
+    // geometry, not the widget type.
+    testWidgets('the wide dialog is vertically centred', (tester) async {
+      await openAt(tester, const Size(1400, 900));
+
+      final box = find.ancestor(
+        of: find.text('Progress updates (4)'),
+        matching: find.byType(ConstrainedBox),
+      ).first;
+      final centre = tester.getCenter(box).dy;
+      final screenCentre = tester.getSize(find.byType(MaterialApp)).height / 2;
+
+      expect((centre - screenCentre).abs(), lessThan(24),
+          reason: 'a centred modal must not hug the bottom edge');
+    });
+
     testWidgets('caps its width on a wide screen', (tester) async {
       await openAt(tester, const Size(1400, 900));
 

@@ -1086,9 +1086,17 @@ class _AllUpdatesSheet extends StatelessWidget {
     final wide = floating || media.size.width >= 720;
 
     return SafeArea(
-      top: false,
+      // A sheet meets the bottom edge and must clear only the home indicator;
+      // a dialog floats free and needs BOTH insets respected, or it hangs
+      // under the browser chrome at the top.
+      top: !floating,
       child: Align(
-        alignment: Alignment.bottomCenter,
+        // ⚠ bottomCenter is a SHEET property. Left unconditional it also
+        // applied inside the Dialog, which is why the centred modal rendered
+        // sitting low on the page rather than in the middle of it — Dialog
+        // gives its child the full screen minus insetPadding, so the child's
+        // own alignment decides where it lands.
+        alignment: floating ? Alignment.center : Alignment.bottomCenter,
         child: ConstrainedBox(
           constraints: BoxConstraints(
             maxWidth: wide ? 620 : double.infinity,
@@ -1147,10 +1155,17 @@ class _AllUpdatesSheet extends StatelessWidget {
                   ),
                 ),
                 const Divider(height: 1),
-                // Flexible + a scrolling list, so a short history sizes to its
-                // content and a long one scrolls instead of overflowing.
+                // Flexible + shrinkWrap, so a short history sizes to its
+                // content and a long one scrolls inside the maxHeight cap.
+                //
+                // shrinkWrap is what makes the first half true: a ListView
+                // without it takes ALL the height its parent offers, so three
+                // updates in a centred dialog left an empty half-screen of
+                // white below them. The comment here used to claim the sizing
+                // the code did not do.
                 Flexible(
                   child: ListView.builder(
+                    shrinkWrap: true,
                     padding: const EdgeInsets.fromLTRB(14, 12, 14, 18),
                     itemCount: updates.length,
                     itemBuilder: (_, i) => tile(updates[i]),
