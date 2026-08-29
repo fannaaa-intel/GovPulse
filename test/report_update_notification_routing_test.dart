@@ -39,6 +39,25 @@ void main() {
       final reports = kPrimaryTabs.firstWhere((t) => t.label == 'Reports');
       expect(reports.topics, contains('report'));
     });
+
+    // TWO lists, and being in only one half-works: kAllAdminTopics decides
+    // whether the row is QUERIED, AdminNotif._routable decides whether the tap
+    // RESOLVES. report_update shipped in the first and not the second, so the
+    // notification appeared and tapping it did nothing.
+    test('the tap resolves rather than collapsing to general', () {
+      final n = AdminNotif.fromRow({
+        'id': 'n1',
+        'topic': 'report_update',
+        'title': 'Progress update needs review',
+        'subtitle': 'Engineering Office: Hello',
+        'reference_id': '3f2a1b6c-8d4e-4f7a-9b1c-2e5d6a7b8c9d',
+        'created_at': '2026-08-29T12:00:00Z',
+      });
+
+      expect(n.topic, 'report_update',
+          reason: 'a topic outside _routable becomes general and dead-ends');
+      expect(n.referenceId, '3f2a1b6c-8d4e-4f7a-9b1c-2e5d6a7b8c9d');
+    });
   });
 
   group('staff', () {

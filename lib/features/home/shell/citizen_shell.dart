@@ -379,6 +379,16 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
   void _routeNotificationTap(AppNotification n) {
     switch (n.type) {
       case 'report_decision':
+      // An approved progress update on this citizen's report. Same destination
+      // and the same reference_id shape as a status change — the updates live
+      // inside the processing timeline on that screen — so it shares the arm
+      // rather than duplicating it.
+      //
+      // ⚠ This switch is the SECOND place the type vocabulary lives (see the
+      // note above). A new notification type needs adding HERE as well as in
+      // routeCitizenNotificationTap, or it works on mobile and silently does
+      // nothing on web — which is exactly how report_update shipped.
+      case 'report_update':
         // reference_id holds the report id — read straight through by
         // AppNotification.fromRow. (_effectivePostId deliberately does NOT
         // claim it: that helper is restricted to social types precisely so a

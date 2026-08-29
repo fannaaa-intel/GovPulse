@@ -188,7 +188,12 @@ class AdminNotif {
   /// Topics the admin shell can route a tap to (_tabIndexForTopic). Includes
   /// both engagement vocabularies (see kAllAdminTopics).
   static const _routable = {
-    'report', 'suggestion', 'feedback', 'verification', 'community_request',
+    // ⚠ kAllAdminTopics is what the QUERY filters on; this is what the TAP
+    // resolves through. A topic in one and not the other half-works: present in
+    // kAllAdminTopics only, the row renders and the tap dead-ends on 'general'
+    // — which is exactly how report_update shipped. Both lists, every time.
+    'report', 'report_update',
+    'suggestion', 'feedback', 'verification', 'community_request',
     'comment', 'post_heart', 'comment_heart',
     'post_like', 'comment_like', 'post_comment', 'comment_reply',
   };

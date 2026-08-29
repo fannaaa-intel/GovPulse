@@ -208,6 +208,30 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
   /// tap from where they were, and the report screen behind it keeps its scroll
   /// position — which a push/pop would lose on the way back.
   void _openAll() {
+    // ── Bottom sheet on a phone, centred dialog on a wide screen ───────────
+    // showModalBottomSheet ALWAYS anchors to the bottom edge, whatever the
+    // viewport: on a desktop browser that put a drag-handled sheet across the
+    // foot of a 1900px window, which is a phone gesture stranded on a device
+    // that has no such gesture. A centred dialog is what a wide screen expects,
+    // and the same content fills both.
+    final wide = MediaQuery.of(context).size.width >= 720;
+
+    if (wide) {
+      showAppDialog<void>(
+        context: context,
+        builder: (_) => Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.all(32),
+          child: _AllUpdatesSheet(
+            updates: _updates,
+            tile: _updateTile,
+            floating: true,
+          ),
+        ),
+      );
+      return;
+    }
+
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -1042,13 +1066,24 @@ class _AllUpdatesSheet extends StatelessWidget {
   /// identical inline and in here.
   final Widget Function(_Update) tile;
 
-  const _AllUpdatesSheet({required this.updates, required this.tile});
+  /// True when presented as a centred dialog rather than a bottom sheet.
+  ///
+  /// Changes three things, all of which look wrong in the other mode: the drag
+  /// handle (a gesture that only exists on a sheet), whether the bottom corners
+  /// are rounded (a sheet meets the screen edge; a dialog floats clear of it),
+  /// and whether the card fills the width it is given.
+  final bool floating;
+
+  const _AllUpdatesSheet({
+    required this.updates,
+    required this.tile,
+    this.floating = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
-    final w = media.size.width;
-    final wide = w >= 720;
+    final wide = floating || media.size.width >= 720;
 
     return SafeArea(
       top: false,
@@ -1074,15 +1109,18 @@ class _AllUpdatesSheet extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const SizedBox(height: 10),
-                Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.black12,
-                    borderRadius: BorderRadius.circular(2),
+                // Drag handle only where dragging is possible.
+                if (!floating) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.black12,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
-                ),
+                ],
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 14, 8, 10),
                   child: Row(

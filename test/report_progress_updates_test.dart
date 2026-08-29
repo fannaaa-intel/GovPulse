@@ -294,6 +294,21 @@ void main() {
           reason: 'a phone sheet runs edge to edge');
     });
 
+    // showModalBottomSheet ALWAYS anchors to the bottom edge, whatever the
+    // viewport — which put a drag-handled phone sheet across the foot of a
+    // desktop browser. A wide screen gets a centred Dialog instead.
+    testWidgets('is a bottom sheet on a phone', (tester) async {
+      await openAt(tester, const Size(360, 720));
+      expect(find.byType(Dialog), findsNothing);
+    });
+
+    testWidgets('is a centred dialog on a wide screen', (tester) async {
+      await openAt(tester, const Size(1400, 900));
+      expect(find.byType(Dialog), findsOneWidget,
+          reason: 'a bottom sheet on a 1400px window is a stranded phone '
+              'gesture');
+    });
+
     testWidgets('caps its width on a wide screen', (tester) async {
       await openAt(tester, const Size(1400, 900));
 
