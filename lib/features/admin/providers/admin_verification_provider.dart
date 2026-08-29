@@ -61,6 +61,11 @@ class AdminVerification {
   final String? idFrontPath;
   final String? idBackPath;
   final String? facePhotoPath;
+  /// Public avatar URL from `profile-photos`, resolved via the citizen's
+  /// `public_user_profiles.profile_photo_path`. Only populated for APPROVED
+  /// submissions — see [_fetch] — so a pending/rejected applicant never has
+  /// their selfie surfaced next to their name.
+  final String? photoUrl;
   final VerificationStatus status;
   final String? reviewerNotes;
   final DateTime? reviewedAt;
@@ -85,6 +90,7 @@ class AdminVerification {
     this.idFrontPath,
     this.idBackPath,
     this.facePhotoPath,
+    this.photoUrl,
     required this.status,
     this.reviewerNotes,
     this.reviewedAt,
@@ -248,10 +254,49 @@ class AdminVerificationNotifier extends AsyncNotifier<List<AdminVerification>> {
         .order('created_at', ascending: _filters.sort == VerificationSort.oldest)
         .limit(200);
 
-    return List<Map<String, dynamic>>.from(rows).map(_map).toList();
+    final list = List<Map<String, dynamic>>.from(rows);
+
+    // Avatars only for APPROVED applicants. The selfie of someone still
+    // pending (or rejected) isn't their profile picture yet — approval is what
+    // publishes it into `profile-photos` (see [approve] → sync-verification-
+    // avatar) — so everyone else deliberately keeps the neutral default.
+    final approvedIds = <String>{
+      for (final r in list)
+        if (verificationStatusFromDb(r['status'] as String?) ==
+            VerificationStatus.approved)
+          r['user_id'] as String,
+    };
+    final photos = await _fetchPhotoUrls(approvedIds.toList());
+
+    return [for (final r in list) _map(r, photos[r['user_id'] as String])];
   }
 
-  AdminVerification _map(Map<String, dynamic> r) {
+  /// Public avatar URL per user id, from `public_user_profiles`. Mirrors the
+  /// reports/suggestions/feedback providers: one batched read, then the public
+  /// URL built off `profile_photo_path`. Best-effort — a failure here just
+  /// leaves every row on the default silhouette rather than failing the queue.
+  Future<Map<String, String>> _fetchPhotoUrls(List<String> userIds) async {
+    if (userIds.isEmpty) return const {};
+    try {
+      final rows = await _db
+          .from('public_user_profiles')
+          .select('user_id, profile_photo_path')
+          .inFilter('user_id', userIds);
+
+      final map = <String, String>{};
+      for (final r in List<Map<String, dynamic>>.from(rows)) {
+        final path = (r['profile_photo_path'] as String?)?.trim() ?? '';
+        if (path.isEmpty) continue;
+        map[r['user_id'] as String] =
+            _db.storage.from('profile-photos').getPublicUrl(path);
+      }
+      return map;
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  AdminVerification _map(Map<String, dynamic> r, [String? photoUrl]) {
     return AdminVerification(
       id: r['id'] as String,
       userId: r['user_id'] as String,
@@ -271,6 +316,7 @@ class AdminVerificationNotifier extends AsyncNotifier<List<AdminVerification>> {
       idFrontPath: r['id_front_path'] as String?,
       idBackPath: r['id_back_path'] as String?,
       facePhotoPath: r['face_photo_path'] as String?,
+      photoUrl: photoUrl,
       status: verificationStatusFromDb(r['status'] as String?),
       reviewerNotes: r['reviewer_notes'] as String?,
       reviewedAt: _parseTs(r['reviewed_at']),

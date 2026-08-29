@@ -443,44 +443,19 @@ class _StatusPill extends StatelessWidget {
   }
 }
 
-/// Circular monogram from the applicant's name — gives each row a face.
+/// Applicant avatar. An approved citizen's profile photo is their published
+/// verification selfie (`profile-photos`), so it renders here; everyone else —
+/// still pending, rejected, or approved without a synced photo — gets the same
+/// neutral silhouette the rest of the admin surfaces use. Initials are
+/// deliberately not used: this column shows a face, not a monogram.
 class _Avatar extends StatelessWidget {
-  final String name;
+  final String? photoUrl;
   final double size;
-  const _Avatar({required this.name, this.size = 34});
+  const _Avatar({this.photoUrl, this.size = 34});
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: AppColors.primaryBlue.withValues(alpha: 0.10),
-        shape: BoxShape.circle,
-      ),
-      child: Text(
-        _initials(name),
-        style: TextStyle(
-          fontSize: size * 0.36,
-          fontWeight: FontWeight.w700,
-          color: AppColors.primaryBlue,
-        ),
-      ),
-    );
-  }
-
-  static String _initials(String name) {
-    final parts = name
-        .trim()
-        .split(RegExp(r'\s+'))
-        .where((p) => p.isNotEmpty)
-        .toList();
-    if (parts.isEmpty) return '?';
-    if (parts.length == 1) return parts.first.characters.first.toUpperCase();
-    return (parts.first.characters.first + parts.last.characters.first)
-        .toUpperCase();
-  }
+  Widget build(BuildContext context) =>
+      AdminAvatar(size: size, photoUrl: photoUrl);
 }
 
 // ── Stat card ──────────────────────────────────────────────────────────────
@@ -668,7 +643,7 @@ class _TableRow extends StatelessWidget {
                 flex: 3,
                 child: Row(
                   children: [
-                    _Avatar(name: verification.fullName),
+                    _Avatar(photoUrl: verification.photoUrl),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
@@ -802,7 +777,7 @@ class _VerificationCard extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      _Avatar(name: verification.fullName, size: 30),
+                      _Avatar(photoUrl: verification.photoUrl, size: 30),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
@@ -1262,7 +1237,7 @@ class _VerificationDetailDialogState
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _Avatar(name: v.fullName, size: 72),
+              _Avatar(photoUrl: v.photoUrl, size: 72),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
