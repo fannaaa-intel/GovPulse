@@ -70,10 +70,20 @@ AdminDashboardData _data() => AdminDashboardData(
   ),
   recentActivity: [
     ActivityItem(
+      id: 'rep-1',
       title: 'New report submitted',
       subtitle: 'Road & Infrastructure — Dodan',
       timestamp: DateTime.now().subtract(const Duration(days: 7)),
       kind: ActivityKind.reportNew,
+    ),
+    // A verification event, because the feed mixes both sources — that mix is
+    // the whole reason the row taps below have to resolve per row.
+    ActivityItem(
+      id: 'ver-1',
+      title: 'ID verification submitted',
+      subtitle: 'Juan Dela Cruz — awaiting review',
+      timestamp: DateTime.now().subtract(const Duration(days: 1)),
+      kind: ActivityKind.verifPending,
     ),
   ],
 );
@@ -290,6 +300,68 @@ void main() {
       expect(find.text('Citizen sentiment'), findsOneWidget);
       expect(find.text('Predictive outlook'), findsOneWidget);
       expect(find.text('Citizen satisfaction'), findsOneWidget);
+    });
+  });
+
+  group('recent activity rows deep-link to the console that owns them', () {
+    // The feed mixes reports and ID verifications. Before this, every row that
+    // navigated at all went to Reports (tab 3) with no highlight, so tapping a
+    // verification event either did nothing or landed on a list that could not
+    // contain it.
+    testWidgets('a report row opens Reports and flashes the report',
+        (tester) async {
+      final nav = <_NavCall>[];
+      await _pump(tester, const Size(1400, 2400), navLog: nav);
+
+      await tester.tap(find.text('New report submitted'));
+      await tester.pumpAndSettle();
+
+      expect(nav, [(index: 3, highlightId: 'rep-1')]);
+    });
+
+    testWidgets('a verification row opens Verification, not Reports',
+        (tester) async {
+      final nav = <_NavCall>[];
+      await _pump(tester, const Size(1400, 2400), navLog: nav);
+
+      await tester.tap(find.text('ID verification submitted'));
+      await tester.pumpAndSettle();
+
+      // Tab 6 is Verification. Landing on 3 here is the original bug.
+      expect(nav, [(index: 6, highlightId: 'ver-1')]);
+    });
+
+    testWidgets('every row carries a highlight id, so each one flashes',
+        (tester) async {
+      final nav = <_NavCall>[];
+      await _pump(tester, const Size(1400, 2400), navLog: nav);
+
+      for (final label in ['New report submitted', 'ID verification submitted']) {
+        await tester.tap(find.text(label));
+        await tester.pumpAndSettle();
+      }
+
+      expect(nav.length, 2);
+      expect(nav.every((c) => c.highlightId != null), isTrue);
+    });
+
+    testWidgets('"View all" no longer jumps straight to Reports',
+        (tester) async {
+      final nav = <_NavCall>[];
+      await _pump(tester, const Size(1400, 2400), navLog: nav);
+
+      await tester.tap(find.text('View all'));
+      await tester.pumpAndSettle();
+
+      // It opens the full feed instead. Navigation happens only once a row in
+      // that feed is tapped, so nothing is requested from the shell yet.
+      expect(nav, isEmpty);
+
+      // The sheet is up: its own header, and the source filter that explains
+      // why the feed is not just the Reports list.
+      expect(find.text('Recent activity'), findsWidgets);
+      expect(find.textContaining('All activity'), findsOneWidget);
+      expect(find.textContaining('Verifications'), findsOneWidget);
     });
   });
 }

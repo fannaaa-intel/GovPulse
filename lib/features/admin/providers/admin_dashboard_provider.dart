@@ -20,17 +20,32 @@ enum ActivityKind {
 
 /// One row in the "Recent activity" feed.
 class ActivityItem {
+  /// The submission this row is about — a `reports.id` or a
+  /// `verification_submissions.id`. Carried so a tap can deep-link to the exact
+  /// row in the console that owns it, the same way a notification does. Empty
+  /// only if the source row somehow had no id, which makes the row unlinkable
+  /// rather than mis-linked.
+  final String id;
   final String title;
   final String subtitle;
   final DateTime? timestamp;
   final ActivityKind kind;
 
   const ActivityItem({
+    required this.id,
     required this.title,
     required this.subtitle,
     required this.timestamp,
     required this.kind,
   });
+
+  /// True when this row describes an ID-verification submission rather than a
+  /// citizen report. The feed mixes both, so every consumer that has to pick a
+  /// destination asks here instead of re-listing the kinds.
+  bool get isVerification =>
+      kind == ActivityKind.verifPending ||
+      kind == ActivityKind.verifApproved ||
+      kind == ActivityKind.verifRejected;
 }
 
 /// One bar in the "Top reported categories" panel.
@@ -1657,6 +1672,7 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
       row['category_other'] as String?,
     );
     final barangay = (row['barangay'] as String?)?.trim();
+    final id = (row['id'] ?? '').toString();
 
     final subtitleParts = <String>[
       if (category.isNotEmpty) category,
@@ -1670,6 +1686,7 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
     switch (status) {
       case ReportStatus.resolved:
         return ActivityItem(
+          id: id,
           title: 'Report resolved',
           subtitle: subtitle,
           timestamp: ts,
@@ -1677,6 +1694,7 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
         );
       case ReportStatus.rejected:
         return ActivityItem(
+          id: id,
           title: 'Report rejected',
           subtitle: subtitle,
           timestamp: ts,
@@ -1685,6 +1703,7 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
       case ReportStatus.underReview:
       case ReportStatus.inProgress:
         return ActivityItem(
+          id: id,
           title: 'Report in review',
           subtitle: subtitle,
           timestamp: ts,
@@ -1692,6 +1711,7 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
         );
       case ReportStatus.pending:
         return ActivityItem(
+          id: id,
           title: 'New report submitted',
           subtitle: subtitle,
           timestamp: ts,
@@ -1702,6 +1722,7 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
 
   ActivityItem _verifActivity(Map<String, dynamic> row) {
     final status = (row['status'] as String?) ?? 'pending';
+    final id = (row['id'] ?? '').toString();
     final name = '${row['first_name'] ?? ''} ${row['last_name'] ?? ''}'.trim();
     final display = name.isEmpty ? 'Citizen' : name;
     // Reviewed rows are events at `reviewed_at`; a pending row's event is its
@@ -1714,6 +1735,7 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
     switch (status) {
       case 'approved':
         return ActivityItem(
+          id: id,
           title: 'User verified',
           subtitle: '$display — Citizen',
           timestamp: ts,
@@ -1721,6 +1743,7 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
         );
       case 'rejected':
         return ActivityItem(
+          id: id,
           title: 'Verification rejected',
           subtitle: display,
           timestamp: ts,
@@ -1728,6 +1751,7 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
         );
       default:
         return ActivityItem(
+          id: id,
           title: 'ID verification submitted',
           subtitle: '$display — awaiting review',
           timestamp: ts,

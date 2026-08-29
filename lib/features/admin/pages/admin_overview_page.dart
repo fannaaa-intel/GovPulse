@@ -12,9 +12,11 @@ import '../providers/admin_suggestions_provider.dart'
     show AdminSuggestion, adminSuggestionsProvider;
 import '../theme/admin_ui.dart';
 import '../utils/analytics_pdf.dart';
+import '../widgets/activity_visuals.dart';
 import '../widgets/admin_skeleton.dart';
 import '../widgets/admin_snackbar.dart';
 import '../widgets/admin_submission_ui.dart';
+import 'admin_recent_activity_page.dart';
 import '../../../core/widgets/app_dialog.dart';
 
 /// The dashboard's one transition length, collapsed to zero when the OS asks
@@ -31,6 +33,7 @@ Duration _motion(BuildContext context) => MediaQuery.disableAnimationsOf(context
 const int _kTabReports = 3;
 const int _kTabSuggestions = 4;
 const int _kTabFeedback = 5;
+const int _kTabVerification = 6;
 
 class AdminOverviewPage extends ConsumerStatefulWidget {
   final int selectedIndex;
@@ -272,13 +275,14 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
           ],
         );
 
-        final actions = Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildRangeToggle(),
-            const SizedBox(width: 10),
-            _buildExportButton(),
-          ],
+        // Wrap, not Row: the 7d/30d/90d toggle plus "Export PDF" is wider than
+        // a 320px phone once the text scales up, and a Row would simply
+        // overflow to the right. Wrapping drops the export button onto its own
+        // line there, and is a no-op at every width where both fit.
+        final actions = Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [_buildRangeToggle(), _buildExportButton()],
         );
 
         if (tight) {
@@ -964,15 +968,22 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // The title flexes and the link keeps its intrinsic width: on a
+          // 320px phone at large text the two together are wider than the
+          // card, and a bare Spacer has no give, so the row overflowed to the
+          // right. Ellipsising the title is the right sacrifice — "View all"
+          // is the control, and a clipped control is unusable.
           Row(
             children: [
-              const _CardTitle('Recent activity'),
-              const Spacer(),
+              // Expanded, not Spacer: the title takes all the room the link
+              // does not need and ellipsises inside it, which keeps "View all"
+              // flush to the card's right edge. A Flexible plus a Spacer pushed
+              // the link inward, and a bare Spacer had no give at all — at
+              // 320px with large text the row overflowed to the right.
+              const Expanded(child: _CardTitle('Recent activity')),
+              const SizedBox(width: 8),
               if (widget.onNavigate != null)
-                _LinkButton(
-                  label: 'View all',
-                  onTap: () => widget.onNavigate!(3),
-                ),
+                _LinkButton(label: 'View all', onTap: _openActivityFeed),
             ],
           ),
           const SizedBox(height: 16),
@@ -982,15 +993,30 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
     );
   }
 
+  /// Opens the full, filterable activity feed.
+  ///
+  /// NOT a jump to the Reports console. The feed mixes reports and ID
+  /// verifications, so sending "View all" to Reports dropped every verification
+  /// row the admin was just reading — the list they landed on did not contain
+  /// what they had tapped from. The sheet shows the whole feed, and its rows
+  /// deep-link onward exactly like the card's do.
+  void _openActivityFeed() {
+    showAdminRecentActivity(
+      context,
+      onOpen: (r) =>
+          widget.onNavigate?.call(r.tabIndex, highlightId: r.highlightId),
+    );
+  }
+
+  /// A row opens the console that owns that submission and flashes the row —
+  /// the same deep-link treatment a notification gets, so an event in the feed
+  /// is traceable to the exact record behind it. Verification events go to
+  /// Verification, report events to Reports; a row with no id is unlinkable and
+  /// stays inert rather than navigating somewhere arbitrary.
   VoidCallback? _activityTap(ActivityItem a) {
-    final isReport =
-        a.kind == ActivityKind.reportNew ||
-        a.kind == ActivityKind.reportReviewing ||
-        a.kind == ActivityKind.reportResolved ||
-        a.kind == ActivityKind.reportRejected;
-    return (isReport && widget.onNavigate != null)
-        ? () => widget.onNavigate!(3)
-        : null;
+    if (widget.onNavigate == null || a.id.isEmpty) return null;
+    final tab = a.isVerification ? _kTabVerification : _kTabReports;
+    return () => widget.onNavigate!(tab, highlightId: a.id);
   }
 
   // ── small helpers ──────────────────────────────────────────────────────────
@@ -1553,7 +1579,7 @@ class _ActivityRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = _activityColor(item.kind);
+    final color = activityKindColor(item.kind);
     return Material(
       type: MaterialType.transparency,
       child: InkWell(
@@ -1575,7 +1601,7 @@ class _ActivityRow extends StatelessWidget {
                   color: color.withValues(alpha: 0.12),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(_activityIcon(item.kind), size: 16, color: color),
+                child: Icon(activityKindIcon(item.kind), size: 16, color: color),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -1612,44 +1638,6 @@ class _ActivityRow extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  IconData _activityIcon(ActivityKind kind) {
-    switch (kind) {
-      case ActivityKind.reportNew:
-        return Icons.flag_rounded;
-      case ActivityKind.reportReviewing:
-        return Icons.hourglass_top_rounded;
-      case ActivityKind.reportResolved:
-        return Icons.check_circle_rounded;
-      case ActivityKind.reportRejected:
-        return Icons.do_not_disturb_on_rounded;
-      case ActivityKind.verifPending:
-        return Icons.how_to_reg_rounded;
-      case ActivityKind.verifApproved:
-        return Icons.verified_user_rounded;
-      case ActivityKind.verifRejected:
-        return Icons.cancel_rounded;
-    }
-  }
-
-  Color _activityColor(ActivityKind kind) {
-    switch (kind) {
-      case ActivityKind.reportNew:
-        return AppColors.primaryBlue;
-      case ActivityKind.reportReviewing:
-        return AppColors.orange;
-      case ActivityKind.reportResolved:
-        return AppColors.green;
-      case ActivityKind.reportRejected:
-        return AppColors.red;
-      case ActivityKind.verifPending:
-        return AppColors.orange;
-      case ActivityKind.verifApproved:
-        return AppColors.green;
-      case ActivityKind.verifRejected:
-        return AppColors.red;
-    }
   }
 
   String _relativeTime(DateTime? t) {
@@ -3265,6 +3253,8 @@ class _CardTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       text,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
       style: const TextStyle(
         fontSize: 15,
         fontWeight: FontWeight.w600,
