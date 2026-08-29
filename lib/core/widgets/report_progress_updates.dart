@@ -121,11 +121,30 @@ class ReportProgressUpdates extends StatefulWidget {
   /// agency name, never a person.
   final String authorName;
 
+  /// Whether to draw the bordered card and its own "Progress updates" heading.
+  ///
+  /// The consoles want it: the panel sits among other bordered panels in a tab
+  /// and needs an edge to separate it from them. The CITIZEN screen does not —
+  /// every section there is a blue heading OUTSIDE the content ("Processing
+  /// timeline", "Report details"), so a self-titled bordered box was the one
+  /// element on that page framed differently from everything around it.
+  final bool chrome;
+
+  /// Rendered above the content, INSIDE this widget's own build.
+  ///
+  /// Passed in rather than written by the caller because this widget hides
+  /// itself completely when a citizen has no approved updates — a heading
+  /// emitted by the parent would be left stranded above nothing. Supplying it
+  /// here ties the label's visibility to the content it labels.
+  final Widget? heading;
+
   const ReportProgressUpdates({
     super.key,
     required this.reportId,
     required this.mode,
     this.authorName = '',
+    this.chrome = true,
+    this.heading,
   });
 
   @override
@@ -422,36 +441,32 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
       return const SizedBox.shrink();
     }
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.primaryBlue.withValues(alpha: 0.2)),
-      ),
-      child: Column(
+    final body = Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              const Icon(Icons.timeline_rounded,
-                  size: 18, color: AppColors.primaryBlue),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Text(
-                  'Progress updates',
-                  style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700),
+          if (widget.heading != null) widget.heading!,
+          if (widget.chrome) ...[
+            Row(
+              children: [
+                const Icon(Icons.timeline_rounded,
+                    size: 18, color: AppColors.primaryBlue),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'Progress updates',
+                    style:
+                        TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700),
+                  ),
                 ),
-              ),
-              if (_updates.isNotEmpty)
-                Text(
-                  '${_updates.length}',
-                  style: const TextStyle(fontSize: 12, color: Colors.black54),
-                ),
-            ],
-          ),
-          const SizedBox(height: 12),
+                if (_updates.isNotEmpty)
+                  Text(
+                    '${_updates.length}',
+                    style: const TextStyle(fontSize: 12, color: Colors.black54),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+          ],
           if (_canPost) ...[
             _composer(),
             const SizedBox(height: 14),
@@ -506,7 +521,19 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
             for (final u in _updates) _updateTile(u),
           ],
         ],
+      );
+
+    if (!widget.chrome) return body;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.primaryBlue.withValues(alpha: 0.2)),
       ),
+      child: body,
     );
   }
 

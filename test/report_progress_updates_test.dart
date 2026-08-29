@@ -104,6 +104,43 @@ void main() {
     });
   });
 
+  // The citizen screen frames every section as a blue heading OUTSIDE the
+  // content, so this widget drops its own card and title there — and takes the
+  // heading as a parameter, because it hides itself entirely when there is
+  // nothing approved and a parent-emitted label would be stranded above
+  // nothing.
+  group('chrome', () {
+    testWidgets('draws its own title and card by default', (tester) async {
+      await tester.pumpWidget(_host(ReportUpdatesMode.author));
+      await tester.pump();
+
+      expect(find.text('Progress updates'), findsOneWidget);
+    });
+
+    testWidgets('drops both when chrome is off, and renders a passed heading',
+        (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: ReportProgressUpdates(
+                reportId: '3f2a1b6c-8d4e-4f7a-9b1c-2e5d6a7b8c9d',
+                mode: ReportUpdatesMode.author,
+                chrome: false,
+                heading: Text('Passed-in heading'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('Progress updates'), findsNothing,
+          reason: 'the self-title must not double up with the parent one');
+      expect(find.text('Passed-in heading'), findsOneWidget);
+    });
+  });
+
   testWidgets('an empty body cannot be submitted', (tester) async {
     await tester.pumpWidget(_host(ReportUpdatesMode.author));
     await tester.pump();

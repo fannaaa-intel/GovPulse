@@ -554,12 +554,28 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
                       // policy binds owns_report to status = 'approved'. The
                       // widget renders nothing at all until there is one, so a
                       // report nobody has written about looks unchanged.
-                      SizedBox(height: w * .03),
+                      // The heading is passed IN rather than written here,
+                      // because the widget hides itself entirely when the
+                      // citizen has no approved updates — a label emitted at
+                      // this level would be left stranded above nothing.
                       _fadeSlide(
                         3,
                         ReportProgressUpdates(
                           reportId: _report.fullId,
                           mode: ReportUpdatesMode.citizen,
+                          // No card of its own: a blue heading OUTSIDE the
+                          // content is this screen's section marker, exactly as
+                          // for Processing timeline and Report details. A
+                          // self-titled bordered box was the one element framed
+                          // unlike its neighbours.
+                          chrome: false,
+                          heading: Padding(
+                            padding: EdgeInsets.only(
+                              top: w * .045,
+                              bottom: w * .03,
+                            ),
+                            child: _buildSectionLabel(w, 'Progress updates'),
+                          ),
                         ),
                       ),
                       SizedBox(height: w * .045),
