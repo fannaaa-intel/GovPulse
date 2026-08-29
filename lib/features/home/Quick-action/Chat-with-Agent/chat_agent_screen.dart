@@ -830,23 +830,22 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
           SizedBox(width: width * 0.03),
           Image.asset(
             'assets/images/newslogo.webp',
-            height: width * 0.080,
+            height: width * 0.085,
             fit: BoxFit.contain,
             errorBuilder: (_, _, _) => Row(
               children: [
                 Icon(
                   Icons.account_balance_rounded,
-                  size: width * 0.062,
+                  size: width * 0.07,
                   color: AppColors.primaryBlue,
                 ),
-                SizedBox(width: width * 0.018),
+                SizedBox(width: width * 0.02),
                 Text(
                   'GovPulse',
                   style: TextStyle(
-                    fontSize: width * 0.045,
+                    fontSize: width * 0.048,
                     fontWeight: FontWeight.w700,
-                    color: const Color(0xFF111827),
-                    letterSpacing: -0.4,
+                    color: AppColors.primaryBlue,
                   ),
                 ),
               ],
