@@ -140,35 +140,44 @@ class HomeNavDrawer extends StatelessWidget {
             const Divider(height: 1, color: CitizenUi.sharedBorder),
             const SizedBox(height: 8),
             // ── Items ──
-            // ── Items ──
+            //
+            // The scrollbar is hidden here for the same reason the web shell
+            // hides its rails': a nav list that paints a grey bar down its edge
+            // reads as a scrolling box rather than as the drawer's contents.
+            // Only the thumb goes — wheel, drag and keyboard scrolling are
+            // untouched (see [_NoDrawerScrollbar]).
             Expanded(
-              child: ListView(
-                padding: EdgeInsets.zero,
-                children: [
-                  for (final item in _items)
-                    _DrawerTile(
-                      label: item.label,
-                      iconPath: item.iconPath,
-                      active: currentIndex == item.index,
-                      onTap: () {
-                        // My Reports is restricted to verified citizens.
-                        if (item.index == 1 && !isVerified) {
-                          showVerificationRequiredDialog(
-                            context,
-                            username: username,
-                            message:
-                                'Only verified citizens can access My Reports.',
-                          );
-                          return;
-                        }
-                        if (Navigator.of(context).canPop()) {
-                          Navigator.of(context).pop();
-                        }
+              child: ScrollConfiguration(
+                behavior: const _NoDrawerScrollbar(),
+                child: ListView(
+                  padding: EdgeInsets.zero,
+                  children: [
+                    for (final item in _items)
+                      _DrawerTile(
+                        label: item.label,
+                        iconPath: item.iconPath,
+                        active: currentIndex == item.index,
+                        onTap: () {
+                          // My Reports is restricted to verified citizens.
+                          if (item.index == 1 && !isVerified) {
+                            showVerificationRequiredDialog(
+                              context,
+                              username: username,
+                              message:
+                                  'Only verified citizens can access My '
+                                  'Reports.',
+                            );
+                            return;
+                          }
+                          if (Navigator.of(context).canPop()) {
+                            Navigator.of(context).pop();
+                          }
 
-                        onTap(item.index);
-                      },
-                    ),
-                ],
+                          onTap(item.index);
+                        },
+                      ),
+                  ],
+                ),
               ),
             ),
             // ── Sign out — pinned to the bottom ──
@@ -280,4 +289,22 @@ class _DrawerTile extends StatelessWidget {
       ),
     );
   }
+}
+
+/// [MaterialScrollBehavior] that scrolls exactly as the default does but paints
+/// no scrollbar.
+///
+/// The same trick the citizen web shell uses for its rails, scoped here to the
+/// drawer's nav list so it cannot restyle anything else. Only [buildScrollbar]
+/// is overridden, so wheel, trackpad, drag and keyboard scrolling all still
+/// work: the bar goes, the scrolling stays.
+class _NoDrawerScrollbar extends MaterialScrollBehavior {
+  const _NoDrawerScrollbar();
+
+  @override
+  Widget buildScrollbar(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) => child;
 }

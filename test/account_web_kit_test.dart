@@ -770,7 +770,7 @@ void main() {
       expect(find.text('Back to Settings'), findsNothing);
       expect(find.bySemanticsLabel('Back to Settings'), findsOneWidget);
 
-      await tester.tap(find.byIcon(Icons.arrow_back_rounded));
+      await tester.tap(find.byType(AccountBackLink));
       await tester.pump();
       expect(popped, 1);
     });
@@ -797,7 +797,7 @@ void main() {
       // be a second heading on the same line.
       expect(find.text('Back to Settings'), findsNothing);
 
-      final chevron = tester.getRect(find.byIcon(Icons.arrow_back_rounded));
+      final chevron = tester.getRect(find.byType(AccountBackLink));
       final title = tester.getRect(find.text('Privacy Policy'));
 
       // Level, not stacked: on its own line a BARE chevron reads as a stray
@@ -945,7 +945,7 @@ void main() {
 
       // The rail pages must not grow one by accident.
       expect(find.byType(AccountBackLink), findsNothing);
-      expect(find.byIcon(Icons.arrow_back_rounded), findsNothing);
+      expect(find.byType(AccountBackLink), findsNothing);
     });
   });
 }

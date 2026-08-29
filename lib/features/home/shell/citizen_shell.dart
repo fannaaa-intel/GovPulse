@@ -1052,21 +1052,29 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
     return Drawer(
       width: kCitizenRailWidth,
       backgroundColor: CitizenUi.pageBg,
-      child: SafeArea(
-        // No scroll view here — [_leftRail] owns its own, and nesting two in
-        // the same axis would give the inner one an unbounded height.
-        child: SizedBox.expand(
-          child: _leftRail(
-            profile: profile,
-            inDrawer: true,
-            // The drawer only exists below 1024 — below the line where the top
-            // nav can fit its links, and below the line where the right sidebar
-            // survives — so it always carries the destinations.
-            showNav: true,
-            // Quick actions drop on an account page here too. The drawer is the
-            // same rail at a narrower width, and the reason they do not belong
-            // on an account page is about the PAGE, not the width.
-            showQuickActions: !_onAccountPage,
+      // The drawer sits in the Scaffold's `drawer:` slot, which is OUTSIDE the
+      // `body:` the shell's ScrollConfiguration wraps — so the rail kept
+      // painting a scrollbar here while the identical rail in the docked
+      // layout did not. Same behaviour object, applied where it actually
+      // reaches this subtree.
+      child: ScrollConfiguration(
+        behavior: const _NoScrollbarBehavior(),
+        child: SafeArea(
+          // No scroll view here — [_leftRail] owns its own, and nesting two in
+          // the same axis would give the inner one an unbounded height.
+          child: SizedBox.expand(
+            child: _leftRail(
+              profile: profile,
+              inDrawer: true,
+              // The drawer only exists below 1024 — below the line where the
+              // top nav can fit its links, and below the line where the right
+              // sidebar survives — so it always carries the destinations.
+              showNav: true,
+              // Quick actions drop on an account page here too. The drawer is
+              // the same rail at a narrower width, and the reason they do not
+              // belong on an account page is about the PAGE, not the width.
+              showQuickActions: !_onAccountPage,
+            ),
           ),
         ),
       ),

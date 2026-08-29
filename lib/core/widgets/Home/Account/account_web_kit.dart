@@ -38,6 +38,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../theme/citizen_ui.dart';
+import '../../app_back_chevron.dart';
 import '../../loading/loading_overlay.dart' show AppShimmerBox;
 
 /// Content cap for every account page, and the width the page CENTRES.
@@ -405,10 +406,16 @@ class _AccountBackLinkState extends State<AccountBackLink> {
   @override
   Widget build(BuildContext context) {
     final radius = BorderRadius.circular(CitizenUi.controlRadius);
+    // The app-wide back glyph, not the Material arrow this used to draw. In its
+    // unlabelled shape this control sits BESIDE a page title, which is the same
+    // chevron+title pair the citizen screens, the admin console and the staff
+    // thread all show — so it shows the same chevron. (The labelled shape is a
+    // breadcrumb above the title, and keeps the same glyph so the two shapes
+    // stay recognisably one control.)
     final icon = Icon(
-      Icons.arrow_back_rounded,
-      size: widget.showLabel ? 17 : 18,
-      color: _hover ? CitizenUi.accent : CitizenUi.textSecondary,
+      Icons.arrow_back_ios_new_rounded,
+      size: widget.showLabel ? 15 : 16,
+      color: _hover ? CitizenUi.accent : kBackChevronGlyph,
     );
 
     return Semantics(
@@ -453,7 +460,7 @@ class _AccountBackLinkState extends State<AccountBackLink> {
                 border: Border.all(
                   color: _hover
                       ? CitizenUi.accent.withValues(alpha: .35)
-                      : CitizenUi.border,
+                      : kBackChevronBorder,
                 ),
               ),
               child: widget.showLabel

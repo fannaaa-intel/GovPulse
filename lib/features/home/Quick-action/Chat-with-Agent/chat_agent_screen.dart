@@ -753,8 +753,10 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
           Semantics(
             button: true,
             label: 'Back',
+            // The app-wide chevron+title pair: an outlined chip with the iOS
+            // chevron, not a filled one with the Material arrow.
             child: Material(
-              color: AppColors.inputBg,
+              color: Colors.transparent,
               borderRadius: BorderRadius.circular(CitizenUi.controlRadius),
               child: InkWell(
                 onTap: () => Navigator.pop(context),
@@ -762,16 +764,17 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
                 child: Container(
                   width: 36,
                   height: 36,
+                  alignment: Alignment.center,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(
                       CitizenUi.controlRadius,
                     ),
-                    border: Border.all(color: CitizenUi.border),
+                    border: Border.all(color: kBackChevronBorder),
                   ),
                   child: const Icon(
-                    Icons.arrow_back_rounded,
-                    size: 18,
-                    color: CitizenUi.textSecondary,
+                    Icons.arrow_back_ios_new_rounded,
+                    size: 17,
+                    color: kBackChevronGlyph,
                   ),
                 ),
               ),
