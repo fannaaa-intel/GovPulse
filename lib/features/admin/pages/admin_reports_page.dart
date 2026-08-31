@@ -1720,8 +1720,19 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
     });
   }
 
-  /// Which tab of the status pane is showing: 0 = Timeline, 1 = Report History.
-  int _trackerTab = 0;
+  /// Which tab of the status pane is showing.
+  ///
+  /// The old "Report History" tab held both of these at once — the
+  /// citizen-facing update queue stacked directly on top of the private
+  /// admin↔office thread. Two composers, a scroll apart, one of which the
+  /// reporter eventually reads and one they never do. Splitting them is what
+  /// gives the thread the pane, and it also ends the mix-up the old layout
+  /// invited.
+  static const int _kTabTimeline = 0;
+  static const int _kTabUpdates = 1;
+  static const int _kTabNotes = 2;
+
+  int _trackerTab = _kTabTimeline;
 
   /// Which PANE is showing, when the layout is too narrow to seat both side by
   /// side: 0 = Report Details, 1 = Update Report Status. Stacking the two into
@@ -2189,9 +2200,21 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
 
   // ── Panes ─────────────────────────────────────────────────────────────────
 
-  /// Left pane — the stepper, the stage card, and the Timeline / Report History
-  /// tabs. Read-only: status is driven by triage and the owning office, never by
-  /// an admin nudging raw states here.
+  /// Left pane — the stepper, the stage card, and the Timeline / Updates /
+  /// Internal notes tabs. Read-only: status is driven by triage and the owning
+  /// office, never by an admin nudging raw states here.
+  ///
+  /// ── WHY THE HEADER IS NOT ALWAYS DRAWN ──────────────────────────────────
+  /// The stepper and the stage card describe WHERE the report is, and that is
+  /// what the Timeline and Updates tabs are read against. They are dead weight
+  /// above a conversation: measured on the live console they cost ~315px of a
+  /// 900px dialog, which left the internal-notes thread about 130px and pushed
+  /// its composer past the dialog's bottom edge — the note you were typing was
+  /// clipped by the frame.
+  ///
+  /// So the notes tab drops them and takes the pane instead. Nothing is lost:
+  /// the stage is one tab away, and the tab that is open is the one being
+  /// worked in.
   Widget _statusPane() {
     final r = report;
     final stages = buildReportStages(
@@ -2200,30 +2223,35 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
       acceptedByName: r.assignedByName,
     );
     final copy = _stageCopy();
+    final notes = _trackerTab == _kTabNotes;
 
     return DetailPane(
       title: 'Update Report Status',
+      fill: notes,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: notes ? MainAxisSize.max : MainAxisSize.min,
         children: [
-          const SizedBox(height: 4),
-          ReportStepperRail(stages: stages),
-          const SizedBox(height: 20),
-          ReportStageCard(
-            chip: copy.chip,
-            headline: copy.headline,
-            blurb: copy.blurb,
-            accent: copy.accent,
-            facts: _acceptanceFacts(),
-          ),
-          const SizedBox(height: 18),
+          if (!notes) ...[
+            const SizedBox(height: 4),
+            ReportStepperRail(stages: stages),
+            const SizedBox(height: 20),
+            ReportStageCard(
+              chip: copy.chip,
+              headline: copy.headline,
+              blurb: copy.blurb,
+              accent: copy.accent,
+              facts: _acceptanceFacts(),
+            ),
+            const SizedBox(height: 18),
+          ],
           AdminUnderlineTabs(
-            labels: const ['Timeline', 'Report History'],
+            labels: const ['Timeline', 'Updates', 'Internal notes'],
             selected: _trackerTab,
             onSelect: (i) => setState(() => _trackerTab = i),
           ),
           const SizedBox(height: 16),
-          if (_trackerTab == 0) ...[
+          if (_trackerTab == _kTabTimeline) ...[
             const Text(
               'Timeline Progress',
               style: TextStyle(
@@ -2234,33 +2262,33 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
             ),
             const SizedBox(height: 14),
             ReportTimelineProgress(stages: stages),
-          ] else
-            _historyTab(),
+          ] else if (_trackerTab == _kTabUpdates)
+            _updatesTab()
+          else
+            // The one tab that fills rather than stacks — see DetailPane.fill.
+            Expanded(child: _notesTab()),
         ],
       ),
     );
   }
 
-  /// "Report History" tab — the internal work log between the admin and the
-  /// owning office, plus the completion photos once it's resolved. Both are
-  /// empty until a department owns the report, so say so rather than showing a
-  /// composer that has nobody to talk to.
-  Widget _historyTab() {
+  /// "Updates" tab — what the owning office has submitted for the citizen to
+  /// see, and the admin's approve/reject gate on it. Empty until a department
+  /// owns the report, so say so rather than showing a review queue that has
+  /// nobody filing into it.
+  Widget _updatesTab() {
     final r = report;
     if (!r.isAssigned && !r.isEndorsed) {
       return const DetailEmptyNote(
         icon: Icons.history_rounded,
         text:
-            'No history yet. Once this report is accepted and routed to a '
+            'No updates yet. Once this report is accepted and routed to a '
             'department, their progress notes and completion photos appear here.',
       );
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Citizen-facing, and the admin is the gate: offices submit here and
-        // nothing reaches the reporter until it is approved. Above the work log
-        // because reviewing what is waiting is the more urgent of the two.
         // Has the agency actually picked the letter up? Reads the endorsement
         // row admins have always been able to SELECT and nothing ever did.
         // Renders nothing when the report was never endorsed.
@@ -2277,17 +2305,34 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
           authorName: 'LGU Admin',
           locked: _isClosed,
         ),
-        const SizedBox(height: 22),
-        const Text(
-          'INTERNAL NOTES',
-          style: TextStyle(
-            fontSize: 10.5,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 0.7,
-            color: AdminUi.textMuted,
-          ),
-        ),
-        const SizedBox(height: 4),
+        if (_status == ReportStatus.resolved) ...[
+          const SizedBox(height: 20),
+          ResolutionMediaSection(reportId: r.id, canEdit: true),
+        ],
+      ],
+    );
+  }
+
+  /// "Internal notes" tab — the private admin↔office thread, filling the pane.
+  ///
+  /// This tab is the reason [DetailPane.fill] exists. It returns a widget that
+  /// expects a BOUNDED height and divides it itself: a caption that holds its
+  /// place, and a thread that takes the rest and scrolls inside it. Sizing to
+  /// content instead would put the composer below the fold the moment the
+  /// conversation ran long, which is the bug this replaced.
+  Widget _notesTab() {
+    final r = report;
+    if (!r.isAssigned && !r.isEndorsed) {
+      return const DetailEmptyNote(
+        icon: Icons.lock_outline_rounded,
+        text:
+            'No notes yet. Once this report is routed to a department, you and '
+            'that office can talk here — the citizen never sees it.',
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
         const Text(
           'Between the admin and the owning office only. The citizen never '
           'sees these.',
@@ -2298,15 +2343,14 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
           ),
         ),
         const SizedBox(height: 10),
-        ReportWorkLog(
-          reportId: r.id,
-          authorRole: 'admin',
-          authorName: 'LGU Admin',
+        Expanded(
+          child: ReportWorkLog(
+            reportId: r.id,
+            authorRole: 'admin',
+            authorName: 'LGU Admin',
+            fill: true,
+          ),
         ),
-        if (_status == ReportStatus.resolved) ...[
-          const SizedBox(height: 20),
-          ResolutionMediaSection(reportId: r.id, canEdit: true),
-        ],
       ],
     );
   }
@@ -2780,10 +2824,24 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
       onSelect: (i) => setState(() => _paneTab = i),
     );
 
-    Widget activePane() => SingleChildScrollView(
-      padding: const EdgeInsets.all(14),
-      child: _paneTab == 0 ? _detailsPane() : _statusPane(),
-    );
+    // A scroll view hands its child UNBOUNDED height, which a pane that means
+    // to fill cannot size against. On the phone this is the only path — there
+    // is no two-pane row here — so the status pane showing notes takes the
+    // height directly and divides it itself. Everything else keeps the scroll
+    // it has always had. See AdminTwoPaneRow.mainFills for the desktop twin.
+    Widget activePane() {
+      final fills = _paneTab == 1 && _trackerTab == _kTabNotes;
+      if (fills) {
+        return Padding(
+          padding: const EdgeInsets.all(14),
+          child: _statusPane(),
+        );
+      }
+      return SingleChildScrollView(
+        padding: const EdgeInsets.all(14),
+        child: _paneTab == 0 ? _detailsPane() : _statusPane(),
+      );
+    }
 
     if (narrow) {
       return AdminDetailScaffold(
@@ -2838,8 +2896,14 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
             // both panes with no way to skip past one, which is worse than a
             // switcher that keeps each to about a screen. Don't retry it.
             if (c.maxWidth < kReportDetailTwoPaneFrom) {
+              // A filling pane needs a column that takes the full height and
+              // an Expanded to divide it. `min` + `Flexible` is right for
+              // every other tab — it lets a short pane leave the dialog short
+              // rather than stretching it to a fixed 900 — but it leaves the
+              // child unbounded, which the notes tab cannot size against.
+              final fills = _paneTab == 1 && _trackerTab == _kTabNotes;
               return Column(
-                mainAxisSize: MainAxisSize.min,
+                mainAxisSize: fills ? MainAxisSize.max : MainAxisSize.min,
                 children: [
                   Padding(
                     padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
@@ -2851,7 +2915,10 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
                       ],
                     ),
                   ),
-                  Flexible(child: activePane()),
+                  if (fills)
+                    Expanded(child: activePane())
+                  else
+                    Flexible(child: activePane()),
                 ],
               );
             }
@@ -2862,6 +2929,10 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
                   child: AdminTwoPaneRow(
                     main: _statusPane(),
                     side: _detailsPane(),
+                    // Only the notes tab divides a fixed height itself; every
+                    // other tab is a column that may outgrow the row and needs
+                    // the scroll view.
+                    mainFills: _trackerTab == _kTabNotes,
                   ),
                 ),
                 // Floats over the details pane's title row (left-aligned, so

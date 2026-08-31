@@ -17,6 +17,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'location_picker_screen.dart';
 import 'dart:async';
 import '../../../../core/widgets/app_snackbar.dart';
+import '../../../../core/widgets/no_scrollbar_behavior.dart';
 import '../../../../core/services/gps_stamp_service.dart';
 import '../../../../core/widgets/reveal_loading.dart';
 import '../../../../core/widgets/Home/Newsfeed/news_feed_helpers.dart'
@@ -3785,114 +3786,293 @@ class _ReportIssueScreenState extends State<ReportIssueForm>
   Future<String?> _showNearbyReportsDialog(List<_NearbyReport> nearby) {
     return showAppDialog<String>(
       context: context,
-      builder: (ctx) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        // Without a cap, the full-width button inside stretches the card across
-        // the whole browser window. A phone screen is narrower than this, so
-        // the constraint only ever bites on web/tablet.
-        constraints: const BoxConstraints(maxWidth: 400, minWidth: 280),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
+      builder: (ctx) {
+        // ── Sized against the SCREEN, not against a guessed number ──────────
+        //
+        // The old card capped the list at a flat 260px and let the rest of the
+        // column run as tall as it liked. On a short phone — or at a large
+        // text scale, where every one of these strings grows — the header plus
+        // three cards plus three stacked actions ran past the viewport, and a
+        // Dialog does not scroll: the actions simply left the screen, with the
+        // only remaining exit being the one control the citizen cannot see.
+        //
+        // So the whole card is bounded by the viewport and the LIST is the
+        // part that gives: header and actions are always on screen, and the
+        // cards scroll between them.
+        final media = MediaQuery.of(ctx);
+        final maxCardHeight = media.size.height * 0.85;
+        // How much of the card the LIST may take.
+        //
+        // 320 is what the header and the two actions occupy at 1.0 text — but
+        // only at 1.0. Every string in this dialog grows with the text scale
+        // while that number would not, so on a small phone at 1.3x the chrome
+        // outgrew its allowance, the list still claimed its floor, and the
+        // column overflowed by ~46px. Scaling the reserve with the text keeps
+        // the two in step.
+        //
+        // The floor is deliberately LOW. It has to be: the list is the only
+        // part that may give, so on a cramped screen it must be able to give
+        // almost everything. An attempt to solve the overflow by letting the
+        // header and the actions scroll instead worked — and scrolled the
+        // accept button off the card, restoring the exact inversion this
+        // redesign existed to remove. The chrome never scrolls.
+        final scale = media.textScaler.scale(14) / 14;
+        final chrome = 320 * scale;
+        final listMax = (maxCardHeight - chrome).clamp(72.0, 320.0);
+
+        // ── When even the CHROME does not fit ───────────────────────────────
+        //
+        // Measured on the tightest phone the app supports (320x568), the
+        // header and the actions alone come to 414px at 1.0 text against a
+        // 483px budget — comfortable. At 1.3x they are 579px and at 1.6x they
+        // are 731px: the fixed parts outgrow the entire card before a single
+        // result is added, so no amount of shrinking the list can help and the
+        // overflow is arithmetic, not layout.
+        //
+        // Almost all of that growth is the header — 262 → 502px — because it
+        // carries a 56px icon and a two-sentence blurb that both scale. So on
+        // a cramped card the header goes COMPACT: no icon, and the blurb drops
+        // to the one clause that actually informs the choice. The title, the
+        // cards and every action survive intact, which is the ranking that
+        // matters when something has to go.
+        final compact = maxCardHeight < 414 * scale;
+
+        // ── The list must show a WHOLE card, not most of one ────────────────
+        //
+        // listMax above is what is left over; that is the right cap when there
+        // is room to spare, and the wrong one when there is not. Squeezed to
+        // its floor, the box clipped the FIRST card partway down — and what it
+        // cut was the accept button, because that sits at the bottom of the
+        // card. So the one control the dialog is asking the citizen to press
+        // was hidden behind the scroll fade at exactly the sizes where it was
+        // hardest to find, which is the same failure as scrolling the actions
+        // and only looks different.
+        //
+        // A card is roughly its own text at this scale — ref line, two lines
+        // of remark, meta, and a 40px button with its padding.
+        final oneCardHigh = 150 * scale;
+        final listFloor = listMax < oneCardHigh
+            ? oneCardHigh.clamp(0.0, maxCardHeight)
+            : listMax;
+
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          // Without a cap, the full-width button inside stretches the card
+          // across the whole browser window. A phone screen is narrower than
+          // this, so the width constraint only ever bites on web/tablet.
+          constraints: BoxConstraints(
+            maxWidth: 400,
+            minWidth: 280,
+            maxHeight: maxCardHeight,
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Center(
-                child: Container(
-                  width: 64,
-                  height: 64,
-                  decoration: BoxDecoration(
-                    color: AppColors.primaryBlue.withValues(alpha: 0.10),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    Icons.where_to_vote_outlined,
-                    color: AppColors.primaryBlue,
-                    size: 32,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                nearby.length == 1
-                    ? 'Already reported here?'
-                    : 'Already reported nearby?',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w800,
-                  color: Color(0xFF1F2937),
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Confirming an existing report helps us prioritise it — the more '
-                'people confirm, the higher it moves up the queue.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Color(0xFF6B7280),
-                  height: 1.55,
-                ),
-              ),
-              const SizedBox(height: 16),
-              // Bounded so three long-remark cards can never push the actions
-              // off a small screen.
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 260),
-                child: SingleChildScrollView(
+              // ── Header ──────────────────────────────────────────────────
+              //
+              // Fixed, NOT flexible. Making this scroll does remove the last
+              // overflow, but it also lets the title and — worse — the accept
+              // button leave the card at a large text scale, which is the
+              // inversion this whole redesign is about. The list absorbs the
+              // pressure instead.
+              // Flexible + scrolling, but ONLY the header.
+              //
+              // Compact covers every phone the app supports up to 1.6x text.
+              // Past that — a 2.0x accessibility setting on a 320px phone —
+              // even the compact chrome exceeds the card, and something has to
+              // yield. It is the header: an icon and a sentence, whose loss
+              // costs the citizen an explanation they can scroll back to. The
+              // ACTIONS stay fixed, so the accept button can never be the
+              // thing that scrolls out of reach; that was the bug this whole
+              // section is written around.
+              Flexible(
+                child: ScrollConfiguration(
+                  behavior: const NoScrollbarBehavior(),
+                  child: SingleChildScrollView(
+                  padding:
+                      EdgeInsets.fromLTRB(24, compact ? 18 : 24, 24, 0),
                   child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      for (final n in nearby) ...[
-                        _nearbyReportCard(ctx, n),
-                        const SizedBox(height: 10),
-                      ],
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // The icon is decoration, and decoration is the first
+                    // thing to go when the card cannot hold its own controls.
+                    if (!compact) ...[
+                      Container(
+                        width: 56,
+                        height: 56,
+                        decoration: BoxDecoration(
+                          color: AppColors.primaryBlue.withValues(alpha: 0.10),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.where_to_vote_outlined,
+                          color: AppColors.primaryBlue,
+                          size: 28,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
                     ],
+                    Text(
+                      nearby.length == 1
+                          ? 'Already reported here?'
+                          : 'Already reported nearby?',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF1F2937),
+                        height: 1.3,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    // Compact keeps the clause that answers "why am I being
+                    // asked this" and drops the one that only restates the
+                    // situation the cards below already show.
+                    Text(
+                      compact
+                          ? 'Confirming pushes it up the queue.'
+                          : nearby.length == 1
+                              ? 'Someone has already reported an issue at this '
+                                    'spot. Confirming it pushes it up the '
+                                    'queue.'
+                              : 'These were reported near your pin. Confirming '
+                                    'one pushes it up the queue.',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: Color(0xFF6B7280),
+                        height: 1.5,
+                      ),
+                    ),
+                    SizedBox(height: compact ? 12 : 16),
+                  ],
+                ),
+                ),
+                ),
+              ),
+              // ── The candidates ──────────────────────────────────────────
+              //
+              // Flexible, not a fixed box: with one short card the dialog
+              // shrink-wraps it, and only a list that would overflow starts
+              // scrolling. A ConstrainedBox alone gave the single-card case
+              // the same 260px of reserved space as three.
+              Flexible(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: listFloor),
+                  // A scrolling list that simply stops mid-card reads as a
+                  // rendering fault, not as "there is more" — and the citizen
+                  // who does not scroll never sees the match that was actually
+                  // theirs. The bottom edge fades into the card's own white so
+                  // the clipped row is visibly continuing rather than broken.
+                  child: ShaderMask(
+                    shaderCallback: (rect) => const LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Colors.white, Colors.white, Colors.transparent],
+                      stops: [0.0, 0.88, 1.0],
+                    ).createShader(rect),
+                    blendMode: BlendMode.dstIn,
+                    // No scrollbar: a track down the inside edge of a card
+                    // reads as a seam in the card, and on web it would sit on
+                    // the dialog's own rounded corner. The fade above is what
+                    // says "there is more" — see NoScrollbarBehavior.
+                    child: ScrollConfiguration(
+                      behavior: const NoScrollbarBehavior(),
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            for (int i = 0; i < nearby.length; i++) ...[
+                              if (i > 0) const SizedBox(height: 10),
+                              _nearbyReportCard(ctx, nearby[i]),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ),
-              const SizedBox(height: 6),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton(
-                  onPressed: () => Navigator.pop(ctx, _kMineIsDifferent),
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: Color(0xFFD1D5DB)),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+              // ── Actions ─────────────────────────────────────────────────
+              //
+              // Both of these are "no". The old card gave the DECLINE a
+              // full-width bordered button while the accept — the thing the
+              // dialog is actually asking for — was a bare text link buried
+              // in the bottom corner of a card, so the hierarchy pointed at
+              // the wrong answer. The accept now lives on the card as a real
+              // button (see _nearbyReportCard) and these two step down to
+              // match what they are.
+              Padding(
+                padding: EdgeInsets.fromLTRB(24, compact ? 10 : 16, 24,
+                    compact ? 12 : 18),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    OutlinedButton(
+                      onPressed: () =>
+                          Navigator.pop(ctx, _kMineIsDifferent),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Color(0xFFD1D5DB)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        // 13 not 12: with the accept button now sitting at 44
+                        // inside the cards, a 12 here left the two reading as
+                        // different sizes of the same control.
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                      ),
+                      child: const Text(
+                        'No — mine is a different issue',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Color(0xFF374151),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13.5,
+                        ),
+                      ),
                     ),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                  child: const Text(
-                    'No — mine is a different issue',
-                    style: TextStyle(
-                      color: Color(0xFF374151),
-                      fontWeight: FontWeight.w700,
+                    const SizedBox(height: 2),
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, null),
+                      style: TextButton.styleFrom(
+                        // A text button's default is a 48px-tall block of dead
+                        // space; this is the quietest control in the dialog
+                        // and should not claim the most room.
+                        minimumSize: const Size(0, 40),
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                      ),
+                      child: const Text(
+                        'Go back and check my pin',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Color(0xFF6B7280),
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12.5,
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 4),
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, null),
-                child: const Text(
-                  'Go back and check my pin',
-                  style: TextStyle(
-                    color: Color(0xFF6B7280),
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12,
-                  ),
+                  ],
                 ),
               ),
             ],
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
-  /// One tappable existing-report card — tapping it confirms that report.
+  /// One existing-report card. Confirming it is the dialog's PRIMARY action,
+  /// so it is a filled button on the card rather than the text link it was —
+  /// the decline underneath used to be the only thing shaped like a button,
+  /// which pointed the citizen at the answer the screen was arguing against.
+  ///
+  /// The card itself stays tappable as well: the button is the affordance, the
+  /// surface is the generous target.
   Widget _nearbyReportCard(BuildContext ctx, _NearbyReport n) {
     final meta = [
       n.distanceLabel,
@@ -3900,89 +4080,116 @@ class _ReportIssueScreenState extends State<ReportIssueForm>
       if (n.barangay != null && n.barangay!.isNotEmpty) n.barangay!,
     ].join(' · ');
 
-    return InkWell(
-      onTap: () => Navigator.pop(ctx, n.id),
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          border: Border.all(color: CitizenUi.sharedBorder),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Text(
-                  'RPT-${n.shortRef}',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF6B7280),
-                    letterSpacing: 0.4,
-                  ),
-                ),
-                const Spacer(),
-                if (n.reporterCount > 1)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 3,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.primaryBlue.withValues(alpha: 0.10),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
+    return Material(
+      color: const Color(0xFFFAFBFD),
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: () => Navigator.pop(ctx, n.id),
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.all(13),
+          decoration: BoxDecoration(
+            border: Border.all(color: CitizenUi.sharedBorder),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Flexible(
                     child: Text(
-                      '${n.reporterCount} reports',
-                      style: TextStyle(
-                        fontSize: 10,
+                      'RPT-${n.shortRef}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 11,
                         fontWeight: FontWeight.w800,
-                        color: AppColors.primaryBlue,
+                        color: Color(0xFF6B7280),
+                        letterSpacing: 0.4,
                       ),
                     ),
                   ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Text(
-              n.remarks.isEmpty ? 'No description given.' : n.remarks,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 13,
-                height: 1.4,
-                color: Color(0xFF1F2937),
-                fontWeight: FontWeight.w600,
+                  if (n.reporterCount > 1) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.primaryBlue.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        '${n.reporterCount} reports',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.primaryBlue,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              meta,
-              style: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF)),
-            ),
-            const SizedBox(height: 10),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                Text(
-                  'This is my issue — confirm it',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.primaryBlue,
+              const SizedBox(height: 6),
+              Text(
+                n.remarks.isEmpty ? 'No description given.' : n.remarks,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 13,
+                  height: 1.4,
+                  color: Color(0xFF1F2937),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 6),
+              // Distance · age · barangay. One line on a phone would clip the
+              // barangay, which is the part that tells the citizen whether
+              // this is really their spot, so it wraps instead of ellipsing.
+              Text(
+                meta,
+                style: const TextStyle(
+                  fontSize: 11,
+                  height: 1.35,
+                  color: Color(0xFF9CA3AF),
+                ),
+              ),
+              const SizedBox(height: 11),
+              // The primary action, at full width and a real tap height. The
+              // label drops "This is my issue —" because the card above it has
+              // already said which issue: the button only has to name what
+              // happens.
+              SizedBox(
+                width: double.infinity,
+                height: 40,
+                child: ElevatedButton.icon(
+                  onPressed: () => Navigator.pop(ctx, n.id),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primaryBlue,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  icon: const Icon(Icons.check_circle_outline_rounded, size: 16),
+                  label: const Text(
+                    'Yes, this is my issue',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
-                const SizedBox(width: 4),
-                Icon(
-                  Icons.arrow_forward_rounded,
-                  size: 14,
-                  color: AppColors.primaryBlue,
-                ),
-              ],
-            ),
-          ],
+              ),
+            ],
+          ),
         ),
       ),
     );

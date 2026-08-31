@@ -71,6 +71,22 @@ class AdminTwoPaneRow extends StatelessWidget {
   final int mainFlex;
   final int sideFlex;
   final double gap;
+
+  /// Hand [main] the row's height directly instead of seating it in a scroll
+  /// view.
+  ///
+  /// The default wrapper exists so a long pane can outgrow the row, and it
+  /// does that by offering the child UNBOUNDED height. A pane that means to
+  /// fill — one holding a conversation that scrolls internally — cannot size
+  /// itself against that: `Expanded` inside it would be expanding into
+  /// infinity, which is an error, not a layout.
+  ///
+  /// So the scroll view is the thing that has to go, and only for that pane.
+  /// [side] keeps its own wrapper either way: the details column is read, not
+  /// worked in, and it still needs to scroll when the report has a long
+  /// description.
+  final bool mainFills;
+
   const AdminTwoPaneRow({
     super.key,
     required this.main,
@@ -78,6 +94,7 @@ class AdminTwoPaneRow extends StatelessWidget {
     this.mainFlex = 62,
     this.sideFlex = 38,
     this.gap = 14,
+    this.mainFills = false,
   });
 
   @override
@@ -85,7 +102,7 @@ class AdminTwoPaneRow extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Expanded(flex: mainFlex, child: _pane(main)),
+        Expanded(flex: mainFlex, child: mainFills ? main : _pane(main)),
         SizedBox(width: gap),
         Expanded(flex: sideFlex, child: _pane(side)),
       ],

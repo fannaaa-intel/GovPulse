@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1520 1150" width="1520" height="1150">
+  <rect x="0" y="0" width="1520" height="1150" fill="#ffffff"/>
+  <defs><marker id="ca" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><polygon points="0,1 10,5 0,9" fill="#111"/></marker></defs>
+  <path d="M645,390 H420 V285 H204" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
+  <path d="M598,430 H370 V300 H204" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
+  <path d="M571,470 H320 V315 H204" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
+  <path d="M160,330 V510 H552" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
+  <path d="M120,330 V550 H546" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
+  <path d="M80,330 V590 H548" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
+  <path d="M40,330 V630 H558" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
+  <path d="M571,650 H110 V816" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
+  <path d="M598,690 H150 V816" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
+  <path d="M200,850 H400 V730 H641" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
+  <path d="M855,390 H1080 V285 H1296" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
+  <path d="M902,430 H1130 V300 H1296" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
+  <path d="M1400,330 V470 H933" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
+  <path d="M1440,330 V510 H948" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
+  <path d="M948,590 H1440 V816" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
+  <path d="M937,630 H1390 V816" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
+  <path d="M917,670 H1340 V816" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
+  <path d="M1300,850 H1240 V710 H886" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
+  <path d="M1300,860 H1200 V750 H816" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
+  <path d="M710,364 V166" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
+  <path d="M790,160 V356" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
+  <path d="M700,754 V980 H440 V1044" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
+  <path d="M520,1048 V1010 H730 V763" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
+  <path d="M800,754 V990 H1020 V1044" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
+  <circle cx="750" cy="560" r="200" fill="#fff" stroke="#111" stroke-width="1.4"/>
+  <text x="750" y="526" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="13" fill="#111">0</text>
+  <text x="750" y="558" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="18" font-weight="600" fill="#111">GovPulse</text>
+  <text x="750" y="582" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="18" font-weight="600" fill="#111">System</text>
+  <rect x="20.0" y="270.0" width="180" height="60" fill="#fff" stroke="#111" stroke-width="1.2"/>
+  <text x="110.0" y="304.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="11" font-weight="600" fill="#111">Citizen</text>
+  <rect x="20.0" y="820.0" width="180" height="60" fill="#fff" stroke="#111" stroke-width="1.2"/>
+  <text x="110.0" y="854.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="11" font-weight="600" fill="#111">External Agency</text>
+  <rect x="1300.0" y="270.0" width="180" height="60" fill="#fff" stroke="#111" stroke-width="1.2"/>
+  <text x="1390.0" y="304.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="11" font-weight="600" fill="#111">Municipal Staff</text>
+  <rect x="1300.0" y="820.0" width="180" height="60" fill="#fff" stroke="#111" stroke-width="1.2"/>
+  <text x="1390.0" y="854.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="11" font-weight="600" fill="#111">Administrator</text>
+  <rect x="650.0" y="100.0" width="200" height="60" fill="#fff" stroke="#111" stroke-width="1.2"/>
+  <text x="750.0" y="127.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="11" font-weight="600" fill="#111">Facebook</text>
+  <text x="750.0" y="141.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="11" font-weight="600" fill="#111">(Social Sign-In)</text>
+  <rect x="365.0" y="1048.0" width="230" height="64" fill="#fff" stroke="#111" stroke-width="1.2"/>
+  <text x="480.0" y="1077.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="11" font-weight="600" fill="#111">AI Services</text>
+  <text x="480.0" y="1091.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="11" font-weight="600" fill="#111">(Groq / Sightengine)</text>
+  <rect x="905.0" y="1048.0" width="230" height="64" fill="#fff" stroke="#111" stroke-width="1.2"/>
+  <text x="1020.0" y="1077.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="11" font-weight="600" fill="#111">Firebase Cloud</text>
+  <text x="1020.0" y="1091.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="11" font-weight="600" fill="#111">Messaging</text>
+  <text x="532.0" y="384.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Authentication Status &amp; OTP Code</text>
+  <text x="484.0" y="424.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Submission Status &amp; Reference Code</text>
+  <text x="445.0" y="464.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Notifications, Feed &amp; Assistant Reply</text>
+  <text x="358.0" y="504.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Login Credentials &amp; Registration Data</text>
+  <text x="335.0" y="544.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Identity Verification Data</text>
+  <text x="316.0" y="584.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Report, Suggestion &amp; Feedback Data</text>
+  <text x="300.0" y="624.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Comments, Likes &amp; Support Messages</text>
+  <text x="340.0" y="644.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Endorsement Letter (PDF + QR)</text>
+  <text x="374.0" y="684.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Endorsed Report Details</text>
+  <text x="522.0" y="724.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Scan Token, PIN &amp; Acknowledgement</text>
+  <text x="967.0" y="384.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Assigned Reports (Identity Withheld)</text>
+  <text x="1016.0" y="424.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Citizen Messages &amp; Notifications</text>
+  <text x="1166.0" y="464.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Login Credentials</text>
+  <text x="1194.0" y="504.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Status Updates, Notes &amp; Replies</text>
+  <text x="1194.0" y="584.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Dashboard Analytics &amp; Predictive Outlook</text>
+  <text x="1163.0" y="624.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Sentiment, Urgency &amp; Theme Results</text>
+  <text x="1128.0" y="664.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Flagged Content &amp; Verification Queue</text>
+  <text x="1063.0" y="704.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Login Credentials</text>
+  <text x="1008.0" y="744.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Lifecycle, Approval &amp; Sanction Decisions</text>
+  <text x="700.0" y="270.0" text-anchor="end" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Authorization Request</text>
+  <text x="800.0" y="270.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">OAuth Token &amp; Profile Name</text>
+  <text x="570.0" y="974.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Report, Feedback &amp; Content Text; Media URLs</text>
+  <text x="625.0" y="1004.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Urgency, Sentiment, Flags &amp; Image Scores</text>
+  <text x="910.0" y="984.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Push Payload &amp; Device Token</text>
+</svg>

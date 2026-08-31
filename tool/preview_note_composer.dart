@@ -21,10 +21,23 @@ import 'package:flutter/material.dart';
 
 import 'package:govpulse/core/theme/app_colors.dart';
 
+// ── This round: the text was not on the centre line ────────────────────────
+// With the button inside the shell, the remaining complaint was the
+// placeholder's vertical position. The field's content box was 30px against a
+// 32px button, and CrossAxisAlignment.end put both missing pixels above the
+// text — so the hint sat 2px low.
+//
+// 2px is under what anyone can point at in a screenshot and above what the eye
+// notices as "off", which is exactly why it needed a guide rather than another
+// screenshot. BEFORE and AFTER below are drawn over a red centre line so the
+// gap is legible, and every pane is rendered at four text scales, because
+// padding alone fixes 1.0 and then breaks 1.3.
+
 // Mirrors report_work_log.dart.
 const double kShellMinHeight = 44;
 const double kSendSize = 32;
 const double kShellPad = 5;
+const double kFieldPad = 7; // was 6 — see report_work_log.dart
 const double kRadius = 12;
 const double kSendRadius = 9;
 const Color kAccent = AppColors.primaryBlue;
@@ -57,14 +70,12 @@ class _App extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 const Text(
-                  'BEFORE: a 44px slab of brand blue across an 8px gap from a '
-                  'mostly-empty field. The gap is what let the eye compare '
-                  'them as two objects of unequal size, and the button owned '
-                  'more of the row the narrower the pane got.\n'
-                  'AFTER: one control. The send button moved inside the '
-                  "field's shell at 32px, so it is visibly the smaller half "
-                  'of its own container and there is no gap left to read a '
-                  'mismatch across.',
+                  'The red hairline is the composer\'s true centre. BEFORE, '
+                  'the placeholder sits below it — a 30px field bottom-aligned '
+                  'against a 32px button drops the text by 2px. AFTER, the '
+                  'field is padded to the button\'s own 32px and the row '
+                  'centres while it is one line, so the text lands on the '
+                  'line at every scale.',
                   style: TextStyle(
                       fontSize: 12, color: Colors.black54, height: 1.5),
                 ),
@@ -84,11 +95,40 @@ class _App extends StatelessWidget {
                   ),
                   const SizedBox(height: 28),
                 ],
-                const _Label('Four lines — the shell grows as one object'),
+                const _Label(
+                  'Text scale — padding alone holds at 1.0 and breaks at 1.3',
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 20,
+                  runSpacing: 20,
+                  children: [
+                    for (final s in const [1.0, 1.15, 1.3, 1.6])
+                      MediaQuery(
+                        data: MediaQueryData(
+                          textScaler: TextScaler.linear(s),
+                        ),
+                        child: _Pane(width: 340, text: '', scaleLabel: '${s}x'),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 28),
+                const _Label(
+                  'Wrapped — the button goes back to the last line, by design',
+                ),
                 const SizedBox(height: 10),
                 const _Pane(
                   width: 420,
                   text: 'Line one\nLine two\nLine three\nLine four',
+                ),
+                const SizedBox(height: 28),
+                const _Label(
+                  'Wrapped by WIDTH, not by a newline — the narrow pane',
+                ),
+                const SizedBox(height: 10),
+                const _Pane(
+                  width: 280,
+                  text: 'Crew dispatched to the site and the culvert is clear.',
                 ),
                 const SizedBox(height: 28),
                 const _Label('Focused — the ring is on the shell now'),
@@ -124,7 +164,13 @@ class _Pane extends StatelessWidget {
   final double width;
   final String text;
   final bool focused;
-  const _Pane({required this.width, required this.text, this.focused = false});
+  final String? scaleLabel;
+  const _Pane({
+    required this.width,
+    required this.text,
+    this.focused = false,
+    this.scaleLabel,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -140,21 +186,45 @@ class _Pane extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '${width.toInt()}px',
+            scaleLabel == null
+                ? '${width.toInt()}px'
+                : '${width.toInt()}px · text scale $scaleLabel',
             style: const TextStyle(fontSize: 10.5, color: Colors.black38),
           ),
           const SizedBox(height: 10),
           const _Tag('BEFORE', Color(0xFFB91C1C)),
           const SizedBox(height: 6),
-          _Old(text: text),
+          _Guide(child: _Old(text: text)),
           const SizedBox(height: 16),
           const _Tag('AFTER', Color(0xFF15803D)),
           const SizedBox(height: 6),
-          _New(text: text, focused: focused),
+          _Guide(child: _New(text: text, focused: focused)),
         ],
       ),
     );
   }
+}
+
+/// Draws a hairline across the exact vertical centre of whatever it wraps.
+///
+/// The whole defect is 2px. Without a reference edge it is invisible in a
+/// screenshot, which is how it survived a round of "looks fine to me" — so the
+/// preview supplies the edge rather than asking anyone to eyeball it.
+class _Guide extends StatelessWidget {
+  final Widget child;
+  const _Guide({required this.child});
+
+  @override
+  Widget build(BuildContext context) => Stack(
+        children: [
+          child,
+          Positioned.fill(
+            child: Center(
+              child: Container(height: 1, color: const Color(0x66DC2626)),
+            ),
+          ),
+        ],
+      );
 }
 
 class _Tag extends StatelessWidget {
@@ -174,71 +244,79 @@ class _Tag extends StatelessWidget {
       );
 }
 
-/// The composer as it was: a field, an 8px gap, and a 44px square.
+/// The composer as it was BEFORE this round: the right shell, the wrong
+/// vertical placement — a 6px field pad under an unconditional `end`.
+///
+/// The slab-and-gap version this file used to show is settled and gone; the
+/// only comparison worth drawing now is the one still on screen.
 class _Old extends StatelessWidget {
   final String text;
   const _Old({required this.text});
 
   @override
-  Widget build(BuildContext context) {
-    final hasText = text.trim().isNotEmpty;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        Expanded(
-          child: TextField(
-            controller: TextEditingController(text: text),
-            minLines: 1,
-            maxLines: 4,
-            style: const TextStyle(fontSize: 13.5, color: Color(0xFF1F2937)),
-            decoration: InputDecoration(
-              isDense: true,
-              counterText: '',
-              hintText: 'Add a note…',
-              hintStyle: const TextStyle(color: Color(0xFF9CA3AF)),
-              filled: true,
-              fillColor: const Color(0xFFF4F6FB),
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: Color(0xFFCBD3DF)),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: Color(0xFFCBD3DF)),
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 8),
-        SizedBox(
-          width: 44,
-          height: 44,
-          child: Container(
-            decoration: BoxDecoration(
-              color: hasText ? kAccent : kAccent.withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Center(
-              child: Icon(
-                Icons.send_rounded,
-                size: 19,
-                color: hasText ? Colors.white : kAccent,
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
+  Widget build(BuildContext context) => _Shell(
+        text: text,
+        focused: false,
+        fieldPad: 6,
+        crossAxisAlignment: CrossAxisAlignment.end,
+      );
 }
 
-/// The composer as it is now: one shell holding both halves.
+/// The composer as it is now: the field padded to the button's own height, and
+/// the row centred until the text actually wraps.
 class _New extends StatelessWidget {
   final String text;
   final bool focused;
   const _New({required this.text, required this.focused});
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+        builder: (context, constraints) => _Shell(
+          text: text,
+          focused: focused,
+          fieldPad: kFieldPad,
+          crossAxisAlignment:
+              _isWrapped(context, text, constraints.maxWidth)
+                  ? CrossAxisAlignment.end
+                  : CrossAxisAlignment.center,
+        ),
+      );
+}
+
+/// Mirrors _ReportWorkLogState._isWrapped.
+bool _isWrapped(BuildContext context, String text, double maxWidth) {
+  if (text.isEmpty) return false;
+  if (text.contains('\n')) return true;
+  if (!maxWidth.isFinite) return false;
+  final avail = maxWidth - 2 * (kShellPad + 1) - 2 * 6 - kSendSize;
+  if (avail <= 0) return false;
+  final painter = TextPainter(
+    text: TextSpan(
+      text: text,
+      style: const TextStyle(fontSize: 13.5, height: 1.35),
+    ),
+    textDirection: Directionality.of(context),
+    textScaler: MediaQuery.textScalerOf(context),
+    maxLines: 4,
+  )..layout(maxWidth: avail);
+  final wrapped = painter.computeLineMetrics().length > 1;
+  painter.dispose();
+  return wrapped;
+}
+
+/// The shared shell, parameterised on the two things this round changed, so
+/// BEFORE and AFTER differ by exactly those and nothing else.
+class _Shell extends StatelessWidget {
+  final String text;
+  final bool focused;
+  final double fieldPad;
+  final CrossAxisAlignment crossAxisAlignment;
+  const _Shell({
+    required this.text,
+    required this.focused,
+    required this.fieldPad,
+    required this.crossAxisAlignment,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -255,7 +333,7 @@ class _New extends StatelessWidget {
         ),
       ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
+        crossAxisAlignment: crossAxisAlignment,
         children: [
           Expanded(
             child: Padding(
@@ -266,18 +344,18 @@ class _New extends StatelessWidget {
                 maxLines: 4,
                 style: const TextStyle(
                     fontSize: 13.5, color: Color(0xFF1F2937), height: 1.35),
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   isDense: true,
                   counterText: '',
                   hintText: 'Add a note…',
-                  hintStyle:
-                      TextStyle(fontSize: 13.5, color: Color(0xFF9CA3AF)),
+                  hintStyle: const TextStyle(
+                      fontSize: 13.5, color: Color(0xFF9CA3AF)),
                   filled: false,
                   isCollapsed: true,
                   border: InputBorder.none,
                   enabledBorder: InputBorder.none,
                   focusedBorder: InputBorder.none,
-                  contentPadding: EdgeInsets.symmetric(vertical: 6),
+                  contentPadding: EdgeInsets.symmetric(vertical: fieldPad),
                 ),
               ),
             ),

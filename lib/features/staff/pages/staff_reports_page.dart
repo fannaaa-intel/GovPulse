@@ -1427,8 +1427,19 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
   bool get _isClosed =>
       _status == ReportStatus.resolved || _status == ReportStatus.rejected;
 
-  /// Which tab of the status pane is showing: 0 = Timeline, 1 = Work log.
-  int _trackerTab = 0;
+  /// Which tab of the status pane is showing.
+  ///
+  /// The old "Work log" tab held both halves at once, and the risk that
+  /// created was called out in this file long before it was fixed: an officer
+  /// mistaking the citizen-facing update box for the private one. They are now
+  /// separate tabs, which also hands the thread the pane it needs — on this
+  /// console the status control pushed internal notes off the dialog
+  /// entirely. Mirrors the admin console's split.
+  static const int _kTabTimeline = 0;
+  static const int _kTabUpdates = 1;
+  static const int _kTabNotes = 2;
+
+  int _trackerTab = _kTabTimeline;
 
   /// Which PANE is showing, when the layout is too narrow to seat both side by
   /// side: 0 = Report Details, 1 = Update Report Status.
@@ -1606,38 +1617,50 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
     );
     final copy = _stageCopy();
 
+    final notes = _trackerTab == _kTabNotes;
+
     return DetailPane(
       title: 'Update Report Status',
+      fill: notes,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: notes ? MainAxisSize.max : MainAxisSize.min,
         children: [
-          const SizedBox(height: 4),
-          ReportStepperRail(stages: stages),
-          const SizedBox(height: 20),
-          ReportStageCard(
-            chip: copy.chip,
-            headline: copy.headline,
-            blurb: copy.blurb,
-            accent: copy.accent,
-            facts: _routingFacts(),
-          ),
-          const SizedBox(height: 18),
-          _StatusControl(
-            flow: _flow,
-            current: _status,
-            busy: _busy,
-            applying: _applying,
-            locked: _isClosed,
-            onPick: _apply,
-          ),
-          const SizedBox(height: 18),
+          // The stepper, the stage card and the status control describe where
+          // the report IS. The notes tab is a conversation, not a reading of
+          // the lifecycle, and on this console those three cost ~405px of a
+          // 900px dialog — enough that internal notes never appeared at all.
+          // They are one tab away, and the status control is still the
+          // office's one write wherever it is actually being used.
+          if (!notes) ...[
+            const SizedBox(height: 4),
+            ReportStepperRail(stages: stages),
+            const SizedBox(height: 20),
+            ReportStageCard(
+              chip: copy.chip,
+              headline: copy.headline,
+              blurb: copy.blurb,
+              accent: copy.accent,
+              facts: _routingFacts(),
+            ),
+            const SizedBox(height: 18),
+            _StatusControl(
+              flow: _flow,
+              current: _status,
+              busy: _busy,
+              applying: _applying,
+              locked: _isClosed,
+              onPick: _apply,
+            ),
+            const SizedBox(height: 18),
+          ],
           AdminUnderlineTabs(
-            labels: const ['Timeline', 'Work log'],
+            labels: const ['Timeline', 'Updates', 'Internal notes'],
             selected: _trackerTab,
             onSelect: (i) => setState(() => _trackerTab = i),
           ),
           const SizedBox(height: 16),
-          if (_trackerTab == 0) ...[
+          if (_trackerTab == _kTabTimeline) ...[
             const Text(
               'Timeline Progress',
               style: TextStyle(
@@ -1648,27 +1671,26 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
             ),
             const SizedBox(height: 14),
             ReportTimelineProgress(stages: stages),
-          ] else
-            _workLogTab(),
+          ] else if (_trackerTab == _kTabUpdates)
+            _updatesTab()
+          else
+            Expanded(child: _notesTab()),
         ],
       ),
     );
   }
 
-  /// "Work log" tab — the internal thread between this office and the admin,
-  /// plus the completion photos once the work is done.
-  Widget _workLogTab() {
+  /// "Updates" tab — the CITIZEN-FACING half. What this office writes here
+  /// reaches the reporter once an admin approves it.
+  ///
+  /// It used to sit stacked directly above the private thread, under a single
+  /// heading, and the risk that created was noted here long before it was
+  /// fixed: the whole danger on this screen is an officer mistaking one box
+  /// for the other. A tab boundary is a stronger separation than a caption.
+  Widget _updatesTab() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // The citizen-facing half first: what this office writes here reaches
-        // the reporter once an admin approves it.
-        //
-        // NOTE the tab used to open with "Log progress or reply to the admin.
-        // The citizen never sees this." — true of the work log, and flatly
-        // wrong about the panel that now sits under it. Each half carries its
-        // own caption instead, because the whole risk on this screen is an
-        // officer mistaking one box for the other.
         // Locked once the report is closed. An office was previously offered
         // a "tell the Municipality what has happened" box on work it had
         // finished weeks earlier — an invitation to file progress against a
@@ -1680,17 +1702,20 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
           authorName: widget.department ?? 'Staff',
           locked: _isClosed,
         ),
-        const SizedBox(height: 22),
-        const Text(
-          'INTERNAL NOTES',
-          style: TextStyle(
-            fontSize: 10.5,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 0.7,
-            color: StaffUi.textMuted,
-          ),
-        ),
-        const SizedBox(height: 4),
+        if (_status == ReportStatus.resolved) ...[
+          const SizedBox(height: 20),
+          ResolutionMediaSection(reportId: widget.report.id, canEdit: true),
+        ],
+      ],
+    );
+  }
+
+  /// "Internal notes" tab — the PRIVATE half, between this office and the
+  /// admin, filling the pane. See the admin console's twin.
+  Widget _notesTab() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
         const Text(
           'Between this office and the admin only. The citizen never sees '
           'these.',
@@ -1703,16 +1728,15 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
         const SizedBox(height: 10),
         // Locked here but NOT on the admin side — see ReportWorkLog.locked.
         // Oversight continues after closure; this office's work does not.
-        ReportWorkLog(
-          reportId: widget.report.id,
-          authorRole: 'staff',
-          authorName: widget.department ?? 'Staff',
-          locked: _isClosed,
+        Expanded(
+          child: ReportWorkLog(
+            reportId: widget.report.id,
+            authorRole: 'staff',
+            authorName: widget.department ?? 'Staff',
+            locked: _isClosed,
+            fill: true,
+          ),
         ),
-        if (_status == ReportStatus.resolved) ...[
-          const SizedBox(height: 20),
-          ResolutionMediaSection(reportId: widget.report.id, canEdit: true),
-        ],
       ],
     );
   }
@@ -1857,10 +1881,28 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
           onSelect: (i) => setState(() => _paneTab = i),
         );
 
-    Widget activePane() => SingleChildScrollView(
+    // ── WHY THIS IS NOT ALWAYS A SCROLL VIEW ──────────────────────────────
+    //
+    // A scroll view hands its child UNBOUNDED height, which is exactly what a
+    // pane that means to fill cannot size against. On the phone this is the
+    // ONLY path — there is no two-pane row here — so without this the notes
+    // tab would work on desktop and throw on mobile.
+    //
+    // The status pane showing notes therefore gets the height directly and
+    // divides it itself; everything else keeps the scroll it has always had.
+    Widget activePane() {
+      final fills = _paneTab == 1 && _trackerTab == _kTabNotes;
+      if (fills) {
+        return Padding(
           padding: const EdgeInsets.all(14),
-          child: _paneTab == 0 ? _detailsPane() : _statusPane(),
+          child: _statusPane(),
         );
+      }
+      return SingleChildScrollView(
+        padding: const EdgeInsets.all(14),
+        child: _paneTab == 0 ? _detailsPane() : _statusPane(),
+      );
+    }
 
     if (narrow) {
       return AdminDetailScaffold(
@@ -1914,8 +1956,11 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
             // REVERTED: it turned a narrow window into a scroll the length of
             // both panes with no way to skip past one. Don't retry it.
             if (c.maxWidth < kReportDetailTwoPaneFrom) {
+              // See the admin console's twin: `min` + `Flexible` leaves the
+              // child unbounded, which a filling pane cannot size against.
+              final fills = _paneTab == 1 && _trackerTab == _kTabNotes;
               return Column(
-                mainAxisSize: MainAxisSize.min,
+                mainAxisSize: fills ? MainAxisSize.max : MainAxisSize.min,
                 children: [
                   Padding(
                     padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
@@ -1927,7 +1972,10 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
                       ],
                     ),
                   ),
-                  Flexible(child: activePane()),
+                  if (fills)
+                    Expanded(child: activePane())
+                  else
+                    Flexible(child: activePane()),
                 ],
               );
             }
@@ -1938,6 +1986,7 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
                   child: AdminTwoPaneRow(
                     main: _statusPane(),
                     side: _detailsPane(),
+                    mainFills: _trackerTab == _kTabNotes,
                   ),
                 ),
                 // Pinned rather than scrolled with the pane — the way out stays

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../theme/app_colors.dart';
+import 'no_scrollbar_behavior.dart';
 
 /// A two-way internal work-log thread on a single report, shared by the admin
 /// console and the staff/external console. Staff/external post progress notes;
@@ -37,12 +38,36 @@ class ReportWorkLog extends StatefulWidget {
   /// filing against it).
   final bool locked;
 
+  /// Take the height the parent gives instead of sizing to the notes.
+  ///
+  /// ── WHY A CONVERSATION MUST NOT SIZE TO ITS CONTENT ─────────────────────
+  /// Sized to content, the thread grows by one bubble per note and carries the
+  /// composer down with it. Every note posted therefore moves the box you post
+  /// from further from the eye, and past a screenful it leaves the viewport
+  /// entirely: on the live admin console the composer sat clipped by the
+  /// dialog's own bottom edge, and on the staff console the thread never
+  /// appeared at all. A short thread had the opposite problem — three notes in
+  /// a pane built for thirty read as an empty stub.
+  ///
+  /// Filling inverts both. The thread takes the room that exists, scrolls
+  /// inside itself, and the composer holds the floor no matter how long the
+  /// conversation runs. It also removes the per-breakpoint height this would
+  /// otherwise need: "what the parent has left" is the right answer on a
+  /// 320px phone and a 1400px desktop alike.
+  ///
+  /// The parent must give a BOUNDED height when this is set — inside a
+  /// [DetailPane] with `fill: true` that is already the case. Left false the
+  /// widget behaves exactly as before, which is what the narrow single-column
+  /// layouts still want.
+  final bool fill;
+
   const ReportWorkLog({
     super.key,
     required this.reportId,
     required this.authorRole,
     required this.authorName,
     this.locked = false,
+    this.fill = false,
   });
 
   @override
@@ -109,6 +134,20 @@ const double _kComposerSendSize = 32;
 /// target the send button needs.
 const double _kComposerShellPad = 5;
 
+/// The field's own vertical padding, inside the shell.
+///
+/// Sized so a ONE-LINE field is exactly as tall as the send button beside it:
+///
+///   7 + 18 line box (13.5sp × 1.35) + 7 = 32 = _kComposerSendSize
+///
+/// It was 6, which made the field 30 against a 32 button. Under the row's
+/// bottom alignment those two missing pixels all landed above the text, so the
+/// hint sat 2px below the shell's centre line — the misalignment that is
+/// visible in the placeholder and in every note being typed. Matching the two
+/// boxes is what lets the row centre and bottom-align to the same result at
+/// rest, rather than one fighting the other.
+const double _kComposerFieldPad = 7;
+
 /// The shell's corner radius.
 ///
 /// One radius for the whole control, because it IS one control now. The
@@ -144,6 +183,16 @@ class _ReportWorkLogState extends State<ReportWorkLog> {
   final _focus = FocusNode();
   final _supabase = Supabase.instance.client;
 
+  /// Drives the thread to its newest note.
+  ///
+  /// A chat that does not follow its own conversation is a chat that loses
+  /// messages: notes arrive here over realtime from the other side, and with
+  /// nothing scrolling, a reply landed below the fold and was simply never
+  /// seen. The controller is attached even when [ReportWorkLog.fill] is false
+  /// — the non-filling layout scrolls in its parent, where a jump would fight
+  /// the reader — so [_stickToEnd] checks `hasClients` and does nothing there.
+  final _scroll = ScrollController();
+
   List<_WorkNote> _notes = const [];
   bool _loading = true;
   bool _sending = false;
@@ -169,8 +218,35 @@ class _ReportWorkLogState extends State<ReportWorkLog> {
     _focus.removeListener(_onFocusChange);
     _focus.dispose();
     _ctrl.dispose();
+    _scroll.dispose();
     if (_channel != null) _supabase.removeChannel(_channel!);
     super.dispose();
+  }
+
+  /// Bring the newest note into view, after the frame that added it.
+  ///
+  /// Scheduled rather than called straight away because the note is appended
+  /// during `setState`: at that moment the list has not been laid out, so
+  /// `maxScrollExtent` is still the OLD end and jumping there lands one bubble
+  /// short. Waiting a frame is what makes "the bottom" mean the bubble that
+  /// just arrived.
+  ///
+  /// [animate] is false for the initial load — the thread should open already
+  /// at the newest note, not scroll there while being read.
+  void _stickToEnd({bool animate = true}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scroll.hasClients) return;
+      final end = _scroll.position.maxScrollExtent;
+      if (animate) {
+        _scroll.animateTo(
+          end,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOut,
+        );
+      } else {
+        _scroll.jumpTo(end);
+      }
+    });
   }
 
   /// Live-append notes the OTHER side posts (RLS still scopes what arrives).
@@ -211,6 +287,8 @@ class _ReportWorkLogState extends State<ReportWorkLog> {
                     ),
                   );
             });
+            // The other side just said something. Follow it.
+            _stickToEnd();
           },
         )
         .subscribe();
@@ -240,6 +318,10 @@ class _ReportWorkLogState extends State<ReportWorkLog> {
             .toList();
         _loading = false;
       });
+      // Open on the newest note rather than the oldest — a thread is read from
+      // where it left off. No animation: this is the resting position, not a
+      // movement.
+      _stickToEnd(animate: false);
     } catch (_) {
       // Table missing → migration not applied. Hide the feature gracefully.
       if (!mounted) return;
@@ -285,6 +367,7 @@ class _ReportWorkLogState extends State<ReportWorkLog> {
         _ctrl.clear();
         _sending = false;
       });
+      _stickToEnd();
     } catch (_) {
       if (!mounted) return;
       setState(() => _sending = false);
@@ -298,95 +381,245 @@ class _ReportWorkLogState extends State<ReportWorkLog> {
   Widget build(BuildContext context) {
     if (_unavailable) return const SizedBox.shrink();
 
+    // ── TWO SHAPES, ONE THREAD ─────────────────────────────────────────────
+    //
+    // Filling, the widget is a frame: the thread takes the height the parent
+    // gives and scrolls inside it, and the composer holds the floor. Not
+    // filling, it is a block in someone else's scroll and must size to its
+    // notes, exactly as before — the narrow single-column layouts still
+    // stack it under other content, where an Expanded has nothing to expand
+    // into.
+    //
+    // Both render the same bubbles from the same list. Only who owns the
+    // scrolling changes.
+    if (!widget.fill) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (_loading)
+            _loader()
+          else if (_notes.isEmpty)
+            _empty()
+          else
+            for (final w in _threadChildren()) w,
+          if (!widget.locked) ...[const SizedBox(height: 8), _composer()],
+        ],
+      );
+    }
+
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (_loading)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 14),
-            child: Center(
-              child: SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            ),
-          )
-        else if (_notes.isEmpty)
-          const Padding(
-            padding: EdgeInsets.only(bottom: 10),
-            child: Text(
-              'No notes yet. Post progress updates or instructions here — '
-              'the citizen never sees these.',
-              style: TextStyle(
-                fontSize: 12.5,
-                color: Color(0xFF8A94A6),
-                height: 1.4,
-              ),
-            ),
-          )
-        else
-          for (final n in _notes) _bubble(n),
-        if (!widget.locked) ...[const SizedBox(height: 8), _composer()],
+        Expanded(
+          child: _loading
+              ? _loader()
+              : _notes.isEmpty
+                  ? Align(
+                      alignment: Alignment.topLeft,
+                      child: _empty(),
+                    )
+                  // The bar is hidden, the scrolling is not — a track drawn
+                  // down the inside edge of a pane reads as a seam in the
+                  // card rather than as a control. This is the app's one
+                  // behaviour for that; see NoScrollbarBehavior.
+                  : ScrollConfiguration(
+                      behavior: const NoScrollbarBehavior(),
+                      child: ListView(
+                        controller: _scroll,
+                        padding: const EdgeInsets.only(bottom: 4),
+                        children: _threadChildren(),
+                      ),
+                    ),
+        ),
+        if (!widget.locked) ...[
+          const SizedBox(height: 10),
+          _composer(),
+        ],
       ],
     );
   }
 
-  Widget _bubble(_WorkNote n) {
-    final isAdmin = n.authorRole == 'admin';
-    final accent = isAdmin ? AppColors.primaryBlue : const Color(0xFF0EA5A4);
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(11),
-      decoration: BoxDecoration(
-        color: accent.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: accent.withValues(alpha: 0.18)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                isAdmin ? Icons.shield_rounded : Icons.engineering_rounded,
-                size: 13,
-                color: accent,
-              ),
-              const SizedBox(width: 5),
-              Flexible(
-                child: Text(
-                  n.authorName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: accent,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 6),
-              Text(
-                _ago(n.createdAt),
-                style: const TextStyle(
-                  fontSize: 10.5,
-                  color: Color(0xFF9CA3AF),
-                ),
-              ),
-            ],
+  Widget _loader() => const Padding(
+        padding: EdgeInsets.symmetric(vertical: 14),
+        child: Center(
+          child: SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
           ),
-          const SizedBox(height: 5),
-          Text(
-            n.body,
-            style: const TextStyle(
-              fontSize: 13,
-              color: Color(0xFF1F2937),
-              height: 1.4,
+        ),
+      );
+
+  Widget _empty() => const Padding(
+        padding: EdgeInsets.only(bottom: 10),
+        child: Text(
+          'No notes yet. Post progress updates or instructions here — '
+          'the citizen never sees these.',
+          style: TextStyle(
+            fontSize: 12.5,
+            color: Color(0xFF8A94A6),
+            height: 1.4,
+          ),
+        ),
+      );
+
+  /// The thread's bubbles, with a date separator wherever the day changes.
+  ///
+  /// The separators are not decoration: every bubble carries only a relative
+  /// stamp ("2d"), which answers how long ago but never which day, and a work
+  /// log is a record people cite dates from. One heading per day gives that
+  /// back without putting a full timestamp on every note.
+  List<Widget> _threadChildren() {
+    final out = <Widget>[];
+    DateTime? lastDay;
+    for (final n in _notes) {
+      final t = n.createdAt;
+      if (t != null) {
+        final day = DateTime(t.year, t.month, t.day);
+        if (lastDay == null || day != lastDay) {
+          out.add(_daySeparator(day));
+          lastDay = day;
+        }
+      }
+      out.add(_bubble(n));
+    }
+    return out;
+  }
+
+  Widget _daySeparator(DateTime day) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final diff = today.difference(day).inDays;
+    final label = diff == 0
+        ? 'Today'
+        : diff == 1
+            ? 'Yesterday'
+            : '${day.day}/${day.month}/${day.year}';
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          const Expanded(child: Divider(height: 1, color: Color(0xFFE1E7F0))),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 9),
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.5,
+                color: Color(0xFF9CA3AF),
+              ),
             ),
           ),
+          const Expanded(child: Divider(height: 1, color: Color(0xFFE1E7F0))),
         ],
+      ),
+    );
+  }
+
+  /// Share of the thread's width a single bubble may take.
+  ///
+  /// A bubble that runs the full width has no side, and side is the whole
+  /// point: with both authors' notes drawn as identical full-width slabs the
+  /// only thing separating "what I said" from "what they said" was a colour
+  /// and a name to read. Stopping short of the far edge is what leaves the gap
+  /// the eye reads the direction from. 0.78 keeps a long note comfortable to
+  /// read while still cutting a visible margin at 320px.
+  static const double _kBubbleMaxWidth = 0.78;
+
+  /// One note, on its author's side of the thread.
+  ///
+  /// "Mine" is whoever is holding this console — [ReportWorkLog.authorRole] —
+  /// not the admin. The same thread is read from both ends: a note the office
+  /// wrote is theirs in the admin console and mine in the staff one, and it
+  /// must sit on the correct side in each.
+  Widget _bubble(_WorkNote n) {
+    final mine = n.authorRole == widget.authorRole;
+    final isAdmin = n.authorRole == 'admin';
+    final accent = isAdmin ? AppColors.primaryBlue : const Color(0xFF0EA5A4);
+
+    return Align(
+      alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+      child: FractionallySizedBox(
+        widthFactor: _kBubbleMaxWidth,
+        alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+        child: Column(
+          crossAxisAlignment:
+              mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          children: [
+            // Author and time ride ABOVE the bubble rather than inside it.
+            // Inside, they took a line of the bubble's width and forced every
+            // note — most of them a sentence — to be at least two lines tall.
+            Padding(
+              padding: const EdgeInsets.only(left: 3, right: 3, bottom: 3),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    isAdmin ? Icons.shield_rounded : Icons.engineering_rounded,
+                    size: 11,
+                    color: accent,
+                  ),
+                  const SizedBox(width: 4),
+                  Flexible(
+                    child: Text(
+                      n.authorName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                        color: accent,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    _ago(n.createdAt),
+                    style: const TextStyle(
+                      fontSize: 10,
+                      color: Color(0xFF9CA3AF),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              margin: const EdgeInsets.only(bottom: 9),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 9,
+              ),
+              decoration: BoxDecoration(
+                // Mine is filled, theirs is outlined. Two different treatments
+                // rather than two tints of the same one: a tint survives
+                // neither a glance nor a colour-blind reader, and the side a
+                // note sits on should be legible before its hue is.
+                color: mine ? accent : const Color(0xFFF6F8FC),
+                border: mine
+                    ? null
+                    : Border.all(color: const Color(0xFFE1E7F0)),
+                borderRadius: BorderRadius.only(
+                  topLeft: const Radius.circular(13),
+                  topRight: const Radius.circular(13),
+                  // The squared-off corner points at its author, the way every
+                  // message thread people already use marks a speaker.
+                  bottomLeft: Radius.circular(mine ? 13 : 4),
+                  bottomRight: Radius.circular(mine ? 4 : 13),
+                ),
+              ),
+              child: Text(
+                n.body,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: mine ? Colors.white : const Color(0xFF1F2937),
+                  height: 1.42,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -407,6 +640,19 @@ class _ReportWorkLogState extends State<ReportWorkLog> {
       builder: (context, value, _) {
         final hasText = value.text.trim().isNotEmpty;
         final canSend = hasText && !_sending;
+
+        // The row's alignment depends on whether the field has WRAPPED, and
+        // wrapping is a function of the width it was given — the same sentence
+        // is one line in a 520px admin pane and two on a 320px phone. A
+        // newline count cannot answer that, so the text is laid out the way
+        // the field lays it out, at the width the field actually gets.
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final wrapped = _isWrapped(
+              context,
+              value.text,
+              constraints.maxWidth,
+            );
 
         // ── ONE CONTROL, NOT TWO ───────────────────────────────────────────
         //
@@ -438,11 +684,33 @@ class _ReportWorkLogState extends State<ReportWorkLog> {
             ),
           ),
           child: Row(
-            // The field grows downward to four lines; the button stays put at
-            // the bottom of the shell beside the last line, where the caret
-            // is. Centring it would float it against the middle of a growing
-            // block of text.
-            crossAxisAlignment: CrossAxisAlignment.end,
+            // ── WHY THIS IS NOT SIMPLY `end` ──────────────────────────────
+            //
+            // Bottom-alignment is right ONCE THE TEXT WRAPS: the field grows
+            // downward to four lines and the button stays beside the last
+            // line, where the caret is. Centring it there would float it
+            // against the middle of a growing block of text.
+            //
+            // But at REST it was wrong, and that is the misalignment in the
+            // placeholder. `end` only centres a one-line row when the field
+            // and the button are the same height, and they were not — a 30px
+            // field bottom-aligned against a 32px button dropped the hint 2px
+            // below the shell's centre. _kComposerFieldPad closes that gap at
+            // 1.0 text scale, but it cannot hold at every scale: the field's
+            // line box grows with the scale factor and the button does not,
+            // so past ~1.15 the field is the TALLER of the two and `end`
+            // starts pushing the BUTTON off-centre instead. The error simply
+            // changes owner.
+            //
+            // So the alignment follows the state it is actually describing:
+            // centred while the composer is one line (both at rest and while
+            // a short note is typed), bottom-aligned the moment the text
+            // wraps. Measured at 1.0/1.15/1.3/1.6 scale across 520/420/320px,
+            // this is the only one of the three that is correct in both
+            // states — see composer_alignment_test.dart.
+            crossAxisAlignment: wrapped
+                ? CrossAxisAlignment.end
+                : CrossAxisAlignment.center,
             children: [
               Expanded(
                 child: Padding(
@@ -479,7 +747,9 @@ class _ReportWorkLogState extends State<ReportWorkLog> {
                       border: InputBorder.none,
                       enabledBorder: InputBorder.none,
                       focusedBorder: InputBorder.none,
-                      contentPadding: EdgeInsets.symmetric(vertical: 6),
+                      contentPadding: EdgeInsets.symmetric(
+                        vertical: _kComposerFieldPad,
+                      ),
                     ),
                   ),
                 ),
@@ -537,9 +807,49 @@ class _ReportWorkLogState extends State<ReportWorkLog> {
               ),
             ],
           ),
+            );
+          },
         );
       },
     );
+  }
+
+  /// Has the field wrapped past its first line at [maxWidth]?
+  ///
+  /// Laid out with the field's own style, scale and width so the answer is the
+  /// one the field itself will reach — the alignment must not disagree with
+  /// the thing it is aligning. [maxWidth] is the shell's, so the field's
+  /// borders, padding and the send button are taken back off it first.
+  ///
+  /// Cheap enough to run per keystroke: at most 500 characters over four
+  /// lines, which is the same layout the field is about to perform anyway.
+  static bool _isWrapped(BuildContext context, String text, double maxWidth) {
+    if (text.isEmpty) return false;
+    if (text.contains('\n')) return true;
+    if (!maxWidth.isFinite) return false;
+
+    // shell padding + border on both sides, the field's own horizontal pad on
+    // both sides, and the button.
+    final avail =
+        maxWidth -
+        2 * (_kComposerShellPad + 1) -
+        2 * 6 -
+        _kComposerSendSize;
+    if (avail <= 0) return false;
+
+    final painter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: const TextStyle(fontSize: 13.5, height: 1.35),
+      ),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+      maxLines: 4,
+    )..layout(maxWidth: avail);
+
+    final wrapped = painter.computeLineMetrics().length > 1;
+    painter.dispose();
+    return wrapped;
   }
 
   static String _ago(DateTime? t) {

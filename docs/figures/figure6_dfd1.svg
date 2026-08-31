@@ -1,0 +1,230 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2160 2180" width="2160" height="2180">
+  <rect x="0" y="0" width="2160" height="2180" fill="#ffffff"/>
+  <defs><marker id="a6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><polygon points="0,1 10,5 0,9" fill="#111"/></marker></defs>
+  <path d="M118.0,178.0 L118.0,380.0 L723.1,380.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M723.1,420.0 L90.0,420.0 L90.0,178.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M174.0,178.0 L174.0,590.0 L712.0,590.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M202.0,178.0 L202.0,762.0 L720.9,762.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M725.5,802.0 L146.0,802.0 L146.0,178.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M230.0,178.0 L230.0,1812.0 L720.9,1812.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M725.5,1852.0 L258.0,1852.0 L258.0,178.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M725.5,1022.0 L286.0,1022.0 L286.0,178.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M712.0,2060.0 L50.0,2060.0 L50.0,150.0 L85.0,150.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M1034.5,378.0 L1950.0,378.0 L1950.0,182.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M2050.0,182.0 L2050.0,422.0 L1034.5,422.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M780.0,178.0 L780.0,300.0 L880.0,300.0 L880.0,344.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M740.0,178.0 L740.0,300.0 L568.0,300.0 L568.0,1420.0 L712.0,1420.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M710.0,178.0 L710.0,330.0 L540.0,330.0 L540.0,1848.0 L720.9,1848.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M725.5,1442.0 L596.0,1442.0 L596.0,246.0 L742.0,246.0 L742.0,178.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M725.5,1808.0 L624.0,1808.0 L624.0,222.0 L818.0,222.0 L818.0,178.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M1230.0,178.0 L1230.0,300.0 L950.0,300.0 L950.0,349.1" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M1260.0,178.0 L1260.0,570.0 L1036.9,570.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M1036.9,610.0 L1350.0,610.0 L1350.0,178.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M1200.0,178.0 L1200.0,340.0 L1430.0,340.0 L1430.0,972.0 L1025.5,972.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M1025.5,1028.0 L1465.0,1028.0 L1465.0,205.0 L1170.0,205.0 L1170.0,178.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M1021.9,1180.0 L1500.0,1180.0 L1500.0,240.0 L1320.0,240.0 L1320.0,178.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M1013.5,1244.0 L1535.0,1244.0 L1535.0,268.0 L1290.0,268.0 L1290.0,178.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M1140.0,178.0 L1140.0,370.0 L1570.0,370.0 L1570.0,1400.0 L1036.9,1400.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M1036.9,1600.0 L1625.0,1600.0 L1625.0,178.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M1046.3,1628.0 L1700.0,1628.0 L1700.0,178.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M1775.0,178.0 L1775.0,1668.0 L966.5,1668.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M1046.3,1008.0 L1850.0,1008.0 L1850.0,1085.0 L1890.0,1085.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M1890.0,1109.0 L1820.0,1109.0 L1820.0,1042.0 L991.1,1042.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M955.7,1160.0 L1790.0,1160.0 L1790.0,1125.0 L1890.0,1125.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M1960.0,1137.0 L1960.0,1230.0 L1036.9,1230.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M1045.3,2050.0 L1850.0,2050.0 L1850.0,2085.0 L1890.0,2085.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M746.5,366.0 L350.0,366.0 L350.0,460.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M440.0,460.0 L440.0,434.0 L746.5,434.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M1046.3,598.0 L1240.0,598.0 L1240.0,650.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M1192.5,680.0 L1130.0,680.0 L1130.0,620.0 L1021.9,620.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M820.0,832.3 L820.0,860.0 L527.5,860.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M940.0,832.3 L940.0,860.0 L1192.5,860.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M527.5,900.0 L760.0,900.0 L760.0,960.8" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M746.5,966.0 L500.0,966.0 L500.0,930.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M1192.5,900.0 L1000.0,900.0 L1000.0,960.8" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M1046.3,992.0 L1240.0,992.0 L1240.0,1035.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M746.5,1034.0 L500.0,1034.0 L500.0,1065.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M527.5,924.0 L680.0,924.0 L680.0,1190.0 L723.1,1190.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M1192.5,924.0 L1155.0,924.0 L1155.0,1196.0 L1042.7,1196.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M1260.0,1115.0 L1260.0,1171.0 L1000.0,1170.8" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M738.1,1390.0 L350.0,1390.0 L350.0,1480.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M440.0,1480.0 L440.0,1452.0 L742.1,1452.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M966.5,1572.0 L1240.0,1572.0 L1240.0,1560.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M1340.0,1560.0 L1340.0,1648.0 L1025.5,1648.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M712.0,1620.0 L470.0,1620.0 L470.0,1560.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M1021.9,1800.0 L1240.0,1800.0 L1240.0,1760.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M1340.0,1760.0 L1340.0,1858.0 L1025.5,1858.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M966.5,1878.0 L1150.0,1878.0 L1150.0,1912.0 L1192.5,1912.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M1192.5,1960.0 L1120.0,1960.0 L1120.0,1846.0 L1041.0,1846.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M738.1,2030.0 L350.0,2030.0 L350.0,1980.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M440.0,1980.0 L440.0,2078.0 L720.9,2078.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M880.0,836.0 L880.0,944.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M880.0,1476.0 L880.0,1564.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M880.0,1886.0 L880.0,2004.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M983.9,634.0 L1065.0,634.0 L1065.0,2005.0 L911.6,2005.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M1021.9,1450.0 L1095.0,1450.0 L1095.0,2032.0 L1025.5,2032.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M1013.5,1654.0 L1125.0,1654.0 L1125.0,2062.0 L1047.9,2062.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <path d="M776.1,1786.0 L652.0,1786.0 L652.0,1044.0 L776.1,1044.0" fill="none" stroke="#111" stroke-width="1" marker-end="url(#a6)"/>
+  <rect x="900.0" y="18" width="360" height="46" fill="#fff" stroke="#111" stroke-width="1.2"/>
+  <text x="1080.0" y="47" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="16" font-weight="600" fill="#111">GovPulse System</text>
+  <rect x="85.0" y="122.0" width="250" height="56" fill="#fff" stroke="#111" stroke-width="1.2"/>
+  <text x="210.0" y="154.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="11" font-weight="600" fill="#111">Citizen</text>
+  <rect x="680.0" y="122.0" width="200" height="56" fill="#fff" stroke="#111" stroke-width="1.2"/>
+  <text x="780.0" y="154.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="11" font-weight="600" fill="#111">Municipal Staff</text>
+  <rect x="1125.0" y="122.0" width="250" height="56" fill="#fff" stroke="#111" stroke-width="1.2"/>
+  <text x="1250.0" y="154.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="11" font-weight="600" fill="#111">Administrator</text>
+  <rect x="1605.0" y="122.0" width="190" height="56" fill="#fff" stroke="#111" stroke-width="1.2"/>
+  <text x="1700.0" y="154.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="11" font-weight="600" fill="#111">External Agency</text>
+  <rect x="1890.0" y="118.0" width="220" height="64" fill="#fff" stroke="#111" stroke-width="1.2"/>
+  <text x="2000.0" y="147.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="11" font-weight="600" fill="#111">Facebook</text>
+  <text x="2000.0" y="161.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="11" font-weight="600" fill="#111">(Social Sign-In)</text>
+  <rect x="1890.0" y="1073.0" width="220" height="64" fill="#fff" stroke="#111" stroke-width="1.2"/>
+  <text x="2000.0" y="1102.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="11" font-weight="600" fill="#111">AI Services</text>
+  <text x="2000.0" y="1116.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="11" font-weight="600" fill="#111">(Groq / Sightengine)</text>
+  <rect x="1890.0" y="2068.0" width="220" height="64" fill="#fff" stroke="#111" stroke-width="1.2"/>
+  <text x="2000.0" y="2097.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="11" font-weight="600" fill="#111">Firebase Cloud</text>
+  <text x="2000.0" y="2111.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="11" font-weight="600" fill="#111">Messaging</text>
+  <path d="M312.5,469.0 V531.0 A107.5,9.0 0 0 0 527.5,531.0 V469.0" fill="#fff" stroke="#111" stroke-width="1"/>
+  <ellipse cx="420.0" cy="469.0" rx="107.5" ry="9.0" fill="#fff" stroke="#111" stroke-width="1"/>
+  <text x="420.0" y="502.5" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="10" font-weight="600" fill="#111">D1</text>
+  <text x="420.0" y="515.5" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="10" font-weight="600" fill="#111">USER &amp; ROLE STORE</text>
+  <path d="M312.5,859.0 V921.0 A107.5,9.0 0 0 0 527.5,921.0 V859.0" fill="#fff" stroke="#111" stroke-width="1"/>
+  <ellipse cx="420.0" cy="859.0" rx="107.5" ry="9.0" fill="#fff" stroke="#111" stroke-width="1"/>
+  <text x="420.0" y="892.5" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="10" font-weight="600" fill="#111">D3</text>
+  <text x="420.0" y="905.5" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="10" font-weight="600" fill="#111">REPORT STORE</text>
+  <path d="M312.5,1074.0 V1136.0 A107.5,9.0 0 0 0 527.5,1136.0 V1074.0" fill="#fff" stroke="#111" stroke-width="1"/>
+  <ellipse cx="420.0" cy="1074.0" rx="107.5" ry="9.0" fill="#fff" stroke="#111" stroke-width="1"/>
+  <text x="420.0" y="1107.5" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="10" font-weight="600" fill="#111">D10</text>
+  <text x="420.0" y="1120.5" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="10" font-weight="600" fill="#111">MODERATION &amp; AUDIT</text>
+  <path d="M312.5,1489.0 V1551.0 A107.5,9.0 0 0 0 527.5,1551.0 V1489.0" fill="#fff" stroke="#111" stroke-width="1"/>
+  <ellipse cx="420.0" cy="1489.0" rx="107.5" ry="9.0" fill="#fff" stroke="#111" stroke-width="1"/>
+  <text x="420.0" y="1522.5" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="10" font-weight="600" fill="#111">D3</text>
+  <text x="420.0" y="1535.5" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="10" font-weight="600" fill="#111">REPORT STORE</text>
+  <path d="M312.5,1909.0 V1971.0 A107.5,9.0 0 0 0 527.5,1971.0 V1909.0" fill="#fff" stroke="#111" stroke-width="1"/>
+  <ellipse cx="420.0" cy="1909.0" rx="107.5" ry="9.0" fill="#fff" stroke="#111" stroke-width="1"/>
+  <text x="420.0" y="1942.5" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="10" font-weight="600" fill="#111">D9</text>
+  <text x="420.0" y="1955.5" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="10" font-weight="600" fill="#111">NOTIFICATION STORE</text>
+  <path d="M1192.5,659.0 V721.0 A107.5,9.0 0 0 0 1407.5,721.0 V659.0" fill="#fff" stroke="#111" stroke-width="1"/>
+  <ellipse cx="1300.0" cy="659.0" rx="107.5" ry="9.0" fill="#fff" stroke="#111" stroke-width="1"/>
+  <text x="1300.0" y="692.5" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="10" font-weight="600" fill="#111">D2</text>
+  <text x="1300.0" y="705.5" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="10" font-weight="600" fill="#111">VERIFICATION STORE</text>
+  <path d="M1192.5,859.0 V921.0 A107.5,9.0 0 0 0 1407.5,921.0 V859.0" fill="#fff" stroke="#111" stroke-width="1"/>
+  <ellipse cx="1300.0" cy="859.0" rx="107.5" ry="9.0" fill="#fff" stroke="#111" stroke-width="1"/>
+  <text x="1300.0" y="892.5" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="10" font-weight="600" fill="#111">D4</text>
+  <text x="1300.0" y="905.5" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="10" font-weight="600" fill="#111">SUGGESTION &amp; FEEDBACK</text>
+  <path d="M1192.5,1044.0 V1106.0 A107.5,9.0 0 0 0 1407.5,1106.0 V1044.0" fill="#fff" stroke="#111" stroke-width="1"/>
+  <ellipse cx="1300.0" cy="1044.0" rx="107.5" ry="9.0" fill="#fff" stroke="#111" stroke-width="1"/>
+  <text x="1300.0" y="1077.5" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="10" font-weight="600" fill="#111">D5</text>
+  <text x="1300.0" y="1090.5" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="10" font-weight="600" fill="#111">AI INSIGHT STORE</text>
+  <path d="M1192.5,1489.0 V1551.0 A107.5,9.0 0 0 0 1407.5,1551.0 V1489.0" fill="#fff" stroke="#111" stroke-width="1"/>
+  <ellipse cx="1300.0" cy="1489.0" rx="107.5" ry="9.0" fill="#fff" stroke="#111" stroke-width="1"/>
+  <text x="1300.0" y="1522.5" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="10" font-weight="600" fill="#111">D6</text>
+  <text x="1300.0" y="1535.5" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="10" font-weight="600" fill="#111">ENDORSEMENT STORE</text>
+  <path d="M1192.5,1689.0 V1751.0 A107.5,9.0 0 0 0 1407.5,1751.0 V1689.0" fill="#fff" stroke="#111" stroke-width="1"/>
+  <ellipse cx="1300.0" cy="1689.0" rx="107.5" ry="9.0" fill="#fff" stroke="#111" stroke-width="1"/>
+  <text x="1300.0" y="1722.5" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="10" font-weight="600" fill="#111">D7</text>
+  <text x="1300.0" y="1735.5" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="10" font-weight="600" fill="#111">COMMUNITY STORE</text>
+  <path d="M1192.5,1909.0 V1971.0 A107.5,9.0 0 0 0 1407.5,1971.0 V1909.0" fill="#fff" stroke="#111" stroke-width="1"/>
+  <ellipse cx="1300.0" cy="1909.0" rx="107.5" ry="9.0" fill="#fff" stroke="#111" stroke-width="1"/>
+  <text x="1300.0" y="1942.5" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="10" font-weight="600" fill="#111">D8</text>
+  <text x="1300.0" y="1955.5" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="10" font-weight="600" fill="#111">SUPPORT TICKET STORE</text>
+  <ellipse cx="880" cy="400" rx="168" ry="56" fill="#fff" stroke="#111" stroke-width="1.3"/>
+  <text x="880" y="390.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="11" font-weight="600" fill="#111">1.0</text>
+  <text x="880" y="404.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="10" font-weight="600" fill="#111">USER AUTHENTICATION</text>
+  <text x="880" y="418.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="10" font-weight="600" fill="#111">&amp; ACCOUNT MANAGEMENT</text>
+  <ellipse cx="880" cy="590" rx="168" ry="56" fill="#fff" stroke="#111" stroke-width="1.3"/>
+  <text x="880" y="587.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="11" font-weight="600" fill="#111">2.0</text>
+  <text x="880" y="601.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="10" font-weight="600" fill="#111">IDENTITY VERIFICATION</text>
+  <ellipse cx="880" cy="780" rx="168" ry="56" fill="#fff" stroke="#111" stroke-width="1.3"/>
+  <text x="880" y="770.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="11" font-weight="600" fill="#111">3.0</text>
+  <text x="880" y="784.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="10" font-weight="600" fill="#111">SUBMISSION INTAKE</text>
+  <text x="880" y="798.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="10" font-weight="600" fill="#111">&amp; MEDIA CAPTURE</text>
+  <ellipse cx="880" cy="1000" rx="168" ry="56" fill="#fff" stroke="#111" stroke-width="1.3"/>
+  <text x="880" y="990.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="11" font-weight="600" fill="#111">4.0</text>
+  <text x="880" y="1004.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="10" font-weight="600" fill="#111">AI PROCESSING</text>
+  <text x="880" y="1018.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="10" font-weight="600" fill="#111">&amp; CONTENT MODERATION</text>
+  <ellipse cx="880" cy="1210" rx="168" ry="56" fill="#fff" stroke="#111" stroke-width="1.3"/>
+  <text x="880" y="1200.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="11" font-weight="600" fill="#111">5.0</text>
+  <text x="880" y="1214.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="10" font-weight="600" fill="#111">ANALYTICS &amp;</text>
+  <text x="880" y="1228.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="10" font-weight="600" fill="#111">INSIGHT REPORTING</text>
+  <ellipse cx="880" cy="1420" rx="168" ry="56" fill="#fff" stroke="#111" stroke-width="1.3"/>
+  <text x="880" y="1410.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="11" font-weight="600" fill="#111">6.0</text>
+  <text x="880" y="1424.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="10" font-weight="600" fill="#111">REPORT LIFECYCLE</text>
+  <text x="880" y="1438.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="10" font-weight="600" fill="#111">&amp; ASSIGNMENT</text>
+  <ellipse cx="880" cy="1620" rx="168" ry="56" fill="#fff" stroke="#111" stroke-width="1.3"/>
+  <text x="880" y="1610.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="11" font-weight="600" fill="#111">7.0</text>
+  <text x="880" y="1624.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="10" font-weight="600" fill="#111">ENDORSEMENT</text>
+  <text x="880" y="1638.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="10" font-weight="600" fill="#111">MANAGEMENT</text>
+  <ellipse cx="880" cy="1830" rx="168" ry="56" fill="#fff" stroke="#111" stroke-width="1.3"/>
+  <text x="880" y="1820.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="11" font-weight="600" fill="#111">8.0</text>
+  <text x="880" y="1834.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="10" font-weight="600" fill="#111">COMMUNITY ENGAGEMENT</text>
+  <text x="880" y="1848.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="10" font-weight="600" fill="#111">&amp; SUPPORT MESSAGING</text>
+  <ellipse cx="880" cy="2060" rx="168" ry="56" fill="#fff" stroke="#111" stroke-width="1.3"/>
+  <text x="880" y="2050.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="11" font-weight="600" fill="#111">9.0</text>
+  <text x="880" y="2064.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="10" font-weight="600" fill="#111">NOTIFICATION</text>
+  <text x="880" y="2078.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="10" font-weight="600" fill="#111">&amp; PUSH DELIVERY</text>
+  <text x="132.0" y="372.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Login Credentials &amp; Registration Data</text>
+  <text x="132.0" y="436.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Authentication Status &amp; OTP Code</text>
+  <text x="188.0" y="582.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Identity Verification Data</text>
+  <text x="216.0" y="754.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Report, Suggestion &amp; Feedback Data</text>
+  <text x="160.0" y="818.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Submission Status &amp; Reference Code</text>
+  <text x="244.0" y="1804.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Comments, Likes &amp; Support Messages</text>
+  <text x="272.0" y="1868.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Community Feed &amp; Event Updates</text>
+  <text x="300.0" y="1038.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">AI Assistant Reply</text>
+  <text x="64.0" y="2076.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Notifications &amp; Alerts</text>
+  <text x="1440.0" y="370.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Authorization Request</text>
+  <text x="1440.0" y="436.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">OAuth Token &amp; Profile Name</text>
+  <text x="892.0" y="292.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Login Credentials</text>
+  <text x="578.0" y="1300.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Status Updates &amp; Resolution Notes</text>
+  <text x="550.0" y="1700.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Replies to Citizen Messages</text>
+  <text x="606.0" y="1345.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Assigned Reports (Identity Withheld)</text>
+  <text x="634.0" y="1130.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Citizen Messages &amp; Notifications</text>
+  <text x="1000.0" y="292.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Login Credentials</text>
+  <text x="1058.0" y="562.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Verification Approval Decisions</text>
+  <text x="1058.0" y="626.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Verification Queue</text>
+  <text x="1060.0" y="964.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Sanction &amp; Moderation Decisions</text>
+  <text x="1060.0" y="1030.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Flagged Content Queue</text>
+  <text x="1060.0" y="1172.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Dashboard Analytics &amp; Predictive Outlook</text>
+  <text x="1060.0" y="1258.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Sentiment, Urgency &amp; Theme Results</text>
+  <text x="1060.0" y="1392.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Lifecycle &amp; Assignment Decisions</text>
+  <text x="1060.0" y="1584.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Endorsement Letter (PDF + QR)</text>
+  <text x="1060.0" y="1612.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Endorsed Report Details</text>
+  <text x="1060.0" y="1678.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Scan Token, PIN &amp; Acknowledgement</text>
+  <text x="1060.0" y="1000.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Report, Feedback &amp; Content Text; Media URLs</text>
+  <text x="1430.0" y="1034.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Urgency, Sentiment, Flags &amp; Image Scores</text>
+  <text x="1440.0" y="1152.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Aggregated Submission Text</text>
+  <text x="1440.0" y="1224.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Recommended Actions &amp; Outlook</text>
+  <text x="1060.0" y="2042.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Push Payload &amp; Device Token</text>
+  <text x="362.0" y="402.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Store Account &amp; Role</text>
+  <text x="452.0" y="452.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Credentials &amp; Role</text>
+  <text x="1058.0" y="590.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Store Submission &amp; Citizen Details</text>
+  <text x="1058.0" y="672.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Verification Records</text>
+  <text x="560.0" y="852.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Store Report &amp; Media</text>
+  <text x="960.0" y="852.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Store Suggestion &amp; Feedback</text>
+  <text x="560.0" y="892.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Report Text</text>
+  <text x="512.0" y="962.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Urgency Score &amp; Reason</text>
+  <text x="1010.0" y="892.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Feedback &amp; Suggestion Text</text>
+  <text x="1058.0" y="984.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Store Analysis Results</text>
+  <text x="512.0" y="1030.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Moderation Flags &amp; Sanctions</text>
+  <text x="690.0" y="1090.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Submission Volumes</text>
+  <text x="1060.0" y="1188.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Feedback Volumes</text>
+  <text x="1272.0" y="1140.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Stored Insights</text>
+  <text x="362.0" y="1382.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Assignment, Status &amp; Notes</text>
+  <text x="452.0" y="1470.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Report Details</text>
+  <text x="980.0" y="1564.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Store Token &amp; PIN Hash</text>
+  <text x="1060.0" y="1640.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Endorsement State</text>
+  <text x="482.0" y="1612.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Mirror Status to Report</text>
+  <text x="1034.0" y="1792.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Store Post &amp; Comment</text>
+  <text x="1060.0" y="1872.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Feed Content</text>
+  <text x="980.0" y="1896.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Store Ticket &amp; Message</text>
+  <text x="1000.0" y="1976.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Ticket Thread</text>
+  <text x="362.0" y="2046.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Store Notification</text>
+  <text x="452.0" y="2094.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Device Token &amp; Preferences</text>
+  <text x="892.0" y="900.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Submission Text &amp; Media URLs</text>
+  <text x="892.0" y="1522.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Endorsement Request</text>
+  <text x="892.0" y="1948.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Message &amp; Engagement Event</text>
+  <text x="1077.0" y="1350.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Verification Decision Event</text>
+  <text x="1040.0" y="1442.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Status-Change Event</text>
+  <text x="1130.0" y="2020.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Endorsement Progress Event</text>
+  <text x="662.0" y="1500.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Post &amp; Comment Text (Moderation)</text>
+</svg>

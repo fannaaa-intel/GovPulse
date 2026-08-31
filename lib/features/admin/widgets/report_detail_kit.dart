@@ -139,7 +139,34 @@ class ReportCategoryIconBox extends StatelessWidget {
 class DetailPane extends StatelessWidget {
   final String title;
   final Widget child;
-  const DetailPane({super.key, required this.title, required this.child});
+
+  /// Let [child] claim the pane's full remaining height instead of sizing to
+  /// its own content.
+  ///
+  /// The panes are normally a column of blocks inside a scroll view, and that
+  /// is right for the ones that are READ — a stepper, a stage card, a
+  /// timeline. It is wrong for the one that is WORKED IN: a conversation
+  /// sized to its content is a conversation that grows the page scroll with
+  /// every note, pushing its own composer below the fold. Measured on the
+  /// live console, the internal-notes thread had ~130px to itself while the
+  /// composer sat clipped by the dialog's bottom edge.
+  ///
+  /// With this set the pane stops scrolling as a whole and becomes a frame:
+  /// the title and tabs hold their place, and the tab's content — which owns
+  /// its own scrolling — takes everything left over. The thread then gets the
+  /// pane floor to ceiling at every window size, with no per-breakpoint
+  /// height to keep in sync.
+  ///
+  /// Callers must give the pane a bounded height when they set this; inside
+  /// [AdminTwoPaneRow] that is already true.
+  final bool fill;
+
+  const DetailPane({
+    super.key,
+    required this.title,
+    required this.child,
+    this.fill = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -154,6 +181,9 @@ class DetailPane extends StatelessWidget {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        // A filling pane must not also try to shrink-wrap its column, or the
+        // Expanded below has nothing to expand into.
+        mainAxisSize: fill ? MainAxisSize.max : MainAxisSize.min,
         children: [
           Text(
             title,
@@ -165,7 +195,7 @@ class DetailPane extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
-          child,
+          if (fill) Expanded(child: child) else child,
         ],
       ),
     );
