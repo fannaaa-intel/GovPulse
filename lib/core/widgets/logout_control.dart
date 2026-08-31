@@ -123,9 +123,15 @@ class LogoutTile extends StatelessWidget {
 /// The logout entry inside a popup or dropdown menu.
 ///
 /// A menu row cannot carry its own border — the menu draws the surface — so
-/// the tint does the work alone, and the caller puts a divider above it. The
-/// icon sits in a tinted disc, which is what the citizen dropdown already did
-/// and the admin and staff ones did not.
+/// the tint does the work alone, and the caller puts a divider above it.
+///
+/// ── THE ICON TILE FOLLOWS THE CITIZEN DROPDOWN ────────────────────────────
+/// 32px, radius 8, a 17px glyph — the same numbers as _DropdownItem in
+/// home_top_nav.dart, deliberately. That menu was here first and already drew
+/// every one of its entries (Settings, Sign out) this way, so it is the
+/// reference the consoles match rather than the other way round: admin and
+/// staff each had ONE such row to change, and the citizen shell would have had
+/// its whole menu re-shaped around it.
 class LogoutMenuRow extends StatelessWidget {
   const LogoutMenuRow({super.key});
 
@@ -134,25 +140,25 @@ class LogoutMenuRow extends StatelessWidget {
     return Row(
       children: [
         Container(
-          width: 30,
-          height: 30,
+          width: 32,
+          height: 32,
           decoration: BoxDecoration(
             color: kLogoutTint,
-            shape: BoxShape.circle,
+            borderRadius: BorderRadius.circular(8),
             border: Border.all(color: kLogoutBorder),
           ),
           child: const Icon(
             Icons.logout_rounded,
-            size: 16,
+            size: 17,
             color: AppColors.red,
           ),
         ),
-        const SizedBox(width: 11),
+        const SizedBox(width: 12),
         const Text(
           kLogoutLabel,
           style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w700,
+            fontSize: 13.5,
+            fontWeight: FontWeight.w600,
             color: AppColors.red,
           ),
         ),

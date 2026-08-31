@@ -130,9 +130,12 @@ void main() {
       expect(text.style?.color, AppColors.red);
     });
 
-    testWidgets('renders its icon in a tinted disc', (tester) async {
-      // The citizen dropdown already did this; admin and staff drew a bare
-      // glyph, so the same action looked like two different controls.
+    testWidgets('renders its icon in a tinted tile matching the citizen menu',
+        (tester) async {
+      // Admin and staff drew a bare glyph; the citizen dropdown already drew
+      // every entry as a 32px tile with radius 8. The consoles follow IT —
+      // they had one row each to change, where the citizen shell would have
+      // had its whole menu re-shaped.
       await tester.pumpWidget(host(const LogoutMenuRow()));
 
       expect(find.byIcon(Icons.logout_rounded), findsOneWidget);
@@ -146,7 +149,10 @@ void main() {
       );
       final d = container.decoration as BoxDecoration;
       expect(d.color, kLogoutTint);
-      expect(d.shape, BoxShape.circle);
+      // A squircle, not a circle: BoxShape stays rectangle and the corner
+      // comes from borderRadius, which is how _DropdownItem draws it.
+      expect(d.shape, BoxShape.rectangle);
+      expect(d.borderRadius, BorderRadius.circular(8));
     });
 
     testWidgets('fits a narrow popup menu', (tester) async {

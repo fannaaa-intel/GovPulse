@@ -603,12 +603,8 @@ class _SettingScreenState extends ConsumerState<SettingsBody>
                             _animated(5, _buildLegalSection(width)),
                             SizedBox(height: width * 0.04),
                             _animated(6, _buildAboutSection(width)),
-                            SizedBox(height: width * 0.05),
-                            if (!widget.embedded) ...[
-                              _animated(7, _buildLogoutButton(width)),
-                              SizedBox(height: width * 0.025),
-                            ],
-                            _animated(7, _buildDeleteAccountButton(width)),
+                            SizedBox(height: width * 0.04),
+                            _animated(7, _buildSessionSection(width)),
                             SizedBox(height: width * 0.04),
                             _animated(8, _buildFooter(width)),
                           ],
@@ -692,7 +688,7 @@ class _SettingScreenState extends ConsumerState<SettingsBody>
                 const SizedBox(height: kAccountSectionGap),
                 ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 320),
-                  child: _buildLogoutButton(width),
+                  child: LogoutTile(onLogout: _confirmLogout),
                 ),
               ],
               const SizedBox(height: 32),
@@ -1483,56 +1479,125 @@ class _SettingScreenState extends ConsumerState<SettingsBody>
     );
   }
 
-  // ── Logout button ─────────────────────────────────────────────────────────
-  /// The shared control, so the phone reads the same as the web settings page
-  /// and both consoles.
+  // ── Account section ───────────────────────────────────────────────────────
+  /// Log out and Delete account, in a titled card like every other group.
   ///
-  /// This was a solid red ElevatedButton carrying a FOURTH spelling of the
-  /// label — "Log Out", capital O — which the first sweep missed because it
-  /// sat inside a button rather than a settings row. It was also the loudest
-  /// control on the page: a filled red block for a reversible action, directly
-  /// above "Delete Account" as a quiet underlined link. The severity was
-  /// exactly inverted.
-  Widget _buildLogoutButton(double width) => LogoutTile(onLogout: _confirmLogout);
-
-  // ── Delete account button ─────────────────────────────────────────────────
-  /// Tinted like the logout tile above it, and deliberately not quieter.
+  /// They used to be two loose buttons floating under ABOUT with no heading —
+  /// the only rows on the page not in a section, and the only ones whose icons
+  /// were bare glyphs rather than the tinted tile every other row carries. The
+  /// page reads as a list of labelled groups, so two unlabelled controls at the
+  /// end read as leftovers rather than as a category.
   ///
-  /// It was a bare underlined red link — the least protected shape available
-  /// for the one action on this page that cannot be undone, sitting directly
-  /// below a solid red logout button. The web surface already fixed this by
-  /// naming a "Danger zone" section; the phone kept the footer link.
-  Widget _buildDeleteAccountButton(double width) {
-    return Material(
-      color: kLogoutTint,
-      borderRadius: BorderRadius.circular(12),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: _confirmDeleteAccount,
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: kLogoutBorder),
+  /// "ACCOUNT" rather than the web's "Danger zone": logging out is not
+  /// dangerous, and a heading that says it is either alarms people out of
+  /// signing out or teaches them to ignore the word before they reach the row
+  /// where it matters. The severity is carried by the rows themselves — both
+  /// are tinted, delete is last.
+  Widget _buildSessionSection(double width) {
+    return _buildSectionCard(
+      title: 'ACCOUNT',
+      width: width,
+      children: [
+        if (!widget.embedded)
+          _buildDangerTile(
+            icon: Icons.logout_rounded,
+            title: kLogoutLabel,
+            width: width,
+            onTap: _confirmLogout,
           ),
-          child: const Row(
-            children: [
-              Icon(Icons.delete_outline_rounded,
-                  size: 20, color: AppColors.red),
-              SizedBox(width: 12),
-              Text(
-                'Delete account',
-                style: TextStyle(
-                  fontSize: 14.5,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.red,
-                ),
+        _buildDangerTile(
+          icon: Icons.delete_outline_rounded,
+          title: 'Delete account',
+          subtitle: 'Permanently removes your account and its data',
+          width: width,
+          showDivider: false,
+          onTap: _confirmDeleteAccount,
+        ),
+      ],
+    );
+  }
+
+  /// A settings row for a consequential action.
+  ///
+  /// Mirrors [_buildTile]'s geometry exactly — same tile size, same corner,
+  /// same paddings, all still proportional to [width] — and changes only what
+  /// has to change: the tint is red rather than blue, and there is no chevron,
+  /// because these act rather than navigate.
+  Widget _buildDangerTile({
+    required IconData icon,
+    required String title,
+    String? subtitle,
+    required VoidCallback onTap,
+    required double width,
+    bool showDivider = true,
+  }) {
+    return Column(
+      children: [
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: width * 0.04,
+                vertical: width * 0.034,
               ),
-            ],
+              child: Row(
+                children: [
+                  Container(
+                    width: width * 0.095,
+                    height: width * 0.095,
+                    decoration: BoxDecoration(
+                      color: kLogoutTint,
+                      borderRadius: BorderRadius.circular(width * 0.022),
+                      border: Border.all(color: kLogoutBorder, width: 1.2),
+                    ),
+                    child: Icon(
+                      icon,
+                      size: width * 0.05,
+                      color: AppColors.red,
+                    ),
+                  ),
+                  SizedBox(width: width * 0.035),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: TextStyle(
+                            fontSize: width * 0.038,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.red,
+                          ),
+                        ),
+                        if (subtitle != null) ...[
+                          SizedBox(height: width * 0.005),
+                          Text(
+                            subtitle,
+                            style: TextStyle(
+                              fontSize: width * 0.030,
+                              color: AppColors.hint,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
-      ),
+        if (showDivider)
+          Divider(
+            height: 1,
+            thickness: 1,
+            indent: width * 0.04,
+            endIndent: width * 0.04,
+            color: CitizenUi.sharedStroke,
+          ),
+      ],
     );
   }
 
