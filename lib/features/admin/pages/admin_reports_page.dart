@@ -1571,6 +1571,24 @@ class _Card extends StatelessWidget {
 //  Detail dialog
 // ═════════════════════════════════════════════════════════════════════════════
 
+/// The actions the detail pane can be running.
+///
+/// Named rather than a bare bool so the spinner lands on the button that was
+/// pressed. [endorse] covers both "Endorse to external entity" and "Change
+/// endorsement" because they are the same call — whichever of the two is on
+/// screen is the one that spins.
+enum _ReportAction {
+  accept,
+  reject,
+  reopen,
+  endorse,
+  download,
+  dismiss,
+  restore,
+  merge,
+  unmerge,
+}
+
 class _ReportDetailDialog extends ConsumerStatefulWidget {
   final AdminReport report;
   const _ReportDetailDialog({required this.report});
@@ -1603,6 +1621,49 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
   late Future<List<DuplicateCandidate>> _dupFuture;
 
   bool _busy = false;
+
+  /// WHICH action is in flight, when one is.
+  ///
+  /// [_busy] gates the whole action block — correct, because these actions
+  /// rewrite the same report and must not overlap. But it is not enough on its
+  /// own: five buttons grey out together and none of them says which one the
+  /// officer actually pressed. This names the running action so its own button
+  /// can carry the spinner, and it is set and cleared in lockstep with [_busy].
+  _ReportAction? _running;
+
+  /// The duplicate row whose Link/Unlink is running.
+  ///
+  /// [_running] alone is too coarse here: the duplicate list draws one button
+  /// per candidate, so spinning on `_running == merge` would spin EVERY row's
+  /// button when one of them was pressed. Holding the row id keeps the spinner
+  /// on the button the officer actually clicked.
+  String? _runningRowId;
+
+  /// Enter the busy state for [a]. Returns false if something is already
+  /// running, which is the re-entrancy guard: the disabled button is the first
+  /// line of defence, this is the one that holds when a second path into the
+  /// same action exists (a keyboard submit, an autofocus, a double click landing
+  /// inside the same frame).
+  bool _beginAction(_ReportAction a, {String? rowId}) {
+    if (_busy) return false;
+    setState(() {
+      _busy = true;
+      _running = a;
+      _runningRowId = rowId;
+    });
+    return true;
+  }
+
+  /// Leave the busy state. Safe to call after an unmount check has already
+  /// returned — callers still guard with `mounted` where they touch context.
+  void _endAction() {
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _running = null;
+      _runningRowId = null;
+    });
+  }
 
   /// Which tab of the status pane is showing: 0 = Timeline, 1 = Report History.
   int _trackerTab = 0;
@@ -1689,7 +1750,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
     );
     if (ok != true || !mounted) return;
 
-    setState(() => _busy = true);
+    if (!_beginAction(_ReportAction.merge, rowId: c.id)) return;
     try {
       await ref
           .read(adminReportsProvider.notifier)
@@ -1703,7 +1764,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
       );
     } catch (e) {
       if (!mounted) return;
-      setState(() => _busy = false);
+      _endAction();
       showAdminSnackBar(
         context,
         'Could not link: $e',
@@ -1715,7 +1776,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
   Future<void> _dismiss() async {
     final reason = await showAdminDismissDialog(context, itemLabel: 'report');
     if (reason == null || !mounted) return;
-    setState(() => _busy = true);
+    if (!_beginAction(_ReportAction.dismiss)) return;
     try {
       await ref
           .read(adminReportsProvider.notifier)
@@ -1729,7 +1790,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
       );
     } catch (e) {
       if (!mounted) return;
-      setState(() => _busy = false);
+      _endAction();
       showAdminSnackBar(
         context,
         'Could not dismiss: $e',
@@ -1742,11 +1803,11 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
   /// finishing with it, so the dialog stays open and re-renders as the ordinary
   /// report — the dismissed banner gone, its actions returned.
   Future<void> _restore() async {
-    setState(() => _busy = true);
+    if (!_beginAction(_ReportAction.restore)) return;
     try {
       await ref.read(adminReportsProvider.notifier).restore(widget.report.id);
       if (!mounted) return;
-      setState(() => _busy = false);
+      _endAction();
       showAdminSnackBar(
         context,
         'Report restored.',
@@ -1754,7 +1815,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
       );
     } catch (e) {
       if (!mounted) return;
-      setState(() => _busy = false);
+      _endAction();
       showAdminSnackBar(
         context,
         'Could not restore: $e',
@@ -1773,14 +1834,14 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
     );
     if (picked == null || !mounted) return;
 
-    setState(() => _busy = true);
+    if (!_beginAction(_ReportAction.endorse)) return;
     try {
       if (picked.isClear) {
         await ref
             .read(adminReportsProvider.notifier)
             .clearEndorsement(widget.report.id, reason: picked.reason);
         if (!mounted) return;
-        setState(() => _busy = false);
+        _endAction();
         showAdminSnackBar(
           context,
           'Endorsement cleared.',
@@ -1793,7 +1854,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
           .read(adminReportsProvider.notifier)
           .endorse(widget.report.id, picked.agency, picked.reason);
       if (!mounted) return;
-      setState(() => _busy = false);
+      _endAction();
 
       // Straight into the success dialog rather than a toast. The PIN it
       // carries exists nowhere else — the server kept only a hash — so this
@@ -1806,7 +1867,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
       );
     } catch (e) {
       if (!mounted) return;
-      setState(() => _busy = false);
+      _endAction();
       showAdminSnackBar(
         context,
         'Could not endorse: $e',
@@ -1824,7 +1885,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
       recommendedOffice: StaffDepartments.forReportCategory(r.categoryKey),
     );
     if (picked == null || !mounted) return;
-    setState(() => _busy = true);
+    if (!_beginAction(_ReportAction.accept)) return;
     try {
       await ref.read(adminReportsProvider.notifier).accept(r.id, picked);
       if (!mounted) return;
@@ -1837,7 +1898,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
       );
     } catch (e) {
       if (!mounted) return;
-      setState(() => _busy = false);
+      _endAction();
       showAdminSnackBar(
         context,
         'Could not accept: $e',
@@ -1853,7 +1914,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
     final r = widget.report;
     final note = await showRejectReportDialog(context);
     if (note == null || !mounted) return;
-    setState(() => _busy = true);
+    if (!_beginAction(_ReportAction.reject)) return;
     try {
       // The provider also drops a work-log note (pinging the office) when the
       // report was already being worked, so [r] is passed for that check.
@@ -1874,7 +1935,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
       );
     } catch (e) {
       if (!mounted) return;
-      setState(() => _busy = false);
+      _endAction();
       showAdminSnackBar(
         context,
         'Could not reject: $e',
@@ -1890,11 +1951,13 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
   /// triage view — Accept / Reject, no rejection reason — which is exactly what
   /// you'd see if you closed this and opened the report again.
   Future<void> _reopen() async {
-    setState(() => _busy = true);
+    if (!_beginAction(_ReportAction.reopen)) return;
     try {
       await ref.read(adminReportsProvider.notifier).reopen(widget.report.id);
       if (!mounted) return;
       setState(() {
+        _running = null;
+        _runningRowId = null;
         _busy = false;
         _status = ReportStatus.pending;
         // Back on the triage desk is the one place duplicates matter, and the
@@ -1910,7 +1973,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
       );
     } catch (e) {
       if (!mounted) return;
-      setState(() => _busy = false);
+      _endAction();
       showAdminSnackBar(
         context,
         'Could not reopen: $e',
@@ -1932,14 +1995,14 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
   /// cached by the pane, so this is usually just the notes.
   Future<void> _download() async {
     final r = report;
-    setState(() => _busy = true);
+    if (!_beginAction(_ReportAction.download)) return;
     try {
       final notifier = ref.read(adminReportsProvider.notifier);
       final media = await notifier.fetchMedia(r.id);
       final notes = await notifier.fetchNotes(r.id);
       await exportReportPdf(report: r, media: media, notes: notes);
       if (!mounted) return;
-      setState(() => _busy = false);
+      _endAction();
       showAdminSnackBar(
         context,
         'Report downloaded.',
@@ -1947,7 +2010,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
       );
     } catch (e) {
       if (!mounted) return;
-      setState(() => _busy = false);
+      _endAction();
       showAdminSnackBar(
         context,
         'Could not download: $e',
@@ -2273,14 +2336,25 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
             onPressed: _busy ? null : () => _merge(c),
             style: TextButton.styleFrom(
               foregroundColor: AppColors.orange,
+              disabledForegroundColor:
+                  _runningRowId == c.id ? AppColors.orange : null,
               padding: const EdgeInsets.symmetric(horizontal: 10),
               minimumSize: const Size(0, 32),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
-            child: const Text(
-              'Link',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
-            ),
+            child: _runningRowId == c.id
+                ? const SizedBox(
+                    width: 13,
+                    height: 13,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppColors.orange,
+                    ),
+                  )
+                : const Text(
+                    'Link',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+                  ),
           ),
         ],
       ),
@@ -2329,17 +2403,28 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
                   onPressed: _busy ? null : () => _unmerge(d),
                   style: TextButton.styleFrom(
                     foregroundColor: AppColors.red,
+                    disabledForegroundColor:
+                        _runningRowId == d.id ? AppColors.red : null,
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                     minimumSize: const Size(0, 28),
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  child: const Text(
-                    'Unlink',
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
+                  child: _runningRowId == d.id
+                      ? const SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppColors.red,
+                          ),
+                        )
+                      : const Text(
+                          'Unlink',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
                 ),
               ],
             ),
@@ -2351,7 +2436,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
   /// Splits a confirmation back out into its own ticket — the escape hatch for a
   /// wrong merge, which is what lets the merge itself be a low-stakes decision.
   Future<void> _unmerge(AdminReport d) async {
-    setState(() => _busy = true);
+    if (!_beginAction(_ReportAction.unmerge, rowId: d.id)) return;
     try {
       await ref.read(adminReportsProvider.notifier).unmerge(d.id);
       if (!mounted) return;
@@ -2363,7 +2448,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
       );
     } catch (e) {
       if (!mounted) return;
-      setState(() => _busy = false);
+      _endAction();
       showAdminSnackBar(
         context,
         'Could not unlink: $e',
@@ -2383,6 +2468,8 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
             isDismissed: r.isDismissed,
             reason: r.dismissedReason,
             busy: _busy,
+            running: _running == _ReportAction.dismiss ||
+                _running == _ReportAction.restore,
             onDismiss: _dismiss,
             onRestore: _restore,
           ),
@@ -2516,12 +2603,14 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
                 label: 'Accept Report',
                 icon: Icons.check_circle_rounded,
                 color: AppColors.green,
+                busy: _running == _ReportAction.accept,
                 onTap: _busy ? null : _accept,
               ),
               DetailActionButton(
                 label: 'Reject Report',
                 icon: Icons.cancel_rounded,
                 color: AppColors.red,
+                busy: _running == _ReportAction.reject,
                 onTap: _busy ? null : _reject,
               ),
             ],
@@ -2533,6 +2622,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
             icon: Icons.forward_to_inbox_rounded,
             color: AppColors.primaryBlue,
             outlined: true,
+            busy: _running == _ReportAction.endorse,
             onTap: _busy ? null : _endorse,
           ),
         );
@@ -2543,6 +2633,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
             icon: Icons.restart_alt_rounded,
             color: AppColors.primaryBlue,
             outlined: true,
+            busy: _running == _ReportAction.reopen,
             onTap: _busy ? null : _reopen,
           ),
         );
@@ -2558,6 +2649,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
                   icon: Icons.swap_horiz_rounded,
                   color: AppColors.primaryBlue,
                   outlined: true,
+                  busy: _running == _ReportAction.endorse,
                   onTap: _busy ? null : _endorse,
                 ),
               DetailActionButton(
@@ -2577,6 +2669,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
         label: 'Download Report',
         icon: Icons.download_rounded,
         color: AppColors.primaryBlue,
+        busy: _running == _ReportAction.download,
         onTap: _busy ? null : _download,
       ),
     );

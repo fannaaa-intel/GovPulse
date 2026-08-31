@@ -207,6 +207,14 @@ class _ScanPageState extends State<ScanPage> {
   }
 
   Future<void> _submit() async {
+    // Re-entrancy guard, and NOT redundant with the disabled button. There are
+    // two paths into this method - the action button and the PIN field's
+    // keyboard "done" - and a press landing in the same frame as another gets
+    // here before setState has rebuilt anything to disable. Completing an
+    // endorsement is irreversible and PIN-gated, so a second call is a wasted
+    // attempt against the 5-try lockout at best.
+    if (_submitting) return;
+
     final completing = _state == _State.received;
     final pin = _pin.text.trim();
     final body = _completionBody.text.trim();
@@ -444,6 +452,11 @@ class _ScanPageState extends State<ScanPage> {
   /// safe here: the worst a stolen letter achieves is queuing something for a
   /// human to reject.
   Future<void> _postUpdate() async {
+    // Same guard as [_submit] - the composer's PIN field also submits from the
+    // keyboard, so the button being disabled is not the only thing standing
+    // between a double tap and two posted updates.
+    if (_postingUpdate) return;
+
     final body = _updateBody.text.trim();
     final pin = _updatePin.text.trim();
 

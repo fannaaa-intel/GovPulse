@@ -508,6 +508,22 @@ class DetailActionButton extends StatelessWidget {
   final Color color;
   final bool outlined;
   final VoidCallback? onTap;
+
+  /// This button's own action is in flight.
+  ///
+  /// The icon becomes a spinner IN PLACE, and the press is refused. Every
+  /// action behind these buttons is a network round trip, and several of them
+  /// (accept, reject, endorse) are irreversible, so "did that register?" is the
+  /// question the officer is actually asking in the second after they click.
+  ///
+  /// Deliberately per-button rather than per-pane. The consoles hold ONE busy
+  /// flag that disables the whole action block — correct, and not enough on its
+  /// own: a pane where five buttons grey out together says something is
+  /// happening but never which thing. Pass [busy] only on the button whose
+  /// action is running, and keep passing the pane's flag to [onTap] so the rest
+  /// stay disabled meanwhile.
+  final bool busy;
+
   const DetailActionButton({
     super.key,
     required this.label,
@@ -515,6 +531,7 @@ class DetailActionButton extends StatelessWidget {
     required this.color,
     this.onTap,
     this.outlined = false,
+    this.busy = false,
   });
 
   @override
@@ -529,10 +546,26 @@ class DetailActionButton extends StatelessWidget {
         ),
       ),
     );
+
+    // The spinner takes the ICON's box exactly (17px, same trailing gap), so
+    // the label does not shift sideways when the action starts. An outlined
+    // button paints its own colour on a transparent ground; a filled one is
+    // always white on [color].
+    final leading = busy
+        ? SizedBox(
+            width: 17,
+            height: 17,
+            child: CircularProgressIndicator(
+              strokeWidth: 2.2,
+              color: outlined ? color : Colors.white,
+            ),
+          )
+        : Icon(icon, size: 17);
+
     final content = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 17),
+        leading,
         const SizedBox(width: 7),
         Flexible(
           child: Text(
@@ -545,23 +578,35 @@ class DetailActionButton extends StatelessWidget {
       ],
     );
 
+    // A busy button refuses its own press even if a caller forgot to fold the
+    // flag into onTap — the guard should not depend on every call site.
+    final onPressed = busy ? null : onTap;
+
     return SizedBox(
       width: double.infinity,
       child: outlined
           ? OutlinedButton(
-              onPressed: onTap,
+              onPressed: onPressed,
               style: style.merge(
                 OutlinedButton.styleFrom(
                   foregroundColor: color,
                   side: BorderSide(color: color.withValues(alpha: 0.45)),
+                  // Keep the outline and label at full strength while busy:
+                  // the spinner already says "working", and the default
+                  // disabled grey reads as "unavailable" instead.
+                  disabledForegroundColor: busy ? color : null,
                 ),
               ),
               child: content,
             )
           : FilledButton(
-              onPressed: onTap,
+              onPressed: onPressed,
               style: style.merge(
-                FilledButton.styleFrom(backgroundColor: color),
+                FilledButton.styleFrom(
+                  backgroundColor: color,
+                  disabledBackgroundColor: busy ? color : null,
+                  disabledForegroundColor: busy ? Colors.white : null,
+                ),
               ),
               child: content,
             ),

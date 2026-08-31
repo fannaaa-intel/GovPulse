@@ -194,6 +194,13 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
   final List<XFile> _staged = [];
   bool _loading = true;
   bool _sending = false;
+
+  /// The id of the update whose approve/return decision is in flight.
+  ///
+  /// Per-update rather than a bare bool: the reviewer sees a LIST of pending
+  /// updates, each with its own pair of buttons, so a single flag would spin
+  /// every row at once.
+  String? _deciding;
   bool _unavailable = false;
   bool _completion = false;
 
@@ -440,11 +447,20 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
   // ── Reviewing ─────────────────────────────────────────────────────────────
 
   Future<void> _decide(_Update u, {required bool approve}) async {
+    // One decision at a time, and never the same one twice. Approving twice
+    // fires review_report_update twice, and the second call lands on an update
+    // that is no longer pending.
+    if (_deciding != null) return;
+
     String? reason;
     if (!approve) {
       reason = await _askReason();
-      if (reason == null) return;
+      // The reason dialog stays open for as long as the reviewer takes to
+      // type; re-check rather than assume nothing else claimed the widget.
+      if (reason == null || !mounted || _deciding != null) return;
     }
+
+    setState(() => _deciding = u.id);
     try {
       await _supabase.rpc('review_report_update', params: {
         'p_update': u.id,
@@ -465,6 +481,10 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
       if (mounted) {
         _toast('Could not save that decision: $e', type: AppSnackType.error);
       }
+    } finally {
+      // Cleared in a finally so an error path cannot leave both buttons stuck
+      // disabled with no way back.
+      if (mounted) setState(() => _deciding = null);
     }
   }
 
@@ -1029,15 +1049,31 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
               runSpacing: 4,
               children: [
                 FilledButton.icon(
-                  onPressed: () => _decide(u, approve: true),
+                  onPressed:
+                      _deciding != null ? null : () => _decide(u, approve: true),
                   style: FilledButton.styleFrom(
                     backgroundColor: AppColors.green,
+                    disabledBackgroundColor:
+                        _deciding == u.id ? AppColors.green : null,
+                    disabledForegroundColor:
+                        _deciding == u.id ? Colors.white : null,
                   ),
-                  icon: const Icon(Icons.check_rounded, size: 16),
+                  icon: _deciding == u.id
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.check_rounded, size: 16),
                   label: const Text('Approve'),
                 ),
                 OutlinedButton.icon(
-                  onPressed: () => _decide(u, approve: false),
+                  onPressed: _deciding != null
+                      ? null
+                      : () => _decide(u, approve: false),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.red,
                     side: BorderSide(

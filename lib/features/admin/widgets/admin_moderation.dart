@@ -161,6 +161,17 @@ class AdminModerationBar extends StatelessWidget {
   final VoidCallback onDismiss;
   final VoidCallback onRestore;
 
+  /// THIS bar's own action is the one in flight, so its button spins.
+  ///
+  /// Separate from [busy], which means "something on this pane is working, do
+  /// not accept another press" and is shared with the action block below.
+  /// Without the distinction, dismissing a report would spin the Dismiss button
+  /// AND every other console using this bar would light up on an unrelated
+  /// action. Optional so the four other consoles that mount this bar
+  /// (feedback, suggestions, events, comments) keep their current behaviour
+  /// until they thread an action id of their own.
+  final bool running;
+
   const AdminModerationBar({
     super.key,
     required this.isDismissed,
@@ -168,7 +179,15 @@ class AdminModerationBar extends StatelessWidget {
     required this.busy,
     required this.onDismiss,
     required this.onRestore,
+    this.running = false,
   });
+
+  /// A 16px spinner sized to the icon it replaces, so the label does not shift.
+  Widget _spinner(Color c) => SizedBox(
+        width: 16,
+        height: 16,
+        child: CircularProgressIndicator(strokeWidth: 2, color: c),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -208,10 +227,16 @@ class AdminModerationBar extends StatelessWidget {
               ),
             ),
             TextButton.icon(
-              onPressed: busy ? null : onRestore,
-              icon: const Icon(Icons.restore_rounded, size: 16),
+              onPressed: (busy || running) ? null : onRestore,
+              icon: running
+                  ? _spinner(AppColors.primaryBlue)
+                  : const Icon(Icons.restore_rounded, size: 16),
               label: const Text('Restore'),
-              style: TextButton.styleFrom(foregroundColor: AppColors.primaryBlue),
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.primaryBlue,
+                disabledForegroundColor:
+                    running ? AppColors.primaryBlue : null,
+              ),
             ),
           ],
         ),
@@ -221,11 +246,14 @@ class AdminModerationBar extends StatelessWidget {
     return Align(
       alignment: Alignment.centerLeft,
       child: OutlinedButton.icon(
-        onPressed: busy ? null : onDismiss,
-        icon: const Icon(Icons.block_rounded, size: 16),
+        onPressed: (busy || running) ? null : onDismiss,
+        icon: running
+            ? _spinner(AppColors.red)
+            : const Icon(Icons.block_rounded, size: 16),
         label: const Text('Dismiss as spam'),
         style: OutlinedButton.styleFrom(
           foregroundColor: AppColors.red,
+          disabledForegroundColor: running ? AppColors.red : null,
           side: BorderSide(color: AppColors.red.withValues(alpha: 0.6)),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         ),

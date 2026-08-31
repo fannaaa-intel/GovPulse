@@ -1242,6 +1242,16 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
   late ReportStatus _status = widget.report.status;
   bool _busy = false;
 
+  /// The status whose chip was pressed and is now being written.
+  ///
+  /// [_busy] disables every chip while the write is in flight; this says which
+  /// one the officer chose, so the spinner appears where they clicked rather
+  /// than the whole row simply going dead.
+  ReportStatus? _applying;
+
+  /// The "Return to triage" action is the one running.
+  bool _returning = false;
+
   /// The report is finished with — completed, or refused by the admin.
   ///
   /// The single definition of "closed" for this pane, so the status control,
@@ -1291,20 +1301,27 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
 
   Future<void> _apply(ReportStatus s) async {
     if (s == _status || _busy) return;
-    setState(() => _busy = true);
+    setState(() {
+      _busy = true;
+      _applying = s;
+    });
     try {
       await widget.onSetStatus(widget.report.id, s);
       if (mounted) {
         setState(() {
           _status = s;
           _busy = false;
+          _applying = null;
         });
         showAppSnackBar(context, 'Status set to ${reportStatusLabel(s)}.',
             type: AppSnackType.success);
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _busy = false);
+        setState(() {
+          _busy = false;
+          _applying = null;
+        });
         showAppSnackBar(context, '$e', type: AppSnackType.error);
       }
     }
@@ -1312,18 +1329,30 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
 
   Future<void> _returnToTriage() async {
     final reason = await _showReturnDialog(context);
-    if (reason == null || !mounted) return;
-    setState(() => _busy = true);
+    // Re-check _busy as well as mounted: the dialog was open for as long as the
+    // officer took to type a reason, and a status chip may have claimed the
+    // pane in the meantime.
+    if (reason == null || !mounted || _busy) return;
+    setState(() {
+      _busy = true;
+      _returning = true;
+    });
     try {
       await widget.onReturnToTriage(widget.report.id, reason);
       if (!mounted) return;
-      setState(() => _busy = false);
+      setState(() {
+        _busy = false;
+        _returning = false;
+      });
       Navigator.pop(context);
       showAppSnackBar(context, 'Returned to the admin for re-routing.',
           type: AppSnackType.success);
     } catch (e) {
       if (mounted) {
-        setState(() => _busy = false);
+        setState(() {
+          _busy = false;
+          _returning = false;
+        });
         showAppSnackBar(context, '$e', type: AppSnackType.error);
       }
     }
@@ -1429,6 +1458,7 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
             flow: _flow,
             current: _status,
             busy: _busy,
+            applying: _applying,
             locked: _isClosed,
             onPick: _apply,
           ),
@@ -1636,6 +1666,7 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
                   icon: Icons.reply_rounded,
                   color: StaffUi.accent,
                   outlined: true,
+                  busy: _returning,
                   onTap: _busy ? null : _returnToTriage,
                 ),
               ],
@@ -1749,6 +1780,9 @@ class _StatusControl extends StatelessWidget {
   final ReportStatus current;
   final bool busy;
 
+  /// The chip whose write is in flight, if any - it carries the spinner.
+  final ReportStatus? applying;
+
   /// The report is finished with, so there are no moves left to offer.
   final bool locked;
   final ValueChanged<ReportStatus> onPick;
@@ -1758,6 +1792,7 @@ class _StatusControl extends StatelessWidget {
     required this.busy,
     required this.locked,
     required this.onPick,
+    this.applying,
   });
 
   @override
@@ -1850,6 +1885,7 @@ class _StatusControl extends StatelessWidget {
                 label: reportStatusLabel(s),
                 color: staffReportStatusColor(s),
                 selected: current == s,
+                busy: applying == s,
                 onTap: busy || current == s ? null : () => onPick(s),
               ),
           ],
@@ -1863,11 +1899,19 @@ class _StatusChip extends StatelessWidget {
   final String label;
   final Color color;
   final bool selected;
+
+  /// This chip's status is the one being written.
+  ///
+  /// The chip takes its SELECTED colours while busy even though the write has
+  /// not landed - the officer pressed it, and showing it inert until the server
+  /// answers reads as a press that missed.
+  final bool busy;
   final VoidCallback? onTap;
   const _StatusChip({
     required this.label,
     required this.color,
     required this.selected,
+    this.busy = false,
     this.onTap,
   });
 
@@ -1882,14 +1926,25 @@ class _StatusChip extends StatelessWidget {
           duration: const Duration(milliseconds: 160),
           padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
           decoration: BoxDecoration(
-            color: selected ? color : StaffUi.subtle,
+            color: (selected || busy) ? color : StaffUi.subtle,
             borderRadius: BorderRadius.circular(StaffUi.controlRadius),
-            border: Border.all(color: selected ? color : StaffUi.border),
+            border:
+                Border.all(color: (selected || busy) ? color : StaffUi.border),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (selected) ...[
+              if (busy) ...[
+                const SizedBox(
+                  width: 15,
+                  height: 15,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(width: 5),
+              ] else if (selected) ...[
                 const Icon(Icons.check_rounded, size: 15, color: Colors.white),
                 const SizedBox(width: 5),
               ],
@@ -1898,7 +1953,8 @@ class _StatusChip extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 12.5,
                   fontWeight: FontWeight.w700,
-                  color: selected ? Colors.white : StaffUi.textSecondary,
+                  color:
+                      (selected || busy) ? Colors.white : StaffUi.textSecondary,
                 ),
               ),
             ],
