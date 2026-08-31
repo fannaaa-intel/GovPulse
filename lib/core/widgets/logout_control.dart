@@ -97,20 +97,18 @@ class LogoutTile extends StatelessWidget {
                 ),
                 if (!compact) ...[
                   const SizedBox(width: 12),
-                  const Expanded(
-                    child: Text(
-                      kLogoutLabel,
-                      style: TextStyle(
-                        fontSize: 14.5,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.red,
-                      ),
+                  // No trailing chevron. A chevron promises a NEXT screen —
+                  // it is what "Change password" and "Edit profile" carry,
+                  // because those open something. Logout opens nothing: it
+                  // acts and the session ends. Borrowing the affordance made
+                  // the one row that behaves differently look like the rest.
+                  const Text(
+                    kLogoutLabel,
+                    style: TextStyle(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.red,
                     ),
-                  ),
-                  Icon(
-                    Icons.chevron_right_rounded,
-                    size: 20,
-                    color: AppColors.red.withValues(alpha: 0.55),
                   ),
                 ],
               ],

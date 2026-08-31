@@ -45,6 +45,19 @@ void main() {
       expect(material.color, kLogoutTint);
     });
 
+    testWidgets('carries no trailing chevron', (tester) async {
+      // A chevron promises a NEXT screen — it is what "Change password" and
+      // "Edit profile" carry, because those open something. Logout opens
+      // nothing: it acts, and the session ends. Borrowing the affordance made
+      // the one row that behaves differently look like all the others.
+      await tester.pumpWidget(host(LogoutTile(onLogout: () {})));
+
+      expect(find.byIcon(Icons.chevron_right_rounded), findsNothing);
+      expect(find.byIcon(Icons.arrow_forward_ios_rounded), findsNothing);
+      // The logout glyph itself stays.
+      expect(find.byIcon(Icons.logout_rounded), findsOneWidget);
+    });
+
     testWidgets('fires its callback', (tester) async {
       var taps = 0;
       await tester.pumpWidget(host(LogoutTile(onLogout: () => taps++)));

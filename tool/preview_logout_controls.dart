@@ -292,8 +292,6 @@ class _Pane extends StatelessWidget {
                                   fontWeight: FontWeight.w600,
                                   color: AppColors.red)),
                         ),
-                        Icon(Icons.chevron_right_rounded,
-                            size: 20, color: Colors.black26),
                       ],
                     ),
                   ),

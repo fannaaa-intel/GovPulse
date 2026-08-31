@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
+import 'logout_control.dart';
 import 'app_dialog.dart';
 import '../../core/theme/citizen_ui.dart';
 
@@ -110,7 +111,7 @@ Future<bool> showLogoutConfirmDialog(
                         ),
                       ),
                       child: Text(
-                        'Log Out',
+                        kLogoutLabel,
                         style: TextStyle(
                           fontSize: kIsWeb ? kWebDialogButtonFont : 14.5,
                           fontWeight: FontWeight.w700,

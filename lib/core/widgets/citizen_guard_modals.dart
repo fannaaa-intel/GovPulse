@@ -7,6 +7,7 @@ import '../router/legacy_nav.dart';
 import '../services/citizen_guard.dart';
 import '../services/session_teardown.dart';
 import '../theme/app_colors.dart';
+import 'logout_control.dart';
 import 'app_dialog.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -98,7 +99,7 @@ Future<void> showSuspendedModal(BuildContext context, SuspensionInfo info) {
           _untilLine(info.expiresAt),
           'You have been signed out. Contact the LGU if you believe this is a mistake.',
         ],
-        primaryLabel: 'Sign out',
+        primaryLabel: kLogoutLabel,
         onPrimary: () {
           Navigator.of(ctx).pop();
           _signOut(context);

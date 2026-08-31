@@ -1484,55 +1484,53 @@ class _SettingScreenState extends ConsumerState<SettingsBody>
   }
 
   // ── Logout button ─────────────────────────────────────────────────────────
-  Widget _buildLogoutButton(double width) {
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton.icon(
-        onPressed: _confirmLogout,
-        icon: SizedBox(
-          width: width * 0.05,
-          height: width * 0.05,
-          child: ColorFiltered(
-            colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
-            child: Image.asset(
-              'assets/images/settings/logout.webp',
-              fit: BoxFit.contain,
-            ),
-          ),
-        ),
-        label: Text(
-          'Log Out',
-          style: TextStyle(
-            fontSize: width * 0.04,
-            fontWeight: FontWeight.w700,
-            color: Colors.white,
-            letterSpacing: 0.2,
-          ),
-        ),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.red,
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(width * 0.03),
-          ),
-          padding: EdgeInsets.symmetric(vertical: width * 0.04),
-        ),
-      ),
-    );
-  }
+  /// The shared control, so the phone reads the same as the web settings page
+  /// and both consoles.
+  ///
+  /// This was a solid red ElevatedButton carrying a FOURTH spelling of the
+  /// label — "Log Out", capital O — which the first sweep missed because it
+  /// sat inside a button rather than a settings row. It was also the loudest
+  /// control on the page: a filled red block for a reversible action, directly
+  /// above "Delete Account" as a quiet underlined link. The severity was
+  /// exactly inverted.
+  Widget _buildLogoutButton(double width) => LogoutTile(onLogout: _confirmLogout);
 
   // ── Delete account button ─────────────────────────────────────────────────
+  /// Tinted like the logout tile above it, and deliberately not quieter.
+  ///
+  /// It was a bare underlined red link — the least protected shape available
+  /// for the one action on this page that cannot be undone, sitting directly
+  /// below a solid red logout button. The web surface already fixed this by
+  /// naming a "Danger zone" section; the phone kept the footer link.
   Widget _buildDeleteAccountButton(double width) {
-    return TextButton(
-      onPressed: _confirmDeleteAccount,
-      child: Text(
-        'Delete Account',
-        style: TextStyle(
-          fontSize: width * 0.034,
-          fontWeight: FontWeight.w600,
-          color: AppColors.red,
-          decoration: TextDecoration.underline,
-          decorationColor: AppColors.red,
+    return Material(
+      color: kLogoutTint,
+      borderRadius: BorderRadius.circular(12),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: _confirmDeleteAccount,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: kLogoutBorder),
+          ),
+          child: const Row(
+            children: [
+              Icon(Icons.delete_outline_rounded,
+                  size: 20, color: AppColors.red),
+              SizedBox(width: 12),
+              Text(
+                'Delete account',
+                style: TextStyle(
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.red,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
