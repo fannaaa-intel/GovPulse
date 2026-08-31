@@ -13,6 +13,7 @@ import '../providers/admin_reports_provider.dart';
 import '../utils/report_pdf.dart';
 import '../widgets/accept_assign_dialog.dart';
 import '../widgets/admin_detail_screen.dart';
+import '../widgets/admin_responsive_dialog.dart';
 import '../widgets/endorse_entity_dialog.dart';
 import '../widgets/endorsement_success_dialog.dart';
 import '../widgets/admin_moderation.dart';
@@ -960,19 +961,15 @@ class _RejectReasonDialogState extends State<_RejectReasonDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: AdminUi.surface,
-      clipBehavior: Clip.antiAlias,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ConstrainedBox(
-        // Wide enough to seat four reason cards; the Dialog itself keeps this
-        // inside the viewport (and above the keyboard) on a phone.
-        constraints: const BoxConstraints(maxWidth: 840, maxHeight: 720),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+    // Full screen on a phone, modal above 640 — the console-wide rule. See
+    // admin_responsive_dialog.dart for why, and for the chevron that replaces
+    // the close ✕ on the screen form.
+    final full = adminDialogIsFullscreen(context);
+
+    final body = Column(
+          mainAxisSize: full ? MainAxisSize.max : MainAxisSize.min,
           children: [
-            _header(),
+            _header(full),
             const Divider(height: 1, color: AdminUi.border),
             // Only the middle scrolls, so the actions stay reachable and the
             // heading stays put while picking a reason.
@@ -998,12 +995,40 @@ class _RejectReasonDialogState extends State<_RejectReasonDialog> {
             const Divider(height: 1, color: AdminUi.border),
             _actions(),
           ],
+    );
+
+    if (full) {
+      return Dialog(
+        backgroundColor: AdminUi.surface,
+        clipBehavior: Clip.antiAlias,
+        insetPadding: EdgeInsets.zero,
+        shape: const RoundedRectangleBorder(),
+        child: SizedBox(
+          width: MediaQuery.sizeOf(context).width,
+          height: MediaQuery.sizeOf(context).height,
+          child: SafeArea(child: body),
         ),
+      );
+    }
+
+    return Dialog(
+      backgroundColor: AdminUi.surface,
+      clipBehavior: Clip.antiAlias,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: ConstrainedBox(
+        // Wide enough to seat four reason cards; the Dialog itself keeps this
+        // inside the viewport (and above the keyboard) on a phone.
+        constraints: const BoxConstraints(maxWidth: 840, maxHeight: 720),
+        child: body,
       ),
     );
   }
 
-  Widget _header() {
+  /// [full] swaps the close ✕ for a back chevron: a modal floats over the page
+  /// and is dismissed by an ✕; a screen is a place you navigated to and is
+  /// dismissed by going back.
+  Widget _header(bool full) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 18, 12, 18),
       child: Row(
@@ -2740,18 +2765,30 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
       );
     }
 
+    final full = adminDialogIsFullscreen(context);
+
     return Dialog(
       backgroundColor: AdminUi.pageBg,
       // Vertical inset is deliberately tight: the panes are long, and every
       // pixel given back here is a pixel the admin doesn't have to scroll.
-      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+      // On a phone it goes to zero — the detail IS the screen there.
+      insetPadding: full
+          ? EdgeInsets.zero
+          : const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
       clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: full
+          ? const RoundedRectangleBorder()
+          : RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       // The two-pane layout fills this height so both cards match; the cap
       // stops that from stretching them into mostly-empty space on a tall
       // monitor. On a short viewport the screen binds first.
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 1120, maxHeight: 900),
+        constraints: full
+            ? BoxConstraints(
+                minWidth: MediaQuery.sizeOf(context).width,
+                minHeight: MediaQuery.sizeOf(context).height,
+              )
+            : const BoxConstraints(maxWidth: 1120, maxHeight: 900),
         child: LayoutBuilder(
           builder: (context, c) {
             // Two columns only once the details pane can still hold a readable

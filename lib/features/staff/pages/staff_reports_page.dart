@@ -18,6 +18,7 @@ import '../../admin/widgets/report_detail_kit.dart';
 import '../../admin/widgets/report_status_tracker.dart';
 import '../data/staff_repository.dart';
 import '../providers/staff_providers.dart';
+import '../../admin/widgets/admin_responsive_dialog.dart';
 import '../theme/staff_ui.dart';
 import '../widgets/staff_common.dart';
 import '../../../core/widgets/app_dialog.dart';
@@ -1712,15 +1713,31 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
       );
     }
 
+    // Full screen on a phone, modal above 640 — the same rule the admin
+    // console's report dialogs follow. This is staff's counterpart to the
+    // admin report detail, and the two are opened from the same kind of list
+    // for the same kind of work, so they take the same shape.
+    final full = adminDialogIsFullscreen(context);
+
     return Dialog(
       backgroundColor: StaffUi.pageBg,
       // Vertical inset is deliberately tight: the panes are long, and every
-      // pixel given back here is a pixel nobody has to scroll.
-      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+      // pixel given back here is a pixel nobody has to scroll. On a phone it
+      // goes to zero — the detail IS the screen there.
+      insetPadding: full
+          ? EdgeInsets.zero
+          : const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
       clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: full
+          ? const RoundedRectangleBorder()
+          : RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 1120, maxHeight: 900),
+        constraints: full
+            ? BoxConstraints(
+                minWidth: MediaQuery.sizeOf(context).width,
+                minHeight: MediaQuery.sizeOf(context).height,
+              )
+            : const BoxConstraints(maxWidth: 1120, maxHeight: 900),
         child: LayoutBuilder(
           builder: (context, c) {
             // Two columns only once the details pane can still hold a readable

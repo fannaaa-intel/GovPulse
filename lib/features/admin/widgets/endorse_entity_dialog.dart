@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../theme/admin_ui.dart';
+import 'admin_dialog_back.dart';
+import 'admin_responsive_dialog.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  Endorse to External Entity — routes an out-of-LGU-scope report to the
@@ -263,14 +265,52 @@ class _EndorseEntityDialogState extends State<_EndorseEntityDialog> {
   @override
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
-    final narrow = media.size.width < 640;
-    final inset = narrow
-        ? const EdgeInsets.symmetric(horizontal: 12, vertical: 24)
-        : const EdgeInsets.all(40);
+    // ── A modal on a desktop, a SCREEN on a phone ─────────────────────────
+    //
+    // This dialog is a form: a search field and a 2-up grid of agency cards.
+    // On a 409px viewport the modal left it ~385px after its inset, minus its
+    // own padding, floating on a barrier showing about 12px either side —
+    // nothing gained by the float, and the grid paying for it twice, once in
+    // the inset and once in the corner radius.
+    //
+    // `narrow` already drove every INTERNAL size at this same 640, so the
+    // outer shape now changes on the same line rather than on a second one.
+    final full = adminDialogIsFullscreen(context);
+
+    final Widget body = Column(
+      mainAxisSize: full ? MainAxisSize.max : MainAxisSize.min,
+      children: [
+            _header(full),
+            const Divider(height: 1, color: AdminUi.border),
+            Flexible(
+              child: SingleChildScrollView(
+                padding: EdgeInsets.fromLTRB(
+                    full ? 16 : 24, 18, full ? 16 : 24, 8),
+                child: _body(full),
+              ),
+            ),
+            const Divider(height: 1, color: AdminUi.border),
+            _footer(full),
+      ],
+    );
+
+    if (full) {
+      return Dialog(
+        backgroundColor: AdminUi.surface,
+        insetPadding: EdgeInsets.zero,
+        shape: const RoundedRectangleBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: SizedBox(
+          width: media.size.width,
+          height: media.size.height,
+          child: SafeArea(child: body),
+        ),
+      );
+    }
 
     return Dialog(
       backgroundColor: AdminUi.surface,
-      insetPadding: inset,
+      insetPadding: const EdgeInsets.all(40),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       clipBehavior: Clip.antiAlias,
       child: ConstrainedBox(
@@ -278,27 +318,18 @@ class _EndorseEntityDialogState extends State<_EndorseEntityDialog> {
           maxWidth: 880,
           maxHeight: media.size.height * 0.9,
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _header(narrow),
-            const Divider(height: 1, color: AdminUi.border),
-            Flexible(
-              child: SingleChildScrollView(
-                padding: EdgeInsets.fromLTRB(
-                    narrow ? 16 : 24, 18, narrow ? 16 : 24, 8),
-                child: _body(narrow),
-              ),
-            ),
-            const Divider(height: 1, color: AdminUi.border),
-            _footer(narrow),
-          ],
-        ),
+        child: body,
       ),
     );
   }
 
   // ── Header: paper-plane seal, title, irreversible notice, and close ────────
+  ///
+  /// On the SCREEN form the close ✕ becomes [AdminDialogBack]. A modal is
+  /// dismissed by an ✕ because it floats over the page; a screen is dismissed
+  /// by a back chevron because it is a place you navigated to. Getting that
+  /// backwards is how a fullscreen dialog starts feeling like a page you
+  /// cannot leave.
   Widget _header(bool narrow) {
     return Padding(
       padding: EdgeInsets.fromLTRB(
@@ -310,15 +341,26 @@ class _EndorseEntityDialogState extends State<_EndorseEntityDialog> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Back leads the header on a screen. A modal is dismissed by the ✕
+          // in its corner because it floats over the page; a screen is
+          // dismissed by a chevron at its start because it is a place you
+          // navigated to.
+          if (narrow) ...[
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: AdminDialogBack(onTap: () => Navigator.of(context).pop()),
+            ),
+            const SizedBox(width: 12),
+          ],
           Container(
-            width: narrow ? 52 : 64,
-            height: narrow ? 52 : 64,
+            width: narrow ? 40 : 64,
+            height: narrow ? 40 : 64,
             decoration: const BoxDecoration(
               color: Color(0xFFEAF1FF),
               shape: BoxShape.circle,
             ),
             child: Icon(Icons.send_rounded,
-                size: narrow ? 24 : 28, color: _selectBlue),
+                size: narrow ? 20 : 28, color: _selectBlue),
           ),
           SizedBox(width: narrow ? 14 : 20),
           Expanded(
@@ -369,13 +411,14 @@ class _EndorseEntityDialogState extends State<_EndorseEntityDialog> {
               ],
             ),
           ),
-          IconButton(
-            onPressed: () => Navigator.of(context).pop(),
-            icon: const Icon(Icons.close_rounded),
-            color: AdminUi.textMuted,
-            splashRadius: 20,
-            tooltip: 'Cancel',
-          ),
+          if (!narrow)
+            IconButton(
+              onPressed: () => Navigator.of(context).pop(),
+              icon: const Icon(Icons.close_rounded),
+              color: AdminUi.textMuted,
+              splashRadius: 20,
+              tooltip: 'Cancel',
+            ),
         ],
       ),
     );

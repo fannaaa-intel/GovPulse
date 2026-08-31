@@ -44,9 +44,36 @@ bool authIsFullBleed(BuildContext context) =>
 /// child to its own height, so the white surface stops where the form stops and
 /// the backdrop shows through above and below — which reads as a very wide card
 /// rather than as a page. Only the card layout wants centring.
-Widget bleedOrCentre(bool bleed, Widget scroll) => bleed
-    ? SizedBox(width: double.infinity, height: double.infinity, child: scroll)
-    : Center(child: scroll);
+Widget bleedOrCentre(bool bleed, Widget scroll) =>
+    bleed ? _BleedFill(child: scroll) : Center(child: scroll);
+
+/// Fills the viewport, and CENTRES a short form inside it.
+///
+/// Two things have to be true at once and they pull against each other:
+///
+///   * A short form — "Reset password" is a field and two buttons — must sit
+///     in the middle of the screen. Left at the top it reads as a page that
+///     failed to finish loading, with a third of the screen empty beneath it.
+///   * A tall form — sign up, or any form with the keyboard open — must still
+///     scroll from its top, never centred into a position that pushes its
+///     first field off the top of the screen.
+///
+/// [child] is the caller's own scroll view, so this adds NO second Scrollable:
+/// it stretches to the viewport and hands the scroll view a `Center`-ing
+/// alignment to use once its content is shorter than the space available.
+/// Nesting another scrollable here would give the page two competing scroll
+/// positions on the one axis.
+class _BleedFill extends StatelessWidget {
+  final Widget child;
+  const _BleedFill({required this.child});
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+        width: double.infinity,
+        height: double.infinity,
+        child: child,
+      );
+}
 
 /// Soft radial glow with true alpha falloff (no hard circle edges).
 class _SoftOrb extends StatelessWidget {
@@ -161,12 +188,22 @@ class WebGlassCard extends StatelessWidget {
       // the viewport. Without it the white stops under the last button and the
       // backdrop's glows show through beneath — which is the seam that makes a
       // full-bleed page read as a very wide card after all.
+      //
+      // The surface filling is only half of it: the CONTENT then has to be
+      // centred in the space that filling created. "Reset password" is a field
+      // and two buttons; pinned to the top of a 904px phone screen it reads as
+      // a page that failed to finish loading, with two-thirds of the screen
+      // empty beneath it. Center inside the min-height box puts it in the
+      // middle, and does nothing at all once the form is taller than the
+      // screen — at which point the caller's scroll view takes over from its
+      // top, so a long form never has its first field pushed off the screen.
       return ConstrainedBox(
         constraints: BoxConstraints(
           minHeight: MediaQuery.sizeOf(context).height,
         ),
         child: Container(
         width: double.infinity,
+        alignment: Alignment.center,
         padding: EdgeInsets.fromLTRB(20, p.top, 20, p.bottom),
         decoration: BoxDecoration(
           gradient: LinearGradient(
