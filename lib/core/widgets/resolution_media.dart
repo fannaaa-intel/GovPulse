@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:video_player/video_player.dart';
 
+import '../../features/admin/widgets/admin_skeleton.dart';
 import '../theme/app_colors.dart';
 import 'app_dialog.dart';
 
@@ -211,16 +212,40 @@ class _ResolutionMediaSectionState extends State<ResolutionMediaSection> {
     }
   }
 
+  /// Deletes the row FIRST, and only removes the tile once that succeeded.
+  ///
+  /// ⚠ This used to be optimistic — the tile vanished immediately and any
+  /// failure was swallowed by a bare `catch (_)`. So an RLS denial or a dropped
+  /// connection left the admin looking at a card that said the photo was gone
+  /// while it was still live on the resident's resolved report. For published
+  /// content that is not a cosmetic glitch: it is the console asserting
+  /// something false about what the public can see, with nothing to correct it
+  /// short of a reload.
+  ///
+  /// The row is what governs visibility (the citizen reads
+  /// report_resolution_media), so the row is the operation that must succeed.
+  /// The storage object is cleaned up afterwards and is genuinely best-effort:
+  /// an orphaned file with no row is unreachable through the app.
   Future<void> _remove(_ResolutionItem item) async {
-    setState(() => _items = _items.where((m) => m.id != item.id).toList());
     try {
       await _supabase
           .from('report_resolution_media')
           .delete()
           .eq('id', item.id);
+    } catch (e) {
+      if (!mounted) return;
+      _toast('Could not remove it: $e');
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() => _items = _items.where((m) => m.id != item.id).toList());
+
+    try {
       await _supabase.storage.from(_bucket).remove([item.path]);
     } catch (_) {
-      // Best-effort; the row is what matters for display.
+      // The row is gone, so the citizen can no longer see it. A leftover
+      // object costs storage and nothing else.
     }
   }
 
@@ -240,123 +265,513 @@ class _ResolutionMediaSectionState extends State<ResolutionMediaSection> {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.green.withValues(alpha: 0.25)),
+        // A NEUTRAL border, not a green one.
+        //
+        // The card used to outline itself in AppColors.green (#2ECC71 — a
+        // bright celebration mint) while ALSO tinting its icon, its title, its
+        // count and both its buttons the same colour. Five green things at
+        // once, none of them ranked, on a console whose every other panel is
+        // grey-bordered. It read as decoration rather than structure and made
+        // the card look bolted on.
+        //
+        // Green is now spent on exactly ONE thing — the "citizen sees this"
+        // banner — where it means something.
+        border: Border.all(color: _kCardBorder),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.verified_rounded,
-                  size: 18, color: AppColors.green),
+              // Neutral, and a camera rather than a "verified" rosette: the
+              // rosette said "approved", which is a different fact from "this
+              // is where completion media lives".
+              const Icon(Icons.photo_library_outlined,
+                  size: 17, color: _kInk),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   widget.title,
                   style: const TextStyle(
-                    fontSize: 14,
+                    fontSize: 14.5,
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFF1F2937),
+                    color: _kInk,
                   ),
                 ),
               ),
-              if (_items.isNotEmpty)
-                Text(
-                  '${_items.length}',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.green,
-                  ),
-                ),
+              if (_items.isNotEmpty) _CountPill(count: _items.length),
             ],
           ),
-          const SizedBox(height: 4),
-          Text(
-            widget.canEdit
-                ? 'Attach "after" photos or a short video of the completed work. The citizen sees these on their resolved report.'
-                : 'Photos from the team after resolving your report.',
-            style: const TextStyle(
-                fontSize: 12, color: Color(0xFF6B7280), height: 1.4),
-          ),
-          if (_loading) ...[
-            const SizedBox(height: 14),
-            const Center(
-              child: SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            ),
-          ] else if (_items.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [
-                for (final m in _items)
-                  _Thumb(
-                    item: m,
-                    canDelete: widget.canEdit,
-                    onDelete: () => _remove(m),
-                  ),
-              ],
-            ),
-          ],
+
+          // ── The consequence, not a footnote ────────────────────────────
+          // "The citizen sees these on their resolved report" WAS the tail of
+          // a grey sentence — the single most important fact about this card,
+          // rendered as the least prominent thing in it. Uploading here is
+          // publishing, and the admin should not have to read to the end of a
+          // paragraph to learn that.
           if (widget.canEdit) ...[
             const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
+            const _PublishBanner(),
+            const SizedBox(height: 12),
+          ] else
+            const SizedBox(height: 10),
+
+          if (_loading)
+            const _MediaSkeleton()
+          else if (_items.isNotEmpty)
+            // ── Why the tile size is COMPUTED, not fixed ──────────────────
+            // At a fixed 92px, four tiles plus their gaps need ~398px. The
+            // admin dialog's right pane is around 420 minus the card's own
+            // padding, so three photos and the add tile came to exactly one
+            // too many — the add slot wrapped alone onto a second row and sat
+            // there looking stranded and unaligned.
+            //
+            // Sizing to the available width instead makes the row always come
+            // out flush, at any pane width, and degrades to fewer-per-row on a
+            // genuinely narrow one rather than to a ragged orphan.
+            LayoutBuilder(
+              builder: (context, c) {
+                const gap = 10.0;
+                // Four across is the target; fall back when the pane cannot
+                // hold four at a sensible size, and never stretch past 104 on a
+                // wide pane (two photos should not become billboards).
+                final perRow = c.maxWidth < 300 ? 3 : 4;
+                final raw = (c.maxWidth - gap * (perRow - 1)) / perRow;
+                final size = raw.clamp(72.0, 104.0);
+
+                return Wrap(
+                  spacing: gap,
+                  runSpacing: gap,
+                  children: [
+                    for (final m in _items)
+                      _Thumb(
+                        item: m,
+                        size: size,
+                        canDelete: widget.canEdit,
+                        onDelete: () => _confirmRemove(m),
+                      ),
+                    // The add tile lives INSIDE the grid, as the next slot
+                    // rather than as a button underneath it: the action sits
+                    // where the eye already is, and it reads as "add another
+                    // one of these", which is exactly what it does.
+                    if (widget.canEdit)
+                      _AddTile(
+                        size: size,
+                        busy: _uploading,
+                        onPhotos: _addPhotos,
+                        onVideo: _addVideo,
+                      ),
+                  ],
+                );
+              },
+            )
+          else if (widget.canEdit)
+            // Empty state. Previously two outlined buttons floating under a
+            // line of prose, with nothing indicating where the photos would go
+            // — a dead box an admin skims straight past.
+            _EmptyDropzone(
+              busy: _uploading,
+              onPhotos: _addPhotos,
+              onVideo: _addVideo,
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Deleting is permanent AND public: the citizen may already have seen the
+  /// photo on their resolved report. The old code deleted on a single tap of a
+  /// small × sitting on the thumbnail, with no confirmation and no undo.
+  Future<void> _confirmRemove(_ResolutionItem item) async {
+    final ok = await showAppDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        title: Text(item.isVideo ? 'Remove this video?' : 'Remove this photo?'),
+        content: const Text(
+          'It will be deleted permanently and will no longer appear on the '
+          "citizen's resolved report.",
+          style: TextStyle(fontSize: 13.5, height: 1.45),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.red),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) await _remove(item);
+  }
+}
+
+// ── Tokens ────────────────────────────────────────────────────────────────
+// Matched to the admin console's own surfaces (AdminUi.border / textMuted)
+// rather than to the citizen palette, because this card's editable form only
+// ever renders inside the admin and staff consoles.
+
+const Color _kInk = Color(0xFF1F2937);
+const Color _kMuted = Color(0xFF6B7280);
+const Color _kCardBorder = Color(0xFFE3E6EF);
+const Color _kTileBg = Color(0xFFF6F7FB);
+
+/// Count of attached items. A pill rather than a bare green numeral, which at
+/// 12.5px in mint on white was both hard to read and easy to mistake for a
+/// stray character.
+class _CountPill extends StatelessWidget {
+  final int count;
+  const _CountPill({required this.count});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: _kTileBg,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: _kCardBorder),
+        ),
+        child: Text(
+          '$count',
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+            color: _kMuted,
+          ),
+        ),
+      );
+}
+
+/// The one green thing on the card, and the only one that earns it: what is
+/// attached here is published to the person who filed the report.
+class _PublishBanner extends StatelessWidget {
+  const _PublishBanner();
+
+  @override
+  Widget build(BuildContext context) => const Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // A tinted BLOCK was the first attempt and it overcorrected: a full
+          // green panel repeated on every card competed with the thumbnails it
+          // was meant to annotate. A single line with a coloured glyph carries
+          // the same warning at a fraction of the weight — the eye still lands
+          // on it, and it stops being the loudest thing on the card.
+          Icon(Icons.visibility_outlined, size: 14, color: Color(0xFF047857)),
+          SizedBox(width: 7),
+          Expanded(
+            child: Text(
+              'Anything you attach appears on the resident’s resolved report.',
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.4,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF047857),
+              ),
+            ),
+          ),
+        ],
+      );
+}
+
+/// Placeholder tiles at the size the real ones use, so the card does not jump
+/// when the fetch resolves. Replaces a lone centred spinner, which reserved a
+/// 20px box for content about to be 92px tall.
+class _MediaSkeleton extends StatelessWidget {
+  const _MediaSkeleton();
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+        builder: (context, c) {
+          // Same arithmetic as the real grid, so the placeholders occupy
+          // exactly the space the tiles will and the card does not resize
+          // under the admin when the fetch lands.
+          const gap = 10.0;
+          final perRow = c.maxWidth < 300 ? 3 : 4;
+          final size =
+              ((c.maxWidth - gap * (perRow - 1)) / perRow).clamp(72.0, 104.0);
+          return AdminShimmer(
+            child: Wrap(
+              spacing: gap,
+              runSpacing: gap,
               children: [
-                OutlinedButton.icon(
-                  onPressed: _uploading ? null : _addPhotos,
-                  icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),
-                  label: const Text('Add photos'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.green,
-                    side: BorderSide(
-                        color: AppColors.green.withValues(alpha: 0.5)),
-                  ),
-                ),
-                OutlinedButton.icon(
-                  onPressed: _uploading ? null : _addVideo,
-                  icon: const Icon(Icons.videocam_outlined, size: 18),
-                  label: const Text('Add video'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.green,
-                    side: BorderSide(
-                        color: AppColors.green.withValues(alpha: 0.5)),
-                  ),
-                ),
-                if (_uploading)
-                  const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
+                for (var i = 0; i < 3; i++)
+                  SkeletonBox(width: size, height: size, radius: 10),
               ],
             ),
+          );
+        },
+      );
+}
+
+/// The empty state: a dashed slot that looks like somewhere media goes, with
+/// one primary action and the video path offered as secondary.
+///
+/// The two equal-weight outlined buttons it replaces gave the admin a choice
+/// before giving them a reason. Photos are the overwhelmingly common case, so
+/// photos lead and video follows as a quieter text action.
+class _EmptyDropzone extends StatelessWidget {
+  final bool busy;
+  final VoidCallback onPhotos;
+  final VoidCallback onVideo;
+  const _EmptyDropzone({
+    required this.busy,
+    required this.onPhotos,
+    required this.onVideo,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _DashedBox(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 14),
+        child: Column(
+          children: [
+            const Icon(Icons.add_photo_alternate_outlined,
+                size: 26, color: Color(0xFF9AA4B5)),
+            const SizedBox(height: 9),
+            const Text(
+              'No completion media yet',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: _kInk,
+              ),
+            ),
+            const SizedBox(height: 3),
+            const Text(
+              'Show the resident the finished work.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, height: 1.4, color: _kMuted),
+            ),
+            const SizedBox(height: 13),
+            // ONE primary action. Full-width at this measure so it is
+            // unmistakably the thing to press.
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: busy ? null : onPhotos,
+                icon: busy
+                    ? const SizedBox(
+                        width: 15,
+                        height: 15,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(Icons.add_a_photo_outlined, size: 17),
+                label: Text(busy ? 'Uploading…' : 'Add photos'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.primaryBlue,
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  textStyle: const TextStyle(
+                      fontSize: 13.5, fontWeight: FontWeight.w700),
+                ),
+              ),
+            ),
+            const SizedBox(height: 2),
+            TextButton.icon(
+              onPressed: busy ? null : onVideo,
+              icon: const Icon(Icons.videocam_outlined, size: 16),
+              label: const Text('or add a short video'),
+              style: TextButton.styleFrom(
+                foregroundColor: _kMuted,
+                textStyle: const TextStyle(
+                    fontSize: 12.5, fontWeight: FontWeight.w600),
+              ),
+            ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The "add another" slot that sits in the grid beside existing thumbnails.
+/// Tapping opens a small sheet so photo and video stay one tap apart without
+/// spending a second tile on the rarer of the two.
+class _AddTile extends StatelessWidget {
+  /// Matches the thumbnails beside it, computed by the same grid.
+  final double size;
+  final bool busy;
+  final VoidCallback onPhotos;
+  final VoidCallback onVideo;
+  const _AddTile({
+    required this.size,
+    required this.busy,
+    required this.onPhotos,
+    required this.onVideo,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _DashedBox(
+      radius: 10,
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(10),
+            onTap: busy ? null : () => _pick(context),
+            child: Center(
+              child: busy
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.add_rounded,
+                            size: 22, color: Color(0xFF9AA4B5)),
+                        SizedBox(height: 2),
+                        Text(
+                          'Add',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                            color: _kMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _pick(BuildContext context) {
+    showAppDialog<void>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        title: const Text('Add completion media',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+        children: [
+          _SheetAction(
+            icon: Icons.add_a_photo_outlined,
+            label: 'Photos',
+            onTap: () {
+              Navigator.pop(ctx);
+              onPhotos();
+            },
+          ),
+          _SheetAction(
+            icon: Icons.videocam_outlined,
+            label: 'Video',
+            onTap: () {
+              Navigator.pop(ctx);
+              onVideo();
+            },
+          ),
         ],
       ),
     );
   }
 }
 
+class _SheetAction extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  const _SheetAction({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) => ListTile(
+        leading: Icon(icon, size: 20, color: AppColors.primaryBlue),
+        title: Text(label,
+            style: const TextStyle(
+                fontSize: 14, fontWeight: FontWeight.w600, color: _kInk)),
+        onTap: onTap,
+      );
+}
+
+/// A dashed outline, painted rather than faked with a dotted image so it scales
+/// with the box and stays crisp at any density.
+class _DashedBox extends StatelessWidget {
+  final Widget child;
+  final double radius;
+  const _DashedBox({required this.child, this.radius = 12});
+
+  @override
+  Widget build(BuildContext context) => CustomPaint(
+        painter: _DashedBorderPainter(radius: radius),
+        child: child,
+      );
+}
+
+class _DashedBorderPainter extends CustomPainter {
+  final double radius;
+  const _DashedBorderPainter({required this.radius});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0xFFC9D2E0)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.3;
+
+    final rrect = RRect.fromRectAndRadius(
+      Offset.zero & size,
+      Radius.circular(radius),
+    );
+
+    // Walk the rounded-rect path and draw alternating on/off segments. Metrics
+    // rather than a dash pattern on the Paint, because Flutter has no dashed
+    // stroke style.
+    const dash = 5.0;
+    const gap = 4.0;
+    final path = Path()..addRRect(rrect);
+    for (final metric in path.computeMetrics()) {
+      var d = 0.0;
+      while (d < metric.length) {
+        canvas.drawPath(
+          metric.extractPath(d, (d + dash).clamp(0.0, metric.length)),
+          paint,
+        );
+        d += dash + gap;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DashedBorderPainter old) => old.radius != radius;
+}
+
 // ── Thumbnail ─────────────────────────────────────────────────────────────────
 
 class _Thumb extends StatelessWidget {
   final _ResolutionItem item;
+
+  /// Computed by the grid so a row always comes out flush — see the
+  /// LayoutBuilder in the card's build. Not a constant, because a fixed size
+  /// left the add tile orphaned on its own row at the admin pane's width.
+  final double size;
   final bool canDelete;
   final VoidCallback onDelete;
   const _Thumb({
     required this.item,
+    required this.size,
     required this.canDelete,
     required this.onDelete,
   });
@@ -378,23 +793,28 @@ class _Thumb extends StatelessWidget {
           child: ClipRRect(
             borderRadius: BorderRadius.circular(10),
             child: SizedBox(
-              width: 92,
-              height: 92,
+              width: size,
+              height: size,
               child: item.isVideo
+                  // A video tile used to be a near-black slab, which made it
+                  // the loudest thing in a grid of pale photographs — the
+                  // rarest item drawing the most attention. It now sits on the
+                  // same light ground as everything else, with a play glyph
+                  // and a corner badge to say what it is.
                   ? Container(
-                      color: const Color(0xFF1F2937),
+                      color: _kTileBg,
                       child: const Center(
-                        child: Icon(Icons.play_circle_fill_rounded,
-                            color: Colors.white70, size: 34),
+                        child: Icon(Icons.play_circle_outline_rounded,
+                            color: Color(0xFF6B7280), size: 30),
                       ),
                     )
                   : CachedNetworkImage(
                       imageUrl: item.url,
                       fit: BoxFit.cover,
                       placeholder: (_, _) =>
-                          Container(color: const Color(0xFFF3F4F6)),
+                          const ColoredBox(color: _kTileBg),
                       errorWidget: (_, _, _) => const ColoredBox(
-                        color: Color(0xFFF3F4F6),
+                        color: _kTileBg,
                         child: Icon(Icons.broken_image_rounded,
                             color: Color(0xFF9CA3AF), size: 22),
                       ),
@@ -402,20 +822,62 @@ class _Thumb extends StatelessWidget {
             ),
           ),
         ),
+
+        // Hairline over the tile, so a pale photo still reads as a bounded
+        // object rather than bleeding into the white card behind it.
+        Positioned.fill(
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: _kCardBorder),
+              ),
+            ),
+          ),
+        ),
+
+        if (item.isVideo)
+          Positioned(
+            left: 5,
+            bottom: 5,
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.62),
+                borderRadius: BorderRadius.circular(5),
+              ),
+              child: const Text(
+                'VIDEO',
+                style: TextStyle(
+                  fontSize: 8.5,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.5,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ),
+
         if (canDelete)
           Positioned(
-            top: 2,
-            right: 2,
-            child: GestureDetector(
-              onTap: onDelete,
-              child: Container(
-                padding: const EdgeInsets.all(3),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.55),
-                  shape: BoxShape.circle,
+            top: 4,
+            right: 4,
+            child: Material(
+              color: Colors.white,
+              shape: const CircleBorder(),
+              clipBehavior: Clip.antiAlias,
+              elevation: 1,
+              child: InkWell(
+                onTap: onDelete,
+                // 32px of touch target under a 20px visual — the old badge was
+                // a 20px tap zone for a permanent, public deletion.
+                child: const SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: Icon(Icons.close_rounded,
+                      size: 13, color: Color(0xFF6B7280)),
                 ),
-                child: const Icon(Icons.close_rounded,
-                    size: 14, color: Colors.white),
               ),
             ),
           ),
