@@ -4,6 +4,8 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../../staff/data/staff_departments.dart';
 import '../theme/admin_ui.dart';
+import 'admin_dialog_back.dart';
+import 'admin_responsive_dialog.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  Accept & Assign — the triage-desk decision that routes a valid report to the
@@ -90,27 +92,17 @@ class _AcceptAssignDialogState extends State<_AcceptAssignDialog> {
   @override
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
-    final screenW = media.size.width;
-    // Phone gets a near-full-bleed sheet-like card; web sits centered at 860.
-    final narrow = screenW < 640;
-    final inset = narrow
-        ? const EdgeInsets.symmetric(horizontal: 12, vertical: 24)
-        : const EdgeInsets.all(40);
+    // Full screen on a phone, modal above 640 — the console-wide rule. This
+    // dialog is a 2-up grid of office cards, the same shape as the endorse
+    // picker, and it was left as a "near-full-bleed sheet" with a 12px inset:
+    // a barrier strip either side and a corner radius eating the grid, for no
+    // gain over simply being the screen.
+    final narrow = adminDialogIsFullscreen(context);
 
-    return Dialog(
-      backgroundColor: AdminUi.surface,
-      insetPadding: inset,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      clipBehavior: Clip.antiAlias,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: 860,
-          maxHeight: media.size.height * 0.9,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+    final Widget body = Column(
+          mainAxisSize: narrow ? MainAxisSize.max : MainAxisSize.min,
           children: [
-            _header(narrow),
+            _header(context, narrow),
             const Divider(height: 1, color: AdminUi.border),
             Flexible(
               child: SingleChildScrollView(
@@ -121,13 +113,39 @@ class _AcceptAssignDialogState extends State<_AcceptAssignDialog> {
             const Divider(height: 1, color: AdminUi.border),
             _footer(narrow),
           ],
+    );
+
+    if (narrow) {
+      return Dialog(
+        backgroundColor: AdminUi.surface,
+        insetPadding: EdgeInsets.zero,
+        shape: const RoundedRectangleBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: SizedBox(
+          width: media.size.width,
+          height: media.size.height,
+          child: SafeArea(child: body),
         ),
+      );
+    }
+
+    return Dialog(
+      backgroundColor: AdminUi.surface,
+      insetPadding: const EdgeInsets.all(40),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      clipBehavior: Clip.antiAlias,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 860,
+          maxHeight: media.size.height * 0.9,
+        ),
+        child: body,
       ),
     );
   }
 
   // ── Header: green quality seal, title, and the irreversible-action notice ──
-  Widget _header(bool narrow) {
+  Widget _header(BuildContext context, bool narrow) {
     final icon = Container(
       width: narrow ? 56 : 72,
       height: narrow ? 56 : 72,
@@ -186,12 +204,29 @@ class _AcceptAssignDialogState extends State<_AcceptAssignDialog> {
         narrow ? 16 : 28,
         narrow ? 18 : 24,
       ),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          icon,
-          SizedBox(width: narrow ? 14 : 20),
-          Expanded(child: text),
+          // ── The chevron gets its OWN row on a screen ────────────────────
+          //
+          // Beside the seal it left the title about 60px of the width it
+          // needs, wrapping "Endorse to External Entity" and its notice into a
+          // dense block against the left edge. Back is chrome: it belongs
+          // above the header it dismisses, the way every pushed screen in this
+          // app places it, not competing with the seal for the same row.
+          if (narrow) ...[
+            AdminDialogBack(onTap: () => Navigator.of(context).pop()),
+            const SizedBox(height: 14),
+          ],
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              icon,
+              SizedBox(width: narrow ? 14 : 20),
+              Expanded(child: text),
+            ],
+          ),
         ],
       ),
     );

@@ -181,9 +181,22 @@ class WebCardHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // ── 44 was too small to read as a brand mark ──────────────────────────
+    //
+    // Every screen using this header — guest, and the four reset/verification
+    // steps — is a page with a logo, a title and one short form. At 44px on a
+    // 390px phone the mark sat as a smudge above the title rather than as the
+    // thing identifying whose site you are handing a password to, which on the
+    // password-reset flow is exactly the question worth answering clearly.
+    //
+    // Sized against the viewport with a ceiling, so it grows on a phone where
+    // there is room to spare and stops at the size the desktop card wants.
+    final w = MediaQuery.sizeOf(context).width;
+    final logoH = (w * 0.17).clamp(56.0, 76.0);
+
     return Column(
       children: [
-        Image.asset("assets/images/applogocrop.webp", height: 44),
+        Image.asset("assets/images/applogocrop.webp", height: logoH),
         const SizedBox(height: 28),
         Text(title, textAlign: TextAlign.center, style: WebUi.title),
         const SizedBox(height: 8),

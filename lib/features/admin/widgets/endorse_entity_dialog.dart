@@ -280,7 +280,7 @@ class _EndorseEntityDialogState extends State<_EndorseEntityDialog> {
     final Widget body = Column(
       mainAxisSize: full ? MainAxisSize.max : MainAxisSize.min,
       children: [
-            _header(full),
+            _header(context, full),
             const Divider(height: 1, color: AdminUi.border),
             Flexible(
               child: SingleChildScrollView(
@@ -330,37 +330,42 @@ class _EndorseEntityDialogState extends State<_EndorseEntityDialog> {
   /// by a back chevron because it is a place you navigated to. Getting that
   /// backwards is how a fullscreen dialog starts feeling like a page you
   /// cannot leave.
-  Widget _header(bool narrow) {
+  Widget _header(BuildContext context, bool narrow) {
     return Padding(
       padding: EdgeInsets.fromLTRB(
         narrow ? 16 : 28,
         narrow ? 18 : 24,
-        narrow ? 8 : 16,
+        narrow ? 16 : 16,
         narrow ? 16 : 22,
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // ── The chevron gets its OWN row on a screen ────────────────────
+          //
+          // Beside the seal it left the title about 60px of the width it
+          // needs, wrapping "Endorse to External Entity" and its one-time-PIN
+          // notice into a dense block jammed against the left edge. Back is
+          // chrome: it belongs above the header it dismisses, the way every
+          // pushed screen in this app places it, not competing with the seal
+          // for the same row.
+          if (narrow) ...[
+            AdminDialogBack(onTap: () => Navigator.of(context).pop()),
+            const SizedBox(height: 14),
+          ],
+          Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Back leads the header on a screen. A modal is dismissed by the ✕
-          // in its corner because it floats over the page; a screen is
-          // dismissed by a chevron at its start because it is a place you
-          // navigated to.
-          if (narrow) ...[
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: AdminDialogBack(onTap: () => Navigator.of(context).pop()),
-            ),
-            const SizedBox(width: 12),
-          ],
           Container(
-            width: narrow ? 40 : 64,
-            height: narrow ? 40 : 64,
+            width: narrow ? 52 : 64,
+            height: narrow ? 52 : 64,
             decoration: const BoxDecoration(
               color: Color(0xFFEAF1FF),
               shape: BoxShape.circle,
             ),
             child: Icon(Icons.send_rounded,
-                size: narrow ? 20 : 28, color: _selectBlue),
+                size: narrow ? 24 : 28, color: _selectBlue),
           ),
           SizedBox(width: narrow ? 14 : 20),
           Expanded(
@@ -419,6 +424,8 @@ class _EndorseEntityDialogState extends State<_EndorseEntityDialog> {
               splashRadius: 20,
               tooltip: 'Cancel',
             ),
+            ],
+          ),
         ],
       ),
     );
