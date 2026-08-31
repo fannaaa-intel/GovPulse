@@ -61,9 +61,7 @@ import 'admin_pdf.dart' show pdfSafe;
 /// is both narrower and nearly an inch and a half shorter — a letter laid out
 /// for it prints short on the paper this office actually stocks.
 ///
-/// Margins are carried over unchanged; the extra length becomes body room,
-/// which is what keeps the signature block and the QR panel on page one for a
-/// typical reason.
+/// Margins are carried over unchanged; the extra length becomes body room.
 const PdfPageFormat kFolioPageFormat = PdfPageFormat(
   8.5 * PdfPageFormat.inch,
   13.0 * PdfPageFormat.inch,
@@ -120,45 +118,79 @@ Future<Uint8List> buildEndorsementLetter({
   doc.addPage(
     pw.MultiPage(
       pageFormat: kFolioPageFormat,
-      margin: const pw.EdgeInsets.fromLTRB(64, 44, 64, 30),
+      // Bottom margin 24 rather than 30. On a 13-inch sheet that is still a
+      // third of an inch of clear paper below the footer, and the six points
+      // are body room on a document whose length is set by two free-text
+      // fields.
+      margin: const pw.EdgeInsets.fromLTRB(64, 42, 64, 24),
       theme: pw.ThemeData.withFont(
         base: base,
         bold: bold,
         italic: italic,
       ).copyWith(
-        defaultTextStyle: pw.TextStyle(font: base, fontSize: 11.5, height: 1.5),
+        // 1.42 rather than 1.5. Generous enough to read as an official letter
+        // rather than a form, tight enough that a long citizen description does
+        // not run the body an extra page on its own.
+        defaultTextStyle:
+            pw.TextStyle(font: base, fontSize: 11.5, height: 1.42),
       ),
       footer: (context) => _footer(context, credentials.reference),
+      // ── The spacing budget ────────────────────────────────────────────────
+      // Each gap here was individually reasonable and collectively they cost
+      // ~30pt. Trimmed by 2-4pt apiece: imperceptible on any single join, and
+      // together they buy back most of a body paragraph.
       build: (context) => [
         _letterhead(seal),
-        pw.SizedBox(height: 14),
+        pw.SizedBox(height: 12),
         _title(),
-        pw.SizedBox(height: 16),
-        _referenceBlock(credentials.reference, at),
-        pw.SizedBox(height: 16),
-        _addressee(credentials.agency),
         pw.SizedBox(height: 14),
+        _referenceBlock(credentials.reference, at),
+        pw.SizedBox(height: 13),
+        _addressee(credentials.agency),
+        pw.SizedBox(height: 12),
         ..._body(report, credentials.agency),
-        pw.SizedBox(height: 12),
+        pw.SizedBox(height: 10),
         ..._reasonSection(reason),
-        pw.SizedBox(height: 12),
+        pw.SizedBox(height: 10),
         ..._termsSection(credentials.agency),
-        pw.SizedBox(height: 18),
-        // ── Why these are two entries and not one ──────────────────────────
-        // MultiPage only breaks BETWEEN children, so wrapping the signature and
-        // the confirmation panel in one Column keeps them together — and for a
-        // typical letter that pushes BOTH onto page two, leaving page one
-        // ending a third of the way up. Measured: ~60pt free after the terms
-        // against a ~425pt closing. No amount of spacing recovers 365pt.
+        // ── Why the closing is not forced onto page one ────────────────────
         //
-        // Separate entries let the signature take the room that is actually
-        // there and the confirmation panel flow after it. Each is individually
-        // unbreakable, which is the property that matters: a signature line
-        // never splits from the Mayor's name, and the QR never splits from its
-        // PIN box.
-        _signatureBlock(),
-        pw.SizedBox(height: 16),
-        _qrBlock(scanUrl, credentials.reference, credentials.pin),
+        // It was tempting, and it is the wrong goal. The letter's length is
+        // driven by two fields an admin types — the citizen's description and
+        // the basis for endorsement — so ANY spacing budget tuned to make one
+        // sample fit is defeated by the next slightly longer reason. Chasing it
+        // produces a document that looks cramped on short letters and still
+        // breaks on long ones.
+        //
+        // So the closing is built to be CORRECT wherever it lands: one
+        // unbreakable row, so page two can never carry a signature split from
+        // its name or a QR split from its PIN. What was actually wrong before
+        // was not the break — it was that the closing was ~425pt of stacked
+        // sections, so page two held a signature stranded above five-sixths of
+        // empty paper. At ~110pt in a single row it reads as a proper closing
+        // block wherever it sits.
+        pw.SizedBox(height: 12),
+        // ── The closing is ONE row, signature beside the panel ─────────────
+        //
+        // It used to be two stacked entries, ~425pt tall between them, against
+        // a typical ~80pt of room left after the terms. So the signature moved
+        // to page two, page one ended with a hand-sized gap, and page two was
+        // five-sixths empty with the Mayor's name floating at the top of it. A
+        // government letter whose signature is stranded on its own sheet reads
+        // as unfinished, and the earlier attempt to fix it by reclaiming margin
+        // only postponed the problem to the next slightly longer reason.
+        //
+        // Side by side, the closing costs ~150pt instead of ~425 and fits under
+        // the terms on nearly every letter. It is also the better arrangement
+        // on its own merits: the confirmation panel reads as an enclosure
+        // sitting beside the signature — which is what it is — rather than as a
+        // second, unrelated section appended below it.
+        //
+        // Still ONE child, so MultiPage cannot split the signature from the
+        // Mayor's name or the QR from its PIN. When it genuinely does not fit,
+        // the whole closing moves together and page two carries a complete
+        // block rather than a fragment.
+        ..._closingBlock(scanUrl, credentials.reference, credentials.pin),
       ],
     ),
   );
@@ -189,12 +221,12 @@ pw.Widget _letterhead(pw.ImageProvider? seal) {
   return pw.Column(
     crossAxisAlignment: pw.CrossAxisAlignment.center,
     children: [
-      pw.SizedBox(height: 64, width: 64, child: _seal(seal)),
-      pw.SizedBox(height: 10),
+      pw.SizedBox(height: 56, width: 56, child: _seal(seal)),
+      pw.SizedBox(height: 8),
       _centred(AppConfig.republic, size: 11.5),
       _centred(AppConfig.lguName, size: 14, bold: true),
       _centred(AppConfig.province, size: 11.5),
-      pw.SizedBox(height: 12),
+      pw.SizedBox(height: 10),
       // The single hairline rule. The whole document's structure rests on
       // spacing and type weight; this is the only drawn line above the footer.
       pw.Container(height: 0.75, color: PdfColors.black),
@@ -379,97 +411,147 @@ List<pw.Widget> _termsSection(String agency) => [
   _numbered(5, 'This Municipality shall inform the reporting citizen of the '
       'progress of the matter as recorded through the confirmation process '
       'described in item 2.'),
-  pw.SizedBox(height: 12),
+  pw.SizedBox(height: 10),
   _para(
     'Your prompt and appropriate action on this matter is earnestly requested.',
   ),
 ];
 
-// ══ Signature ═════════════════════════════════════════════════════════════════
+// ══ Closing: signature + confirmation panel, side by side ═══════════════════
+
+/// The whole closing as ONE unbreakable row.
+///
+/// Left: the confirmation panel the agency acts on. Right: the signature.
+/// Reading order on a letter runs to the signature LAST, and the signature is
+/// conventionally on the right — so the panel takes the left column and the
+/// eye finishes on the Mayor's name, as it should.
+/// ⚠ Returns TWO children, and that is the whole trick.
+///
+/// MultiPage decides a break by measuring each child against the space left,
+/// and it does that BEFORE drawing. With the separator rule inside the same
+/// Column as the row, the block measured ~150pt as one indivisible unit — so
+/// even with 150pt of clear paper below the last paragraph, the comparison
+/// came out just short and the entire closing jumped to page two, which then
+/// carried nothing else.
+///
+/// Splitting the rule out leaves the ROW as the only thing that has to fit.
+/// The row is still one unbreakable child, so the signature can never separate
+/// from the Mayor's name, nor the QR from its PIN.
+List<pw.Widget> _closingBlock(String scanUrl, String reference, String pin) {
+  return [
+    pw.Container(height: 0.5, color: PdfColors.grey600),
+    pw.SizedBox(height: 10),
+    pw.Row(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Expanded(child: _confirmationPanel(scanUrl, reference, pin)),
+        pw.SizedBox(width: 24),
+        _signatureBlock(),
+      ],
+    ),
+  ];
+}
 
 pw.Widget _signatureBlock() {
-  return pw.Row(
-    mainAxisAlignment: pw.MainAxisAlignment.end,
-    children: [
-      pw.SizedBox(
-        width: 240,
-        child: pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.center,
-          children: [
-            pw.Text(
-              'Very truly yours,',
-              style: const pw.TextStyle(fontSize: 11.5),
-            ),
-            // Room for a wet signature above the rule.
-            pw.SizedBox(height: 32),
-            pw.Container(height: 0.75, width: 220, color: PdfColors.black),
-            pw.SizedBox(height: 5),
-            pw.Text(
-              pdfSafe(AppConfig.mayorName).toUpperCase(),
-              textAlign: pw.TextAlign.center,
-              style: pw.TextStyle(
-                fontSize: 12,
-                fontWeight: pw.FontWeight.bold,
-                letterSpacing: 0.5,
-              ),
-            ),
-            pw.SizedBox(height: 2),
-            pw.Text(
-              AppConfig.mayorTitle,
-              style: const pw.TextStyle(fontSize: 11),
-            ),
-          ],
+  return pw.SizedBox(
+    width: 236,
+    child: pw.Column(
+      // ⚠ START, not center. "Very truly yours," is a complimentary close: it
+      // belongs at the LEFT EDGE of the signature column, above the rule.
+      // Centred over a 240pt box it floated into the middle of the block,
+      // reading as a caption for the signature rather than as the line that
+      // closes the letter.
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Text(
+          'Very truly yours,',
+          style: const pw.TextStyle(fontSize: 11.5),
         ),
-      ),
-    ],
+        // Room for a wet signature above the rule. 22pt is still a comfortable
+        // band for a pen — Philippine government correspondence routinely
+        // allows less — and this is the single largest block of reclaimable
+        // white on the page.
+        pw.SizedBox(height: 22),
+        pw.Container(height: 0.75, width: 236, color: PdfColors.black),
+        pw.SizedBox(height: 5),
+        // The name and title CENTRE on the rule, which is the convention — the
+        // close aligns left, the signatory sits under the middle of the line
+        // they signed above.
+        pw.Container(
+          width: 236,
+          alignment: pw.Alignment.center,
+          child: pw.Text(
+            pdfSafe(AppConfig.mayorName).toUpperCase(),
+            textAlign: pw.TextAlign.center,
+            style: pw.TextStyle(
+              fontSize: 12,
+              fontWeight: pw.FontWeight.bold,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ),
+        pw.SizedBox(height: 2),
+        pw.Container(
+          width: 236,
+          alignment: pw.Alignment.center,
+          child: pw.Text(
+            AppConfig.mayorTitle,
+            style: const pw.TextStyle(fontSize: 11),
+          ),
+        ),
+      ],
+    ),
   );
 }
 
-// ══ QR ════════════════════════════════════════════════════════════════════════
+// ══ Confirmation panel ═══════════════════════════════════════════════════════
 
-pw.Widget _qrBlock(String scanUrl, String reference, String pin) {
-  return pw.Column(
-    crossAxisAlignment: pw.CrossAxisAlignment.center,
-    children: [
-      pw.Container(height: 0.5, color: PdfColors.grey600),
-      pw.SizedBox(height: 10),
-      pw.BarcodeWidget(
-        barcode: pw.Barcode.qrCode(
-          errorCorrectLevel: pw.BarcodeQRCorrectionLevel.medium,
+/// QR + PIN, boxed as the enclosure it is.
+///
+/// Previously a centred stack running the full width of the page under the
+/// signature, which read as a third section of the letter rather than as the
+/// tear-off instrument the agency uses. Ruled and left-aligned beside the
+/// signature, it is unmistakably an attachment to the letter above it.
+pw.Widget _confirmationPanel(String scanUrl, String reference, String pin) {
+  return pw.Container(
+    padding: const pw.EdgeInsets.fromLTRB(11, 8, 11, 9),
+    decoration: pw.BoxDecoration(
+      border: pw.Border.all(width: 0.5, color: PdfColors.grey600),
+    ),
+    child: pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.center,
+      children: [
+        // No 'AGENCY CONFIRMATION' caption. The instruction line below already
+        // says what the panel is for, and a heading that only restates the
+        // sentence under it costs ~18pt — which is most of what stood between
+        // this letter and closing on a single sheet.
+        pw.Row(
+          crossAxisAlignment: pw.CrossAxisAlignment.center,
+          mainAxisAlignment: pw.MainAxisAlignment.center,
+          children: [
+            pw.BarcodeWidget(
+              barcode: pw.Barcode.qrCode(
+                errorCorrectLevel: pw.BarcodeQRCorrectionLevel.medium,
+              ),
+              data: scanUrl,
+              width: 68,
+              height: 68,
+              drawText: false,
+              color: PdfColors.black,
+            ),
+            pw.SizedBox(width: 10),
+            pw.Expanded(child: _pinBox(pin)),
+          ],
         ),
-        data: scanUrl,
-        width: 92,
-        height: 92,
-        drawText: false,
-        color: PdfColors.black,
-      ),
-      pw.SizedBox(height: 8),
-      pw.Text(
-        'Scan to confirm receipt and update status.',
-        style: pw.TextStyle(fontSize: 10.5, fontWeight: pw.FontWeight.bold),
-      ),
-      pw.SizedBox(height: 3),
-      pw.Text(
-        'The confirmation PIN below is required for every update.',
-        textAlign: pw.TextAlign.center,
-        style: pw.TextStyle(
-          fontSize: 9,
-          color: PdfColors.grey700,
-          fontStyle: pw.FontStyle.italic,
+        pw.SizedBox(height: 6),
+        pw.Text(
+          'Scan to acknowledge receipt, record progress, and completion.',
+          textAlign: pw.TextAlign.center,
+          style: const pw.TextStyle(fontSize: 8.5, height: 1.3),
         ),
-      ),
-      pw.SizedBox(height: 10),
-      _pinBox(pin),
-      pw.SizedBox(height: 8),
-      pw.Text(
-        reference,
-        style: pw.TextStyle(
-          fontSize: 8.5,
-          color: PdfColors.grey700,
-          letterSpacing: 0.6,
-        ),
-      ),
-    ],
+
+      ],
+    ),
   );
 }
 
@@ -482,7 +564,7 @@ pw.Widget _qrBlock(String scanUrl, String reference, String pin) {
 /// page at all.
 pw.Widget _pinBox(String pin) {
   return pw.Container(
-    padding: const pw.EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+    padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 9),
     decoration: pw.BoxDecoration(
       border: pw.Border.all(width: 0.75, style: pw.BorderStyle.dashed),
     ),
@@ -501,16 +583,20 @@ pw.Widget _pinBox(String pin) {
         pw.Text(
           pdfSafe(pin),
           style: pw.TextStyle(
-            fontSize: 22,
+            fontSize: 20,
             fontWeight: pw.FontWeight.bold,
-            letterSpacing: 6,
+            // Tracked, but less than before: the box now shares a row with the
+            // QR instead of spanning the page, and 6pt of tracking on four
+            // digits overflowed the narrower column.
+            letterSpacing: 4,
           ),
         ),
         pw.SizedBox(height: 3),
         pw.Text(
-          'Detach and retain. Do not file with the letter.',
+          'Detach and retain.',
+          textAlign: pw.TextAlign.center,
           style: pw.TextStyle(
-            fontSize: 7.5,
+            fontSize: 7,
             color: PdfColors.grey700,
             fontStyle: pw.FontStyle.italic,
           ),
@@ -556,7 +642,7 @@ pw.Widget _para(String text, {bool italic = false}) => pw.Paragraph(
   margin: pw.EdgeInsets.zero,
   style: pw.TextStyle(
     fontSize: 11.5,
-    height: 1.55,
+    height: 1.42,
     fontStyle: italic ? pw.FontStyle.italic : pw.FontStyle.normal,
   ),
 );
@@ -586,7 +672,11 @@ pw.Widget _fact(String label, String value) => pw.Padding(
 );
 
 pw.Widget _numbered(int n, String text) => pw.Padding(
-  padding: const pw.EdgeInsets.only(bottom: 7),
+  // 4pt, not 7. Five terms make this the densest run of gaps in the letter,
+  // and three points apiece is fifteen points overall — most of what stood
+  // between the signature and page one. The items stay clearly separated
+  // because each is a justified block with a hanging number.
+  padding: const pw.EdgeInsets.only(bottom: 4),
   child: pw.Row(
     crossAxisAlignment: pw.CrossAxisAlignment.start,
     children: [
@@ -595,7 +685,7 @@ pw.Widget _numbered(int n, String text) => pw.Padding(
         child: pw.Text(
           pdfSafe(text),
           textAlign: pw.TextAlign.justify,
-          style: const pw.TextStyle(fontSize: 11.5, height: 1.5),
+          style: const pw.TextStyle(fontSize: 11.5, height: 1.42),
         ),
       ),
     ],

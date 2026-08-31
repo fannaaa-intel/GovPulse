@@ -78,6 +78,22 @@ class AppConfig {
   /// photocopy and fax cleanly, and a colour logo greys out unpredictably.
   static const String sealAssetPath = String.fromEnvironment(
     'LGU_SEAL_ASSET',
-    defaultValue: 'assets/images/applogocrop.png',
+    // The real municipal seal of Aparri. This was the GovPulse APP LOGO until
+    // 2026-08-31 — a product mark standing in for a government crest on a
+    // letter issued over the Mayor's signature, which is the one place a
+    // vendor logo has no business being. It was always meant as a placeholder;
+    // the seal arrived, so it is gone.
+    //
+    // ⚠ PNG, not the aparri.webp beside it. The `pdf` package decodes PNG and
+    // JPEG only — handed a WebP it throws, _loadSeal swallows it, and the
+    // letter quietly falls back to the drawn placeholder ring. That failure is
+    // completely silent: the export succeeds, the file is valid, and the only
+    // symptom is a government letter going out with "LGU APARRI" in a circle
+    // where the crest should be. Measured: the WebP build produced a 12KB PDF
+    // against 304KB with the seal actually embedded.
+    //
+    // 220x220 is ~283dpi at the 56pt the letterhead draws it, which is ample
+    // for print. Keep any replacement PNG or JPEG.
+    defaultValue: 'assets/images/aparri_seal.png',
   );
 }

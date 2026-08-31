@@ -269,4 +269,90 @@ void main() {
     );
     expect(bytes.length, greaterThan(2000));
   });
+
+  // ── The closing is ONE block, wherever it lands ─────────────────────────
+  //
+  // The signature and the confirmation panel used to be two stacked sections
+  // ~425pt tall. Against the ~110pt typically left after the terms, that put
+  // the signature on page two with five-sixths of the sheet empty below it —
+  // and a government letter whose signature is stranded on its own page reads
+  // as unfinished.
+  //
+  // Side by side they cost ~110pt in a single row. The letter's length is set
+  // by two free-text fields an admin types, so a break can never be ruled out;
+  // what these pin is that when it DOES break, the closing arrives whole.
+  group('the closing block', () {
+    test('the signature and the PIN are always on the same page', () async {
+      final bytes = await buildEndorsementLetter(
+        report: _report(),
+        credentials: _credentials,
+        reason: _reason,
+        now: DateTime(2026, 8, 1),
+      );
+
+      final pages = _pdfStreams(bytes);
+      // Whichever page carries the Mayor also carries the PIN box, and vice
+      // versa. Splitting them would hand the agency a letter it cannot act on
+      // or a credential with nothing authorising it.
+      final mayorPage =
+          pages.indexWhere((p) => p.contains('DAYAG') || p.contains('MAYOR'));
+      final pinPage = pages.indexWhere((p) => p.contains('CONFIRMATION'));
+      expect(mayorPage, isNot(-1), reason: 'the signature must appear');
+      expect(pinPage, isNot(-1), reason: 'the PIN box must appear');
+      expect(
+        mayorPage,
+        pinPage,
+        reason: 'signature and PIN split across pages',
+      );
+    });
+
+    test('a very long letter still closes with a complete block', () async {
+      // Forces the break, which is the case that was ugly before.
+      final bytes = await buildEndorsementLetter(
+        report: _report(remarks: 'Ang baha po dito ay ' * 220),
+        credentials: _credentials,
+        reason: '$_reason ${'Further, ' * 120}',
+        now: DateTime(2026, 8, 1),
+      );
+
+      final pages = _pdfStreams(bytes);
+      final mayorPage =
+          pages.indexWhere((p) => p.contains('DAYAG') || p.contains('MAYOR'));
+      final pinPage = pages.indexWhere((p) => p.contains('CONFIRMATION'));
+      expect(mayorPage, pinPage);
+      // And the complimentary close travels with them — it is part of the
+      // signature, not a loose line the previous page can keep.
+      expect(pages[mayorPage], contains('truly'));
+    });
+  });
+
+  // ── The seal must actually embed ────────────────────────────────────────
+  //
+  // _loadSeal swallows any decode failure and the letterhead falls back to a
+  // drawn placeholder ring. That fallback is right — an admin needs the letter
+  // more than the crest — but it is COMPLETELY SILENT: the export succeeds,
+  // the PDF is valid, and the only symptom is a government letter going out
+  // with "LGU APARRI" in a circle where the municipal seal should be.
+  //
+  // It bit exactly once, on 2026-08-31: the seal was configured as a .webp,
+  // which the pdf package cannot decode (PNG and JPEG only). Nothing failed;
+  // the document just quietly lost its crest. Measured 12KB against 99KB with
+  // the seal embedded, which is what this test keys on — an image stream is
+  // the one thing that makes this document big.
+  test('the municipal seal is embedded, not silently dropped', () async {
+    final bytes = await buildEndorsementLetter(
+      report: _report(),
+      credentials: _credentials,
+      reason: _reason,
+      now: DateTime(2026, 8, 1),
+    );
+
+    expect(
+      bytes.length,
+      greaterThan(40000),
+      reason: 'the letter is suspiciously small — the seal probably failed to '
+          'decode and fell back to the placeholder ring. Check that '
+          'AppConfig.sealAssetPath points at a PNG or JPEG, not a WebP.',
+    );
+  });
 }
