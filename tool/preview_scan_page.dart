@@ -40,7 +40,35 @@ class _MockApi extends http.BaseClient {
   /// skeleton is unobservable — which is how a bare spinner survived here.
   final Duration delay;
 
-  _MockApi(this.state, {this.delay = Duration.zero});
+  /// What the citizen attached: 'mixed' (photos + a video), 'video' (a video
+  /// and nothing else — the case that used to reach the agency looking like a
+  /// report with no evidence), 'photos', or 'none'.
+  final String media;
+
+  _MockApi(this.state, {this.delay = Duration.zero, this.media = 'mixed'});
+
+  /// The attachment list as scan_endorsement returns it: paths plus a kind.
+  List<Map<String, String>> get _mediaRows {
+    switch (media) {
+      case 'none':
+        return const [];
+      case 'video':
+        return const [
+          {'path': 'reports/r1/clip.mp4', 'kind': 'video'},
+        ];
+      case 'photos':
+        return const [
+          {'path': 'reports/r1/a.jpg', 'kind': 'photo'},
+          {'path': 'reports/r1/b.jpg', 'kind': 'photo'},
+        ];
+      default:
+        return const [
+          {'path': 'reports/r1/a.jpg', 'kind': 'photo'},
+          {'path': 'reports/r1/clip.mp4', 'kind': 'video'},
+          {'path': 'reports/r1/b.jpg', 'kind': 'photo'},
+        ];
+    }
+  }
 
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
@@ -68,7 +96,24 @@ class _MockApi extends http.BaseClient {
           'description':
               'Large pothole across both lanes of the national road.',
           'reported_at': '2026-08-29T08:54:00Z',
+          'media': _mediaRows,
         },
+      };
+    } else if (path.contains('scan-endorsement-media')) {
+      // Stands in for the Edge Function: hands back a signed url per path.
+      // Photos resolve to a real picture so the strip is worth looking at; the
+      // video url is never fetched unless the play tile is tapped.
+      body = {
+        'ok': true,
+        'photos': [
+          for (final m in _mediaRows)
+            {
+              'path': m['path'],
+              'url': m['kind'] == 'video'
+                  ? 'https://example.invalid/clip.mp4'
+                  : _dataUri(m['path']!),
+            },
+        ],
       };
     } else {
       body = {'ok': false, 'error': 'bad_pin', 'attempts_left': 3};
@@ -88,13 +133,18 @@ Future<void> main() async {
 
   final q = Uri.base.queryParameters;
   final state = q['state'] ?? 'endorsed';
+  final media = q['media'] ?? 'mixed';
   final delayMs = int.tryParse(q['delay'] ?? '') ?? 0;
   final width = double.tryParse(q['w'] ?? '');
 
   await Supabase.initialize(
     url: 'https://preview.invalid',
     anonKey: 'preview-not-a-real-key',
-    httpClient: _MockApi(state, delay: Duration(milliseconds: delayMs)),
+    httpClient: _MockApi(
+      state,
+      delay: Duration(milliseconds: delayMs),
+      media: media,
+    ),
     authOptions: const FlutterAuthClientOptions(detectSessionInUri: false),
     debug: false,
   );
@@ -138,4 +188,18 @@ class _Ruler extends StatelessWidget {
         ),
         child: child,
       );
+}
+
+/// A small solid-colour PNG as a data: URI, keyed off the path so the two
+/// photos are visibly different tiles.
+///
+/// Image.network handles a data: URI, so the strip renders real pixels with no
+/// server — which is what makes this preview worth screenshotting.
+String _dataUri(String path) {
+  // 1x1 PNGs, stretched by BoxFit.cover. Colour distinguishes the tiles.
+  const blue =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  const amber =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  return 'data:image/png;base64,${path.contains('a.jpg') ? blue : amber}';
 }

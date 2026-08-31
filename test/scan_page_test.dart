@@ -24,6 +24,10 @@ class _MockApi extends http.BaseClient {
   final Map<String, dynamic> writeError;
   final bool valid;
 
+  /// What the citizen attached: 'none', 'photos', 'video' (a video and nothing
+  /// else) or 'mixed'.
+  final String media;
+
   _MockApi(
     this.state, {
     this.writeError = const {
@@ -32,7 +36,29 @@ class _MockApi extends http.BaseClient {
       'attempts_left': 3,
     },
     this.valid = true,
+    this.media = 'none',
   });
+
+  List<Map<String, String>> get _mediaRows {
+    switch (media) {
+      case 'photos':
+        return const [
+          {'path': 'reports/r1/a.jpg', 'kind': 'photo'},
+          {'path': 'reports/r1/b.jpg', 'kind': 'photo'},
+        ];
+      case 'video':
+        return const [
+          {'path': 'reports/r1/clip.mp4', 'kind': 'video'},
+        ];
+      case 'mixed':
+        return const [
+          {'path': 'reports/r1/a.jpg', 'kind': 'photo'},
+          {'path': 'reports/r1/clip.mp4', 'kind': 'video'},
+        ];
+      default:
+        return const [];
+    }
+  }
 
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
@@ -57,9 +83,21 @@ class _MockApi extends http.BaseClient {
                 'address': 'Near Lyceum of Aparri',
                 'description': 'Large pothole across both lanes.',
                 'reported_at': '2026-08-29T08:54:00Z',
+                'media': _mediaRows,
               },
             }
           : {'valid': false};
+    } else if (request.url.path.contains('scan-endorsement-media')) {
+      body = {
+        'ok': true,
+        'photos': [
+          for (final m in _mediaRows)
+            {
+              'path': m['path'],
+              'url': 'https://signed.invalid/${m['path']}',
+            },
+        ],
+      };
     } else {
       body = writeError;
     }
@@ -523,4 +561,158 @@ void main() {
       });
     }
   });
+
+  group('the citizen\'s attachments', () {
+    // The agency officer is the party standing at the site. Until this existed
+    // they got the report in words only - and a report whose only evidence is a
+    // clip of moving floodwater reached them looking like a report with no
+    // evidence at all.
+    //
+    // ⚠ The STRIP itself cannot be driven from a widget test: functions.invoke
+    // decodes its response inside a YAJsonIsolate, which does not run under
+    // flutter_test's fake async, so the signing call never completes here no
+    // matter how long the test pumps. (Confirmed by logging every url the mock
+    // client saw: only the scan_endorsement RPC ever arrives.) The join is
+    // therefore tested directly through joinScanMedia, and the rendered strip
+    // was verified by screenshot - tool/preview_scan_page.dart ?media=.
+
+    testWidgets('no attachments renders no strip at all', (tester) async {
+      await _boot(_MockApi('endorsed', media: 'none'));
+      await tester.pumpWidget(_host());
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(find.text('Attached by the resident'), findsNothing,
+          reason: 'an empty heading is worse than no heading');
+    });
+
+    testWidgets('attachments announce themselves while loading',
+        (tester) async {
+      // The heading and its shimmer appear as soon as the RPC says media
+      // exists, before the signing call returns - so the strip holds its space
+      // instead of appearing suddenly and pushing the PIN field under the
+      // officer's thumb.
+      await _boot(_MockApi('endorsed', media: 'photos'));
+      await tester.pumpWidget(_host());
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(find.text('Attached by the resident'), findsOneWidget);
+    });
+
+    group('joinScanMedia', () {
+      test('pairs each attachment with its signed url', () {
+        final out = joinScanMedia(
+          const [
+            {'path': 'reports/r1/a.jpg', 'kind': 'photo'},
+            {'path': 'reports/r1/clip.mp4', 'kind': 'video'},
+          ],
+          const {
+            'ok': true,
+            'photos': [
+              {'path': 'reports/r1/a.jpg', 'url': 'https://s/a'},
+              {'path': 'reports/r1/clip.mp4', 'url': 'https://s/c'},
+            ],
+          },
+        );
+
+        expect(out, hasLength(2));
+        expect(out[0].isVideo, isFalse);
+        expect(out[0].url, 'https://s/a');
+        expect(out[1].isVideo, isTrue,
+            reason: 'the video must survive the join, not be filtered out');
+      });
+
+      test('a video-only report still yields an attachment', () {
+        // The case that motivated including videos at all. There is no
+        // thumbnail stored for one, so the easy implementation drops them -
+        // and the report then reaches the agency looking like it has no
+        // evidence attached.
+        final out = joinScanMedia(
+          const [
+            {'path': 'reports/r1/clip.mp4', 'kind': 'video'}
+          ],
+          const {
+            'ok': true,
+            'photos': [
+              {'path': 'reports/r1/clip.mp4', 'url': 'https://s/c'}
+            ],
+          },
+        );
+
+        expect(out, hasLength(1));
+        expect(out.single.isVideo, isTrue);
+      });
+
+      test('urls are matched by path, never by position', () {
+        // A reordered signing response must not pair a url with the wrong
+        // attachment - the same failure AdminReportsNotifier.fetchMedia was
+        // fixed for.
+        final out = joinScanMedia(
+          const [
+            {'path': 'a', 'kind': 'photo'},
+            {'path': 'b', 'kind': 'photo'},
+          ],
+          const {
+            'photos': [
+              {'path': 'b', 'url': 'https://s/B'},
+              {'path': 'a', 'url': 'https://s/A'},
+            ],
+          },
+        );
+
+        expect(out[0].path, 'a');
+        expect(out[0].url, 'https://s/A');
+        expect(out[1].url, 'https://s/B');
+      });
+
+      test('an object that failed to sign is dropped, not shown broken', () {
+        final out = joinScanMedia(
+          const [
+            {'path': 'a', 'kind': 'photo'},
+            {'path': 'b', 'kind': 'photo'},
+          ],
+          const {
+            'photos': [
+              {'path': 'a', 'url': 'https://s/A'}
+            ],
+          },
+        );
+
+        expect(out, hasLength(1));
+        expect(out.single.path, 'a');
+      });
+
+      test('a failed response yields nothing rather than throwing', () {
+        expect(
+          joinScanMedia(
+            const [
+              {'path': 'a', 'kind': 'photo'}
+            ],
+            const {'ok': false, 'error': 'server_error'},
+          ),
+          isEmpty,
+        );
+        expect(joinScanMedia(const [], null), isEmpty);
+      });
+
+      test('malformed rows are skipped', () {
+        final out = joinScanMedia(
+          const [
+            'not a map',
+            {'kind': 'photo'},
+            {'path': 'a', 'kind': 'photo'},
+          ],
+          const {
+            'photos': [
+              {'path': 'a', 'url': 'https://s/A'}
+            ],
+          },
+        );
+
+        expect(out, hasLength(1));
+      });
+    });
+  });
+
 }

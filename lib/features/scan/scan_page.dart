@@ -6,7 +6,9 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/theme/citizen_ui.dart';
+import '../../core/widgets/media_viewer.dart';
 import '../admin/widgets/admin_skeleton.dart';
+import '../admin/widgets/report_detail_kit.dart' show NetworkVideoDialog;
 
 // ════════════════════════════════════════════════════════════════════════════
 //  /scan/<token> — the public endorsement confirmation page
@@ -146,6 +148,16 @@ class _ScanPageState extends State<ScanPage> {
   bool _loading = true;
   bool _submitting = false;
 
+  /// The citizen's attachments, once signed.
+  ///
+  /// Loaded SEPARATELY from the report itself and never blocking it: the
+  /// signing round trip is the slowest thing on this page, and an officer
+  /// standing in the road should not wait on photographs to read the address.
+  /// A failure here leaves [_mediaFailed] set and the rest of the page intact.
+  List<ScanMedia> _media = const [];
+  bool _mediaLoading = false;
+  bool _mediaFailed = false;
+
   /// Fatal: the token is bad or the lookup failed. Replaces the whole page.
   String? _fatal;
 
@@ -196,12 +208,56 @@ class _ScanPageState extends State<ScanPage> {
         _data = map;
         _loading = false;
       });
+
+      // Kicked off after the report is on screen, deliberately unawaited.
+      _loadMedia(map);
     } catch (_) {
       // Network or server trouble — distinct from an invalid token, because
       // one is worth retrying and the other never will be.
       setState(() {
         _loading = false;
         _fatal = 'network';
+      });
+    }
+  }
+
+  /// Exchanges the token for short-lived signed urls.
+  ///
+  /// The paths in [map] are inert on their own — `report-media` is a PRIVATE
+  /// bucket with no anon SELECT policy — so they are useless until the
+  /// `scan-endorsement-media` Edge Function signs them with the service key. A
+  /// SECURITY DEFINER function cannot do this: signed urls are HMAC-signed by
+  /// the Storage service, not by the database.
+  Future<void> _loadMedia(Map<String, dynamic> map) async {
+    final report = (map['report'] as Map?) ?? const {};
+    final raw = (report['media'] as List?) ?? const [];
+    if (raw.isEmpty) return;
+
+    setState(() {
+      _mediaLoading = true;
+      _mediaFailed = false;
+    });
+
+    try {
+      final res = await Supabase.instance.client.functions.invoke(
+        'scan-endorsement-media',
+        body: {'token': widget.token},
+      );
+      final out = joinScanMedia(raw, res.data);
+
+      if (!mounted) return;
+      setState(() {
+        _media = out;
+        _mediaLoading = false;
+        // Some attachments exist but none could be signed — worth saying,
+        // rather than rendering an empty space where evidence should be.
+        _mediaFailed = out.isEmpty;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _mediaLoading = false;
+        _mediaFailed = true;
       });
     }
   }
@@ -717,6 +773,15 @@ class _ScanPageState extends State<ScanPage> {
               _timeline(d, report),
 
               _block('Description as reported', report['description']),
+              // Directly under the citizen's words, because the photographs
+              // are the same statement in another form - and above the basis
+              // for endorsement, which is the LGU's voice rather than theirs.
+              _MediaStrip(
+                media: _media,
+                loading: _mediaLoading,
+                failed: _mediaFailed,
+              ),
+              const SizedBox(height: 4),
               _block('Basis for endorsement', d['reason']),
             ],
           ),
@@ -2036,4 +2101,261 @@ class _FracBox extends StatelessWidget {
       },
     );
   }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  The citizen's attachments
+// ════════════════════════════════════════════════════════════════════════════
+
+/// One signed attachment on the scanned report.
+///
+/// Public so scan_page_test can build one directly - see
+/// [joinScanMedia] for why the widget path is untestable.
+class ScanMedia {
+  /// The storage path — stable, and therefore the image cache key. The signed
+  /// url carries an expiry in its query string and changes on every load, so
+  /// caching by url would re-download every photo on every visit.
+  final String path;
+  final String url;
+  final bool isVideo;
+
+  const ScanMedia({
+    required this.path,
+    required this.url,
+    required this.isVideo,
+  });
+}
+
+/// The attachment strip: photos open the shared gallery, videos open a player.
+///
+/// Videos are shown rather than skipped. There is no thumbnail stored for one
+/// (report_media has no such column, and the citizen app's local preview is
+/// never uploaded), so a video draws a PLAY tile — the same answer the admin
+/// console already gives. Skipping them would mean a report whose only evidence
+/// is a clip of moving floodwater reaches the agency looking like a report with
+/// no evidence at all.
+class _MediaStrip extends StatelessWidget {
+  final List<ScanMedia> media;
+  final bool loading;
+  final bool failed;
+
+  const _MediaStrip({
+    required this.media,
+    required this.loading,
+    required this.failed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (!loading && !failed && media.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 14),
+        const Text(
+          'Attached by the resident',
+          style: TextStyle(
+            fontSize: 11.5,
+            fontWeight: FontWeight.w700,
+            color: _muted,
+            letterSpacing: 0.3,
+          ),
+        ),
+        const SizedBox(height: 8),
+        if (loading)
+          // A shaped placeholder rather than a spinner, for the same reason the
+          // page's own skeleton is shaped: the officer is on mobile data
+          // outdoors and the strip should hold its space rather than appear
+          // suddenly and push the buttons down under their thumb.
+          Row(
+            children: [
+              for (var i = 0; i < 3; i++) ...[
+                if (i > 0) const SizedBox(width: 8),
+                const AdminShimmer(
+                  child: SizedBox(
+                    width: 84,
+                    height: 84,
+                    child: ColoredBox(color: Color(0xFFE5E7EB)),
+                  ),
+                ),
+              ],
+            ],
+          )
+        else if (failed)
+          const Text(
+            'The photographs could not be loaded. Pull to refresh, or ask the '
+            'Municipality for a copy.',
+            style: TextStyle(fontSize: 12.5, color: _muted, height: 1.4),
+          )
+        else
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (var i = 0; i < media.length; i++)
+                _MediaTile(media: media, index: i),
+            ],
+          ),
+      ],
+    );
+  }
+}
+
+/// One tile: a photo thumbnail, or a play tile for a video.
+class _MediaTile extends StatelessWidget {
+  final List<ScanMedia> media;
+  final int index;
+
+  const _MediaTile({required this.media, required this.index});
+
+  @override
+  Widget build(BuildContext context) {
+    final m = media[index];
+    const size = 84.0;
+
+    return Semantics(
+      button: true,
+      label: m.isVideo
+          ? 'Video attachment ${index + 1}. Opens a player.'
+          : 'Photo ${index + 1} of ${media.length}. Opens full screen.',
+      child: Material(
+        color: const Color(0xFFE5E7EB),
+        borderRadius: BorderRadius.circular(8),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => _open(context),
+          child: SizedBox(
+            width: size,
+            height: size,
+            child: m.isVideo ? _videoTile() : _photoTile(m),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _open(BuildContext context) {
+    if (media[index].isVideo) {
+      showDialog<void>(
+        context: context,
+        barrierColor: Colors.black87,
+        builder: (_) => NetworkVideoDialog(url: media[index].url),
+      );
+      return;
+    }
+    // Videos are skipped when building the gallery, so the index has to be
+    // recomputed against the photos-only list or a tap opens the wrong image.
+    final photos = [for (final s in media) if (!s.isVideo) s];
+    final start = photos.indexWhere((s) => s.path == media[index].path);
+    openMediaViewer(
+      context,
+      urls: [for (final s in photos) s.url],
+      // Signed urls carry an expiry and change on every load; the storage path
+      // is what stays stable enough to cache by.
+      cacheKeys: [for (final s in photos) s.path],
+      initialIndex: start < 0 ? 0 : start,
+    );
+  }
+
+  Widget _photoTile(ScanMedia m) => Stack(
+        fit: StackFit.expand,
+        children: [
+          Image.network(
+            m.url,
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => const Center(
+              child: Icon(Icons.broken_image_outlined,
+                  size: 18, color: _muted),
+            ),
+          ),
+          const Positioned(
+            right: 3,
+            bottom: 3,
+            child: _TileGlyph(icon: Icons.zoom_out_map_rounded),
+          ),
+        ],
+      );
+
+  /// A video has no frame to show, so the tile says what it is in words as
+  /// well as with the play mark — an unlabelled dark square reads as a photo
+  /// that failed to load.
+  Widget _videoTile() => Container(
+        color: const Color(0xFF1F2937),
+        alignment: Alignment.center,
+        child: const Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.play_circle_fill_rounded,
+                size: 30, color: Colors.white),
+            SizedBox(height: 3),
+            Text(
+              'Video',
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              ),
+            ),
+          ],
+        ),
+      );
+}
+
+class _TileGlyph extends StatelessWidget {
+  final IconData icon;
+  const _TileGlyph({required this.icon});
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+        decoration: const BoxDecoration(
+          color: Color(0x8A000000),
+          shape: BoxShape.circle,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(3),
+          child: Icon(icon, size: 11, color: Colors.white),
+        ),
+      );
+}
+
+/// Joins the RPC's attachment list to the Edge Function's signed urls.
+///
+/// Split out of the widget and made top-level ON PURPOSE: `functions.invoke`
+/// decodes its response inside a `YAJsonIsolate`, which does not run under
+/// flutter_test's fake async — so a widget test can never observe the result of
+/// a real invoke. This is where the logic worth testing lives (the join, the
+/// dropping of unsigned objects, the photo/video split), and it is testable
+/// directly.
+///
+/// [rows] is `report.media` from scan_endorsement — `{path, kind}` objects.
+/// [response] is the function's body, `{ok, photos: [{path, url}]}`.
+///
+/// Kinds come from the RPC and urls from the function, joined ON PATH, so a
+/// reordered or partial signing response can never pair a url with the wrong
+/// attachment. An object that failed to sign is dropped rather than rendered
+/// as a broken tile.
+@visibleForTesting
+List<ScanMedia> joinScanMedia(List<dynamic> rows, dynamic response) {
+  final map = response is Map ? Map<String, dynamic>.from(response) : const {};
+  final signed = <String, String>{
+    for (final p in (map['photos'] as List? ?? const []))
+      if (p is Map && p['path'] is String && p['url'] is String)
+        p['path'] as String: p['url'] as String,
+  };
+
+  final out = <ScanMedia>[];
+  for (final m in rows) {
+    if (m is! Map) continue;
+    final path = m['path'] as String?;
+    if (path == null) continue;
+    final url = signed[path];
+    if (url == null) continue;
+    out.add(ScanMedia(
+      path: path,
+      url: url,
+      isVideo: (m['kind'] as String?) == 'video',
+    ));
+  }
+  return out;
 }

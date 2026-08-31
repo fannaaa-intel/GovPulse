@@ -549,3 +549,16 @@ enabled = true
 # the accident that flipped check-email-exists.
 verify_jwt = true
 entrypoint = "./functions/post-endorsement-media/index.ts"
+
+[functions.scan-endorsement-media]
+enabled = true
+# true, and satisfied by the publishable anon key that functions.invoke()
+# attaches — which is what lets the account-less agency on the scan page reach
+# it with no session at all. The JWT is NOT the gate here: this endpoint is
+# authorised by the endorsement TOKEN, and the caller never names a path — it
+# sends a token and the database decides which objects belong to it
+# (endorsement_media_paths, service_role only). Declared explicitly because an
+# UNDECLARED function silently takes the CLI default on its next deploy — the
+# accident that flipped check-email-exists.
+verify_jwt = true
+entrypoint = "./functions/scan-endorsement-media/index.ts"
