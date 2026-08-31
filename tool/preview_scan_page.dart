@@ -11,7 +11,16 @@
 // Run:
 //   flutter run -d web-server --web-port 57820 -t tool/preview_scan_page.dart
 //
-// then append ?state=received (or completed / withdrawn) to the URL.
+// Query parameters:
+//   ?state=endorsed|received|completed|withdrawn   which lifecycle state
+//   &delay=3000                                    ms before the RPC answers,
+//                                                  so the SKELETON is visible
+//                                                  (it is otherwise gone in one
+//                                                  frame and cannot be looked at)
+//   &w=320                                         clamp the viewport width, to
+//                                                  check the page holds together
+//                                                  on a small phone without
+//                                                  resizing the browser
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -25,10 +34,17 @@ import 'package:govpulse/features/scan/scan_page.dart';
 /// attempts-remaining copy are previewable too.
 class _MockApi extends http.BaseClient {
   final String state;
-  _MockApi(this.state);
+
+  /// Held before answering, so the loading state can actually be looked at.
+  /// Without it the mock resolves in the same frame the page mounts and the
+  /// skeleton is unobservable — which is how a bare spinner survived here.
+  final Duration delay;
+
+  _MockApi(this.state, {this.delay = Duration.zero});
 
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    if (delay > Duration.zero) await Future<void>.delayed(delay);
     final path = request.url.path;
     final Object body;
 
@@ -70,20 +86,56 @@ class _MockApi extends http.BaseClient {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  final state = Uri.base.queryParameters['state'] ?? 'endorsed';
+  final q = Uri.base.queryParameters;
+  final state = q['state'] ?? 'endorsed';
+  final delayMs = int.tryParse(q['delay'] ?? '') ?? 0;
+  final width = double.tryParse(q['w'] ?? '');
 
   await Supabase.initialize(
     url: 'https://preview.invalid',
     anonKey: 'preview-not-a-real-key',
-    httpClient: _MockApi(state),
+    httpClient: _MockApi(state, delay: Duration(milliseconds: delayMs)),
     authOptions: const FlutterAuthClientOptions(detectSessionInUri: false),
     debug: false,
   );
 
+  const page = ScanPage(token: 'preview-token');
+
   runApp(
-    const MaterialApp(
+    MaterialApp(
       debugShowCheckedModeBanner: false,
-      home: ScanPage(token: 'preview-token'),
+      home: width == null
+          ? page
+          // A hard viewport clamp rather than a browser resize: the narrow end
+          // (320px) is where this page's fixed widths — the tracker labels, the
+          // 116px detail column, the letter-spaced PIN field — either fit or
+          // overflow, and dragging a window to exactly 320 by hand is not a
+          // repeatable check.
+          : Align(
+              alignment: Alignment.topCenter,
+              child: SizedBox(
+                width: width,
+                child: MediaQuery(
+                  data: MediaQueryData(size: Size(width, 900)),
+                  child: const _Ruler(child: page),
+                ),
+              ),
+            ),
     ),
   );
+}
+
+/// Draws a hairline border round the clamped viewport so an overflow past its
+/// edge is visible rather than merely being clipped by the window.
+class _Ruler extends StatelessWidget {
+  final Widget child;
+  const _Ruler({required this.child});
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border.all(color: const Color(0xFFEF4444)),
+        ),
+        child: child,
+      );
 }

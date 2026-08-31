@@ -245,9 +245,240 @@ void main() {
     });
   });
 
+  // ── Completing is two presses ────────────────────────────────────────────
+  //
+  // It used to be one, with nothing but a PIN, which left the resident with a
+  // status change and no account of what was actually done — and, because §11
+  // of migration 20260829000001 keys the completion gallery on an APPROVED
+  // completion update existing, no photographs either. The agency path created
+  // no such update, so an agency completion published a resolved report with
+  // nothing attached to it at all.
+  group('marking completed', () {
+    testWidgets('the first press opens a form rather than completing',
+        (tester) async {
+      await _boot(_MockApi('received'));
+      await tester.pumpWidget(_host());
+      await tester.pumpAndSettle();
+
+      // Before: an invitation, not a form.
+      expect(find.text('Mark Completed'), findsOneWidget);
+      expect(find.text('Record the completed work'), findsNothing);
+
+      await _tapAfterScroll(tester, find.text('Mark Completed'));
+
+      // After: the account is asked for, and the button that actually commits
+      // is a DIFFERENT one, so the press that opened the form cannot also have
+      // sent it.
+      expect(find.text('Record the completed work'), findsOneWidget);
+      expect(find.byKey(const Key('scan-completion-body')), findsOneWidget);
+      expect(find.text('Submit & Complete'), findsOneWidget);
+      expect(find.text('Mark Completed'), findsNothing);
+    });
+
+    testWidgets('a completion with no note is refused before the PIN is spent',
+        (tester) async {
+      // The mock answers every write with bad_pin. If the client let this
+      // through, the assertion below would find the PIN message instead — which
+      // is exactly the bug: a missing note is the officer's omission, not a bad
+      // credential, and must not consume one of their five attempts.
+      await _boot(_MockApi('received'));
+      await tester.pumpWidget(_host());
+      await tester.pumpAndSettle();
+
+      await _tapAfterScroll(tester, find.text('Mark Completed'));
+      await tester.enterText(find.byKey(const Key('scan-confirm-pin')), '1234');
+      await tester.pumpAndSettle();
+      await _tapAfterScroll(tester, find.text('Submit & Complete'));
+
+      expect(
+        find.textContaining('Describe what was done'),
+        findsWidgets,
+        reason: 'the note must be demanded before the PIN is checked',
+      );
+      expect(find.textContaining('not correct'), findsNothing);
+    });
+
+    testWidgets('there is a way back out of the completion step',
+        (tester) async {
+      await _boot(_MockApi('received'));
+      await tester.pumpWidget(_host());
+      await tester.pumpAndSettle();
+
+      await _tapAfterScroll(tester, find.text('Mark Completed'));
+      expect(find.text('Submit & Complete'), findsOneWidget);
+
+      // Nothing has been sent at this point, so leaving must cost the officer
+      // only what they typed. A two-step form with no exit is a trap.
+      await _tapAfterScroll(tester, find.text('Not yet — go back'));
+      expect(find.text('Mark Completed'), findsOneWidget);
+      expect(find.text('Submit & Complete'), findsNothing);
+    });
+
+    testWidgets('the completion form offers photos', (tester) async {
+      await _boot(_MockApi('received'));
+      await tester.pumpWidget(_host());
+      await tester.pumpAndSettle();
+
+      await _tapAfterScroll(tester, find.text('Mark Completed'));
+      expect(
+        find.textContaining('PHOTOS OF THE COMPLETED WORK'),
+        findsOneWidget,
+      );
+      // Two pickers on the page now: the progress composer's and this one.
+      expect(find.text('Add photos'), findsNWidgets(2));
+    });
+  });
+
+  // ── The detail card's information design ─────────────────────────────────
+  group('the report facts are grouped, not listed flat', () {
+    testWidgets('the milestones read as a dated sequence', (tester) async {
+      await _boot(_MockApi('received'));
+      await tester.pumpWidget(_host());
+      await tester.pumpAndSettle();
+
+      // Reported → Endorsed → Received is ONE sequence. As four identical
+      // label/value rows that was invisible; as dated steps it answers "how
+      // long has this been sitting with us" at a glance.
+      expect(find.text('Reported by resident'), findsOneWidget);
+      expect(find.text('Endorsed to DPWH'), findsOneWidget);
+      expect(find.text('Receipt confirmed'), findsOneWidget);
+
+      // A milestone that has not happened is ABSENT, not rendered as "—".
+      // Placeholder rows for the future are noise on a phone held outdoors.
+      expect(find.text('Work completed'), findsNothing);
+    });
+
+    testWidgets('completion joins the sequence once it happens',
+        (tester) async {
+      await _boot(_MockApi('completed'));
+      await tester.pumpWidget(_host());
+      await tester.pumpAndSettle();
+
+      expect(find.text('Work completed'), findsOneWidget);
+    });
+
+    testWidgets('the milestones are actually JOINED by a rail', (tester) async {
+      // ⚠ The connector between the dots silently collapsed to zero height in
+      // the first draft: an `Expanded` inside a bare Column has nothing bounded
+      // to expand into, so the line rendered at 0px and the dots floated
+      // unconnected. Nothing errored, nothing overflowed, and the analyzer was
+      // perfectly happy — only a screenshot caught it.
+      //
+      // Measuring the painted height is what makes this test worth having;
+      // asserting the widget merely EXISTS would have passed on the broken
+      // version too.
+      await _boot(_MockApi('completed'));
+      await tester.pumpWidget(_host());
+      await tester.pumpAndSettle();
+
+      final connectors = tester
+          .widgetList<ColoredBox>(find.byType(ColoredBox))
+          .where((b) => b.color == const Color(0xFFA7F3D0))
+          .toList();
+      expect(
+        connectors,
+        isNotEmpty,
+        reason: 'the timeline should draw connectors between its dots',
+      );
+
+      final heights = find
+          .byWidgetPredicate((w) =>
+              w is ColoredBox && w.color == const Color(0xFFA7F3D0))
+          .evaluate()
+          .map((e) => e.renderObject! as RenderBox)
+          .map((r) => r.size.height)
+          .toList();
+      expect(
+        heights.every((h) => h > 0),
+        isTrue,
+        reason: 'a connector collapsed to zero height: $heights',
+      );
+    });
+
+    testWidgets('the location is lifted out of the timestamp rows',
+        (tester) async {
+      await _boot(_MockApi('received'));
+      await tester.pumpWidget(_host());
+      await tester.pumpAndSettle();
+
+      // It is the one fact the officer has to ACT on — they are standing in
+      // the street looking for the place — and the one that wraps to several
+      // lines. Sharing a 116px label column with four dates made the longest
+      // and most useful value the most cramped.
+      expect(find.text('LOCATION'), findsOneWidget);
+      expect(
+        find.textContaining('Near Lyceum of Aparri'),
+        findsOneWidget,
+      );
+    });
+  });
+
+  // ── Ranking the two actions ──────────────────────────────────────────────
+  group('only one action is a filled button at a time', () {
+    testWidgets('the completion opener is outlined, the composer is filled',
+        (tester) async {
+      await _boot(_MockApi('received'));
+      await tester.pumpWidget(_host());
+      await tester.pumpAndSettle();
+
+      // "Mark Completed" only OPENS the form here; a solid green button gave
+      // the page two equally loud primaries competing for the same attention,
+      // when one is done many times and the other once, irreversibly.
+      expect(
+        find.widgetWithText(OutlinedButton, 'Mark Completed'),
+        findsOneWidget,
+      );
+      expect(find.widgetWithText(FilledButton, 'Post update'), findsOneWidget);
+    });
+
+    testWidgets('the solid green is spent on the press that actually commits',
+        (tester) async {
+      await _boot(_MockApi('received'));
+      await tester.pumpWidget(_host());
+      await tester.pumpAndSettle();
+
+      await _tapAfterScroll(tester, find.text('Mark Completed'));
+
+      expect(
+        find.widgetWithText(FilledButton, 'Submit & Complete'),
+        findsOneWidget,
+      );
+    });
+  });
+
+  testWidgets('a completed report does not congratulate itself twice',
+      (tester) async {
+    // Two green panels used to stack the moment an officer completed: the
+    // "Recorded…" banner AND the "already completed" card, saying the same
+    // thing in different words.
+    await _boot(_MockApi('completed'));
+    await tester.pumpWidget(_host());
+    await tester.pumpAndSettle();
+
+    // On a LATER scan (nothing just advanced) the standing notice is the only
+    // one, and it must still be there — it is the whole answer to "what do I
+    // do now".
+    expect(find.textContaining('already completed'), findsOneWidget);
+    expect(find.textContaining('now marked completed'), findsNothing);
+  });
+
+  // Migration 20260829000001 §10 concluded "an agency update is text only",
+  // reasoning from the credential rather than from the need. The agency is the
+  // party standing at the site with a phone; theirs is the update that most
+  // needs a photograph. Uploads now go through an Edge Function that re-checks
+  // the PIN, so the account is no longer what gates them.
+  testWidgets('the progress composer offers photos too', (tester) async {
+    await _boot(_MockApi('received'));
+    await tester.pumpWidget(_host());
+    await tester.pumpAndSettle();
+
+    expect(find.text('Post a progress update'), findsOneWidget);
+    expect(find.text('PHOTOS (OPTIONAL)'), findsOneWidget);
+  });
+
   // The page is opened on a phone held in one hand, outdoors, essentially
-  // always — and now carries a three-step tracker, two PIN fields and a
-  // multiline composer that did not exist before.
+  // always — and now carries a three-step tracker, two PIN fields, two photo
+  // pickers and a multiline composer that did not exist before.
   group('lays out on every phone', () {
     for (final state in ['endorsed', 'received', 'completed', 'withdrawn']) {
       for (final device in kAllPhones) {
@@ -266,5 +497,30 @@ void main() {
     final overflows =
         await pumpAt(tester, kSmallPhone, _host, textScale: 1.6);
     expect(overflows, isEmpty, reason: overflows.join('\n'));
+  });
+
+  // ⚠ The matrix above never sees the completion form: it renders only in the
+  // `received` state and only after a tap, so a page pumped and measured
+  // straight away is measuring the collapsed card. That is the newest and
+  // densest layout on this page — a 5-line field, a photo picker, a PIN box and
+  // two buttons — and it is exactly the one most likely to overflow.
+  group('the expanded completion form lays out too', () {
+    for (final device in kAllPhones) {
+      testWidgets('at $device', (tester) async {
+        await _boot(_MockApi('received'));
+        final overflows = await pumpAt(
+          tester,
+          device,
+          _host,
+          after: (t) async {
+            await t.ensureVisible(find.text('Mark Completed'));
+            await t.pumpAndSettle();
+            await t.tap(find.text('Mark Completed'));
+            await t.pumpAndSettle();
+          },
+        );
+        expect(overflows, isEmpty, reason: overflows.join('\n'));
+      });
+    }
   });
 }

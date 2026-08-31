@@ -76,6 +76,14 @@ Future<List<String>> pumpAt(
   Device device,
   Widget Function() build, {
   double textScale = 1.0,
+
+  /// Driven after the first settle, still inside the overflow trap, so a layout
+  /// that only exists behind an interaction can be measured too.
+  ///
+  /// Without it a matrix silently measures the COLLAPSED form of any screen
+  /// whose densest layout is one tap away — an expanded panel, a revealed step,
+  /// a sheet — and reports a clean pass for a layout it never rendered.
+  Future<void> Function(WidgetTester)? after,
 }) async {
   await tester.pumpWidget(const SizedBox.shrink());
 
@@ -107,6 +115,12 @@ Future<List<String>> pumpAt(
     // a citizen actually looks at. `pumpAndSettle` is not an option — several
     // of these screens shimmer on a repeating controller and never settle.
     await tester.pump(const Duration(milliseconds: 600));
+    // Inside the try, so an overflow the interaction CAUSES is still caught by
+    // the trap above rather than escaping to the default handler.
+    if (after != null) {
+      await after(tester);
+      await tester.pump(const Duration(milliseconds: 600));
+    }
   } finally {
     FlutterError.onError = prev;
   }
