@@ -7,6 +7,7 @@ import 'package:video_player/video_player.dart';
 import '../../features/admin/widgets/admin_skeleton.dart';
 import '../theme/app_colors.dart';
 import 'app_dialog.dart';
+import 'media_viewer.dart';
 
 /// Completion ("after") photos & videos an LGU office / admin attaches when a
 /// report is marked RESOLVED. Shown to the citizen on their resolved report so
@@ -350,6 +351,10 @@ class _ResolutionMediaSectionState extends State<ResolutionMediaSection> {
                     for (final m in _items)
                       _Thumb(
                         item: m,
+                        // The whole set, so tapping a PHOTO opens the shared
+                        // gallery and a swipe moves through the others rather
+                        // than dead-ending on the one that was pressed.
+                        siblings: _items,
                         size: size,
                         canDelete: widget.canEdit,
                         onDelete: () => _confirmRemove(m),
@@ -767,10 +772,14 @@ class _Thumb extends StatelessWidget {
   /// LayoutBuilder in the card's build. Not a constant, because a fixed size
   /// left the add tile orphaned on its own row at the admin pane's width.
   final double size;
+
+  /// Every item in this grid, in display order — the gallery a photo tap opens.
+  final List<_ResolutionItem> siblings;
   final bool canDelete;
   final VoidCallback onDelete;
   const _Thumb({
     required this.item,
+    required this.siblings,
     required this.size,
     required this.canDelete,
     required this.onDelete,
@@ -782,12 +791,26 @@ class _Thumb extends StatelessWidget {
       children: [
         GestureDetector(
           onTap: () {
-            showAppDialog(
-              context: context,
-              barrierColor: Colors.black87,
-              builder: (_) => item.isVideo
-                  ? _ResolutionVideoDialog(url: item.url)
-                  : _ResolutionImageDialog(url: item.url),
+            // Video keeps its own dialog — the shared viewer is a photo
+            // gallery and has no player. A PHOTO opens the same full-screen
+            // viewer as the citizen's report detail, so zoom, swipe and the
+            // counter behave identically wherever report imagery appears.
+            if (item.isVideo) {
+              showAppDialog(
+                context: context,
+                barrierColor: Colors.black87,
+                builder: (_) => _ResolutionVideoDialog(url: item.url),
+              );
+              return;
+            }
+            // Videos are skipped rather than shown as a blank page, so the
+            // index has to be recomputed against the photos-only list.
+            final photos = [for (final s in siblings) if (!s.isVideo) s];
+            final start = photos.indexWhere((s) => s.url == item.url);
+            openMediaViewer(
+              context,
+              urls: [for (final s in photos) s.url],
+              initialIndex: start < 0 ? 0 : start,
             );
           },
           child: ClipRRect(
@@ -886,34 +909,7 @@ class _Thumb extends StatelessWidget {
   }
 }
 
-// ── Full-screen viewers ───────────────────────────────────────────────────────
-
-class _ResolutionImageDialog extends StatelessWidget {
-  final String url;
-  const _ResolutionImageDialog({required this.url});
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      insetPadding: EdgeInsets.zero,
-      child: Stack(
-        children: [
-          Center(
-            child: InteractiveViewer(
-              child: CachedNetworkImage(imageUrl: url, fit: BoxFit.contain),
-            ),
-          ),
-          Positioned(
-            top: 40,
-            right: 16,
-            child: _CloseChip(onTap: () => Navigator.pop(context)),
-          ),
-        ],
-      ),
-    );
-  }
-}
+// ── Full-screen video viewer ───────────────────────────────────────────────────────
 
 class _ResolutionVideoDialog extends StatefulWidget {
   final String url;

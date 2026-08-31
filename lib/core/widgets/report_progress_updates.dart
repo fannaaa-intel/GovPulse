@@ -7,6 +7,7 @@ import '../../features/admin/widgets/admin_skeleton.dart';
 import '../theme/app_colors.dart';
 import 'app_dialog.dart';
 import 'app_snackbar.dart';
+import 'media_viewer.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  Progress updates — the running account under a report's status
@@ -1024,20 +1025,18 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
               spacing: 6,
               runSpacing: 6,
               children: [
-                for (final m in u.media)
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: CachedNetworkImage(
-                      imageUrl: m.url,
-                      width: 84,
-                      height: 84,
-                      fit: BoxFit.cover,
-                      errorWidget: (_, _, _) => const SizedBox(
-                        width: 84,
-                        height: 84,
-                        child: Icon(Icons.broken_image_outlined, size: 18),
-                      ),
-                    ),
+                // Tapping opens the SAME full-screen gallery the citizen's
+                // report detail uses - swipe between photos, pinch to zoom.
+                // These were bare thumbnails: 84px of a pothole says nothing,
+                // and there was no way to look closer.
+                //
+                // The whole update's media list is handed over, opening at the
+                // tapped index, so a swipe moves through that update's photos
+                // rather than dead-ending on the one that was pressed.
+                for (var i = 0; i < u.media.length; i++)
+                  _UpdateThumb(
+                    media: u.media,
+                    index: i,
                   ),
               ],
             ),
@@ -1248,6 +1247,81 @@ class _AllUpdatesSheet extends StatelessWidget {
                     padding: const EdgeInsets.fromLTRB(14, 12, 14, 18),
                     itemCount: updates.length,
                     itemBuilder: (_, i) => tile(updates[i]),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One photo on an update, tappable into the shared full-screen viewer.
+///
+/// Split out of the update card so the tap target, the hover affordance and
+/// the error box are described once. [media] is the whole update's list rather
+/// than a single url so the viewer opens as a gallery.
+class _UpdateThumb extends StatelessWidget {
+  final List<_UpdateMedia> media;
+  final int index;
+
+  const _UpdateThumb({required this.media, required this.index});
+
+  @override
+  Widget build(BuildContext context) {
+    const size = 84.0;
+    return Semantics(
+      button: true,
+      label: 'Photo ${index + 1} of ${media.length}. Opens full screen.',
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => openMediaViewer(
+            context,
+            urls: [for (final m in media) m.url],
+            // Update photos live in the PUBLIC resolution-media bucket, so the
+            // url is stable and works as its own cache key.
+            initialIndex: index,
+          ),
+          child: SizedBox(
+            width: size,
+            height: size,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                CachedNetworkImage(
+                  imageUrl: media[index].url,
+                  fit: BoxFit.cover,
+                  placeholder: (_, _) => Container(
+                    color: const Color(0xFFEEF1F6),
+                  ),
+                  errorWidget: (_, _, _) => Container(
+                    color: const Color(0xFFEEF1F6),
+                    child: const Icon(Icons.broken_image_outlined, size: 18),
+                  ),
+                ),
+                // A small glyph is the only thing marking these as openable —
+                // a bare photo in a card does not read as a control.
+                const Positioned(
+                  right: 3,
+                  bottom: 3,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Color(0x8A000000),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Padding(
+                      padding: EdgeInsets.all(3),
+                      child: Icon(
+                        Icons.zoom_out_map_rounded,
+                        size: 11,
+                        color: Colors.white,
+                      ),
+                    ),
                   ),
                 ),
               ],

@@ -12,6 +12,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../../../../core/services/chat_service.dart';
 import '../Quick-action/Chat-with-Agent/chat_agent_screen.dart';
 import '../../../core/theme/citizen_ui.dart';
+import '../../../core/widgets/media_viewer.dart';
 import '../../../core/widgets/Home/Account/account_web_kit.dart';
 import '../../../core/theme/mobile_metrics.dart';
 // ─── Timeline step model ──────────────────────────────────────────────────────
@@ -2381,28 +2382,14 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
   }
 
   void _openMediaViewer(int initialIndex) {
-    if (_mediaItems.isEmpty) return;
-    // On WEB this screen renders inside the shell's centre column, and its
-    // BRANCH navigator bounds the viewer: the barrier stopped at the column,
-    // so the left rail and the quick-actions sidebar stayed bright either side
-    // of a black strip. The root navigator is the whole window.
-    //
-    // Same fix, same reason, as the news feed card's [openImageViewer] call.
-    // kIsWeb rather than a bare `true` so MOBILE takes exactly the path it
-    // takes today - there `Navigator.of(context, rootNavigator: false)` is
-    // what the bare `Navigator.push(context, ...)` already resolved to.
-    Navigator.of(context, rootNavigator: kIsWeb).push(
-      PageRouteBuilder(
-        opaque: false,
-        barrierColor: Colors.black87,
-        pageBuilder: (_, _, _) => _MediaViewerScreen(
-          urls: _mediaItems.map((e) => e.url).toList(),
-          cacheKeys: _mediaItems.map((e) => e.path).toList(),
-          initialIndex: initialIndex,
-        ),
-        transitionsBuilder: (_, anim, _, child) =>
-            FadeTransition(opacity: anim, child: child),
-      ),
+    // The viewer, the route and the web root-navigator fix all moved to
+    // core/widgets/media_viewer.dart so the progress-update and completion
+    // galleries open the SAME one rather than a lookalike.
+    openMediaViewer(
+      context,
+      urls: [for (final m in _mediaItems) m.url],
+      cacheKeys: [for (final m in _mediaItems) m.path],
+      initialIndex: initialIndex,
     );
   }
 
@@ -2428,160 +2415,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
     } finally {
       if (mounted) setState(() => _openingChat = false);
     }
-  }
-}
-
-// ─── Media viewer ─────────────────────────────────────────────────────────────
-
-class _MediaViewerScreen extends StatefulWidget {
-  final List<String> urls;
-  final List<String> cacheKeys;
-  final int initialIndex;
-
-  const _MediaViewerScreen({
-    required this.urls,
-    required this.cacheKeys,
-    required this.initialIndex,
-  });
-  @override
-  State<_MediaViewerScreen> createState() => _MediaViewerScreenState();
-}
-
-class _MediaViewerScreenState extends State<_MediaViewerScreen> {
-  late final PageController _pageCtrl;
-  late int _current;
-
-  @override
-  void initState() {
-    super.initState();
-    _current = widget.initialIndex;
-    _pageCtrl = PageController(initialPage: widget.initialIndex);
-  }
-
-  @override
-  void dispose() {
-    _pageCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          PageView.builder(
-            controller: _pageCtrl,
-            itemCount: widget.urls.length,
-            onPageChanged: (i) => setState(() => _current = i),
-            itemBuilder: (_, i) => InteractiveViewer(
-              child: Center(
-                // ── The plate behind the image ─────────────────────────
-                //
-                // A PNG or WebP with an alpha channel and dark artwork is
-                // INVISIBLE on this black scaffold - it loads, it paints, and
-                // there is nothing to see, which reads as a broken viewer
-                // rather than as a transparent image. The card behind it does
-                // not have the problem because it sits on white.
-                //
-                // A neutral plate sized to the image fixes that and costs an
-                // opaque photo nothing: at BoxFit.contain the photo covers the
-                // plate exactly, so it is only ever visible THROUGH the
-                // transparent parts of an image that has any.
-                child: DecoratedBox(
-                  decoration: const BoxDecoration(color: Color(0xFFE5E7EB)),
-                  child: CachedNetworkImage(
-                    imageUrl: widget.urls[i],
-                    cacheKey: widget.cacheKeys[i],
-                    fit: BoxFit.contain,
-                    placeholder: (context, url) => const Center(
-                      child: CircularProgressIndicator(
-                        color: Colors.white54,
-                        strokeWidth: 2,
-                      ),
-                    ),
-                    errorWidget: (context, url, error) => const Icon(
-                      Icons.broken_image_outlined,
-                      color: Colors.white54,
-                      size: 60,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          // Top bar
-          Positioned(
-            top: MediaQuery.of(context).padding.top + 8,
-            left: 16,
-            right: 16,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                GestureDetector(
-                  onTap: () => Navigator.pop(context),
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.5),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.close_rounded,
-                      color: Colors.white,
-                      size: 20,
-                    ),
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.5),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    '${_current + 1} / ${widget.urls.length}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // Dots indicator
-          if (widget.urls.length > 1)
-            Positioned(
-              bottom: MediaQuery.of(context).padding.bottom + 24,
-              left: 0,
-              right: 0,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  for (int i = 0; i < widget.urls.length; i++)
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      margin: const EdgeInsets.symmetric(horizontal: 3),
-                      width: _current == i ? 20 : 6,
-                      height: 6,
-                      decoration: BoxDecoration(
-                        color: _current == i
-                            ? Colors.white
-                            : Colors.white.withValues(alpha: 0.4),
-                        borderRadius: BorderRadius.circular(3),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
   }
 }
 
