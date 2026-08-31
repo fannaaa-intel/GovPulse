@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:govpulse/features/admin/widgets/admin_dialog_back.dart';
+import 'package:govpulse/features/admin/widgets/admin_dialog_keyboard.dart';
 import 'package:govpulse/features/admin/widgets/admin_responsive_dialog.dart';
 
 /// The report-process dialogs are a modal on a desktop and a SCREEN on a phone.
@@ -58,21 +59,44 @@ void main() {
           isNot(EdgeInsets.zero));
     });
 
+    // ── CHANGED: the fullscreen form is no longer a Dialog ────────────────
+    //
+    // It was a Dialog with a zero inset and no radius, and these tests read
+    // those two properties. It is now [AdminFullBleedDialog] — a Scaffold with
+    // `resizeToAvoidBottomInset`, because Dialog animates its own viewInsets
+    // padding on a clock that races the keyboard's and made the transition
+    // move in steps. See report_process_keyboard_motion_test.
+    //
+    // So these now assert the BEHAVIOUR that mattered — the form meets the
+    // screen edges, with nothing to float on — rather than the widget that
+    // used to deliver it. A Dialog with the right inset and a Scaffold are
+    // indistinguishable at rest, which is why the old assertions passed for
+    // years and said nothing about the keyboard.
     testWidgets('just below the threshold fills the screen', (tester) async {
       await tester.pumpWidget(host(kAdminDialogFullscreenBelow - 1));
 
-      final dialog = tester.widget<Dialog>(find.byType(Dialog));
-      expect(dialog.insetPadding, EdgeInsets.zero,
-          reason: 'a screen has no inset to float on');
-      final shape = dialog.shape as RoundedRectangleBorder;
-      expect(shape.borderRadius, BorderRadius.zero,
-          reason: 'and no corner, because it meets the screen edges');
+      expect(
+        find.byType(AdminFullBleedDialog),
+        findsOneWidget,
+        reason: 'a screen has no inset to float on',
+      );
+      // No centred card in the tree: the form IS the surface.
+      expect(find.byType(Dialog), findsNothing);
     });
 
     testWidgets('a phone viewport fills the screen', (tester) async {
       await tester.pumpWidget(host(409));
-      expect(tester.widget<Dialog>(find.byType(Dialog)).insetPadding,
-          EdgeInsets.zero);
+
+      expect(find.byType(AdminFullBleedDialog), findsOneWidget);
+      expect(find.byType(Dialog), findsNothing);
+
+      // Width is not asserted here: `host` mounts the widget inline under a
+      // FAKE MediaQuery rather than presenting it as a route, so the Scaffold
+      // fills the real 800px test surface regardless of the size passed in.
+      // What this harness can say is which SHAPE was chosen, which is what the
+      // threshold tests are about. The real viewport-spanning behaviour is
+      // covered by report_process_dialog_nav_inset_test, which opens the
+      // dialogs for real.
     });
   });
 

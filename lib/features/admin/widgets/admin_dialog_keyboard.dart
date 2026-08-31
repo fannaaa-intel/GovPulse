@@ -219,3 +219,53 @@ class AdminDialogFlex extends StatelessWidget {
   Widget build(BuildContext context) =>
       expand ? Expanded(child: child) : Flexible(child: child);
 }
+
+/// The full-bleed phone form of a report-process dialog.
+///
+/// ── Why this is a Scaffold and NOT a Dialog with a zero inset ─────────────
+/// The two look identical and behave quite differently once a keyboard is
+/// involved. [Dialog] pads itself by `viewInsets` using an [AnimatedPadding]
+/// — 100ms, `Curves.decelerate`, on its own clock — while the OS reports the
+/// keyboard's rise in steps on a different one. Two animations on the same
+/// dimension, racing: the content box lags the keyboard by a frame or two and
+/// then catches up in a jump, which is what reads as the transition going
+/// brick by brick rather than sliding.
+///
+/// Measured on the endorse dialog at a 900px viewport with a 320px keyboard:
+/// the box was still 745 tall on the frame the inset reached its full 320,
+/// then snapped to 580. The same lag, mirrored, on the way back down.
+///
+/// [Scaffold] with `resizeToAvoidBottomInset` is the mechanism
+/// keyboard_visibility_test.dart already pins as correct, and the one the
+/// citizen quick-action panel switched to for exactly this reason. It shrinks
+/// the body on the keyboard's OWN clock — no second animation to race — AND
+/// strips the inset from the MediaQuery the body sees, so a focused field
+/// below the fold is scrolled above the keyboard by the framework instead of
+/// being left under it.
+///
+/// The body still has to be TOLD a keyboard is up, because Scaffold strips the
+/// inset for the same reason Dialog does — that is what [AdminDialogKeyboard]
+/// carries, and why the caller reads it above this widget rather than inside.
+class AdminFullBleedDialog extends StatelessWidget {
+  final Widget child;
+
+  /// Painted behind the form — the console surface, not the shell's grey.
+  final Color backgroundColor;
+
+  const AdminFullBleedDialog({
+    super.key,
+    required this.child,
+    required this.backgroundColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: backgroundColor,
+      // The whole point — see the class note.
+      resizeToAvoidBottomInset: true,
+      // Flush to the viewport is not flush under a notch or a home indicator.
+      body: SafeArea(child: child),
+    );
+  }
+}

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/admin_ui.dart';
 import 'admin_dialog_back.dart';
+import 'admin_dialog_keyboard.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  A dialog that becomes a SCREEN on a phone
@@ -99,21 +100,18 @@ class AdminResponsiveDialog extends StatelessWidget {
     );
 
     if (full) {
-      // A Dialog with no inset and no radius, rather than a pushed route: the
-      // callers are `showAppDialog(...)` and they await a RESULT. Turning them
-      // into routes would change every call site's control flow to fix a
-      // shape, and the barrier/blur behaviour in app_dialog would have to be
-      // rebuilt for the new route type.
-      return Dialog(
+      // Still a dialog ROUTE, not a pushed page: the callers are
+      // `showAppDialog(...)` and they await a RESULT. Turning them into routes
+      // would change every call site's control flow to fix a shape, and the
+      // barrier/blur behaviour in app_dialog would have to be rebuilt for the
+      // new route type.
+      //
+      // What DID change is the fullscreen shell inside that route — a Scaffold
+      // rather than a zero-inset Dialog. See AdminFullBleedDialog for the
+      // keyboard race that settles.
+      return AdminFullBleedDialog(
         backgroundColor: AdminUi.surface,
-        insetPadding: EdgeInsets.zero,
-        shape: const RoundedRectangleBorder(),
-        clipBehavior: Clip.antiAlias,
-        child: SizedBox(
-          width: media.size.width,
-          height: media.size.height,
-          child: SafeArea(child: content),
-        ),
+        child: content,
       );
     }
 

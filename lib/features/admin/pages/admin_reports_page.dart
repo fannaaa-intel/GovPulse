@@ -1021,16 +1021,12 @@ class _RejectReasonDialogState extends State<_RejectReasonDialog> {
     );
 
     if (full) {
-      return Dialog(
+      // A Scaffold, not a zero-inset Dialog — see AdminFullBleedDialog for
+      // the keyboard race that distinction settles. This dialog's "Or provide
+      // another reason" field is the one the report described typing into.
+      return AdminFullBleedDialog(
         backgroundColor: AdminUi.surface,
-        clipBehavior: Clip.antiAlias,
-        insetPadding: EdgeInsets.zero,
-        shape: const RoundedRectangleBorder(),
-        child: SizedBox(
-          width: MediaQuery.sizeOf(context).width,
-          height: MediaQuery.sizeOf(context).height,
-          child: SafeArea(child: body),
-        ),
+        child: body,
       );
     }
 

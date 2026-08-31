@@ -266,16 +266,11 @@ class _EndorseEntityDialogState extends State<_EndorseEntityDialog> {
     );
 
     if (full) {
-      return Dialog(
+      // A Scaffold, not a zero-inset Dialog — see AdminFullBleedDialog for
+      // the keyboard race that distinction settles.
+      return AdminFullBleedDialog(
         backgroundColor: AdminUi.surface,
-        insetPadding: EdgeInsets.zero,
-        shape: const RoundedRectangleBorder(),
-        clipBehavior: Clip.antiAlias,
-        child: SizedBox(
-          width: media.size.width,
-          height: media.size.height,
-          child: SafeArea(child: body),
-        ),
+        child: body,
       );
     }
 
@@ -905,16 +900,10 @@ class _WithdrawEndorsementDialogState
     );
 
     if (full) {
-      return Dialog(
+      // A Scaffold, not a zero-inset Dialog — see AdminFullBleedDialog.
+      return AdminFullBleedDialog(
         backgroundColor: AdminUi.surface,
-        insetPadding: EdgeInsets.zero,
-        shape: const RoundedRectangleBorder(),
-        clipBehavior: Clip.antiAlias,
-        child: SizedBox(
-          width: media.size.width,
-          height: media.size.height,
-          child: SafeArea(child: body),
-        ),
+        child: body,
       );
     }
 

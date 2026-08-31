@@ -153,16 +153,11 @@ class _ReturnToTriageDialogState extends State<_ReturnToTriageDialog> {
     );
 
     if (full) {
-      return Dialog(
+      // A Scaffold, not a zero-inset Dialog — see AdminFullBleedDialog for
+      // the keyboard race that distinction settles.
+      return AdminFullBleedDialog(
         backgroundColor: StaffUi.surface,
-        insetPadding: EdgeInsets.zero,
-        shape: const RoundedRectangleBorder(),
-        clipBehavior: Clip.antiAlias,
-        child: SizedBox(
-          width: media.size.width,
-          height: media.size.height,
-          child: SafeArea(child: body),
-        ),
+        child: body,
       );
     }
 
