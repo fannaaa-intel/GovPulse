@@ -15,6 +15,45 @@ const Color kSkeletonBase = Color(0xFFE7EBF1);
 /// The moving highlight swept across the base by [AdminShimmer].
 const Color kSkeletonHighlight = Color(0xFFF5F7FB);
 
+// ── WHY THIS IS NOT A ShaderMask ────────────────────────────────────────────
+//
+// It was, until 2026-08-31. `ShaderMask(blendMode: BlendMode.srcATop)` wrapped
+// the whole group and swept a gradient across it. On paper that only tints
+// pixels the child already painted — the skeleton shapes — and leaves the gaps
+// between them alone.
+//
+// In the WEB renderer it does not. The mask composites against everything
+// already on the canvas within its bounds, so any opaque surface BEHIND the
+// group is tinted too. Wrap a group of placeholders in a white card and the
+// card's own fill is repainted skeleton-grey, at which point the shapes are the
+// same colour as the space between them and the card renders as one solid slab.
+// Not a subtle degradation: the skeleton disappears completely.
+//
+// Every admin surface that puts placeholders on a card was affected. It went
+// unnoticed because a skeleton is visible for a few hundred milliseconds, and
+// because nothing but looking at a screenshot can catch it — the analyzer, the
+// widget tests and the layout are all perfectly happy.
+//
+// So the sweep now travels with each SHAPE instead. AdminShimmer supplies a
+// clock (via an InheritedWidget) and paints nothing at all; SkeletonBox and
+// SkeletonCircle read it and animate their own gradient fill. Nothing behind
+// them is touched, on any renderer. The public API is unchanged.
+
+/// Broadcasts the shimmer clock to the [SkeletonBox] / [SkeletonCircle] shapes
+/// beneath it, so one controller drives a whole group and their sweeps stay in
+/// step.
+class _ShimmerClock extends InheritedWidget {
+  final double t; // 0..1
+  const _ShimmerClock({required this.t, required super.child});
+
+  static double? maybeOf(BuildContext context) => context
+      .dependOnInheritedWidgetOfExactType<_ShimmerClock>()
+      ?.t;
+
+  @override
+  bool updateShouldNotify(_ShimmerClock old) => old.t != t;
+}
+
 class AdminShimmer extends StatefulWidget {
   final Widget child;
 
@@ -38,7 +77,16 @@ class _AdminShimmerState extends State<AdminShimmer>
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1250),
-    )..repeat();
+    );
+    if (widget.enabled) _controller.repeat();
+  }
+
+  @override
+  void didUpdateWidget(covariant AdminShimmer old) {
+    super.didUpdateWidget(old);
+    if (widget.enabled != old.enabled) {
+      widget.enabled ? _controller.repeat() : _controller.stop();
+    }
   }
 
   @override
@@ -52,40 +100,48 @@ class _AdminShimmerState extends State<AdminShimmer>
     if (!widget.enabled) return widget.child;
     return AnimatedBuilder(
       animation: _controller,
-      builder: (context, child) {
-        return ShaderMask(
-          blendMode: BlendMode.srcATop,
-          shaderCallback: (bounds) {
-            return LinearGradient(
-              begin: Alignment.centerLeft,
-              end: Alignment.centerRight,
-              colors: const [
-                kSkeletonBase,
-                kSkeletonHighlight,
-                kSkeletonBase,
-              ],
-              stops: const [0.25, 0.5, 0.75],
-              transform: _SlideTransform(_controller.value),
-            ).createShader(bounds);
-          },
-          child: child,
-        );
-      },
+      builder: (context, child) =>
+          _ShimmerClock(t: _controller.value, child: child!),
       child: widget.child,
     );
   }
 }
 
-/// Slides the shimmer gradient from left to right across the wrapped bounds.
-class _SlideTransform extends GradientTransform {
-  final double t; // 0..1
-  const _SlideTransform(this.t);
-
-  @override
-  Matrix4? transform(Rect bounds, {TextDirection? textDirection}) {
-    final dx = (t * 2 - 1) * bounds.width;
-    return Matrix4.translationValues(dx, 0, 0);
+/// The animated fill a skeleton shape paints when it is inside an
+/// [AdminShimmer], and the flat base colour when it is not.
+///
+/// The band is placed by sliding the gradient's stops rather than by a
+/// [GradientTransform], so it is positioned relative to THIS shape. A transform
+/// keyed to the shared clock would put a 40px bar and a full-width bar at
+/// different phases of the same sweep, which reads as several unrelated things
+/// blinking instead of one band crossing the group.
+Decoration _shimmerFill(BuildContext context, BorderRadius? radius,
+    {BoxShape shape = BoxShape.rectangle}) {
+  final t = _ShimmerClock.maybeOf(context);
+  if (t == null) {
+    return BoxDecoration(
+      color: kSkeletonBase,
+      borderRadius: radius,
+      shape: shape,
+    );
   }
+  // Runs the band from fully off the left edge to fully off the right, so every
+  // shape spends part of the cycle at rest rather than permanently lit.
+  final centre = t * 2 - 0.5;
+  return BoxDecoration(
+    borderRadius: radius,
+    shape: shape,
+    gradient: LinearGradient(
+      begin: Alignment.centerLeft,
+      end: Alignment.centerRight,
+      colors: const [kSkeletonBase, kSkeletonHighlight, kSkeletonBase],
+      stops: [
+        (centre - 0.28).clamp(0.0, 1.0),
+        centre.clamp(0.0, 1.0),
+        (centre + 0.28).clamp(0.0, 1.0),
+      ],
+    ),
+  );
 }
 
 /// A rounded rectangular placeholder. Give [width] `double.infinity` to fill
@@ -107,10 +163,7 @@ class SkeletonBox extends StatelessWidget {
     return Container(
       width: width,
       height: height,
-      decoration: BoxDecoration(
-        color: kSkeletonBase,
-        borderRadius: BorderRadius.circular(radius),
-      ),
+      decoration: _shimmerFill(context, BorderRadius.circular(radius)),
     );
   }
 }
@@ -169,12 +222,14 @@ class SkeletonNetworkImage extends StatelessWidget {
   }
 
   Widget _placeholder() => AdminShimmer(
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: kSkeletonBase,
-            borderRadius: BorderRadius.circular(radius),
+        // Builder so the DecoratedBox reads the clock this AdminShimmer just
+        // published — a context from ABOVE it would find no _ShimmerClock and
+        // render the flat base colour, unanimated.
+        child: Builder(
+          builder: (context) => DecoratedBox(
+            decoration: _shimmerFill(context, BorderRadius.circular(radius)),
+            child: const SizedBox.expand(),
           ),
-          child: const SizedBox.expand(),
         ),
       );
 }
@@ -189,10 +244,9 @@ class SkeletonCircle extends StatelessWidget {
     return Container(
       width: size,
       height: size,
-      decoration: const BoxDecoration(
-        color: kSkeletonBase,
-        shape: BoxShape.circle,
-      ),
+      // No borderRadius with BoxShape.circle — BoxDecoration asserts on the
+      // pair.
+      decoration: _shimmerFill(context, null, shape: BoxShape.circle),
     );
   }
 }
