@@ -21,11 +21,28 @@ class ReportWorkLog extends StatefulWidget {
   /// Display label saved with the note (e.g. "LGU Admin", "Sanitation Office").
   final String authorName;
 
+  /// The report is closed, so the thread becomes a record rather than a
+  /// conversation.
+  ///
+  /// ⚠ This is a judgement call and it differs from the progress-updates
+  /// composer, which locks unconditionally. That one is CITIZEN-FACING: a
+  /// progress note on finished work is either a mistake or something nobody
+  /// will read. This thread is the PRIVATE admin↔staff channel, and there are
+  /// real reasons to write in it after closure — an audit query, a correction,
+  /// a note for whoever reopens the report later.
+  ///
+  /// So the widget can be locked, but the callers decide: the admin console
+  /// leaves it open (oversight continues after closure), the staff console
+  /// locks it (the office's work is done and they have no standing to keep
+  /// filing against it).
+  final bool locked;
+
   const ReportWorkLog({
     super.key,
     required this.reportId,
     required this.authorRole,
     required this.authorName,
+    this.locked = false,
   });
 
   @override
@@ -210,8 +227,10 @@ class _ReportWorkLogState extends State<ReportWorkLog> {
           )
         else
           for (final n in _notes) _bubble(n),
-        const SizedBox(height: 8),
-        _composer(),
+        if (!widget.locked) ...[
+          const SizedBox(height: 8),
+          _composer(),
+        ],
       ],
     );
   }

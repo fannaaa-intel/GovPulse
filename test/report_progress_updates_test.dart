@@ -87,13 +87,14 @@ Future<void> _bootWith(http.BaseClient api) async {
 /// branch — which renders SizedBox.shrink and would make every assertion below
 /// vacuous. So the tree is pumped and inspected for what it offers BEFORE that
 /// future resolves, which is also the frame a real user sees first.
-Widget _host(ReportUpdatesMode mode) => MaterialApp(
+Widget _host(ReportUpdatesMode mode, {bool locked = false}) => MaterialApp(
       home: Scaffold(
         body: SingleChildScrollView(
           child: ReportProgressUpdates(
             reportId: '3f2a1b6c-8d4e-4f7a-9b1c-2e5d6a7b8c9d',
             mode: mode,
             authorName: 'Engineering Office',
+            locked: locked,
           ),
         ),
       ),
@@ -156,6 +157,50 @@ void main() {
         findsNothing,
         reason: 'the admin IS the reviewer — telling them this is nonsense',
       );
+    });
+  });
+
+  // ── A CLOSED report offers nobody a composer ─────────────────────────────
+  //
+  // `mode` answers "who is this person and what may they do". `locked` answers
+  // "is there still work to report on". They are different questions and both
+  // have to be true before a composer appears — which they were not: an office
+  // was offered a "tell the Municipality what has happened" box on a report
+  // finished weeks earlier, and an admin the same on work that was closed.
+  group('a closed report takes the composer away from everyone', () {
+    testWidgets('the office loses its composer', (tester) async {
+      await tester.pumpWidget(_host(ReportUpdatesMode.author, locked: true));
+      await tester.pump();
+
+      expect(find.byType(TextField), findsNothing);
+      expect(find.text('Submit for approval'), findsNothing);
+    });
+
+    testWidgets('so does the admin', (tester) async {
+      await tester.pumpWidget(_host(ReportUpdatesMode.reviewer, locked: true));
+      await tester.pump();
+
+      expect(find.byType(TextField), findsNothing);
+      expect(find.text('Post update'), findsNothing);
+    });
+
+    testWidgets('but the panel itself stays — the history is the record',
+        (tester) async {
+      // Locking must not collapse the widget. The updates already posted are
+      // exactly what someone opening a finished report has come to read.
+      await tester.pumpWidget(_host(ReportUpdatesMode.reviewer, locked: true));
+      await tester.pump();
+
+      expect(find.text('Progress updates'), findsOneWidget);
+    });
+
+    testWidgets('an OPEN report is unaffected', (tester) async {
+      // Guards the default: `locked` must be opt-in, or wiring it into one
+      // caller would silently disarm every other composer in the app.
+      await tester.pumpWidget(_host(ReportUpdatesMode.author));
+      await tester.pump();
+
+      expect(find.byType(TextField), findsOneWidget);
     });
   });
 

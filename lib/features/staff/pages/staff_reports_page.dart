@@ -1242,6 +1242,15 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
   late ReportStatus _status = widget.report.status;
   bool _busy = false;
 
+  /// The report is finished with — completed, or refused by the admin.
+  ///
+  /// The single definition of "closed" for this pane, so the status control,
+  /// the citizen-facing composer and the internal thread cannot drift apart
+  /// about whether there is still work to do. Staff never see dismissed rows,
+  /// so those are not part of this test (unlike the admin console's).
+  bool get _isClosed =>
+      _status == ReportStatus.resolved || _status == ReportStatus.rejected;
+
   /// Which tab of the status pane is showing: 0 = Timeline, 1 = Work log.
   int _trackerTab = 0;
 
@@ -1420,6 +1429,7 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
             flow: _flow,
             current: _status,
             busy: _busy,
+            locked: _isClosed,
             onPick: _apply,
           ),
           const SizedBox(height: 18),
@@ -1461,10 +1471,16 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
         // wrong about the panel that now sits under it. Each half carries its
         // own caption instead, because the whole risk on this screen is an
         // officer mistaking one box for the other.
+        // Locked once the report is closed. An office was previously offered
+        // a "tell the Municipality what has happened" box on work it had
+        // finished weeks earlier — an invitation to file progress against a
+        // closed report, which is either a mistake about to happen or a note
+        // nobody will read. The history stays; only the composer goes.
         ReportProgressUpdates(
           reportId: widget.report.id,
           mode: ReportUpdatesMode.author,
           authorName: widget.department ?? 'Staff',
+          locked: _isClosed,
         ),
         const SizedBox(height: 22),
         const Text(
@@ -1487,10 +1503,13 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
           ),
         ),
         const SizedBox(height: 10),
+        // Locked here but NOT on the admin side — see ReportWorkLog.locked.
+        // Oversight continues after closure; this office's work does not.
         ReportWorkLog(
           reportId: widget.report.id,
           authorRole: 'staff',
           authorName: widget.department ?? 'Staff',
+          locked: _isClosed,
         ),
         if (_status == ReportStatus.resolved) ...[
           const SizedBox(height: 20),
@@ -1600,20 +1619,28 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
               placeholderCount: r.mediaCount,
             ),
           ),
-          const SizedBox(height: 18),
-          const Divider(height: 1, color: StaffUi.border),
-          const SizedBox(height: 16),
-          DetailActionSection(
-            buttons: [
-              DetailActionButton(
-                label: 'Not my department — return to triage',
-                icon: Icons.reply_rounded,
-                color: StaffUi.accent,
-                outlined: true,
-                onTap: _busy ? null : _returnToTriage,
-              ),
-            ],
-          ),
+          // "Not my department" is a triage objection, and it stops making
+          // sense the moment the work is finished: an office cannot both have
+          // completed a report and disown it. Offered on a closed report it
+          // would bounce completed work back to the admin's desk and drag the
+          // citizen's status backwards. The whole action block goes with it —
+          // an empty bordered section under a divider is worse than no section.
+          if (!_isClosed) ...[
+            const SizedBox(height: 18),
+            const Divider(height: 1, color: StaffUi.border),
+            const SizedBox(height: 16),
+            DetailActionSection(
+              buttons: [
+                DetailActionButton(
+                  label: 'Not my department — return to triage',
+                  icon: Icons.reply_rounded,
+                  color: StaffUi.accent,
+                  outlined: true,
+                  onTap: _busy ? null : _returnToTriage,
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -1721,16 +1748,82 @@ class _StatusControl extends StatelessWidget {
   final List<ReportStatus> flow;
   final ReportStatus current;
   final bool busy;
+
+  /// The report is finished with, so there are no moves left to offer.
+  final bool locked;
   final ValueChanged<ReportStatus> onPick;
   const _StatusControl({
     required this.flow,
     required this.current,
     required this.busy,
+    required this.locked,
     required this.onPick,
   });
 
   @override
   Widget build(BuildContext context) {
+    // ── A closed report offers no moves ────────────────────────────────────
+    //
+    // This used to render the full chip row whatever the status, so a RESOLVED
+    // report still showed live "Under review" and "In progress" chips. One tap
+    // reopened finished work and — because every status change notifies the
+    // reporter — told the resident their completed report had gone backwards.
+    //
+    // An office has no standing to reopen its own closed work: that is the
+    // admin's call, and the admin console has its own Reopen action. So this
+    // becomes a statement of fact rather than a control.
+    if (locked) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(13),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF6F8FB),
+          borderRadius: BorderRadius.circular(11),
+          border: Border.all(color: StaffUi.border),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              current == ReportStatus.resolved
+                  ? Icons.task_alt_rounded
+                  : Icons.do_not_disturb_on_outlined,
+              size: 19,
+              color: staffReportStatusColor(current),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    current == ReportStatus.resolved
+                        ? 'This report is completed.'
+                        : 'This report is closed.',
+                    style: const TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w700,
+                      color: StaffUi.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  const Text(
+                    'No further action is needed from this office. Contact '
+                    'the Municipality if it has to be reopened.',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      height: 1.4,
+                      color: StaffUi.textMuted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

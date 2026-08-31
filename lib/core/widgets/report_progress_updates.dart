@@ -154,6 +154,21 @@ class ReportProgressUpdates extends StatefulWidget {
   /// here ties the label's visibility to the content it labels.
   final Widget? heading;
 
+  /// The report is CLOSED — resolved or rejected — so the history stays but
+  /// nothing new may be written.
+  ///
+  /// [mode] answers "who is this person and what are they allowed to do"; this
+  /// answers "is there still work to report on". They are different questions
+  /// and both have to be true before a composer appears. An office was
+  /// previously offered a "what has happened" box on a report that had been
+  /// finished weeks earlier — an invitation to file progress against closed
+  /// work, which is either a mistake about to happen or a note nobody will
+  /// ever read.
+  ///
+  /// Pending rows are still shown when set, because an admin must be able to
+  /// decide an update that was submitted just before the report closed.
+  final bool locked;
+
   const ReportProgressUpdates({
     super.key,
     required this.reportId,
@@ -163,6 +178,7 @@ class ReportProgressUpdates extends StatefulWidget {
     this.heading,
     this.maxVisible,
     this.padding,
+    this.locked = false,
   });
 
   @override
@@ -181,7 +197,10 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
   bool _unavailable = false;
   bool _completion = false;
 
-  bool get _canPost => widget.mode != ReportUpdatesMode.citizen;
+  /// Both must hold: the right role, AND a report still open to be worked on.
+  /// See [ReportProgressUpdates.locked].
+  bool get _canPost =>
+      widget.mode != ReportUpdatesMode.citizen && !widget.locked;
   bool get _canReview => widget.mode == ReportUpdatesMode.reviewer;
 
   /// Split for the reviewer's two lists. Order is preserved from the fetch
