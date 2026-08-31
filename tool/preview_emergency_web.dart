@@ -83,6 +83,14 @@ class _PreviewApp extends StatelessWidget {
               _Frame(width: 700, height: 820),
               SizedBox(width: 24),
               _Frame(width: 560, height: 820),
+              SizedBox(width: 24),
+              // PHONE panes. A citizen opening the site on their handset gets
+              // the WEB body — kIsWeb is true there — so these are the widths
+              // the reported bug was seen at, and the ones the phone-scale
+              // branch exists for.
+              _Frame(width: 390, height: 820),
+              SizedBox(width: 24),
+              _Frame(width: 360, height: 820),
             ],
           ),
         ),

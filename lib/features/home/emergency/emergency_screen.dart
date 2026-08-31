@@ -17,6 +17,15 @@ import '../../../core/widgets/Home/nav/responsive_nav_scaffold.dart';
 import 'dart:io';
 import '../../../core/theme/mobile_metrics.dart';
 
+/// Pane width below which the web layout stops being a desktop layout.
+///
+/// The citizen web shell hands this page the CENTRE COLUMN's width, not the
+/// window's, so this is measured against the pane the content actually gets.
+/// 560 rather than 600: the page's own band/stack switch already happens at
+/// 720, and this is the second, narrower question — "is this a phone?" —
+/// which only wants to be true on something genuinely handheld.
+const double kPhonePane = 560;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Palette
 // ─────────────────────────────────────────────────────────────────────────────
@@ -564,12 +573,19 @@ class _EmergencyScreenState extends State<EmergencyBody>
           // band loses its watermark, which is correct: that fills a gap that
           // only exists above ~960, and at 816 there is no gap to fill.
           constraints: const BoxConstraints(maxWidth: kAccountMaxWidth),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(
-              kAccountPageGutter,
-              24,
-              kAccountPageGutter,
-              56,
+          child: LayoutBuilder(
+            builder: (context, outer) {
+              // The gutter and the vertical rhythm are desktop numbers too.
+              // kAccountPageGutter is 32; spending 64px of a 390px phone
+              // browser on side margin leaves the hero drawing in 326.
+              final phone = outer.maxWidth < kPhonePane;
+              final gutter = phone ? 16.0 : kAccountPageGutter;
+              return Padding(
+            padding: EdgeInsets.fromLTRB(
+              gutter,
+              phone ? 12 : 24,
+              gutter,
+              phone ? 28 : 56,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -590,9 +606,9 @@ class _EmergencyScreenState extends State<EmergencyBody>
                 // x — see _hero911CardWeb for why the band shape replaces the
                 // card here.
                 _hero911CardWeb(),
-                const SizedBox(height: 40),
+                SizedBox(height: phone ? 22 : 40),
                 _sectionLabel(w, 'Emergency Services'),
-                const SizedBox(height: 20),
+                SizedBox(height: phone ? 12 : 20),
                 // ── Rows, not tiles ─────────────────────────────────────
                 //
                 // The square card puts the count in a circle at the FAR right,
@@ -653,12 +669,14 @@ class _EmergencyScreenState extends State<EmergencyBody>
                     );
                   },
                 ),
-                const SizedBox(height: 28),
+                SizedBox(height: phone ? 18 : 28),
                 // Also full width now. A 720 note centred under a 1080 grid
                 // was the same split measure the hero had.
                 _disclaimer(w),
               ],
             ),
+              );
+            },
           ),
         ),
       ),
@@ -968,9 +986,34 @@ class _EmergencyScreenState extends State<EmergencyBody>
         final dialable = canPlaceCalls(context);
         final band = width >= 720 && !dialable;
         final watermark = band && width >= 960;
-        final badgeBox = band ? 104.0 : 92.0;
         final roomy = width >= 900;
-        final pad = band ? 26.0 : 22.0;
+
+        // ── Below kPhonePane the sizes SCALE, they do not just stack ───────
+        //
+        // The layout already collapsed to the phone's stacked shape under 720,
+        // but every size inside it stayed a desktop constant — a 22px title, a
+        // 92px badge, 22px of padding, pills at scale 1.25. On a 390px phone
+        // browser that is the phone LAYOUT drawn at TABLET SIZE, which is why
+        // the hero filled the viewport and the title wrapped to three lines.
+        //
+        // The phone body next door has never had this problem because every
+        // number there is a fraction of its width. So below the threshold this
+        // does the same thing, against the same proportions the phone uses:
+        //   title   w * .042   badge  w * .235   pad  w * .05
+        // At w = 380 those give 16 / 89 / 19, so a desktop pane is unchanged
+        // in practice and only a genuinely narrow one moves.
+        final phone = width < kPhonePane;
+        final s = width.clamp(320.0, kPhonePane);
+
+        final badgeBox = phone ? s * .235 : (band ? 104.0 : 92.0);
+        final pad = phone ? s * .05 : (band ? 26.0 : 22.0);
+        // .055, not .06. At 390 that is 21.5 against a ~250px text column,
+        // which is the size "National Emergency Hotline" stops needing a third
+        // line at — the phone body's own title lands in the same place.
+        final titleSize = phone ? s * .055 : (band && roomy ? 25.0 : 22.0);
+        // The pills carry the three service words. 1.25 is right beside a 25px
+        // title and too wide beside a 17px one.
+        final pillScale = phone ? 1.0 : 1.25;
 
         final title = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -979,21 +1022,23 @@ class _EmergencyScreenState extends State<EmergencyBody>
             Text(
               'National Emergency Hotline',
               style: TextStyle(
-                fontSize: band && roomy ? 25 : 22,
+                fontSize: titleSize,
                 fontWeight: FontWeight.w900,
                 color: Colors.white,
                 height: 1.15,
                 letterSpacing: -.6,
               ),
             ),
-            const SizedBox(height: 10),
+            SizedBox(height: phone ? 8 : 10),
             Wrap(
               spacing: 8,
               runSpacing: 6,
               children: [
-                _pill(Icons.local_police_rounded, 'Police', scale: 1.25),
-                _pill(Icons.local_fire_department_rounded, 'Fire', scale: 1.25),
-                _pill(Icons.local_hospital_rounded, 'Medical', scale: 1.25),
+                _pill(Icons.local_police_rounded, 'Police', scale: pillScale),
+                _pill(Icons.local_fire_department_rounded, 'Fire',
+                    scale: pillScale),
+                _pill(Icons.local_hospital_rounded, 'Medical',
+                    scale: pillScale),
               ],
             ),
           ],
