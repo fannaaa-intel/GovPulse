@@ -165,10 +165,21 @@ void main() {
     await tester.pumpAndSettle();
     expect(result, isNull, reason: 'a blank reason must not withdraw');
 
+    // Scoped to the withdraw dialog rather than `find.byType(TextField).last`.
+    // Both dialogs are in the tree at once — the endorse form stays mounted
+    // underneath its confirmation — so "the last TextField" is whichever the
+    // framework happened to build last, which is not a fact a test should
+    // depend on. It broke when the withdraw dialog was rebuilt as a responsive
+    // form, and it was pointing at the WRONG field before that without anyone
+    // noticing, because both happened to be empty.
     await tester.enterText(
-      find.byType(TextField).last,
+      find.descendant(
+        of: find.byType(Dialog).last,
+        matching: find.byType(TextField),
+      ),
       'DPWH confirmed the road is municipal after all.',
     );
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Withdraw'));
     await tester.pumpAndSettle();
 

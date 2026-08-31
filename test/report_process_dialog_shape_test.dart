@@ -468,6 +468,99 @@ void main() {
     });
   });
 
+  group('the withdraw confirmation got the same treatment', () {
+    // It was the LAST report-process dialog still drawn as a bare AlertDialog:
+    // a form with a required text field, so on a phone it had every problem
+    // the others were fixed for — a small card floating on a barrier, an
+    // action bar sitting on the keyboard, buttons at Material's bare minimum.
+    Future<void> openWithdraw(WidgetTester tester, Size size) async {
+      await _sized(tester, size);
+      await _open(
+        tester,
+        (ctx) => showEndorseEntityDialog(ctx, currentEndorsement: 'DPWH'),
+      );
+      await tester.tap(find.text('Clear endorsement'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('phone — a screen with a chevron, not a floating card', (
+      tester,
+    ) async {
+      await openWithdraw(tester, const Size(400, 1400));
+
+      expect(find.text('Withdraw this endorsement'), findsOneWidget);
+      // Two chevrons: the endorse screen underneath and this one on top.
+      expect(find.byType(AdminDialogBack), findsNWidgets(2));
+
+      // Full bleed — the content box IS the screen. Measured on the header
+      // rather than on `Dialog`, whose own rect always fills the viewport and
+      // so would report 400 either way.
+      final header = tester.getRect(
+        find.text('Withdraw this endorsement'),
+      );
+      // 60 = the header's own 16px padding + the 32px chevron + the 12px gap
+      // it sits beside. Anything much past that means a centred card's inset.
+      expect(
+        header.left,
+        lessThanOrEqualTo(64),
+        reason: 'a full-bleed screen starts at the edge, not inset by a '
+            'centred card',
+      );
+    });
+
+    testWidgets('phone — the buttons are stacked and full size', (
+      tester,
+    ) async {
+      await openWithdraw(tester, const Size(400, 1400));
+
+      final withdraw = tester.getRect(
+        find.widgetWithText(FilledButton, 'Withdraw'),
+      );
+      final cancel = tester
+          .getRect(find.widgetWithText(OutlinedButton, 'Cancel').last);
+
+      expect(withdraw.bottom, lessThanOrEqualTo(cancel.top));
+      expect(withdraw.height, greaterThanOrEqualTo(48));
+      expect(cancel.height, greaterThanOrEqualTo(48));
+    });
+
+    testWidgets('the reason is still required', (tester) async {
+      await openWithdraw(tester, const Size(400, 1400));
+
+      // Disabled until something is typed — withdrawing voids a signed letter
+      // and revokes an agency's credential, so the justification is not
+      // optional. endorse_dialog_test drives the full resolve path.
+      expect(
+        tester
+            .widget<FilledButton>(
+              find.widgetWithText(FilledButton, 'Withdraw'),
+            )
+            .onPressed,
+        isNull,
+      );
+    });
+
+    testWidgets('desktop — still a modal', (tester) async {
+      await openWithdraw(tester, _kDesktop);
+
+      expect(find.text('Withdraw this endorsement'), findsOneWidget);
+      // The endorse dialog's chevron is absent at this width, and the withdraw
+      // form adds none of its own.
+      expect(find.byType(AdminDialogBack), findsNothing);
+
+      // A centred card, so its title is inset well away from the viewport
+      // edge — the opposite of the phone assertion above.
+      final header = tester.getRect(
+        find.text('Withdraw this endorsement'),
+      );
+      expect(
+        header.left,
+        greaterThan(200),
+        reason: 'the modal is a centred card, not the whole window',
+      );
+    });
+  });
+
   group('AdminDialogScreenHeader', () {
     testWidgets('the modal form draws no chevron', (tester) async {
       await tester.pumpWidget(

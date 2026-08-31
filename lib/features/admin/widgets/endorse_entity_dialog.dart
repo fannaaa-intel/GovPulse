@@ -188,64 +188,13 @@ class _EndorseEntityDialogState extends State<_EndorseEntityDialog> {
   /// it asks for a justification the same way endorsing does. The reason is
   /// recorded on the event log against the admin who withdrew it.
   Future<void> _confirmClear() async {
-    final ctrl = TextEditingController();
     // showAppDialog, not a bare showDialog: house rule (see app_dialog.dart) —
     // a plain showDialog is a pop-up that leaves differently from every other
     // pop-up, and skips the frosted backdrop the rest of the app uses.
     final reason = await showAppDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AdminUi.surface,
-        title: const Text(
-          'Withdraw this endorsement',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'The report returns to the LGU and the printed letter stops '
-              'working. Say why — it is recorded against your account.',
-              style: TextStyle(fontSize: 12.5, height: 1.4),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: ctrl,
-              autofocus: true,
-              minLines: 2,
-              maxLines: 4,
-              maxLength: 300,
-              decoration: const InputDecoration(
-                hintText: 'e.g. DPWH confirmed the road is municipal after all.',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.red),
-            onPressed: () {
-              final v = ctrl.text.trim();
-              if (v.isEmpty) return;
-              Navigator.pop(ctx, v);
-            },
-            child: const Text('Withdraw'),
-          ),
-        ],
-      ),
+      builder: (_) => const _WithdrawEndorsementDialog(),
     );
-    // Disposed AFTER the route is fully gone, not the instant `await` returns.
-    // showAppDialog resolves when the pop is REQUESTED, and the dialog keeps
-    // rebuilding through its exit transition — disposing here throws
-    // "A TextEditingController was used after being disposed" on the next
-    // frame. The post-frame callback lands after that transition.
-    WidgetsBinding.instance.addPostFrameCallback((_) => ctrl.dispose());
     if (reason == null || !mounted) return;
     if (context.mounted) {
       Navigator.of(context).pop(EndorseChoice.clearWith(reason));
@@ -874,6 +823,258 @@ class _EndorseEntityDialogState extends State<_EndorseEntityDialog> {
                 const SizedBox(width: 12),
                 send,
               ],
+            ),
+    );
+  }
+}
+
+/// Withdraw an endorsement — a SCREEN on a phone, a modal above 640.
+///
+/// This was the last report-process dialog still drawn as a bare [AlertDialog].
+/// It is a form with a required text field, so on a phone it had every problem
+/// the others were fixed for: a small card floating on a barrier, an action bar
+/// sitting on the keyboard while the officer typed, and buttons at Material's
+/// bare minimum. It now takes the same shape as the reject and return-to-triage
+/// forms — see admin_responsive_dialog.dart and AdminDialogKeyboard.
+///
+/// Resolves to the typed reason, or null on cancel. The reason is REQUIRED:
+/// withdrawing voids a signed letter and revokes an agency's credential, and
+/// the justification is recorded against the admin who did it.
+class _WithdrawEndorsementDialog extends StatefulWidget {
+  const _WithdrawEndorsementDialog();
+
+  @override
+  State<_WithdrawEndorsementDialog> createState() =>
+      _WithdrawEndorsementDialogState();
+}
+
+class _WithdrawEndorsementDialogState
+    extends State<_WithdrawEndorsementDialog> {
+  final _ctrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  bool get _canSubmit => _ctrl.text.trim().isNotEmpty;
+
+  void _submit() {
+    final v = _ctrl.text.trim();
+    if (v.isEmpty) return;
+    Navigator.pop(context, v);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final full = adminDialogIsFullscreen(context);
+
+    // Read HERE, above the strip: this build's context is outside the [Dialog]
+    // returned below, so it still sees the real inset. Inside the dialog it is
+    // always zero — see AdminDialogKeyboard.
+    final keyboardUp = full && AdminDialogKeyboard.of(context);
+
+    final body = Column(
+      mainAxisSize: full ? MainAxisSize.max : MainAxisSize.min,
+      children: [
+        _header(full),
+        const Divider(height: 1, color: AdminUi.border),
+        AdminDialogFlex(
+          expand: full,
+          child: SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(full ? 16 : 24, 18, full ? 16 : 24, 18),
+            child: _field(),
+          ),
+        ),
+        // One required textarea, so the keyboard is up for almost all of the
+        // time this dialog is open. Under it the buttons are unreachable
+        // anyway — they stand down and give the field the height.
+        AdminKeyboardCollapse(
+          keyboardUp: keyboardUp,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Divider(height: 1, color: AdminUi.border),
+              _actions(full),
+            ],
+          ),
+        ),
+      ],
+    );
+
+    if (full) {
+      return Dialog(
+        backgroundColor: AdminUi.surface,
+        insetPadding: EdgeInsets.zero,
+        shape: const RoundedRectangleBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: SizedBox(
+          width: media.size.width,
+          height: media.size.height,
+          child: SafeArea(child: body),
+        ),
+      );
+    }
+
+    return Dialog(
+      backgroundColor: AdminUi.surface,
+      insetPadding: const EdgeInsets.all(40),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      clipBehavior: Clip.antiAlias,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 520,
+          maxHeight: media.size.height * 0.9,
+        ),
+        child: body,
+      ),
+    );
+  }
+
+  Widget _header(bool full) {
+    final seal = Container(
+      width: full ? 52 : 56,
+      height: full ? 52 : 56,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: AppColors.red.withValues(alpha: 0.10),
+        shape: BoxShape.circle,
+      ),
+      child: Icon(Icons.link_off_rounded,
+          size: full ? 24 : 26, color: AppColors.red),
+    );
+
+    final title = Text(
+      'Withdraw this endorsement',
+      style: TextStyle(
+        fontSize: full ? 19 : 21,
+        fontWeight: FontWeight.w800,
+        color: AdminUi.textPrimary,
+        height: 1.15,
+      ),
+    );
+
+    const description = Text.rich(
+      TextSpan(
+        style: TextStyle(
+          fontSize: 13,
+          height: 1.4,
+          color: AdminUi.textSecondary,
+        ),
+        children: [
+          TextSpan(
+            text: 'The report returns to the LGU and ',
+          ),
+          TextSpan(
+            text: 'the printed letter stops working',
+            style: TextStyle(
+              color: AppColors.red,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          TextSpan(
+            text: '. Say why — it is recorded against your account.',
+          ),
+        ],
+      ),
+    );
+
+    return AdminDialogScreenHeader(
+      full: full,
+      seal: seal,
+      title: title,
+      description: description,
+      padding: EdgeInsets.fromLTRB(
+        full ? 16 : 24,
+        full ? 18 : 22,
+        full ? 16 : 24,
+        full ? 16 : 20,
+      ),
+    );
+  }
+
+  Widget _field() {
+    OutlineInputBorder border(Color c, [double w = 1]) => OutlineInputBorder(
+      borderRadius: BorderRadius.circular(10),
+      borderSide: BorderSide(color: c, width: w),
+    );
+
+    return TextField(
+      controller: _ctrl,
+      autofocus: true,
+      minLines: 3,
+      maxLines: 5,
+      maxLength: 300,
+      textCapitalization: TextCapitalization.sentences,
+      // The Withdraw button enables on the first keystroke rather than making
+      // the admin press it to find out it is refused.
+      onChanged: (_) => setState(() {}),
+      style: const TextStyle(fontSize: 14, color: AdminUi.textPrimary),
+      decoration: InputDecoration(
+        hintText: 'e.g. DPWH confirmed the road is municipal after all.',
+        hintStyle: const TextStyle(fontSize: 13, color: AdminUi.textMuted),
+        counterStyle: const TextStyle(fontSize: 11, color: AdminUi.textMuted),
+        contentPadding: const EdgeInsets.all(14),
+        filled: true,
+        fillColor: AdminUi.subtle,
+        border: border(AdminUi.border),
+        enabledBorder: border(AdminUi.border),
+        focusedBorder: border(AppColors.red, 1.5),
+      ),
+    );
+  }
+
+  Widget _actions(bool full) {
+    // Taller on the phone form — see the note in the reject dialog's
+    // _actions(); the report-process footers must not disagree about a
+    // button's height.
+    final double vPad = full ? 17 : 14;
+
+    final cancel = OutlinedButton(
+      onPressed: () => Navigator.pop(context),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: AdminUi.textSecondary,
+        side: const BorderSide(color: AdminUi.borderStrong),
+        padding: EdgeInsets.symmetric(horizontal: 22, vertical: vPad),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        textStyle: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
+      ),
+      child: const Text('Cancel'),
+    );
+
+    final withdraw = FilledButton.icon(
+      onPressed: _canSubmit ? _submit : null,
+      style: FilledButton.styleFrom(
+        backgroundColor: AppColors.red,
+        disabledBackgroundColor: const Color(0xFFE8B4B4),
+        padding: EdgeInsets.symmetric(horizontal: 22, vertical: vPad),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        textStyle: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
+      ),
+      icon: const Icon(Icons.link_off_rounded, size: 17),
+      label: const Text('Withdraw'),
+    );
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        full ? 16 : 24,
+        14,
+        full ? 16 : 24,
+        full ? 16 : 18,
+      ),
+      child: full
+          ? Column(
+              children: [
+                SizedBox(width: double.infinity, child: withdraw),
+                const SizedBox(height: 10),
+                SizedBox(width: double.infinity, child: cancel),
+              ],
+            )
+          : Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [cancel, const SizedBox(width: 10), withdraw],
             ),
     );
   }
