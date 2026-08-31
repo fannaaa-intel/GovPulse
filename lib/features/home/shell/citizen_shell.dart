@@ -1,5 +1,4 @@
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -22,6 +21,7 @@ import '../../../core/services/citizen_guard.dart';
 import '../../../core/services/citizen_logout.dart';
 import '../../../core/widgets/app_snackbar.dart';
 import '../../../core/widgets/citizen_guard_modals.dart';
+import '../../../core/widgets/no_scrollbar_behavior.dart';
 import '../../../core/widgets/modal/verification_required_dialog.dart';
 import '../Quick-action/Events/events_screen.dart';
 import '../Quick-action/Feedback/feedback_screen.dart';
@@ -1068,7 +1068,7 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
       // layout did not. Same behaviour object, applied where it actually
       // reaches this subtree.
       child: ScrollConfiguration(
-        behavior: const _NoScrollbarBehavior(),
+        behavior: const NoScrollbarBehavior(),
         child: SafeArea(
           // No scroll view here — [_leftRail] owns its own, and nesting two in
           // the same axis would give the inner one an unbounded height.
@@ -1252,14 +1252,16 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
       // Hidden for every scrollable in the shell — both rails and whichever
       // pane the centre is showing — so the columns read like a feed rather
       // than like three boxes with grey bars. Scrolling itself is untouched:
-      // [_NoScrollbarBehavior] only declines to PAINT the thumb.
+      // [NoScrollbarBehavior] only declines to PAINT the thumb.
       //
-      // Scoped HERE, deliberately, and not on GovPulseWebApp's MaterialApp:
-      // citizenRouter also serves /admin and /staff, so an app-level
-      // scrollBehavior would silently restyle both consoles and the auth
-      // screens. This wrapper reaches the shell subtree and nothing else.
+      // This wrapper is now REDUNDANT rather than wrong: GovPulseWebApp sets
+      // the same behaviour at the web root, which is where it had to move to
+      // reach the consoles' detail dialogs (a dialog mounts above this `body:`
+      // and never saw this wrapper). It is kept because the shell is also
+      // built under the legacy MaterialApp, and deleting a working guard to
+      // prove a point is how a regression gets in.
       body: ScrollConfiguration(
-        behavior: const _NoScrollbarBehavior(),
+        behavior: const NoScrollbarBehavior(),
         child: Stack(
           children: [
             SafeArea(
@@ -1397,31 +1399,3 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
   }
 }
 
-/// [MaterialScrollBehavior] that scrolls exactly as the default does but paints
-/// no scrollbar.
-///
-/// Only [buildScrollbar] is overridden — returning the child untouched instead
-/// of wrapping it in a [Scrollbar]. Everything else is inherited, so wheel,
-/// trackpad, drag and keyboard scrolling, the overscroll indicator and the
-/// platform physics are all unchanged. This is deliberately NOT
-/// `physics: NeverScrollableScrollPhysics` or any other way of disabling
-/// scrolling: the bar goes, the scrolling stays.
-///
-/// [dragDevices] adds the mouse to the default set so click-and-drag keeps
-/// working on the web once there is no visible bar to grab.
-class _NoScrollbarBehavior extends MaterialScrollBehavior {
-  const _NoScrollbarBehavior();
-
-  @override
-  Widget buildScrollbar(
-    BuildContext context,
-    Widget child,
-    ScrollableDetails details,
-  ) => child;
-
-  @override
-  Set<PointerDeviceKind> get dragDevices => {
-    ...super.dragDevices,
-    PointerDeviceKind.mouse,
-  };
-}

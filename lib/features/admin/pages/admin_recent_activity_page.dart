@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
+import '../../../core/widgets/no_scrollbar_behavior.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
@@ -117,25 +117,6 @@ void showAdminRecentActivity(
   );
 }
 
-/// [MaterialScrollBehavior] that scrolls exactly as the default does but paints
-/// no scrollbar — matching the Settings activity log, scoped here so it cannot
-/// restyle the rest of the console.
-class _NoScrollbarBehavior extends MaterialScrollBehavior {
-  const _NoScrollbarBehavior();
-
-  @override
-  Widget buildScrollbar(
-    BuildContext context,
-    Widget child,
-    ScrollableDetails details,
-  ) => child;
-
-  @override
-  Set<PointerDeviceKind> get dragDevices => {
-    ...super.dragDevices,
-    PointerDeviceKind.mouse,
-  };
-}
 
 /// The modal shell: a rounded, height-capped card holding the same feed the
 /// pushed screen shows.
@@ -312,7 +293,7 @@ class _RecentActivityScreenState extends ConsumerState<_RecentActivityScreen>
         const Divider(height: 1, thickness: 1, color: AdminUi.border),
         Expanded(
           child: ScrollConfiguration(
-            behavior: const _NoScrollbarBehavior(),
+            behavior: const NoScrollbarBehavior(),
             child: RefreshIndicator(
               onRefresh: () =>
                   ref.read(adminDashboardProvider.notifier).refresh(),
@@ -413,7 +394,7 @@ class _RecentActivityScreenState extends ConsumerState<_RecentActivityScreen>
       // and Flutter excludes the mouse from dragDevices by default, which left
       // the trailing chips unreachable on a narrow browser window.
       child: ScrollConfiguration(
-        behavior: const _NoScrollbarBehavior(),
+        behavior: const NoScrollbarBehavior(),
         child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           padding: EdgeInsets.symmetric(horizontal: gutter),

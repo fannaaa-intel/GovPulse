@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../no_scrollbar_behavior.dart';
 import '../../../theme/app_colors.dart';
 import '../home_enums.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -146,10 +147,10 @@ class HomeNavDrawer extends StatelessWidget {
             // hides its rails': a nav list that paints a grey bar down its edge
             // reads as a scrolling box rather than as the drawer's contents.
             // Only the thumb goes — wheel, drag and keyboard scrolling are
-            // untouched (see [_NoDrawerScrollbar]).
+            // untouched (see [NoScrollbarBehavior]).
             Expanded(
               child: ScrollConfiguration(
-                behavior: const _NoDrawerScrollbar(),
+                behavior: const NoScrollbarBehavior(),
                 child: ListView(
                   padding: EdgeInsets.zero,
                   children: [
@@ -292,20 +293,3 @@ class _DrawerTile extends StatelessWidget {
   }
 }
 
-/// [MaterialScrollBehavior] that scrolls exactly as the default does but paints
-/// no scrollbar.
-///
-/// The same trick the citizen web shell uses for its rails, scoped here to the
-/// drawer's nav list so it cannot restyle anything else. Only [buildScrollbar]
-/// is overridden, so wheel, trackpad, drag and keyboard scrolling all still
-/// work: the bar goes, the scrolling stays.
-class _NoDrawerScrollbar extends MaterialScrollBehavior {
-  const _NoDrawerScrollbar();
-
-  @override
-  Widget buildScrollbar(
-    BuildContext context,
-    Widget child,
-    ScrollableDetails details,
-  ) => child;
-}

@@ -13,6 +13,7 @@ import '../../../core/services/citizen_guard.dart';
 import '../../../core/services/events_service.dart';
 import '../../../core/theme/citizen_ui.dart';
 import '../../../core/widgets/citizen_guard_modals.dart';
+import '../../../core/widgets/no_scrollbar_behavior.dart';
 import '../../../core/widgets/resolve_by_id.dart';
 import '../../admin/screens/admin_dashboard_screen.dart';
 import '../../guest/screen/guest.dart';
@@ -1093,6 +1094,19 @@ class _StartingUp extends StatelessWidget {
 /// No global chat-bubble overlay, unlike the legacy app's `builder`. That bubble
 /// is only ever raised by HomePage (`HomeChatBubble.showGlobal()`), which is
 /// mobile-only now; the shell has its own docked chat window instead.
+///
+/// ── Scrollbars ──────────────────────────────────────────────────────────────
+/// [NoScrollbarBehavior] is set HERE, at the web root, and that is a reversal
+/// of what [CitizenShell] used to say. It scoped its own copy to `body:` on the
+/// grounds that an app-level behaviour "would silently restyle both consoles" —
+/// true, and restyling both consoles is now the point: the admin and staff
+/// detail pop-ups (report, event, feedback, suggestion) each paint a track down
+/// the inside edge of a rounded card.
+///
+/// A shell-scoped wrapper could not have fixed them in any case. Dialogs mount
+/// on the Navigator, ABOVE the shell's `body:`, so every pop-up escaped that
+/// wrapper no matter how the console was styled. The root is the only place
+/// that reaches a dialog route.
 class GovPulseWebApp extends StatelessWidget {
   const GovPulseWebApp({super.key});
 
@@ -1116,6 +1130,9 @@ class GovPulseWebApp extends StatelessWidget {
           },
         ),
       ),
+      // Only the painted bar goes — wheel, trackpad, drag and keyboard
+      // scrolling are untouched. See NoScrollbarBehavior.
+      scrollBehavior: const NoScrollbarBehavior(),
       routerConfig: citizenRouter,
     );
   }

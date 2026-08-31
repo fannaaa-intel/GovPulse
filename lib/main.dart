@@ -22,6 +22,7 @@ import 'core/network/timeout_http_client.dart';
 import 'core/services/session_cache.dart';
 import 'features/scan/scan_page.dart';
 import 'core/widgets/Home/Chat-bubbles/home_chat_bubble.dart';
+import 'core/widgets/no_scrollbar_behavior.dart';
 import 'core/services/chat_service.dart';
 import 'features/home/screen/notification_popup.dart' show NotificationService;
 
@@ -196,29 +197,6 @@ Future<void> _initServices() async {
 
 /// The app's one theme.
 ///
-/// [MaterialScrollBehavior] that scrolls exactly as the default does but paints
-/// no scrollbar, applied app-wide from [MaterialApp.scrollBehavior].
-///
-/// Only [buildScrollbar] is overridden: wheel, trackpad, drag and keyboard
-/// scrolling are untouched, and so are the physics and the overscroll
-/// indicator. The bar goes, the scrolling stays.
-///
-/// This supersedes the two local copies that existed first — `_NoDrawerScrollbar`
-/// in home_nav_drawer.dart and the `ScrollConfiguration` in
-/// quick_action_split_panel.dart. Both are now redundant rather than wrong;
-/// they are left in place because each is scoped and harmless, and deleting a
-/// working guard to prove a point is how a regression gets in.
-class _NoScrollbars extends MaterialScrollBehavior {
-  const _NoScrollbars();
-
-  @override
-  Widget buildScrollbar(
-    BuildContext context,
-    Widget child,
-    ScrollableDetails details,
-  ) => child;
-}
-
 /// Until this existed, `MaterialApp` was handed a bare `ThemeData()`, which in
 /// Material 3 builds a colour scheme seeded from Flutter's DEFAULT purple — not
 /// from our blue. Every widget that takes its background from a scheme role
@@ -333,8 +311,8 @@ class GovPulseApp extends StatelessWidget {
       //
       // Only the PAINTED BAR goes. buildScrollbar is the sole override, so
       // wheel, trackpad, drag, keyboard and scrollbar-drag-free scrolling all
-      // behave exactly as before — see _NoScrollbars.
-      scrollBehavior: const _NoScrollbars(),
+      // behave exactly as before — see NoScrollbarBehavior.
+      scrollBehavior: const NoScrollbarBehavior(),
       navigatorObservers: [homeRouteObserver],
       home: scanToken != null
           ? ScanPage(token: scanToken)

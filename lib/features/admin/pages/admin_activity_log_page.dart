@@ -1,8 +1,8 @@
 import 'dart:ui' as ui show TextDirection;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
+import '../../../core/widgets/no_scrollbar_behavior.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
@@ -81,30 +81,6 @@ void showAdminActivityLog(BuildContext context) {
   );
 }
 
-/// [MaterialScrollBehavior] that scrolls exactly as the default does but paints
-/// no scrollbar — the same trick the citizen shell uses, scoped here to the
-/// activity log so it cannot restyle the rest of the console.
-///
-/// Only [buildScrollbar] is overridden, so wheel, trackpad, drag and keyboard
-/// scrolling all still work: the bar goes, the scrolling stays. [dragDevices]
-/// adds the mouse so click-and-drag keeps working on the web once there is no
-/// visible bar to grab.
-class _NoScrollbarBehavior extends MaterialScrollBehavior {
-  const _NoScrollbarBehavior();
-
-  @override
-  Widget buildScrollbar(
-    BuildContext context,
-    Widget child,
-    ScrollableDetails details,
-  ) => child;
-
-  @override
-  Set<PointerDeviceKind> get dragDevices => {
-    ...super.dragDevices,
-    PointerDeviceKind.mouse,
-  };
-}
 
 /// The modal shell: a rounded, height-capped card holding the same history
 /// content the pushed screen shows.
@@ -466,7 +442,7 @@ class _ActivityLogScreenState extends ConsumerState<_ActivityLogScreen>
     // The bar is hidden across the whole sheet — the list, the skeleton and
     // the empty state all scroll — so the wrapper sits above every branch.
     final unbarred = ScrollConfiguration(
-      behavior: const _NoScrollbarBehavior(),
+      behavior: const NoScrollbarBehavior(),
       child: content,
     );
 
