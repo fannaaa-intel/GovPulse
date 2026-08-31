@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
@@ -1020,7 +1022,29 @@ class _HomeSkeletonScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final double w = uiScaleWidth(context);
-    final h = MediaQuery.of(context).size.height;
+    final size = MediaQuery.of(context).size;
+    final h = size.height;
+
+    // ── These three figures MIRROR _buildMobileBody ─────────────────────────
+    // A skeleton's whole job is to occupy the shape the content will, so the
+    // page does not jump when it arrives. This one was drawn to its own
+    // proportions and got all three wrong:
+    //
+    //  * the banner was a bare w * 0.52. The real header clamps that to
+    //    [200,300], then again against height * 0.35 — because on a LANDSCAPE
+    //    handset the width-based figure pins to its 300 maximum against a
+    //    ~390dp-tall screen and the banner alone eats three-quarters of the
+    //    page. The skeleton did exactly that.
+    //  * the content was left-aligned and unbounded. The real body centres it
+    //    in a 480dp box, so on any viewport wider than that the skeleton sat
+    //    against the left edge and the content jumped to the middle on load.
+    //  * the profile card sits ON the banner, pulled up by cardPull. Without
+    //    it the card started lower and slid up when the page rendered.
+    const double contentMax = 480;
+    final double headerHeight = math
+        .min((size.width * 0.52).clamp(200.0, 300.0), h * 0.35)
+        .clamp(140.0, 300.0);
+    final double cardPull = (w * 0.05).clamp(14.0, 28.0);
 
     return SafeArea(
       child: SingleChildScrollView(
@@ -1028,95 +1052,137 @@ class _HomeSkeletonScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _Shimmer(width: double.infinity, height: w * 0.52, radius: 0),
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: w * 0.04),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(height: w * 0.02),
-                  Container(
-                    padding: EdgeInsets.all(w * 0.04),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(w * 0.04),
-                      border: Border.all(color: CitizenUi.sharedBorder),
-                    ),
-                    child: Column(
-                      children: [
-                        Row(
-                          children: [
-                            _Shimmer(
-                              width: w * 0.18,
-                              height: w * 0.18,
-                              radius: w * 0.09,
+            _Shimmer(width: double.infinity, height: headerHeight, radius: 0),
+            Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: contentMax),
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: w * 0.04),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // The real card is pulled UP onto the banner with a
+                      // Transform.translate, not with a negative gap — a
+                      // SizedBox with a negative height is not a valid
+                      // constraint and destabilises the layout (it surfaced
+                      // here as a _FocusInheritedScope assertion on teardown,
+                      // nowhere near the actual cause). Mirror the technique,
+                      // not just the offset.
+                      SizedBox(height: w * 0.02),
+                      Transform.translate(
+                        offset: Offset(0, -cardPull),
+                        child: Container(
+                          padding: EdgeInsets.all(w * 0.04),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(w * 0.04),
+                            border: Border.all(color: CitizenUi.sharedBorder),
+                          ),
+                          child: Column(
+                            children: [
+                              Row(
+                                children: [
+                                  _Shimmer(
+                                    width: w * 0.18,
+                                    height: w * 0.18,
+                                    radius: w * 0.09,
+                                  ),
+                                  SizedBox(width: w * 0.04),
+                                  Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      _Shimmer(
+                                        width: w * 0.40,
+                                        height: w * 0.04,
+                                      ),
+                                      SizedBox(height: w * 0.02),
+                                      _Shimmer(
+                                        width: w * 0.28,
+                                        height: w * 0.03,
+                                      ),
+                                      SizedBox(height: w * 0.025),
+                                      _Shimmer(
+                                        width: w * 0.22,
+                                        height: w * 0.06,
+                                        radius: w * 0.03,
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                              SizedBox(height: w * 0.04),
+                              _Shimmer(
+                                width: double.infinity,
+                                height: w * 0.12,
+                                radius: w * 0.03,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      SizedBox(height: w * 0.05),
+                      _Shimmer(width: w * 0.35, height: w * 0.035),
+                      SizedBox(height: w * 0.03),
+                      // ── Expanded, NOT a computed width ────────────────────
+                      // This used to size each tile as (w - w*0.08 - w*0.06) / 3,
+                      // reconstructing the parent's padding and the gaps from `w`.
+                      // Two things made that wrong. `w` is uiScaleWidth, which is
+                      // CLAMPED at 480, while the row's real width is not — so past
+                      // 480dp the arithmetic described a narrower box than the one
+                      // it was laid out in. And the reconstruction had to agree
+                      // exactly with padding written elsewhere in this widget, so a
+                      // rounding difference of a fraction of a pixel overflowed the
+                      // Row. It did, visibly: "RIGHT OVERFLOWED BY 2.0 PIXELS" at
+                      // 390dp, which is the commonest phone width there is.
+                      //
+                      // Expanded takes whatever is actually left after the gaps, so
+                      // it cannot disagree with the layout it sits in.
+                      Row(
+                        children: List.generate(
+                          3,
+                          (i) => Expanded(
+                            child: Padding(
+                              padding: EdgeInsets.only(
+                                right: i < 2 ? w * 0.03 : 0,
+                              ),
+                              child: _Shimmer(
+                                width: double.infinity,
+                                height: w * 0.32,
+                                radius: w * 0.03,
+                              ),
                             ),
-                            SizedBox(width: w * 0.04),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                          ),
+                        ),
+                      ),
+                      SizedBox(height: w * 0.05),
+                      _Shimmer(width: w * 0.30, height: w * 0.035),
+                      SizedBox(height: w * 0.03),
+                      Row(
+                        children: List.generate(
+                          3,
+                          (i) => Padding(
+                            padding: EdgeInsets.only(
+                              right: i < 2 ? w * 0.03 : 0,
+                            ),
+                            child: Column(
                               children: [
-                                _Shimmer(width: w * 0.40, height: w * 0.04),
-                                SizedBox(height: w * 0.02),
-                                _Shimmer(width: w * 0.28, height: w * 0.03),
-                                SizedBox(height: w * 0.025),
                                 _Shimmer(
-                                  width: w * 0.22,
-                                  height: w * 0.06,
-                                  radius: w * 0.03,
+                                  width: w * 0.20,
+                                  height: w * 0.20,
+                                  radius: w * 0.04,
                                 ),
+                                SizedBox(height: w * 0.02),
+                                _Shimmer(width: w * 0.16, height: w * 0.025),
                               ],
                             ),
-                          ],
-                        ),
-                        SizedBox(height: w * 0.04),
-                        _Shimmer(
-                          width: double.infinity,
-                          height: w * 0.12,
-                          radius: w * 0.03,
-                        ),
-                      ],
-                    ),
-                  ),
-                  SizedBox(height: w * 0.05),
-                  _Shimmer(width: w * 0.35, height: w * 0.035),
-                  SizedBox(height: w * 0.03),
-                  Row(
-                    children: List.generate(
-                      3,
-                      (i) => Padding(
-                        padding: EdgeInsets.only(right: i < 2 ? w * 0.03 : 0),
-                        child: _Shimmer(
-                          width: (w - w * 0.08 - w * 0.06) / 3,
-                          height: w * 0.32,
-                          radius: w * 0.03,
+                          ),
                         ),
                       ),
-                    ),
+                      SizedBox(height: h * 0.04),
+                    ],
                   ),
-                  SizedBox(height: w * 0.05),
-                  _Shimmer(width: w * 0.30, height: w * 0.035),
-                  SizedBox(height: w * 0.03),
-                  Row(
-                    children: List.generate(
-                      3,
-                      (i) => Padding(
-                        padding: EdgeInsets.only(right: i < 2 ? w * 0.03 : 0),
-                        child: Column(
-                          children: [
-                            _Shimmer(
-                              width: w * 0.20,
-                              height: w * 0.20,
-                              radius: w * 0.04,
-                            ),
-                            SizedBox(height: w * 0.02),
-                            _Shimmer(width: w * 0.16, height: w * 0.025),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  SizedBox(height: h * 0.04),
-                ],
+                ),
               ),
             ),
           ],
