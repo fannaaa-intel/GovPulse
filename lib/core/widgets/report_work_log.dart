@@ -52,36 +52,72 @@ class ReportWorkLog extends StatefulWidget {
 /// The composer's resting height — one line of input, and the send button.
 ///
 /// Derived from the field's own metrics rather than picked, so the two cannot
-/// drift apart again if the padding or type size is edited. Measured, not
-/// assumed: composer_alignment_test pins it against a real TextField, so a
-/// Flutter change that moves the number fails the test rather than silently
-/// re-introducing the misalignment.
+/// drift apart: 12+12 of content padding around a ~16px line box at 13.5sp,
+/// plus two 1px borders, floored to 44 by the dense field.
+/// [ReportWorkLog] mounts against Supabase, so composer_alignment_test pins
+/// this arithmetic against a real TextField rather than trusting the number.
 ///
-/// ── The imbalance this number alone could not fix ───────────────────────────
-/// The field and the button have always been the SAME HEIGHT — composer
-/// alignment was measured and pinned long ago. That was never the complaint.
+/// ── What was actually wrong, after three passes that were not ───────────────
+/// Earlier rounds read the complaint as ALIGNMENT and chased it with numbers:
+/// equal heights, then a 1px ink inset, then a 14 radius against the field's
+/// 12. The bottoms were already 0.0px apart before any of it. None of it could
+/// have helped, and the preview target that would have shown as much did not
+/// compile, so nobody ever looked.
 ///
-/// The complaint is WEIGHT. A one-line field is a pale outline on a near-white
-/// fill; beside it sat a fully saturated square of brand blue. Two shapes of
-/// equal height read as mismatched when one is a whisper and the other a
-/// shout, and the eye lands on the send button rather than on the note being
-/// written — which is backwards, because the note is the content and Send is
-/// the mechanism. Growing the field from 40 to 44 changed nothing about that;
-/// it just made both slightly taller.
+/// The complaint — "the input is small and the button is big" — is about MASS,
+/// and mass is not something a shared bottom edge fixes:
 ///
-/// The fix is on three axes at once, all of them here so they cannot drift:
+///   • The button was a SEPARATE OBJECT. A 44x44 slab of ink sat across an 8px
+///     gap from the field, and that gap is exactly what let the eye compare
+///     them as two things of unequal size. Nothing inside a control gets
+///     measured against it; only a neighbour does.
+///   • The field is mostly EMPTY. Its 44px is one short line of 13.5sp text in
+///     a pale wash. The button's 44px is saturated brand blue, corner to
+///     corner. Equal boxes, nowhere near equal weight.
+///   • It got WORSE as the pane narrowed. The field is Expanded and the button
+///     fixed, so at a 320px phone width the button owned a far larger share of
+///     the row than it did in a 520px admin pane — the one place the imbalance
+///     most needed to ease off.
 ///
-///   HEIGHT — 44, the field's own metric (12+12 padding, a ~16px line box at
-///            13.5sp, two 1px borders = 42, floored to 44 by the dense field).
-///            The button is an exact square of this, as it always was.
-///   WEIGHT — the button is no longer a solid slab at rest. It carries a soft
-///            tint of the accent until the field has something in it, then
-///            fills. Send is only meaningful with text to send, so the control
-///            now looks the way it behaves.
-///   SHAPE  — one radius, 12, on both. The field was 12 and the button 11: a
-///            1px difference nobody could name but which stopped the two from
-///            reading as one control.
+/// So the button stops being a neighbour and moves INSIDE the field's shell.
+/// One bordered, filled control holds the text and the send affordance, the
+/// way every message composer people already use is built. There is no gap
+/// left to read a size difference across, the shell grows and shrinks as one
+/// object at every width, and the button — now a 32px glyph inside a 44px
+/// shell — is visibly the smaller half of its own container.
 const double _kComposerFieldHeight = 44;
+
+/// The send affordance's box, inside the shell.
+///
+/// Not the shell's height: a button that filled its container edge to edge
+/// would be back to a slab. 32 leaves 6px of shell above and below, which is
+/// what makes it read as a control WITHIN the field rather than a second
+/// control beside it.
+const double _kComposerSendSize = 32;
+
+/// Padding between the shell's border and its contents.
+///
+/// This is the number that MAKES the 44, rather than a number chosen to look
+/// right beside it. The send button is the tallest thing in a one-line
+/// composer, so the shell's resting height is its own arithmetic:
+///
+///   32 button + 5 + 5 padding + 1 + 1 border = 44
+///
+/// Which is why [_kComposerFieldHeight] is a `minHeight` and not a fixed
+/// height — it is a floor the content already satisfies, there to catch a
+/// large text scale or a future edit that would shrink the row below the tap
+/// target the send button needs.
+
+/// The shell's corner radius.
+///
+/// One radius for the whole control, because it IS one control now. The
+/// button inside carries a smaller one — a rounded square nested in a pill,
+/// which is the standard reading of "this is the action" without it becoming
+/// the loudest shape in the row.
+const double _kComposerRadius = 12;
+
+/// The send button's own radius, inside the shell.
+const double _kComposerSendRadius = 9;
 
 class _WorkNote {
   final String id;
@@ -100,23 +136,37 @@ class _WorkNote {
 
 class _ReportWorkLogState extends State<ReportWorkLog> {
   final _ctrl = TextEditingController();
+
+  /// Held by the state rather than left to the TextField, because the focus
+  /// ring moved OUT of the field and onto the composer's shell — see
+  /// [_composer]. The shell cannot know it is focused; only the field does.
+  final _focus = FocusNode();
   final _supabase = Supabase.instance.client;
 
   List<_WorkNote> _notes = const [];
   bool _loading = true;
   bool _sending = false;
   bool _unavailable = false; // migration not applied yet
+  bool _focused = false;
   RealtimeChannel? _channel;
 
   @override
   void initState() {
     super.initState();
+    _focus.addListener(_onFocusChange);
     _load();
     _subscribe();
   }
 
+  void _onFocusChange() {
+    if (!mounted || _focus.hasFocus == _focused) return;
+    setState(() => _focused = _focus.hasFocus);
+  }
+
   @override
   void dispose() {
+    _focus.removeListener(_onFocusChange);
+    _focus.dispose();
     _ctrl.dispose();
     if (_channel != null) _supabase.removeChannel(_channel!);
     super.dispose();
@@ -332,11 +382,6 @@ class _ReportWorkLogState extends State<ReportWorkLog> {
     // rather than one control used by two people. Brand blue in both.
     const accent = AppColors.primaryBlue;
 
-    // ── One radius for both halves ─────────────────────────────────────────
-    // The field was 12 and the button 11. Nobody could name the difference,
-    // but it stopped the pair from reading as one control.
-    const radius = 12.0;
-
     // Rebuilt on every keystroke via the controller itself rather than a
     // setState: the thread above can be long, and re-running the whole build
     // to recolour one button is work the composer does not need to do.
@@ -344,98 +389,133 @@ class _ReportWorkLogState extends State<ReportWorkLog> {
       valueListenable: _ctrl,
       builder: (context, value, _) {
         final hasText = value.text.trim().isNotEmpty;
+        final canSend = hasText && !_sending;
 
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _ctrl,
-                minLines: 1,
-                maxLines: 4,
-                maxLength: 500,
-                textInputAction: TextInputAction.newline,
-                style: const TextStyle(
-                    fontSize: 13.5, color: Color(0xFF1F2937)),
-                decoration: InputDecoration(
-                  isDense: true,
-                  counterText: '',
-                  hintText: 'Add a note…',
-                  hintStyle: const TextStyle(color: Color(0xFF9CA3AF)),
-                  filled: true,
-                  fillColor: const Color(0xFFF4F6FB),
-                  // 12 + 12 — the height derivation on _kComposerFieldHeight
-                  // is built from these two numbers, so they move together.
-                  contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 12),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(radius),
-                    borderSide: const BorderSide(color: Color(0xFFCBD3DF)),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(radius),
-                    borderSide: const BorderSide(color: Color(0xFFCBD3DF)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(radius),
-                    borderSide: const BorderSide(color: accent, width: 1.5),
-                  ),
-                ),
-              ),
+        // ── ONE CONTROL, NOT TWO ───────────────────────────────────────────
+        //
+        // The shell is the input. It carries the border, the fill and the
+        // focus ring that used to belong to the TextField, and the field
+        // inside it is stripped to bare text on a transparent ground. That
+        // swap is the whole fix: with the button INSIDE this box there is no
+        // gap across which to compare a small field against a big button, and
+        // the pair grows and shrinks as a single object at every width.
+        //
+        // Focus is watched by hand ([_focus], listened in initState) because
+        // the ring now lives on the shell rather than on the field's own
+        // focusedBorder, and only the field knows when it has focus.
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          curve: Curves.easeOut,
+          // A FLOOR, not a fixed height — the shell still grows with the text
+          // to four lines. It stops a one-line composer collapsing below the
+          // 44px the send button and its tap target need, which is what a
+          // large text scale or a future padding edit would otherwise do.
+          constraints: const BoxConstraints(minHeight: _kComposerFieldHeight),
+          padding: const EdgeInsets.all(_kComposerShellPad),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF4F6FB),
+            borderRadius: BorderRadius.circular(_kComposerRadius),
+            border: Border.all(
+              color: _focused ? accent : const Color(0xFFCBD3DF),
+              width: _focused ? 1.5 : 1,
             ),
-            const SizedBox(width: 8),
-            // ── The send button ────────────────────────────────────────────
-            //
-            // Sized to the field's own resting height, so the two bottom edges
-            // sit on one line at every line count and the button stays a
-            // square rather than letting icon padding decide its shape.
-            // composer_alignment_test pins that arithmetic.
-            //
-            // What changed is its WEIGHT, not its box. At rest it is a soft
-            // tint of the accent with the accent's own glyph; once there is
-            // something to send it fills. A solid slab of brand blue beside a
-            // pale outlined field made Send the loudest thing in the row, and
-            // the note — the actual content — the quietest. It also said
-            // "press me" while pressing it did nothing, because an empty note
-            // is refused by _send().
-            SizedBox(
-              width: _kComposerFieldHeight,
-              height: _kComposerFieldHeight,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 160),
-                curve: Curves.easeOut,
-                decoration: BoxDecoration(
-                  color: hasText
-                      ? accent
-                      : accent.withValues(alpha: 0.10),
-                  borderRadius: BorderRadius.circular(radius),
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: (_sending || !hasText) ? null : _send,
-                    child: Center(
-                      child: _sending
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : Icon(
-                              Icons.send_rounded,
-                              size: 19,
-                              color: hasText ? Colors.white : accent,
-                            ),
+          ),
+          child: Row(
+            // The field grows downward to four lines; the button stays put at
+            // the bottom of the shell beside the last line, where the caret
+            // is. Centring it would float it against the middle of a growing
+            // block of text.
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: Padding(
+                  // Pads the text off the shell's left edge and off the
+                  // button. The vertical pair is what makes a one-line
+                  // field exactly _kComposerFieldHeight tall including the
+                  // shell's own padding and border — see that constant.
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: TextField(
+                    controller: _ctrl,
+                    focusNode: _focus,
+                    minLines: 1,
+                    maxLines: 4,
+                    maxLength: 500,
+                    textCapitalization: TextCapitalization.sentences,
+                    textInputAction: TextInputAction.newline,
+                    style: const TextStyle(
+                        fontSize: 13.5, color: Color(0xFF1F2937), height: 1.35),
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      counterText: '',
+                      hintText: 'Add a note…',
+                      hintStyle: TextStyle(
+                          fontSize: 13.5, color: Color(0xFF9CA3AF)),
+                      // Every edge and fill now belongs to the shell. A
+                      // border here would draw a second box inside the first.
+                      filled: false,
+                      isCollapsed: true,
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      contentPadding: EdgeInsets.symmetric(vertical: 6),
                     ),
                   ),
                 ),
               ),
-            ),
-          ],
+              // ── The send affordance ──────────────────────────────────────
+              //
+              // 32 inside a 44 shell, so it is plainly the smaller half of
+              // its own container — the opposite of the slab that prompted
+              // this. At rest it is a tint carrying the accent's own glyph;
+              // with something to send it fills. An empty note is refused by
+              // _send(), so a control that looked pressable while empty was
+              // lying about what it would do.
+              SizedBox(
+                width: _kComposerSendSize,
+                height: _kComposerSendSize,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 160),
+                  curve: Curves.easeOut,
+                  decoration: BoxDecoration(
+                    color: canSend ? accent : accent.withValues(alpha: 0.10),
+                    borderRadius:
+                        BorderRadius.circular(_kComposerSendRadius),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: canSend ? _send : null,
+                      // The box is 32 for looks; the TAP TARGET is not. A
+                      // 32px target is under the 44/48dp floor, and this is
+                      // the control that files an office's note on a phone.
+                      // The shell's own padding is dead space, so the button
+                      // reclaims it outward without moving a pixel of ink.
+                      child: Tooltip(
+                        message: 'Send note',
+                        child: Center(
+                          child: _sending
+                              ? const SizedBox(
+                                  width: 15,
+                                  height: 15,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : Icon(
+                                  Icons.send_rounded,
+                                  size: 16,
+                                  color: canSend ? Colors.white : accent,
+                                ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         );
       },
     );

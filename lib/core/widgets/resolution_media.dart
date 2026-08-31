@@ -660,32 +660,97 @@ class _AddTile extends StatelessWidget {
     );
   }
 
+  /// Width at or above which the picker is skipped entirely.
+  ///
+  /// On a desktop the "Photos or Video?" question is answered better by the
+  /// file explorer itself: it opens over the page, shows both kinds, and the
+  /// admin picks by looking. Asking first is a modal in front of a dialog to
+  /// choose which dialog to open next.
+  ///
+  /// Below it — phone, and the medium web window that behaves like one — the
+  /// explorer is a full-screen system UI, so a cheap sheet first is worth it:
+  /// Video goes straight to the camera roll's video tab instead of making the
+  /// officer hunt for it.
+  static const double _kSkipPickerAt = 900;
+
   void _pick(BuildContext context) {
-    showAppDialog<void>(
+    // ── Large screens: no picker at all ────────────────────────────────────
+    // Photos is the overwhelmingly common case and the explorer shows videos
+    // too, so this is one tap instead of two with nothing lost.
+    if (MediaQuery.sizeOf(context).width >= _kSkipPickerAt) {
+      onPhotos();
+      return;
+    }
+
+    // ── Phone and medium web: a slide-up sheet ─────────────────────────────
+    //
+    // NOT showAppDialog. A centred card that fades in is the shape the citizen
+    // side deliberately moved away from — see _showBarangayPicker in
+    // edit_profile_screen.dart, which is the reference this mirrors: a rounded
+    // top, a grab handle, and the sheet rising from the edge it is anchored
+    // to. A two-item chooser floating in the middle of a phone screen reads as
+    // an interruption; the same two items rising from the bottom read as the
+    // continuation of the tap that opened them.
+    showModalBottomSheet<void>(
       context: context,
-      builder: (ctx) => SimpleDialog(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        title: const Text('Add completion media',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-        children: [
-          _SheetAction(
-            icon: Icons.add_a_photo_outlined,
-            label: 'Photos',
-            onTap: () {
-              Navigator.pop(ctx);
-              onPhotos();
-            },
-          ),
-          _SheetAction(
-            icon: Icons.videocam_outlined,
-            label: 'Video',
-            onTap: () {
-              Navigator.pop(ctx);
-              onVideo();
-            },
-          ),
-        ],
+      backgroundColor: Colors.white,
+      // The sheet sizes to its two rows rather than to a fraction of the
+      // screen — there is nothing to scroll.
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 10),
+            // The grab handle, straight from the citizen sheet. It is what
+            // says "this came from the bottom edge and goes back there".
+            Center(
+              child: Container(
+                width: 44,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE5E7EB),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 18, 20, 4),
+              child: Text(
+                'Add completion media',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 0, 20, 10),
+              child: Text(
+                'The resident sees this on their resolved report.',
+                style: TextStyle(fontSize: 12.5, color: Color(0xFF6B7280)),
+              ),
+            ),
+            _SheetAction(
+              icon: Icons.add_a_photo_outlined,
+              label: 'Photos',
+              onTap: () {
+                Navigator.pop(ctx);
+                onPhotos();
+              },
+            ),
+            _SheetAction(
+              icon: Icons.videocam_outlined,
+              label: 'Video',
+              onTap: () {
+                Navigator.pop(ctx);
+                onVideo();
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
       ),
     );
   }
