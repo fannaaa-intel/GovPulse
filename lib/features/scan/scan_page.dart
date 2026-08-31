@@ -40,6 +40,26 @@ const Color _green = Color(0xFF15803D);
 const Color _red = Color(0xFFB91C1C);
 const Color _canvas = Color(0xFFF3F4F6);
 
+/// Below this width the page goes edge to edge; at or above it, the content
+/// sits on a centred card over the grey canvas.
+///
+/// This screen is opened by a phone camera at a roadside, essentially always —
+/// so the phone case is the ordinary one and the desktop case is the exception,
+/// which is the reverse of every other surface in this app.
+///
+/// On a 360px phone the card layout spent ~36px per side on chrome that carries
+/// no information: 16px of scroll padding, a 1px border, and 20px of card
+/// inset, with the grey canvas showing through either side of a white sheet
+/// that filled the viewport anyway. That is a fifth of the screen given to a
+/// container edge, on the one screen where the reader is outdoors, one-handed,
+/// and reading an address they have to act on.
+///
+/// 600 rather than a phone-width number: it is the same threshold the citizen
+/// quick-action panels use for their fullscreen collapse, and a 480-wide card
+/// (the maxWidth below) plus its margins needs about this much room before it
+/// reads as a sheet on a page rather than as a page with wasted edges.
+const double kScanCardFrom = 600;
+
 /// The most photos the agency may attach to one update.
 ///
 /// Enforced in three places on purpose: here (so the picker stops offering),
@@ -643,19 +663,37 @@ class _ScanPageState extends State<ScanPage> {
         scaffoldBackgroundColor: _canvas,
         colorScheme: ColorScheme.fromSeed(seedColor: _blue),
       ),
-      child: Scaffold(
-        backgroundColor: _canvas,
-        body: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 480),
-                child: _content(),
+      child: Builder(
+        builder: (context) {
+          final wide = MediaQuery.sizeOf(context).width >= kScanCardFrom;
+          return Scaffold(
+            // White under the phone layout: the cards ARE the page there, so a
+            // grey scaffold would show only as a seam wherever the content
+            // stops short of the fold.
+            backgroundColor: wide ? _canvas : Colors.white,
+            body: SafeArea(
+              // Centred only when there IS spare room to centre in. On a phone
+              // the content is taller than the viewport, and Center on a
+              // taller-than-screen child pushes the top of the page off the
+              // top of the scroll view - the letterhead ends up below a band
+              // of empty white and the officer has to scroll UP to find it.
+              child: Align(
+                alignment:
+                    wide ? Alignment.center : Alignment.topCenter,
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: wide ? 16 : 0,
+                    vertical: wide ? 24 : 0,
+                  ),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 480),
+                    child: _content(),
+                  ),
+                ),
               ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
@@ -1589,15 +1627,7 @@ class _ScanPageState extends State<ScanPage> {
         borderSide: BorderSide(color: c, width: w),
       );
 
-  Widget _shell({required Widget child}) => Container(
-    padding: const EdgeInsets.all(20),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(14),
-      border: Border.all(color: _line),
-    ),
-    child: child,
-  );
+  Widget _shell({required Widget child}) => scanShell(context, child: child);
 
   // ── Where it is ───────────────────────────────────────────────────────────
   //
@@ -1959,7 +1989,7 @@ class _ScanSkeleton extends StatelessWidget {
         ),
         const SizedBox(height: 16),
 
-        _shell(
+        _shell(context,
           child: AdminShimmer(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1998,7 +2028,7 @@ class _ScanSkeleton extends StatelessWidget {
         // The action card: heading, two lines of instruction, the PIN field and
         // the button. Sized to the real thing so the button does not jump up the
         // page when the content lands.
-        _shell(
+        _shell(context,
           child: const AdminShimmer(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2064,17 +2094,12 @@ class _ScanSkeleton extends StatelessWidget {
         ),
       );
 
-  /// Same white card the real page uses, so the placeholder occupies exactly
-  /// the surface the content will.
-  static Widget _shell({required Widget child}) => Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: _line),
-        ),
-        child: child,
-      );
+  /// Same surface the real page uses, so the placeholder occupies exactly the
+  /// space the content will — including the phone layout's full-bleed form,
+  /// which is what stops the page reflowing under the reader's thumb when the
+  /// content lands.
+  static Widget _shell(BuildContext context, {required Widget child}) =>
+      scanShell(context, child: child);
 }
 
 /// A skeleton bar sized to a FRACTION of whatever width it is given.
@@ -2358,4 +2383,48 @@ List<ScanMedia> joinScanMedia(List<dynamic> rows, dynamic response) {
     ));
   }
   return out;
+}
+
+/// One content surface on the scan page.
+///
+/// Two forms, chosen by width (see [kScanCardFrom]):
+///
+///   * **Phone** — full bleed. No side border, no radius, no outer margin; the
+///     surface IS the page, and the only rule is a hairline between stacked
+///     sections so they still read as separate. Horizontal padding drops from
+///     20 to 18, which is a comfortable reading margin rather than a card
+///     inset.
+///   * **Tablet and desktop** — the white card on grey canvas this page has
+///     always used: rounded, bordered, capped at 480 wide and centred.
+///
+/// Shared by the real page and the skeleton so a slow first load does not
+/// change shape when the content arrives. The two used to be separate copies
+/// of the same Container.
+Widget scanShell(BuildContext context, {required Widget child}) {
+  final wide = MediaQuery.sizeOf(context).width >= kScanCardFrom;
+
+  if (wide) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _line),
+      ),
+      child: child,
+    );
+  }
+
+  return Container(
+    width: double.infinity,
+    padding: const EdgeInsets.fromLTRB(18, 20, 18, 20),
+    decoration: const BoxDecoration(
+      color: Colors.white,
+      // Top hairline only. A full border on a full-bleed surface draws a line
+      // down the very edge of the screen, which reads as a rendering fault
+      // rather than as a container.
+      border: Border(top: BorderSide(color: _line)),
+    ),
+    child: child,
+  );
 }

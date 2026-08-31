@@ -715,4 +715,90 @@ void main() {
     });
   });
 
+
+  group('phone goes edge to edge, desktop keeps the card', () {
+    // On a 360px phone the card layout spent ~36px per side on chrome carrying
+    // no information: scroll padding, a border, and the card's own inset, with
+    // grey canvas showing either side of a white sheet that filled the screen
+    // anyway. This page is opened by a phone camera at a roadside essentially
+    // always, so that is the ordinary case, not the exception.
+
+    Future<void> pumpAt(WidgetTester tester, double width) async {
+      tester.view.physicalSize = Size(width, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await _boot(_MockApi('endorsed'));
+      await tester.pumpWidget(_host());
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+    }
+
+    /// The surface a content section is drawn on.
+    BoxDecoration shellDecoration(WidgetTester tester) {
+      // The first Container whose decoration is a white BoxDecoration is a
+      // content shell; the scaffold above it paints through its own property.
+      final containers = tester.widgetList<Container>(find.byType(Container));
+      for (final c in containers) {
+        final d = c.decoration;
+        if (d is BoxDecoration && d.color == Colors.white) return d;
+      }
+      fail('no white content surface found');
+    }
+
+    testWidgets('a phone draws no rounded card border', (tester) async {
+      await pumpAt(tester, 390);
+      final d = shellDecoration(tester);
+
+      expect(d.borderRadius, isNull,
+          reason: 'a full-bleed surface with a radius shows canvas in the '
+              'corners');
+      // A full border on a full-bleed surface draws a line down the very edge
+      // of the screen, which reads as a rendering fault.
+      expect(d.border, isA<Border>().having((b) => b.left, 'left side',
+          BorderSide.none));
+    });
+
+    testWidgets('a desktop keeps the rounded bordered card', (tester) async {
+      await pumpAt(tester, 1100);
+      final d = shellDecoration(tester);
+
+      expect(d.borderRadius, isNotNull);
+      expect(d.border, isNotNull);
+    });
+
+    testWidgets('the scaffold is white on a phone, grey on a desktop',
+        (tester) async {
+      // The cards ARE the page on a phone, so a grey scaffold would show only
+      // as a seam wherever content stops short of the fold.
+      await pumpAt(tester, 390);
+      expect(
+        tester.widget<Scaffold>(find.byType(Scaffold)).backgroundColor,
+        Colors.white,
+      );
+
+      await pumpAt(tester, 1100);
+      expect(
+        tester.widget<Scaffold>(find.byType(Scaffold)).backgroundColor,
+        isNot(Colors.white),
+      );
+    });
+
+    testWidgets('the phone layout starts at the top, not vertically centred',
+        (tester) async {
+      // Center on a child taller than the viewport pushes the top of the page
+      // off the top of the scroll view: the letterhead ends up below a band of
+      // empty white and the officer has to scroll UP to find it.
+      await pumpAt(tester, 390);
+      final align = tester.widget<Align>(
+        find
+            .ancestor(
+              of: find.byType(SingleChildScrollView),
+              matching: find.byType(Align),
+            )
+            .first,
+      );
+      expect(align.alignment, Alignment.topCenter);
+    });
+  });
+
 }
