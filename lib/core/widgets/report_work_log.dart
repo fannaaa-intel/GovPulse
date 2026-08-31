@@ -107,6 +107,7 @@ const double _kComposerSendSize = 32;
 /// height — it is a floor the content already satisfies, there to catch a
 /// large text scale or a future edit that would shrink the row below the tap
 /// target the send button needs.
+const double _kComposerShellPad = 5;
 
 /// The shell's corner radius.
 ///
@@ -192,18 +193,23 @@ class _ReportWorkLogState extends State<ReportWorkLog> {
             if (_notes.any((n) => n.id == id)) return; // dedupe our own echo
             if (!mounted) return;
             setState(() {
-              _notes = [
-                ..._notes,
-                _WorkNote(
-                  id: id,
-                  authorRole: (row['author_role'] as String?) ?? 'staff',
-                  authorName: (row['author_name'] as String?) ?? 'Staff',
-                  body: (row['body'] as String?) ?? '',
-                  createdAt:
-                      DateTime.tryParse(row['created_at'].toString())?.toLocal(),
-                ),
-              ]..sort((a, b) => (a.createdAt ?? DateTime(0))
-                  .compareTo(b.createdAt ?? DateTime(0)));
+              _notes =
+                  [
+                    ..._notes,
+                    _WorkNote(
+                      id: id,
+                      authorRole: (row['author_role'] as String?) ?? 'staff',
+                      authorName: (row['author_name'] as String?) ?? 'Staff',
+                      body: (row['body'] as String?) ?? '',
+                      createdAt: DateTime.tryParse(
+                        row['created_at'].toString(),
+                      )?.toLocal(),
+                    ),
+                  ]..sort(
+                    (a, b) => (a.createdAt ?? DateTime(0)).compareTo(
+                      b.createdAt ?? DateTime(0),
+                    ),
+                  );
             });
           },
         )
@@ -220,14 +226,17 @@ class _ReportWorkLogState extends State<ReportWorkLog> {
       if (!mounted) return;
       setState(() {
         _notes = List<Map<String, dynamic>>.from(rows)
-            .map((r) => _WorkNote(
-                  id: r['id'].toString(),
-                  authorRole: (r['author_role'] as String?) ?? 'staff',
-                  authorName: (r['author_name'] as String?) ?? 'Staff',
-                  body: (r['body'] as String?) ?? '',
-                  createdAt: DateTime.tryParse(r['created_at'].toString())
-                      ?.toLocal(),
-                ))
+            .map(
+              (r) => _WorkNote(
+                id: r['id'].toString(),
+                authorRole: (r['author_role'] as String?) ?? 'staff',
+                authorName: (r['author_name'] as String?) ?? 'Staff',
+                body: (r['body'] as String?) ?? '',
+                createdAt: DateTime.tryParse(
+                  r['created_at'].toString(),
+                )?.toLocal(),
+              ),
+            )
             .toList();
         _loading = false;
       });
@@ -263,11 +272,14 @@ class _ReportWorkLogState extends State<ReportWorkLog> {
           ..._notes,
           _WorkNote(
             id: inserted['id'].toString(),
-            authorRole: (inserted['author_role'] as String?) ?? widget.authorRole,
-            authorName: (inserted['author_name'] as String?) ?? widget.authorName,
+            authorRole:
+                (inserted['author_role'] as String?) ?? widget.authorRole,
+            authorName:
+                (inserted['author_name'] as String?) ?? widget.authorName,
             body: (inserted['body'] as String?) ?? body,
-            createdAt:
-                DateTime.tryParse(inserted['created_at'].toString())?.toLocal(),
+            createdAt: DateTime.tryParse(
+              inserted['created_at'].toString(),
+            )?.toLocal(),
           ),
         ];
         _ctrl.clear();
@@ -306,15 +318,16 @@ class _ReportWorkLogState extends State<ReportWorkLog> {
             child: Text(
               'No notes yet. Post progress updates or instructions here — '
               'the citizen never sees these.',
-              style: TextStyle(fontSize: 12.5, color: Color(0xFF8A94A6), height: 1.4),
+              style: TextStyle(
+                fontSize: 12.5,
+                color: Color(0xFF8A94A6),
+                height: 1.4,
+              ),
             ),
           )
         else
           for (final n in _notes) _bubble(n),
-        if (!widget.locked) ...[
-          const SizedBox(height: 8),
-          _composer(),
-        ],
+        if (!widget.locked) ...[const SizedBox(height: 8), _composer()],
       ],
     );
   }
@@ -337,9 +350,7 @@ class _ReportWorkLogState extends State<ReportWorkLog> {
           Row(
             children: [
               Icon(
-                isAdmin
-                    ? Icons.shield_rounded
-                    : Icons.engineering_rounded,
+                isAdmin ? Icons.shield_rounded : Icons.engineering_rounded,
                 size: 13,
                 color: accent,
               ),
@@ -359,7 +370,10 @@ class _ReportWorkLogState extends State<ReportWorkLog> {
               const SizedBox(width: 6),
               Text(
                 _ago(n.createdAt),
-                style: const TextStyle(fontSize: 10.5, color: Color(0xFF9CA3AF)),
+                style: const TextStyle(
+                  fontSize: 10.5,
+                  color: Color(0xFF9CA3AF),
+                ),
               ),
             ],
           ),
@@ -367,7 +381,10 @@ class _ReportWorkLogState extends State<ReportWorkLog> {
           Text(
             n.body,
             style: const TextStyle(
-                fontSize: 13, color: Color(0xFF1F2937), height: 1.4),
+              fontSize: 13,
+              color: Color(0xFF1F2937),
+              height: 1.4,
+            ),
           ),
         ],
       ),
@@ -411,7 +428,7 @@ class _ReportWorkLogState extends State<ReportWorkLog> {
           // 44px the send button and its tap target need, which is what a
           // large text scale or a future padding edit would otherwise do.
           constraints: const BoxConstraints(minHeight: _kComposerFieldHeight),
-          padding: const EdgeInsets.all(_kComposerShellPad),
+          padding: EdgeInsets.all(_kComposerShellPad),
           decoration: BoxDecoration(
             color: const Color(0xFFF4F6FB),
             borderRadius: BorderRadius.circular(_kComposerRadius),
@@ -443,13 +460,18 @@ class _ReportWorkLogState extends State<ReportWorkLog> {
                     textCapitalization: TextCapitalization.sentences,
                     textInputAction: TextInputAction.newline,
                     style: const TextStyle(
-                        fontSize: 13.5, color: Color(0xFF1F2937), height: 1.35),
+                      fontSize: 13.5,
+                      color: Color(0xFF1F2937),
+                      height: 1.35,
+                    ),
                     decoration: const InputDecoration(
                       isDense: true,
                       counterText: '',
                       hintText: 'Add a note…',
                       hintStyle: TextStyle(
-                          fontSize: 13.5, color: Color(0xFF9CA3AF)),
+                        fontSize: 13.5,
+                        color: Color(0xFF9CA3AF),
+                      ),
                       // Every edge and fill now belongs to the shell. A
                       // border here would draw a second box inside the first.
                       filled: false,
@@ -478,8 +500,7 @@ class _ReportWorkLogState extends State<ReportWorkLog> {
                   curve: Curves.easeOut,
                   decoration: BoxDecoration(
                     color: canSend ? accent : accent.withValues(alpha: 0.10),
-                    borderRadius:
-                        BorderRadius.circular(_kComposerSendRadius),
+                    borderRadius: BorderRadius.circular(_kComposerSendRadius),
                   ),
                   clipBehavior: Clip.antiAlias,
                   child: Material(
