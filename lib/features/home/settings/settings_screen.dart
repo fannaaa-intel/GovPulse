@@ -15,6 +15,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../Resets/set_password_screen.dart';
 import '../../../core/widgets/app_dialog.dart';
+import '../../../core/widgets/logout_control.dart';
 import '../../../core/theme/citizen_ui.dart';
 import '../../../core/widgets/Home/Account/account_web_kit.dart';
 import '../../../core/theme/mobile_metrics.dart';
@@ -349,47 +350,138 @@ class _SettingScreenState extends ConsumerState<SettingsBody>
   Future<void> _confirmLogout() => performCitizenLogout(context);
 
   // ── Delete account ────────────────────────────────────────────────────────
+  //
+  // ⚠ WIDTH. This was a bare AlertDialog with no constraint, and every size in
+  // it was a fraction of the viewport. On a desktop browser that produced a
+  // ~760px-wide box holding two sentences, with a 19px-radius corner and
+  // oversized type — the widest dialog in the app, for the shortest message in
+  // it. Capped at 400 now, which is what every other dialog here uses
+  // (feedback, report, location picker all cap at 400-480).
+  //
+  // The proportional sizes went with it. `uiScaleWidth` clamps at 480 so the
+  // numbers were not wild, but a dialog is not a phone screen: it has its own
+  // fixed width now, so type measured against the VIEWPORT would still drift
+  // for no reason as the browser resized.
   Future<void> _confirmDeleteAccount() async {
-    final width = uiScaleWidth(context);
-
     await showAppDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => Dialog(
         backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(width * 0.04),
+          borderRadius: BorderRadius.circular(16),
         ),
-        title: Text(
-          'Delete Account',
-          style: TextStyle(
-            fontSize: width * 0.05,
-            fontWeight: FontWeight.w700,
-            color: AppColors.red,
-          ),
-        ),
-        content: Text(
-          'This will permanently remove your account and all submissions. '
-          'This action cannot be undone.\n\n'
-          'Please contact support to proceed with account deletion.',
-          style: TextStyle(
-            fontSize: width * 0.034,
-            color: const Color(0xFF374151),
-            height: 1.5,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(
-              'OK',
-              style: TextStyle(
-                color: AppColors.primaryBlue,
-                fontWeight: FontWeight.w700,
-                fontSize: width * 0.038,
-              ),
+        child: ConstrainedBox(
+          // minWidth so it does not collapse around the text on a narrow
+          // phone; maxWidth so it stops growing on a desktop.
+          constraints: const BoxConstraints(maxWidth: 400, minWidth: 280),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // The icon carries the warning, so the title does not have to
+                // shout it in oversized red type.
+                Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: AppColors.red.withValues(alpha: 0.10),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.delete_outline_rounded,
+                        size: 21,
+                        color: AppColors.red,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    const Expanded(
+                      child: Text(
+                        'Delete account',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF111827),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                const Text(
+                  'This permanently removes your account and every report, '
+                  'suggestion and comment you have submitted. It cannot be '
+                  'undone.',
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    height: 1.5,
+                    color: Color(0xFF374151),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // The operative sentence, and the reason this dialog has one
+                // button rather than two: nothing is deleted from here. It was
+                // buried as the second half of a paragraph, which read as
+                // fine print under a heading that says the account is going.
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF9FAFB),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFE5E7EB)),
+                  ),
+                  child: const Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.support_agent_rounded,
+                          size: 17, color: Color(0xFF6B7280)),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'To proceed, contact the Municipality so a staff '
+                          'member can verify your identity first.',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            height: 1.45,
+                            color: Color(0xFF4B5563),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.primaryBlue,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 18, vertical: 10),
+                    ),
+                    // "Close", not "OK": OK acknowledges an instruction, and
+                    // this dialog did not give one — nothing happens either
+                    // way.
+                    child: const Text(
+                      'Close',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -780,12 +872,24 @@ class _SettingScreenState extends ConsumerState<SettingsBody>
     return AccountListSection(
       title: 'Danger zone',
       children: [
-        AccountRow(
-          icon: Icons.delete_outline_rounded,
-          title: 'Delete account',
-          subtitle: 'Permanently removes your account and its data',
-          danger: true,
-          onTap: _confirmDeleteAccount,
+        // Tinted like the logout control, and deliberately not LESS than it.
+        // Once logout gained a tinted ground, red-text-on-white left the
+        // IRREVERSIBLE action reading as the quieter of the two - the wrong
+        // way round. AccountRow is shared by a dozen ordinary settings rows,
+        // so the tint is applied here rather than by widening `danger`.
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color: kLogoutTint,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: kLogoutBorder),
+          ),
+          child: AccountRow(
+            icon: Icons.delete_outline_rounded,
+            title: 'Delete account',
+            subtitle: 'Permanently removes your account and its data',
+            danger: true,
+            onTap: _confirmDeleteAccount,
+          ),
         ),
       ],
     );

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/logout_control.dart';
 import '../providers/admin_activity_provider.dart';
 import '../providers/admin_flagged_comments_provider.dart';
 import '../providers/admin_moderation_config_provider.dart';
@@ -1127,27 +1128,14 @@ class _AboutRow extends StatelessWidget {
 }
 
 // ── Logout ───────────────────────────────────────────────────────────────────
+// The shared control (core/widgets/logout_control.dart), so this reads the same
+// as the account dropdown above it and as the staff and citizen consoles. It
+// was an outlined button on a white ground - correct in isolation, and the
+// quietest of the seven logout controls the app had.
 class _LogoutButton extends StatelessWidget {
   final VoidCallback onLogout;
   const _LogoutButton({required this.onLogout});
 
   @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 50,
-      child: OutlinedButton.icon(
-        onPressed: onLogout,
-        icon: const Icon(Icons.logout_rounded, size: 20),
-        label: const Text('Log out'),
-        style: OutlinedButton.styleFrom(
-          foregroundColor: AppColors.red,
-          side: BorderSide(color: AppColors.red.withValues(alpha: 0.5)),
-          textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => LogoutTile(onLogout: onLogout);
 }

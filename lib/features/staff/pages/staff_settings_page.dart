@@ -7,6 +7,7 @@ import '../../../core/widgets/app_snackbar.dart';
 import '../../../core/widgets/modal/media_picker_sheet.dart';
 import '../../admin/pages/admin_change_password.dart' show showAdminChangePassword;
 import '../providers/staff_providers.dart';
+import '../../../core/widgets/logout_control.dart';
 import '../theme/staff_ui.dart';
 import '../widgets/staff_common.dart';
 
@@ -101,15 +102,10 @@ class StaffSettingsPage extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 12),
-          StaffCard(
-            padding: EdgeInsets.zero,
-            child: _Tile(
-              icon: Icons.logout_rounded,
-              label: 'Log out',
-              danger: true,
-              onTap: onLogout,
-            ),
-          ),
+          // The shared control rather than another _Tile: logout is not one
+          // more settings row, and drawn as one it read as the same kind of
+          // thing as "Change password" directly above it.
+          LogoutTile(onLogout: onLogout),
         ],
       ),
     );
@@ -322,21 +318,20 @@ class _PresenceTile extends ConsumerWidget {
   }
 }
 
+/// An ordinary settings row. The `danger` arm went with the logout tile — the
+/// only caller that used it — and LogoutTile now draws that case.
 class _Tile extends StatelessWidget {
   final IconData icon;
   final String label;
-  final bool danger;
   final VoidCallback onTap;
   const _Tile({
     required this.icon,
     required this.label,
-    this.danger = false,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final c = danger ? StaffUi.danger : StaffUi.textPrimary;
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -345,14 +340,15 @@ class _Tile extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
           child: Row(
             children: [
-              Icon(icon, size: 20, color: danger ? StaffUi.danger : StaffUi.accent),
+              Icon(icon, size: 20, color: StaffUi.accent),
               const SizedBox(width: 14),
               Text(label,
-                  style: TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.w600, color: c)),
+                  style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: StaffUi.textPrimary)),
               const Spacer(),
-              if (!danger)
-                const Icon(Icons.chevron_right_rounded, color: StaffUi.textMuted),
+              const Icon(Icons.chevron_right_rounded, color: StaffUi.textMuted),
             ],
           ),
         ),

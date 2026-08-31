@@ -6,6 +6,7 @@ import '../../../core/theme/app_colors.dart';
 import '../pages/admin_change_password.dart';
 import '../pages/admin_profile_editor.dart';
 import '../providers/admin_profile_provider.dart';
+import '../../../core/widgets/logout_control.dart';
 import '../theme/admin_ui.dart';
 import 'admin_skeleton.dart';
 
@@ -168,11 +169,7 @@ class _Chip extends StatelessWidget {
         PopupMenuDivider(),
         PopupMenuItem(
           value: _AccountAction.logout,
-          child: _MenuRow(
-            icon: Icons.logout_rounded,
-            label: 'Log out',
-            danger: true,
-          ),
+          child: LogoutMenuRow(),
         ),
       ],
       child: content,
@@ -220,16 +217,14 @@ class _Avatar extends StatelessWidget {
 class _MenuRow extends StatelessWidget {
   final IconData icon;
   final String label;
-  final bool danger;
   const _MenuRow({
     required this.icon,
     required this.label,
-    this.danger = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    final c = danger ? AppColors.red : AdminUi.textSecondary;
+    const c = AdminUi.textSecondary;
     return Row(
       children: [
         Icon(icon, size: 18, color: c),

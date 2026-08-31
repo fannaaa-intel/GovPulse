@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../screens/admin_dashboard_screen.dart';
+import '../../../core/widgets/logout_control.dart';
 import '../theme/admin_ui.dart';
 import 'admin_account_chip.dart';
 
@@ -230,45 +231,15 @@ class _LogoutTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The shared control, so the rail reads the same as the account dropdown
+    // in the header above it. `compact` drops the label — the caller already
+    // derives `collapsed` from the LIVE rail width (see the RenderFlex note at
+    // the top of this file), so this is icon-only for every frame of the
+    // 72 <-> 244 animation rather than only at the endpoints.
     return Tooltip(
-      message: collapsed ? 'Logout' : '',
+      message: collapsed ? kLogoutLabel : '',
       preferBelow: false,
-      child: Material(
-        type: MaterialType.transparency,
-        child: InkWell(
-          onTap: onLogout,
-          borderRadius: BorderRadius.circular(10),
-          child: Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: collapsed ? 0 : 12,
-              vertical: 11,
-            ),
-            child: Row(
-              mainAxisAlignment: collapsed
-                  ? MainAxisAlignment.center
-                  : MainAxisAlignment.start,
-              children: [
-                const Icon(
-                  Icons.logout_rounded,
-                  size: 20,
-                  color: Color(0xFFEF4444),
-                ),
-                if (!collapsed) ...[
-                  const SizedBox(width: 12),
-                  const Text(
-                    'Logout',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: Color(0xFFEF4444),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
+      child: LogoutTile(onLogout: onLogout, compact: collapsed),
     );
   }
 }

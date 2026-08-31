@@ -4,6 +4,7 @@ import '../home_enums.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../modal/verification_required_dialog.dart';
 import '../../../../core/theme/citizen_ui.dart';
+import '../../logout_control.dart';
 
 class HomeNavDrawer extends StatelessWidget {
   final int currentIndex;
@@ -205,7 +206,7 @@ class HomeNavDrawer extends StatelessWidget {
                       ),
                       const SizedBox(width: 16),
                       const Text(
-                        'Sign Out',
+                        kLogoutLabel,
                         style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,

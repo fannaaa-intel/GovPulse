@@ -22,6 +22,7 @@ import '../pages/staff_reports_page.dart'
     show StaffReportsPage, StaffEndorsementsPage;
 import '../pages/staff_settings_page.dart';
 import '../providers/staff_providers.dart';
+import '../../../core/widgets/logout_control.dart';
 import '../theme/staff_ui.dart';
 import '../widgets/staff_command_palette.dart';
 import '../widgets/staff_notifications.dart';
@@ -626,6 +627,10 @@ class _NavTile extends StatelessWidget {
   }
 }
 
+/// The rail's logout, drawn by the shared control.
+///
+/// This one said "Logout" while the account menu two clicks away said "Log out"
+/// and the citizen shell said "Sign Out" - three spellings for one action.
 class _LogoutTile extends StatelessWidget {
   final bool collapsed;
   final VoidCallback onLogout;
@@ -634,34 +639,10 @@ class _LogoutTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(12),
-      child: Material(
-        type: MaterialType.transparency,
-        child: InkWell(
-          onTap: onLogout,
-          borderRadius: BorderRadius.circular(10),
-          child: Padding(
-            padding: EdgeInsets.symmetric(
-                horizontal: collapsed ? 0 : 12, vertical: 11),
-            child: Row(
-              mainAxisAlignment: collapsed
-                  ? MainAxisAlignment.center
-                  : MainAxisAlignment.start,
-              children: [
-                const Icon(Icons.logout_rounded,
-                    size: 20, color: StaffUi.danger),
-                if (!collapsed) ...[
-                  const SizedBox(width: 12),
-                  const Text('Logout',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                        color: StaffUi.danger,
-                      )),
-                ],
-              ],
-            ),
-          ),
-        ),
+      child: Tooltip(
+        message: collapsed ? kLogoutLabel : '',
+        preferBelow: false,
+        child: LogoutTile(onLogout: onLogout, compact: collapsed),
       ),
     );
   }
@@ -885,11 +866,7 @@ class _AccountMenu extends ConsumerWidget {
         PopupMenuDivider(),
         PopupMenuItem(
           value: _AccountAction.logout,
-          child: Row(children: [
-            Icon(Icons.logout_rounded, size: 18, color: StaffUi.danger),
-            SizedBox(width: 10),
-            Text('Log out', style: TextStyle(color: StaffUi.danger)),
-          ]),
+          child: LogoutMenuRow(),
         ),
       ],
       child: Row(

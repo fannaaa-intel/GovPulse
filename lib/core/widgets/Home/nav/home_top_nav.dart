@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'dart:async';
 import '../../../../core/theme/citizen_ui.dart';
+import '../../logout_control.dart';
 // kNavTopBreakpoint: the brand steps on the same width line the nav band does.
 // nav_band is a dependency-free leaf, so importing it here cannot cycle.
 import 'nav_band.dart' show kNavTopBreakpoint;
@@ -733,7 +734,7 @@ class _UserChipState extends State<_UserChip>
                                 iconColor: const Color(0xFFEF4444),
                                 iconBg: const Color(0xFFFEF2F2),
                                 iconBorder: const Color(0xFFFECACA),
-                                label: 'Sign Out',
+                                label: kLogoutLabel,
                                 danger: true,
                                 isLast: true,
                                 onTap: () => _close(then: widget.onLogoutTap),
