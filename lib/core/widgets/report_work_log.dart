@@ -52,18 +52,31 @@ class ReportWorkLog extends StatefulWidget {
 /// The composer's resting height — one line of input, and the send button.
 ///
 /// Derived from the field's own metrics rather than picked, so the two cannot
-/// drift apart again if the padding or type size is edited:
+/// drift apart again if the padding or type size is edited. Measured, not
+/// assumed: composer_alignment_test pins it against a real TextField, so a
+/// Flutter change that moves the number fails the test rather than silently
+/// re-introducing the misalignment.
 ///
-///   content padding   10 + 10  = 20
-///   one line @ 13.5sp × 1.2 lh ≈ 16.2 → 16 (Material rounds the line box)
+/// ── Why this grew from 40 to 44 ─────────────────────────────────────────────
+/// At 40 the field was one thin line of 13.5sp text with 10px of padding, and
+/// beside it sat a 40x40 SOLID block of brand blue. The two were the same
+/// height and still read as mismatched: the button was a filled square with an
+/// 18px glyph floating in it while the field was a hairline outline, so the
+/// eye weighed the send control heavier than the thing being sent — which is
+/// the inconsistency image 8 shows, in both consoles.
+///
+/// The fix is proportion, not alignment (the alignment was already exact, and
+/// composer_alignment_test pins it). A slightly taller field with more vertical
+/// padding gives the input the presence its role deserves, and the button —
+/// still an exact square of the same height, still built from this one number —
+/// now reads as its companion rather than as the loudest thing in the row.
+///
+///   content padding   12 + 12  = 24
+///   one line @ 13.5sp x 1.2 lh ~ 16.2 -> 16 (Material rounds the line box)
 ///   border            1 + 1    =  2
-///                              = 38 … measured 40 with the dense field's own
+///                              = 42 ... measured 44 with the dense field's own
 ///                                floor, which is what the button matches.
-///
-/// Measured, not assumed: composer_alignment_test pins it against a real
-/// TextField so a Flutter change that moves the number fails the test rather
-/// than silently re-introducing the misalignment.
-const double _kComposerFieldHeight = 40;
+const double _kComposerFieldHeight = 44;
 
 class _WorkNote {
   final String id;
@@ -332,7 +345,7 @@ class _ReportWorkLogState extends State<ReportWorkLog> {
               filled: true,
               fillColor: const Color(0xFFF4F6FB),
               contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: const BorderSide(color: Color(0xFFCBD3DF)),
@@ -368,7 +381,7 @@ class _ReportWorkLogState extends State<ReportWorkLog> {
           height: _kComposerFieldHeight,
           child: Material(
             color: accent,
-            borderRadius: BorderRadius.circular(11),
+            borderRadius: BorderRadius.circular(12),
             clipBehavior: Clip.antiAlias,
             child: InkWell(
               onTap: _sending ? null : _send,
@@ -383,7 +396,7 @@ class _ReportWorkLogState extends State<ReportWorkLog> {
                         ),
                       )
                     : const Icon(Icons.send_rounded,
-                        size: 18, color: Colors.white),
+                        size: 19, color: Colors.white),
               ),
             ),
           ),

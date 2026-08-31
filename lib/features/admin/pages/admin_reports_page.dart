@@ -13,6 +13,7 @@ import '../providers/admin_reports_provider.dart';
 import '../utils/report_pdf.dart';
 import '../widgets/accept_assign_dialog.dart';
 import '../widgets/admin_detail_screen.dart';
+import '../widgets/admin_dialog_keyboard.dart';
 import '../widgets/admin_responsive_dialog.dart';
 import '../widgets/endorse_entity_dialog.dart';
 import '../widgets/endorsement_success_dialog.dart';
@@ -966,6 +967,11 @@ class _RejectReasonDialogState extends State<_RejectReasonDialog> {
     // the close ✕ on the screen form.
     final full = adminDialogIsFullscreen(context);
 
+    // Read HERE, above the strip: this build's context is outside the [Dialog]
+    // returned below, so it still sees the real inset. Inside the dialog it is
+    // always zero — see AdminDialogKeyboard.
+    final keyboardUp = full && AdminDialogKeyboard.of(context);
+
     final body = Column(
           mainAxisSize: full ? MainAxisSize.max : MainAxisSize.min,
           children: [
@@ -973,7 +979,10 @@ class _RejectReasonDialogState extends State<_RejectReasonDialog> {
             const Divider(height: 1, color: AdminUi.border),
             // Only the middle scrolls, so the actions stay reachable and the
             // heading stays put while picking a reason.
-            Flexible(
+            // Expanded on the screen form so the action bar sits on the
+            // bottom edge whatever the body's height — see AdminDialogFlex.
+            AdminDialogFlex(
+              expand: full,
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
                 child: Column(
@@ -992,8 +1001,22 @@ class _RejectReasonDialogState extends State<_RejectReasonDialog> {
                 ),
               ),
             ),
-            const Divider(height: 1, color: AdminUi.border),
-            _actions(),
+            // "Or provide another reason" is a 3-line textarea, so the
+            // keyboard is up for most of the time this dialog is open. The
+            // request describes exactly what that cost: the field stayed
+            // visible (the framework scrolls it into view) but the buttons rode
+            // up with it and sat on the keyboard. Under it they are unreachable
+            // anyway, so the bar stands down and the body takes the height.
+            AdminKeyboardCollapse(
+              keyboardUp: keyboardUp,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Divider(height: 1, color: AdminUi.border),
+                  _actions(),
+                ],
+              ),
+            ),
           ],
     );
 
@@ -1025,81 +1048,78 @@ class _RejectReasonDialogState extends State<_RejectReasonDialog> {
     );
   }
 
-  /// [full] swaps the close ✕ for a back chevron: a modal floats over the page
-  /// and is dismissed by an ✕; a screen is a place you navigated to and is
-  /// dismissed by going back.
+  /// The shared phone header — chevron on its own row, then the seal beside the
+  /// title and description — so this dialog, Accept & Assign and Endorse all
+  /// draw the same shape. See [AdminDialogScreenHeader].
+  ///
+  /// ── The ✕ is gone at EVERY width ──────────────────────────────────────
+  /// On the screen form it was already replaced by the chevron. On the modal it
+  /// was redundant: the action bar carries an explicit Cancel, the barrier is
+  /// dismissible and Esc pops the route, so the only thing the ✕ added was a
+  /// control sharing the title's row.
   Widget _header(bool full) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 18, 12, 18),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    final seal = Container(
+      width: full ? 54 : 60,
+      height: full ? 54 : 60,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: AppColors.red.withValues(alpha: 0.10),
+        shape: BoxShape.circle,
+      ),
+      child: Image.asset(
+        'assets/images/report/exclamation (1).webp',
+        width: full ? 28 : 30,
+        height: full ? 28 : 30,
+        fit: BoxFit.contain,
+      ),
+    );
+
+    final title = Text(
+      'Reject this report?',
+      style: TextStyle(
+        fontSize: full ? 20 : 22,
+        fontWeight: FontWeight.w800,
+        color: AdminUi.textPrimary,
+        letterSpacing: -0.3,
+      ),
+    );
+
+    // The consequence, spelled out: this closes the report AND notifies a real
+    // person, and there's no undo from here.
+    const description = Text.rich(
+      TextSpan(
+        style: TextStyle(
+          fontSize: 13,
+          height: 1.45,
+          color: AdminUi.textSecondary,
+        ),
         children: [
-          Container(
-            width: 54,
-            height: 54,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: AppColors.red.withValues(alpha: 0.10),
-              shape: BoxShape.circle,
-            ),
-            child: Image.asset(
-              'assets/images/report/exclamation (1).webp',
-              width: 28,
-              height: 28,
-              fit: BoxFit.contain,
+          TextSpan(
+            text: 'The report will be closed and the citizen will be '
+                'notified. This action ',
+          ),
+          TextSpan(
+            text: 'cannot be undone',
+            style: TextStyle(
+              color: AppColors.red,
+              fontWeight: FontWeight.w700,
             ),
           ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Reject this report?',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    color: AdminUi.textPrimary,
-                    letterSpacing: -0.3,
-                  ),
-                ),
-                const SizedBox(height: 5),
-                // The consequence, spelled out: this closes the report AND
-                // notifies a real person, and there's no undo from here.
-                Text.rich(
-                  const TextSpan(
-                    style: TextStyle(
-                      fontSize: 13,
-                      height: 1.45,
-                      color: AdminUi.textSecondary,
-                    ),
-                    children: [
-                      TextSpan(
-                        text:
-                            'The report will be closed and the citizen will '
-                            'be notified. This action ',
-                      ),
-                      TextSpan(
-                        text: 'cannot be undone',
-                        style: TextStyle(
-                          color: AppColors.red,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      TextSpan(text: '.'),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          IconButton(
-            onPressed: () => Navigator.pop(context),
-            icon: const Icon(Icons.close_rounded),
-            color: AdminUi.textMuted,
-            tooltip: 'Cancel',
-          ),
+          TextSpan(text: '.'),
         ],
+      ),
+    );
+
+    return AdminDialogScreenHeader(
+      full: full,
+      seal: seal,
+      title: title,
+      description: description,
+      padding: EdgeInsets.fromLTRB(
+        full ? 16 : 24,
+        full ? 18 : 22,
+        full ? 16 : 24,
+        full ? 16 : 20,
       ),
     );
   }
@@ -1234,12 +1254,26 @@ class _RejectReasonDialogState extends State<_RejectReasonDialog> {
   }
 
   Widget _actions() {
+    // ── Taller on the phone form ──────────────────────────────────────────
+    //
+    // 14px of vertical padding is right for a modal, where the buttons sit in
+    // a row at their natural width. Stacked full-width on a phone they are the
+    // two biggest targets on the screen and 14 left them looking thin — a
+    // wide, short slab rather than a button. 17 brings them to a ~50px tap
+    // target, clearing the 48dp Material minimum.
+    //
+    // Keyed off the same 640 the dialog changes shape at, NOT off the
+    // LayoutBuilder's 420 below: that one decides whether the two buttons
+    // stack, and a button's HEIGHT should follow the presentation (screen vs
+    // modal) rather than flipping mid-modal on a narrow desktop window.
+    final double vPad = adminDialogIsFullscreen(context) ? 17 : 14;
+
     final cancel = OutlinedButton(
       onPressed: () => Navigator.pop(context),
       style: OutlinedButton.styleFrom(
         foregroundColor: AdminUi.textSecondary,
         side: const BorderSide(color: AdminUi.border),
-        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
+        padding: EdgeInsets.symmetric(horizontal: 22, vertical: vPad),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AdminUi.controlRadius),
         ),
@@ -1261,7 +1295,7 @@ class _RejectReasonDialogState extends State<_RejectReasonDialog> {
       ),
       style: FilledButton.styleFrom(
         backgroundColor: AppColors.red,
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        padding: EdgeInsets.symmetric(horizontal: 20, vertical: vPad),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AdminUi.controlRadius),
         ),

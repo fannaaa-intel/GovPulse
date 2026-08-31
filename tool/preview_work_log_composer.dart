@@ -14,7 +14,7 @@
 // in-flight state.
 import 'package:flutter/material.dart';
 
-const double kComposerFieldHeight = 40;
+const double kComposerFieldHeight = 44;
 const Color kAccent = Color(0xFF1D4ED8);
 
 void main() {
@@ -147,7 +147,7 @@ class _Pane extends StatelessWidget {
               filled: true,
               fillColor: const Color(0xFFF4F6FB),
               contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: const BorderSide(color: Color(0xFFCBD3DF)),
@@ -165,7 +165,7 @@ class _Pane extends StatelessWidget {
           height: kComposerFieldHeight,
           child: Material(
             color: kAccent,
-            borderRadius: BorderRadius.circular(11),
+            borderRadius: BorderRadius.circular(12),
             clipBehavior: Clip.antiAlias,
             child: InkWell(
               onTap: () {},

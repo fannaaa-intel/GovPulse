@@ -21,7 +21,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// derivation comment on _kComposerFieldHeight plus the preview target.
 void main() {
   // Mirrors _kComposerFieldHeight in report_work_log.dart.
-  const composerHeight = 40.0;
+  const composerHeight = 44.0;
 
   Widget composer({int lines = 1, bool sending = false}) {
     return MaterialApp(
@@ -47,7 +47,7 @@ void main() {
                     hintText: 'Add a note…',
                     filled: true,
                     contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 10),
+                        horizontal: 14, vertical: 12),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide: const BorderSide(color: Color(0xFFCBD3DF)),
@@ -62,7 +62,7 @@ void main() {
                 height: composerHeight,
                 child: Material(
                   color: const Color(0xFF1D4ED8),
-                  borderRadius: BorderRadius.circular(11),
+                  borderRadius: BorderRadius.circular(12),
                   clipBehavior: Clip.antiAlias,
                   child: InkWell(
                     onTap: () {},

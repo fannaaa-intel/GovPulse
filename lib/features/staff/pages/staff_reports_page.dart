@@ -18,6 +18,7 @@ import '../../admin/widgets/report_detail_kit.dart';
 import '../../admin/widgets/report_status_tracker.dart';
 import '../data/staff_repository.dart';
 import '../providers/staff_providers.dart';
+import '../../admin/widgets/admin_dialog_keyboard.dart';
 import '../../admin/widgets/admin_responsive_dialog.dart';
 import '../theme/staff_ui.dart';
 import '../widgets/staff_common.dart';
@@ -41,11 +42,10 @@ class StaffReportsPage extends ConsumerWidget {
       async: async,
       highlightId: highlightId,
       department: ref.watch(staffDepartmentProvider),
+      // The PROVIDER, not closures over this build's `ref` — see the note on
+      // [_ReportListView.queue].
+      queue: staffReportsProvider,
       onRefresh: () => ref.read(staffReportsProvider.notifier).refresh(),
-      onSetStatus: (id, s) =>
-          ref.read(staffReportsProvider.notifier).setStatus(id, s),
-      onReturnToTriage: (id, reason) =>
-          ref.read(staffReportsProvider.notifier).returnToTriage(id, reason),
       emptyIcon: Icons.flag_outlined,
       emptyTitle: 'No reports for your department',
       emptySubtitle:
@@ -67,12 +67,8 @@ class StaffEndorsementsPage extends ConsumerWidget {
       async: async,
       highlightId: highlightId,
       department: ref.watch(staffDepartmentProvider),
+      queue: staffEndorsementsProvider,
       onRefresh: () => ref.read(staffEndorsementsProvider.notifier).refresh(),
-      onSetStatus: (id, s) =>
-          ref.read(staffEndorsementsProvider.notifier).setStatus(id, s),
-      onReturnToTriage: (id, reason) => ref
-          .read(staffEndorsementsProvider.notifier)
-          .returnToTriage(id, reason),
       emptyIcon: Icons.assignment_turned_in_outlined,
       emptyTitle: 'No endorsed reports',
       emptySubtitle:
@@ -82,76 +78,240 @@ class StaffEndorsementsPage extends ConsumerWidget {
   }
 }
 
-typedef _SetStatus = Future<void> Function(String id, ReportStatus s);
-typedef _ReturnToTriage = Future<void> Function(String id, String reason);
 
 /// Ask why the report is being bounced back to the admin. Returns the reason
 /// (possibly empty if they confirm without typing), or null on cancel.
+///
+/// A SCREEN on a phone, a modal above 640 — the same rule the admin console's
+/// report-process dialogs follow. It was an [AlertDialog] at every width, which
+/// on a phone drew a small card floating on a barrier with the keyboard under
+/// it: the one shape a form this size should not have. See
+/// admin_responsive_dialog.dart.
 Future<String?> _showReturnDialog(BuildContext context) {
-  final ctrl = TextEditingController();
   return showAppDialog<String>(
     context: context,
-    builder: (ctx) => AlertDialog(
-      backgroundColor: StaffUi.surface,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: const Text('Return to triage',
-          style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-              color: StaffUi.textPrimary)),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'This sends the report back to the admin to re-route. Add a short '
-            'reason — it\'s logged for the admin.',
-            style: TextStyle(
-                fontSize: 12.5, color: StaffUi.textSecondary, height: 1.4),
+    builder: (_) => const _ReturnToTriageDialog(),
+  );
+}
+
+class _ReturnToTriageDialog extends StatefulWidget {
+  const _ReturnToTriageDialog();
+
+  @override
+  State<_ReturnToTriageDialog> createState() => _ReturnToTriageDialogState();
+}
+
+class _ReturnToTriageDialogState extends State<_ReturnToTriageDialog> {
+  final _ctrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final full = adminDialogIsFullscreen(context);
+
+    // Read HERE, above the strip: this build's context is outside the [Dialog]
+    // returned below, so it still sees the real inset. Inside the dialog it is
+    // always zero — see AdminDialogKeyboard.
+    final keyboardUp = full && AdminDialogKeyboard.of(context);
+
+    final body = Column(
+      mainAxisSize: full ? MainAxisSize.max : MainAxisSize.min,
+      children: [
+        _header(full),
+        const Divider(height: 1, color: StaffUi.border),
+        // Expanded on the screen form so the action bar sits on the bottom
+        // edge — this dialog is one short field, which is exactly the case
+        // that left the buttons floating mid-screen. See AdminDialogFlex.
+        AdminDialogFlex(
+          expand: full,
+          child: SingleChildScrollView(
+            padding:
+                EdgeInsets.fromLTRB(full ? 16 : 24, 18, full ? 16 : 24, 18),
+            child: _field(),
           ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: ctrl,
-            autofocus: true,
-            minLines: 2,
-            maxLines: 4,
-            maxLength: 300,
-            style: const TextStyle(fontSize: 14, color: StaffUi.textPrimary),
-            decoration: InputDecoration(
-              hintText: 'e.g. This belongs to the Sanitation Office',
-              hintStyle: const TextStyle(color: StaffUi.textMuted),
-              filled: true,
-              fillColor: StaffUi.subtle,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: StaffUi.border),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: StaffUi.border),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: StaffUi.accent),
-              ),
-            ),
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(ctx),
-          child: const Text('Cancel',
-              style: TextStyle(color: StaffUi.textMuted)),
         ),
-        FilledButton(
-          onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-          style: FilledButton.styleFrom(backgroundColor: StaffUi.accent),
-          child: const Text('Return'),
+        // This dialog is one textarea, so the keyboard is up for almost all of
+        // the time it is open. Pinned under the keyboard the buttons are
+        // unreachable anyway — they stand down and give the field the height.
+        AdminKeyboardCollapse(
+          keyboardUp: keyboardUp,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Divider(height: 1, color: StaffUi.border),
+              _actions(full),
+            ],
+          ),
         ),
       ],
-    ),
-  );
+    );
+
+    if (full) {
+      return Dialog(
+        backgroundColor: StaffUi.surface,
+        insetPadding: EdgeInsets.zero,
+        shape: const RoundedRectangleBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: SizedBox(
+          width: media.size.width,
+          height: media.size.height,
+          child: SafeArea(child: body),
+        ),
+      );
+    }
+
+    return Dialog(
+      backgroundColor: StaffUi.surface,
+      insetPadding: const EdgeInsets.all(40),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      clipBehavior: Clip.antiAlias,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 520,
+          maxHeight: media.size.height * 0.9,
+        ),
+        child: body,
+      ),
+    );
+  }
+
+  /// The console's shared header shape — chevron on its own row on a screen,
+  /// then the seal beside the title and description.
+  Widget _header(bool full) {
+    final seal = Container(
+      width: full ? 52 : 56,
+      height: full ? 52 : 56,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: StaffUi.accent.withValues(alpha: 0.10),
+        shape: BoxShape.circle,
+      ),
+      child: Icon(Icons.undo_rounded,
+          size: full ? 24 : 26, color: StaffUi.accent),
+    );
+
+    final title = Text(
+      'Return to triage',
+      style: TextStyle(
+        fontSize: full ? 20 : 21,
+        fontWeight: FontWeight.w800,
+        color: StaffUi.textPrimary,
+        height: 1.1,
+      ),
+    );
+
+    const description = Text(
+      "This sends the report back to the admin to re-route. Add a short "
+      "reason — it's logged for the admin.",
+      style: TextStyle(
+        fontSize: 13,
+        height: 1.4,
+        color: StaffUi.textSecondary,
+      ),
+    );
+
+    return AdminDialogScreenHeader(
+      full: full,
+      seal: seal,
+      title: title,
+      description: description,
+      padding: EdgeInsets.fromLTRB(
+        full ? 16 : 24,
+        full ? 18 : 22,
+        full ? 16 : 24,
+        full ? 16 : 20,
+      ),
+    );
+  }
+
+  Widget _field() {
+    return TextField(
+      controller: _ctrl,
+      autofocus: true,
+      minLines: 3,
+      maxLines: 5,
+      maxLength: 300,
+      textCapitalization: TextCapitalization.sentences,
+      style: const TextStyle(fontSize: 14, color: StaffUi.textPrimary),
+      decoration: InputDecoration(
+        hintText: 'e.g. This belongs to the Sanitation Office',
+        hintStyle: const TextStyle(color: StaffUi.textMuted),
+        filled: true,
+        fillColor: StaffUi.subtle,
+        counterStyle: const TextStyle(fontSize: 11, color: StaffUi.textMuted),
+        contentPadding: const EdgeInsets.all(14),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: StaffUi.border),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: StaffUi.border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: StaffUi.accent, width: 1.5),
+        ),
+      ),
+    );
+  }
+
+  Widget _actions(bool full) {
+    // Taller on the phone form — see the note in the reject dialog's
+    // _actions(); the two footers must not disagree about a button's height.
+    final double vPad = full ? 17 : 14;
+
+    final cancel = OutlinedButton(
+      onPressed: () => Navigator.pop(context),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: StaffUi.textSecondary,
+        side: const BorderSide(color: StaffUi.border),
+        padding: EdgeInsets.symmetric(horizontal: 22, vertical: vPad),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        textStyle: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
+      ),
+      child: const Text('Cancel'),
+    );
+
+    final ret = FilledButton.icon(
+      onPressed: () => Navigator.pop(context, _ctrl.text.trim()),
+      style: FilledButton.styleFrom(
+        backgroundColor: StaffUi.accent,
+        padding: EdgeInsets.symmetric(horizontal: 22, vertical: vPad),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        textStyle: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
+      ),
+      icon: const Icon(Icons.undo_rounded, size: 17),
+      label: const Text('Return'),
+    );
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        full ? 16 : 24,
+        14,
+        full ? 16 : 24,
+        full ? 16 : 18,
+      ),
+      child: full
+          ? Column(
+              children: [
+                SizedBox(width: double.infinity, child: ret),
+                const SizedBox(height: 10),
+                SizedBox(width: double.infinity, child: cancel),
+              ],
+            )
+          : Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [cancel, const SizedBox(width: 10), ret],
+            ),
+    );
+  }
 }
 
 // ── Queue shape: buckets, filters, sort ──────────────────────────────────────
@@ -242,8 +402,18 @@ class _ReportListView extends StatefulWidget {
   final AsyncValue<List<StaffReport>> async;
   final String? department;
   final Future<void> Function() onRefresh;
-  final _SetStatus onSetStatus;
-  final _ReturnToTriage onReturnToTriage;
+  /// The queue this list is showing, passed down so the DETAIL can read its
+  /// notifier off its own `ref`.
+  ///
+  /// It used to be handed two closures built in [StaffReportsPage.build], and
+  /// each of those captured that build's `ref`. The detail is presented as a
+  /// pushed ROUTE on a phone, so the list under it is free to be rebuilt or
+  /// disposed while the detail is still open — and calling a closure over a
+  /// disposed [ConsumerWidget]'s `ref` throws
+  /// "Bad state: Cannot use \"ref\" after the widget was disposed". Every
+  /// button in the staff detail went through one of those two closures, which
+  /// is why every one of them could throw it.
+  final AsyncNotifierProvider<StaffReportQueue, List<StaffReport>> queue;
   final IconData emptyIcon;
   final String emptyTitle;
   final String emptySubtitle;
@@ -257,8 +427,7 @@ class _ReportListView extends StatefulWidget {
     required this.async,
     required this.department,
     required this.onRefresh,
-    required this.onSetStatus,
-    required this.onReturnToTriage,
+    required this.queue,
     required this.emptyIcon,
     required this.emptyTitle,
     required this.emptySubtitle,
@@ -484,8 +653,7 @@ class _ReportListViewState extends State<_ReportListView>
         report: r,
         endorsement: widget.endorsement,
         department: widget.department,
-        onSetStatus: widget.onSetStatus,
-        onReturnToTriage: widget.onReturnToTriage,
+        queue: widget.queue,
       ),
     );
   }
@@ -1225,14 +1393,16 @@ class _ReportDetail extends ConsumerStatefulWidget {
   final StaffReport report;
   final bool endorsement;
   final String? department;
-  final _SetStatus onSetStatus;
-  final _ReturnToTriage onReturnToTriage;
+  /// The queue this report belongs to. The detail reads its notifier through
+  /// its OWN `ref`, which lives as long as this widget does — see the note on
+  /// [_ReportListView.queue] for the crash that came of borrowing another
+  /// widget's.
+  final AsyncNotifierProvider<StaffReportQueue, List<StaffReport>> queue;
   const _ReportDetail({
     required this.report,
     required this.endorsement,
     required this.department,
-    required this.onSetStatus,
-    required this.onReturnToTriage,
+    required this.queue,
   });
 
   @override
@@ -1307,7 +1477,7 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
       _applying = s;
     });
     try {
-      await widget.onSetStatus(widget.report.id, s);
+      await ref.read(widget.queue.notifier).setStatus(widget.report.id, s);
       if (mounted) {
         setState(() {
           _status = s;
@@ -1339,7 +1509,9 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
       _returning = true;
     });
     try {
-      await widget.onReturnToTriage(widget.report.id, reason);
+      await ref
+          .read(widget.queue.notifier)
+          .returnToTriage(widget.report.id, reason);
       if (!mounted) return;
       setState(() {
         _busy = false;

@@ -739,6 +739,10 @@ class _ScanPageState extends State<ScanPage> {
             const SizedBox(height: 18),
             SizedBox(
               width: double.infinity,
+              // 48, like the other actions on this page. Left unsized it fell
+              // to Material's own floor and came out visibly shorter than the
+              // buttons beside it on the very next screen.
+              height: 48,
               child: FilledButton(
                 onPressed: _load,
                 style: _buttonStyle(_blue),
@@ -1473,6 +1477,10 @@ class _ScanPageState extends State<ScanPage> {
               disabledForegroundColor: _muted,
               side: const BorderSide(color: _line),
               padding: const EdgeInsets.symmetric(vertical: 13),
+              // A floor, not more padding: this sits in the same column as the
+              // 48/52px actions, and at padding alone it came out shorter than
+              // all of them. Padding still governs a wrapped label.
+              minimumSize: const Size(0, 48),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(11),
               ),

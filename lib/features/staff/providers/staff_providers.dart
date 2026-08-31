@@ -355,8 +355,31 @@ final staffConversationsProvider =
 final staffConversationsStaleProvider = StateProvider<bool>((_) => false);
 
 // ── Reports (department-scoped) ───────────────────────────────────────────────
+
+/// The two report queues an officer works — their department's reports, and the
+/// reports endorsed to their agency — expose the SAME three write actions.
+///
+/// This names that overlap so a screen can be handed the PROVIDER and read the
+/// notifier off its own `ref`, instead of being handed closures that captured
+/// some other widget's `ref`. That mattered: the detail is pushed as a ROUTE,
+/// the list underneath is free to be rebuilt or disposed while it is open, and
+/// a captured `ref` from a disposed [ConsumerWidget] throws
+/// "Bad state: Cannot use \"ref\" after the widget was disposed" on the first
+/// button pressed in the detail. See [_ReportDetailState].
+///
+/// Extends [AsyncNotifier] rather than standing alone: Riverpod bounds
+/// `AsyncNotifierProvider`'s notifier parameter to `AsyncNotifier<State>`, so a
+/// bare interface cannot be used as that type argument. Both queues already
+/// ARE async notifiers of the same state, so this costs nothing.
+abstract class StaffReportQueue extends AsyncNotifier<List<StaffReport>> {
+  Future<void> setStatus(String id, ReportStatus status);
+  Future<void> returnToTriage(String id, String reason);
+  Future<void> refresh();
+}
+
 class StaffReportsNotifier extends AsyncNotifier<List<StaffReport>>
-    with StaffIntervalPoll {
+    with StaffIntervalPoll
+    implements StaffReportQueue {
   StaffRepository get _repo => ref.read(staffRepoProvider);
 
   @override
@@ -401,6 +424,7 @@ class StaffReportsNotifier extends AsyncNotifier<List<StaffReport>>
     }
   }
 
+  @override
   Future<void> refresh() async {
     final dept = ref.read(staffDepartmentProvider);
     if (dept == null) return;
@@ -418,6 +442,7 @@ class StaffReportsNotifier extends AsyncNotifier<List<StaffReport>>
     if (next.hasValue) state = next;
   }
 
+  @override
   Future<void> setStatus(String id, ReportStatus status) async {
     await _repo.setReportStatus(id, status);
     final dept = ref.read(staffDepartmentProvider);
@@ -427,6 +452,7 @@ class StaffReportsNotifier extends AsyncNotifier<List<StaffReport>>
     if (next.hasValue) state = next;
   }
 
+  @override
   Future<void> returnToTriage(String id, String reason) async {
     final dept = ref.read(staffDepartmentProvider);
     if (dept == null) return;
@@ -451,7 +477,8 @@ final staffReportsStaleProvider = StateProvider<bool>((_) => false);
 
 // ── Endorsements (external entities) ──────────────────────────────────────────
 class StaffEndorsementsNotifier extends AsyncNotifier<List<StaffReport>>
-    with StaffIntervalPoll {
+    with StaffIntervalPoll
+    implements StaffReportQueue {
   StaffRepository get _repo => ref.read(staffRepoProvider);
 
   @override
@@ -488,6 +515,7 @@ class StaffEndorsementsNotifier extends AsyncNotifier<List<StaffReport>>
     }
   }
 
+  @override
   Future<void> refresh() async {
     final dept = ref.read(staffDepartmentProvider);
     if (dept == null) return;
@@ -503,6 +531,7 @@ class StaffEndorsementsNotifier extends AsyncNotifier<List<StaffReport>>
     if (next.hasValue) state = next;
   }
 
+  @override
   Future<void> setStatus(String id, ReportStatus status) async {
     await _repo.setReportStatus(id, status);
     final dept = ref.read(staffDepartmentProvider);
@@ -511,6 +540,7 @@ class StaffEndorsementsNotifier extends AsyncNotifier<List<StaffReport>>
     if (next.hasValue) state = next;
   }
 
+  @override
   Future<void> returnToTriage(String id, String reason) async {
     final dept = ref.read(staffDepartmentProvider);
     if (dept == null) return;

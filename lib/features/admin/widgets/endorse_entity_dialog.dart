@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../theme/admin_ui.dart';
-import 'admin_dialog_back.dart';
+import 'admin_dialog_keyboard.dart';
 import 'admin_responsive_dialog.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -75,9 +75,6 @@ class _AgencyData {
     this.tagBg,
     this.tagFg,
   );
-
-  /// Everything the search field matches against.
-  String get haystack => '$display $full $tag $name'.toLowerCase();
 }
 
 const List<_AgencyData> _agencies = [
@@ -153,7 +150,6 @@ class _EndorseEntityDialog extends StatefulWidget {
 
 class _EndorseEntityDialogState extends State<_EndorseEntityDialog> {
   late String? _selected = widget.currentEndorsement;
-  String _query = '';
 
   final TextEditingController _reason = TextEditingController();
 
@@ -256,12 +252,6 @@ class _EndorseEntityDialogState extends State<_EndorseEntityDialog> {
     }
   }
 
-  List<_AgencyData> get _filtered {
-    final q = _query.trim().toLowerCase();
-    if (q.isEmpty) return _agencies;
-    return _agencies.where((a) => a.haystack.contains(q)).toList();
-  }
-
   @override
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
@@ -277,20 +267,52 @@ class _EndorseEntityDialogState extends State<_EndorseEntityDialog> {
     // outer shape now changes on the same line rather than on a second one.
     final full = adminDialogIsFullscreen(context);
 
+    // Read HERE, above the strip: this build's context sits outside the
+    // [Dialog] returned below, so it still sees the real inset. Inside the
+    // dialog it is always zero — see AdminDialogKeyboard.
+    final keyboardUp = full && AdminDialogKeyboard.of(context);
+
     final Widget body = Column(
       mainAxisSize: full ? MainAxisSize.max : MainAxisSize.min,
       children: [
             _header(context, full),
             const Divider(height: 1, color: AdminUi.border),
-            Flexible(
+            // Expanded on the SCREEN form, Flexible on the modal.
+            //
+            // Flexible lets a child be SMALLER than the space offered, so on a
+            // phone a short body left the action bar floating in the middle of
+            // the screen with white below it, while a long one pushed it to the
+            // bottom — the same dialog pinning its buttons in two different
+            // places depending on how many cards it happened to be showing.
+            // Accept & Assign has four office cards and did exactly this; the
+            // endorse picker's five agency cards filled the screen and hid it.
+            //
+            // Expanded forces the scroll view to take everything left over, so
+            // the bar sits on the bottom edge at every content length. The
+            // modal keeps Flexible: there the dialog is sized to its content
+            // and must be free to be shorter than the viewport.
+            AdminDialogFlex(
+              expand: full,
               child: SingleChildScrollView(
                 padding: EdgeInsets.fromLTRB(
                     full ? 16 : 24, 18, full ? 16 : 24, 8),
                 child: _body(full),
               ),
             ),
-            const Divider(height: 1, color: AdminUi.border),
-            _footer(full),
+            // The reason field is a 3-line textarea at the bottom of the body,
+            // so the keyboard is up for most of the time this dialog is open.
+            // While it is, the pinned bar is under the keyboard and unreachable
+            // — it stands down and gives the body its height back.
+            AdminKeyboardCollapse(
+              keyboardUp: keyboardUp,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Divider(height: 1, color: AdminUi.border),
+                  _footer(full),
+                ],
+              ),
+            ),
       ],
     );
 
@@ -323,112 +345,83 @@ class _EndorseEntityDialogState extends State<_EndorseEntityDialog> {
     );
   }
 
-  // ── Header: paper-plane seal, title, irreversible notice, and close ────────
-  ///
-  /// On the SCREEN form the close ✕ becomes [AdminDialogBack]. A modal is
-  /// dismissed by an ✕ because it floats over the page; a screen is dismissed
-  /// by a back chevron because it is a place you navigated to. Getting that
-  /// backwards is how a fullscreen dialog starts feeling like a page you
-  /// cannot leave.
+  // ── Header ────────────────────────────────────────────────────────────────
+  //
+  // Delegates to [AdminDialogScreenHeader] so this dialog, Accept & Assign and
+  // Reject all draw the SAME phone header: chevron on its own row, then the
+  // seal beside the title and description. They had drifted into three
+  // variations of it — see that widget's note.
   Widget _header(BuildContext context, bool narrow) {
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        narrow ? 16 : 28,
-        narrow ? 18 : 24,
-        narrow ? 16 : 16,
-        narrow ? 16 : 22,
+    final seal = Container(
+      width: narrow ? 52 : 64,
+      height: narrow ? 52 : 64,
+      decoration: const BoxDecoration(
+        color: Color(0xFFEAF1FF),
+        shape: BoxShape.circle,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
+      child: Icon(Icons.send_rounded,
+          size: narrow ? 24 : 28, color: _selectBlue),
+    );
+
+    final title = Text(
+      'Endorse to External Entity',
+      style: TextStyle(
+        fontSize: narrow ? 18 : 25,
+        fontWeight: FontWeight.w800,
+        color: AdminUi.textPrimary,
+        height: 1.1,
+      ),
+    );
+
+    // The old copy read "This action cannot be undone", which was untrue in
+    // three ways — this dialog's own Clear button, Accept-into-an-office, and a
+    // staff bounce all withdraw an endorsement. What IS irreversible is the
+    // letter: sending mints a PIN shown once, and withdrawing later voids the
+    // printed QR rather than un-sending it.
+    const description = Text.rich(
+      TextSpan(
+        style: TextStyle(
+          fontSize: 13.5,
+          height: 1.35,
+          color: AdminUi.textSecondary,
+        ),
         children: [
-          // ── The chevron gets its OWN row on a screen ────────────────────
-          //
-          // Beside the seal it left the title about 60px of the width it
-          // needs, wrapping "Endorse to External Entity" and its one-time-PIN
-          // notice into a dense block jammed against the left edge. Back is
-          // chrome: it belongs above the header it dismisses, the way every
-          // pushed screen in this app places it, not competing with the seal
-          // for the same row.
-          if (narrow) ...[
-            AdminDialogBack(onTap: () => Navigator.of(context).pop()),
-            const SizedBox(height: 14),
-          ],
-          Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: narrow ? 52 : 64,
-            height: narrow ? 52 : 64,
-            decoration: const BoxDecoration(
-              color: Color(0xFFEAF1FF),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(Icons.send_rounded,
-                size: narrow ? 24 : 28, color: _selectBlue),
+          TextSpan(
+            text: 'Send this report to the appropriate external agency for '
+                'action and follow-up. ',
           ),
-          SizedBox(width: narrow ? 14 : 20),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Endorse to External Entity',
-                  style: TextStyle(
-                    fontSize: narrow ? 20 : 25,
-                    fontWeight: FontWeight.w800,
-                    color: AdminUi.textPrimary,
-                    height: 1.1,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text.rich(
-                  TextSpan(
-                    style: const TextStyle(
-                      fontSize: 13.5,
-                      height: 1.35,
-                      color: AdminUi.textSecondary,
-                    ),
-                    // The old copy read "This action cannot be undone", which
-                    // was untrue in three ways — this dialog's own Clear
-                    // button, Accept-into-an-office, and a staff bounce all
-                    // withdraw an endorsement. What IS irreversible is the
-                    // letter: sending mints a PIN shown once, and withdrawing
-                    // later voids the printed QR rather than un-sending it.
-                    children: const [
-                      TextSpan(
-                        text:
-                            'Send this report to the appropriate external '
-                            'agency for action and follow-up. ',
-                      ),
-                      TextSpan(
-                        text:
-                            'This issues a printed letter with a one-time PIN.',
-                        style: TextStyle(
-                          color: AppColors.red,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+          TextSpan(
+            text: 'This issues a printed letter with a one-time PIN.',
+            style: TextStyle(
+              color: AppColors.red,
+              fontWeight: FontWeight.w700,
             ),
-          ),
-          if (!narrow)
-            IconButton(
-              onPressed: () => Navigator.of(context).pop(),
-              icon: const Icon(Icons.close_rounded),
-              color: AdminUi.textMuted,
-              splashRadius: 20,
-              tooltip: 'Cancel',
-            ),
-            ],
           ),
         ],
       ),
     );
+
+    final header = AdminDialogScreenHeader(
+      full: narrow,
+      seal: seal,
+      title: title,
+      description: description,
+      padding: EdgeInsets.fromLTRB(
+        narrow ? 16 : 28,
+        narrow ? 18 : 24,
+        narrow ? 16 : 28,
+        narrow ? 16 : 22,
+      ),
+    );
+
+    // ── The modal keeps NO ✕ either ────────────────────────────────────────
+    //
+    // The request asks for it gone at medium and large widths too. It was
+    // always redundant here: the action bar carries an explicit Cancel, the
+    // barrier is dismissible, and Esc pops the route — three ways out already,
+    // and the ✕ was the only one that made the title share its row with a
+    // control. Removing it lets the header block be identical at every width.
+    return header;
   }
 
   Widget _body(bool narrow) {
@@ -452,40 +445,21 @@ class _EndorseEntityDialogState extends State<_EndorseEntityDialog> {
       ],
     );
 
-    final search = _searchField(narrow);
-    final list = _filtered;
+    // ── No search field ───────────────────────────────────────────────────
+    //
+    // Five agencies, all of them on screen at once at every width. A search box
+    // over a list you can already see in full is a control that can only ever
+    // hide things, and on a phone it cost a row of height plus a keyboard the
+    // picker never needed. If the roster grows past a screenful this comes
+    // back — with the list, not ahead of it.
+    final list = _agencies;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Label left, search right on wide; stacked on phone.
-        if (narrow) ...[
-          label,
-          const SizedBox(height: 12),
-          search,
-        ] else
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Expanded(child: label),
-              const SizedBox(width: 16),
-              SizedBox(width: 240, child: search),
-            ],
-          ),
+        label,
         const SizedBox(height: 16),
-        if (list.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 28),
-            child: Center(
-              child: Text(
-                'No agency matches "${_query.trim()}".',
-                style: const TextStyle(
-                    fontSize: 13, color: AdminUi.textMuted),
-              ),
-            ),
-          )
-        else
-          LayoutBuilder(
+        LayoutBuilder(
             builder: (context, c) {
               const gap = 12.0;
               // Two columns wherever a pair of cards fits, one when too narrow.
@@ -499,9 +473,9 @@ class _EndorseEntityDialogState extends State<_EndorseEntityDialog> {
                 cards: [
                   for (final a in list) _agencyCard(a, compact: compact),
                 ],
-              );
-            },
-          ),
+          );
+          },
+        ),
         const SizedBox(height: 20),
         _reasonField(narrow),
         const SizedBox(height: 18),
@@ -608,37 +582,6 @@ class _EndorseEntityDialogState extends State<_EndorseEntityDialog> {
           ),
         ),
       ],
-    );
-  }
-
-  Widget _searchField(bool narrow) {
-    return TextField(
-      onChanged: (v) => setState(() => _query = v),
-      style: const TextStyle(fontSize: 13.5, color: AdminUi.textPrimary),
-      decoration: InputDecoration(
-        isDense: true,
-        hintText: 'Search agency…',
-        hintStyle: const TextStyle(fontSize: 13.5, color: AdminUi.textMuted),
-        prefixIcon: const Icon(Icons.search_rounded,
-            size: 19, color: AdminUi.textMuted),
-        prefixIconConstraints:
-            const BoxConstraints(minWidth: 38, minHeight: 38),
-        contentPadding: const EdgeInsets.symmetric(vertical: 11),
-        filled: true,
-        fillColor: AdminUi.subtle,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: AdminUi.border),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: AdminUi.border),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: _selectBlue, width: 1.5),
-        ),
-      ),
     );
   }
 
@@ -852,6 +795,16 @@ class _EndorseEntityDialogState extends State<_EndorseEntityDialog> {
   }
 
   Widget _footer(bool narrow) {
+    // ── Taller on the phone form ──────────────────────────────────────────
+    //
+    // 14px of vertical padding is right for a modal, where the buttons sit in a
+    // row at their natural width and read as a pair of controls. Stacked
+    // full-width on a phone they are the two biggest targets on the screen and
+    // 14 left them looking thin — a wide, short slab rather than a button. 17
+    // brings them to a ~50px tap target, which is also the first size that
+    // clears the 48dp Material minimum with the text's own line box.
+    final double vPad = narrow ? 17 : 14;
+
     final canSend = _selected != null && _selected!.isNotEmpty;
     // Only offered when there's an endorsement to clear (the "Change" flow).
     final canClear = (widget.currentEndorsement ?? '').isNotEmpty;
@@ -871,7 +824,7 @@ class _EndorseEntityDialogState extends State<_EndorseEntityDialog> {
       style: OutlinedButton.styleFrom(
         foregroundColor: AdminUi.textSecondary,
         side: const BorderSide(color: AdminUi.borderStrong),
-        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
+        padding: EdgeInsets.symmetric(horizontal: 22, vertical: vPad),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
       ),
@@ -886,7 +839,7 @@ class _EndorseEntityDialogState extends State<_EndorseEntityDialog> {
       style: FilledButton.styleFrom(
         backgroundColor: _selectBlue,
         disabledBackgroundColor: const Color(0xFFB9C7E8),
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+        padding: EdgeInsets.symmetric(horizontal: 24, vertical: vPad),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
       ),

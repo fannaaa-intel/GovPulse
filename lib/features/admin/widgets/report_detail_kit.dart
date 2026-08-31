@@ -536,10 +536,26 @@ class DetailActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // ── Size ──────────────────────────────────────────────────────────────
+    //
+    // These are the report-process actions — Accept & Assign, Reject, Endorse,
+    // Return to triage — the most consequential controls in either console, and
+    // several of them irreversible. At 13px of padding alone they came out
+    // around 44px: legal, but read as thin strips of colour rather than as
+    // buttons, which is the complaint. A 50px floor gives them the weight the
+    // action carries and clears the 48dp Material minimum with room to spare.
+    //
+    // A minimumSize, not more padding: padding alone grows with the text scale
+    // and would push a wrapped two-line label (which "Not my department —
+    // return to triage" becomes on a phone) to an unreasonable height. This
+    // sets a floor and lets a long label grow past it on its own.
+    const double minHeight = 50;
+
     final style = ButtonStyle(
       padding: const WidgetStatePropertyAll(
-        EdgeInsets.symmetric(horizontal: 10, vertical: 13),
+        EdgeInsets.symmetric(horizontal: 14, vertical: 13),
       ),
+      minimumSize: const WidgetStatePropertyAll(Size(0, minHeight)),
       shape: WidgetStatePropertyAll(
         RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AdminUi.controlRadius),

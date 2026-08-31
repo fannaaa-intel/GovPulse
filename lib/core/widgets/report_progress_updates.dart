@@ -593,7 +593,7 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
           ],
           if (_canPost) ...[
             _composer(),
-            const SizedBox(height: 14),
+            const SizedBox(height: 12),
           ],
           if (_loading)
             // Shaped placeholders, not a spinner: the list that lands has a
@@ -684,15 +684,23 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
   // with nothing to say what it did -- a control the user had to click to find
   // out. It is now a labelled either/or with its consequence spelled out, on
   // its own row, above the actions rather than mixed in among them.
+  //
+  // ── ONE BOX, NOT THREE ────────────────────────────────────────────────────
+  //
+  // The composer used to be a filled, bordered, rounded [Container] sitting
+  // INSIDE the panel's own filled, bordered, rounded card — and the text field
+  // inside THAT was filled and bordered again. Three nested boxes to hold one
+  // textarea and two buttons, each with its own edge and its own inset, which
+  // is what made the panel read as heavy and left the phone layout paying ~26px
+  // of horizontal padding before a character of text.
+  //
+  // The composer is not a separate THING from the panel it lives in; it is the
+  // top of it. So it draws no box of its own: the field keeps its outline
+  // (that one means "type here" and has to stay), a hairline rule underneath
+  // separates the composer from the history below it, and the panel's card is
+  // the only frame. Same controls, same order, one edge instead of three.
   Widget _composer() {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF7F9FC),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.black12),
-      ),
-      child: Column(
+    return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           TextField(
@@ -704,8 +712,12 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
             decoration: InputDecoration(
               hintText: 'What has happened since the last update?',
               hintStyle: const TextStyle(fontSize: 13, color: Colors.black38),
+              // A faint tint, not white: the field used to be white on the
+              // composer's grey ground, which is what gave it its edge. With
+              // the grey gone it would be white on white, leaving a 1px border
+              // to carry the whole "this is an input" signal.
               filled: true,
-              fillColor: Colors.white,
+              fillColor: const Color(0xFFF7F9FC),
               isDense: true,
               contentPadding:
                   const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
@@ -735,8 +747,14 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
                   side: BorderSide(
                     color: AppColors.primaryBlue.withValues(alpha: 0.4),
                   ),
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
-                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  // `VisualDensity.compact` SUBTRACTS from the tap target, and
+                  // on top of Material's own floor it left these two at about
+                  // 36px — thin strips rather than buttons, and below the 48dp
+                  // minimum for the control that submits an office's work.
+                  // Standard density plus a 44px floor: still compact enough to
+                  // sit inline in the composer, no longer undersized.
+                  minimumSize: const Size(0, 44),
                 ),
                 icon: const Icon(Icons.add_photo_alternate_outlined, size: 17),
                 label: Text(_staged.isEmpty
@@ -747,8 +765,9 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
                 onPressed: _sending ? null : _submit,
                 style: FilledButton.styleFrom(
                   backgroundColor: AppColors.primaryBlue,
-                  padding: const EdgeInsets.symmetric(horizontal: 18),
-                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  // Matches the outlined button beside it — see its note.
+                  minimumSize: const Size(0, 44),
                 ),
                 icon: _sending
                     ? const SizedBox(
@@ -781,8 +800,12 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
               ],
             ),
           ],
+          // The seam between "what I am writing" and "what has been written".
+          // A 1px rule says it in the space a 12px gap plus two card edges used
+          // to take.
+          const SizedBox(height: 14),
+          const Divider(height: 1, thickness: 1, color: Color(0x14000000)),
         ],
-      ),
     );
   }
 
