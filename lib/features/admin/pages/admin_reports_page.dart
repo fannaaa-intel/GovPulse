@@ -1859,11 +1859,37 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
       // Straight into the success dialog rather than a toast. The PIN it
       // carries exists nowhere else — the server kept only a hash — so this
       // must not be something the admin can miss while looking elsewhere.
+      // The pane already loaded this report's media for its gallery, so the
+      // letter's enclosure costs no extra round trip. Best-effort: a failed
+      // media load must not stop the admin getting the letter that carries the
+      // one-time PIN.
+      List<ReportMedia> shots = const [];
+      try {
+        // DetailMediaItem is the kit's own view model, so it is mapped back
+        // rather than unwrapped - it carries the same facts the plates need.
+        shots = await _mediaFuture.then(
+          (items) => [
+            for (final i in items)
+              ReportMedia(
+                url: i.url,
+                mimeType: i.isVideo ? 'video/mp4' : 'image/jpeg',
+                source: i.isGpsVerified ? 'camera' : 'upload',
+                aiScore: i.aiScore,
+                aiStatus: i.aiStatus,
+              ),
+          ],
+        );
+      } catch (_) {
+        // Letter without photographs beats no letter.
+      }
+      if (!mounted) return;
+
       await showEndorsementSuccessDialog(
         context,
         report: widget.report,
         credentials: credentials,
         reason: picked.reason,
+        media: shots,
       );
     } catch (e) {
       if (!mounted) return;

@@ -40,6 +40,7 @@ Future<void> showEndorsementSuccessDialog(
   required AdminReport report,
   required EndorsementCredentials credentials,
   required String reason,
+  List<ReportMedia> media = const [],
 }) {
   return showAppDialog<void>(
     context: context,
@@ -50,6 +51,7 @@ Future<void> showEndorsementSuccessDialog(
       report: report,
       credentials: credentials,
       reason: reason,
+      media: media,
     ),
   );
 }
@@ -59,10 +61,16 @@ class _EndorsementSuccessDialog extends StatefulWidget {
   final EndorsementCredentials credentials;
   final String reason;
 
+  /// The citizen's photographs, enclosed with the letter so the receiving
+  /// office can identify the site. Defaults to empty: a caller that has not
+  /// loaded media prints the letter exactly as before rather than failing.
+  final List<ReportMedia> media;
+
   const _EndorsementSuccessDialog({
     required this.report,
     required this.credentials,
     required this.reason,
+    this.media = const [],
   });
 
   @override
@@ -446,6 +454,7 @@ class _EndorsementSuccessDialogState extends State<_EndorsementSuccessDialog> {
         report: widget.report,
         credentials: widget.credentials,
         reason: widget.reason,
+        media: widget.media,
       );
     } catch (e) {
       if (!mounted) return;
@@ -464,6 +473,7 @@ class _EndorsementSuccessDialogState extends State<_EndorsementSuccessDialog> {
         report: widget.report,
         credentials: widget.credentials,
         reason: widget.reason,
+        media: widget.media,
       );
       await Printing.layoutPdf(onLayout: (_) async => bytes);
     } catch (e) {

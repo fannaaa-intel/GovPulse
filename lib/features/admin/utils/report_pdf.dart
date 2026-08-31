@@ -1,3 +1,6 @@
+import 'dart:typed_data';
+
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -6,6 +9,7 @@ import 'package:printing/printing.dart';
 import '../providers/admin_reports_provider.dart';
 import '../widgets/report_status_tracker.dart';
 import 'admin_pdf.dart';
+import 'pdf_photos.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  One report → print-ready PDF dossier
@@ -38,8 +42,40 @@ Future<void> exportReportPdf({
   required List<ReportNote> notes,
   DateTime? now,
 }) async {
+  final bytes = await buildReportPdf(
+    report: report,
+    media: media,
+    notes: notes,
+    now: now,
+  );
+  await Printing.sharePdf(
+    bytes: bytes,
+    filename: 'GovPulse-Report-RPT-${report.shortId}.pdf',
+  );
+}
+
+/// The raw dossier bytes.
+///
+/// Split out of [exportReportPdf] so the document can be BUILT without a share
+/// sheet. The letter has had this seam since it was written and it is why the
+/// letter has tests; the dossier had none, so nothing could assert that it
+/// assembles at all for an awkward report.
+Future<Uint8List> buildReportPdf({
+  required AdminReport report,
+  required List<ReportMedia> media,
+  required List<ReportNote> notes,
+
+  /// Injected only by tests — see buildEndorsementLetter.
+  http.Client? client,
+  DateTime? now,
+}) async {
   final at = now ?? DateTime.now();
   final r = report;
+
+  // Fetched BEFORE the document is built, because embedding needs the bytes in
+  // hand. Failures degrade to "no plate, and a line saying so" rather than
+  // failing the export — see pdf_photos.dart.
+  final shots = await preparePhotos(media, client: client);
 
   final doc = pw.Document(
     title: 'GovPulse Report RPT-${r.shortId}',
@@ -76,15 +112,25 @@ Future<void> exportReportPdf({
         pw.SizedBox(height: 22),
         ..._attachmentsSection(media),
         pw.SizedBox(height: 22),
+        // Splatted, not wrapped in a Column: MultiPage breaks only BETWEEN
+        // children, so one Column of plates would push the whole block to the
+        // next page. One child per row lets it break between rows.
+        ...pdfPhotoPlates(
+          shots,
+          heading: '6. Photographs',
+          emptyNote: shots.videos > 0
+              ? 'No photographs are attached. ${shots.videos} video '
+                  'attachment(s) cannot be reproduced in print - view them in '
+                  'the admin console.'
+              : 'No photographs were attached to this report.',
+        ),
+        pw.SizedBox(height: 22),
         ..._workLogSection(notes),
       ],
     ),
   );
 
-  await Printing.sharePdf(
-    bytes: await doc.save(),
-    filename: 'GovPulse-Report-RPT-${r.shortId}.pdf',
-  );
+  return doc.save();
 }
 
 /// The whole report in one paragraph, for someone who reads nothing else.
@@ -325,13 +371,13 @@ String _aiVerdict(ReportMedia m) {
   };
 }
 
-// ══ 6. Work log ═══════════════════════════════════════════════════════════════
+// ══ 7. Work log ═══════════════════════════════════════════════════════════════
 
 /// The internal thread. Included because it is the only record of WHY the report
 /// was handled the way it was — and the reason an admin prints a dossier is
 /// usually to answer exactly that.
 List<pw.Widget> _workLogSection(List<ReportNote> notes) {
-  final out = <pw.Widget>[pdfH1('6. Internal Work Log')];
+  final out = <pw.Widget>[pdfH1('7. Internal Work Log')];
 
   if (notes.isEmpty) {
     out.add(

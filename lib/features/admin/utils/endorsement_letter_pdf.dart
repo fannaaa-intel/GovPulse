@@ -2,12 +2,14 @@ import 'dart:typed_data';
 
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:intl/intl.dart';
+import 'package:http/http.dart' as http;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
 import '../../../core/config/app_config.dart';
 import '../providers/admin_reports_provider.dart';
+import 'pdf_photos.dart';
 import 'admin_pdf.dart' show pdfSafe;
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -74,12 +76,16 @@ Future<void> exportEndorsementLetter({
   required AdminReport report,
   required EndorsementCredentials credentials,
   required String reason,
+  List<ReportMedia> media = const [],
+  http.Client? client,
   DateTime? now,
 }) async {
   final bytes = await buildEndorsementLetter(
     report: report,
     credentials: credentials,
     reason: reason,
+    media: media,
+    client: client,
     now: now,
   );
   await Printing.sharePdf(
@@ -93,10 +99,24 @@ Future<Uint8List> buildEndorsementLetter({
   required AdminReport report,
   required EndorsementCredentials credentials,
   required String reason,
+  List<ReportMedia> media = const [],
+
+  /// Injected only by tests, which cannot reach a real signed url. Production
+  /// passes nothing and [preparePhotos] opens (and closes) its own client.
+  http.Client? client,
   DateTime? now,
 }) async {
   final at = now ?? DateTime.now();
   final scanUrl = AppConfig.scanUrl(credentials.token);
+
+  // The citizen's photographs. Defaults to empty so every existing caller (and
+  // the dialog's preview pane) keeps working unchanged and simply prints the
+  // letter it printed before.
+  //
+  // Capped at FOUR rather than the dossier's eight. This is correspondence, not
+  // a case file: the agency needs enough to recognise the site, and a letter
+  // that runs to four pages of plates stops reading as a letter.
+  final shots = await preparePhotos(media, limit: 4, client: client);
 
   // Times, TimesBold, TimesItalic are PDF standard-14 core fonts: present in
   // every conforming reader, embedded by nobody, fetched from nowhere. That
@@ -153,6 +173,17 @@ Future<Uint8List> buildEndorsementLetter({
         ..._reasonSection(reason),
         pw.SizedBox(height: 10),
         ..._termsSection(credentials.agency),
+        // ── The enclosure, before the closing ──────────────────────────────
+        //
+        // Placed here for the same reason the closing is built as one
+        // unbreakable row: a signature must be the last thing on the letter.
+        // Photographs appended AFTER it would read as an afterthought stapled
+        // past the Mayor's name.
+        //
+        // Nothing here identifies the reporter. The plates carry a number and
+        // whether the shot was GPS-stamped - the same two facts the attachments
+        // table already prints - and the letter has never named the citizen.
+        ..._photoEnclosure(shots),
         // ── Why the closing is not forced onto page one ────────────────────
         //
         // It was tempting, and it is the wrong goal. The letter's length is
@@ -703,3 +734,61 @@ String? _place(AdminReport r) {
 
 String _capitalise(String s) =>
     s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
+
+// == Photographic enclosure ===================================================
+
+/// The citizen's photographs, titled in the letter's own voice.
+///
+/// Returns an EMPTY list when there is nothing to show, so a report filed
+/// without photos produces exactly the letter it produced before rather than a
+/// heading over an apology. That asymmetry is deliberate: the dossier is a
+/// record and says "no photographs are attached", whereas a letter that
+/// announces an enclosure it does not have is simply wrong.
+List<pw.Widget> _photoEnclosure(PreparedPhotos shots) {
+  if (shots.isEmpty) return const [];
+  final n = shots.photos.length;
+  final plates = pdfPhotoPlates(shots);
+
+  return [
+    pw.SizedBox(height: 12),
+    // The heading and the FIRST row of plates are one child.
+    //
+    // Rendered as separate children, MultiPage broke between them: page one
+    // ended with "Enclosures: 4 photographs submitted by the reporting
+    // citizen" and page two opened with four unannounced pictures. Same class
+    // of break as the signature that used to strand itself on its own sheet —
+    // MultiPage only breaks BETWEEN children, so anything that must not
+    // separate has to be ONE.
+    //
+    // Only the first row is bound to the heading. Binding all of them would
+    // make the whole enclosure unbreakable, which for four plates is taller
+    // than a page and would overflow rather than flow.
+    //
+    // pw.Inseparable, not a bare Column: MultiPage breaks INSIDE a multi-child
+    // Column when the whole thing does not fit, which is exactly what stranded
+    // the heading in the first place. Inseparable (canSpan: false by default)
+    // is the package's own way of saying "this group moves together".
+    pw.Inseparable(
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text(
+            n == 1
+                ? 'Enclosure: photograph submitted by the reporting citizen'
+                : 'Enclosures: $n photographs submitted by the reporting citizen',
+            style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold),
+          ),
+          pw.SizedBox(height: 3),
+          pw.Text(
+            'Taken at the location described above and reproduced here so that '
+            'the receiving office may identify the site before inspection.',
+            style: pw.TextStyle(fontSize: 9.5, color: PdfColors.grey700),
+          ),
+          pw.SizedBox(height: 8),
+          plates.first,
+        ],
+      ),
+    ),
+    ...plates.skip(1),
+  ];
+}
