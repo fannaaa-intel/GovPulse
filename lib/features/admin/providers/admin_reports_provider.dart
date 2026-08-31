@@ -937,9 +937,23 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
     return null;
   }
 
-  /// Writes an update, and if it fails because the report_triage_gate migration
-  /// hasn't been applied yet, retries without the not-yet-existing columns so
-  /// the core status change still lands.
+  /// Writes a triage update, degrading ONLY for a missing column.
+  ///
+  /// ── ⚠ WHY THE BARE `catch (_)` HAD TO GO ──────────────────────────────────
+  /// This retried on ANY failure. The intent was narrow — report_triage_gate
+  /// might not be applied, so drop its columns and let the status change land —
+  /// but the effect was that an RLS denial, a constraint violation or a dropped
+  /// connection also fell into the retry. The narrower payload then often
+  /// SUCCEEDED, so `accept()` reported "Accepted — routed to Engineering
+  /// Office" while `assigned_to_department` was never written: the report sat
+  /// unassigned, the office was never notified, and nothing anywhere said so.
+  ///
+  /// That migration is applied (it lives in supabase/legacy/, and all six
+  /// columns are confirmed present live), so the fallback is dead code for its
+  /// stated purpose and was only ever hiding real errors. It is kept — a
+  /// deployment restored from an older schema is exactly when you want it — but
+  /// it now fires ONLY on PostgREST's undefined-column code, and any other
+  /// failure propagates to the caller, which already has the error UI for it.
   Future<void> _tryUpdate(
     String id,
     Map<String, dynamic> update,
@@ -947,12 +961,20 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
   ) async {
     try {
       await _db.from('reports').update(update).eq('id', id);
-    } catch (_) {
+    } on PostgrestException catch (e) {
+      // 42703 = undefined_column. PostgREST also answers PGRST204 when a column
+      // named in the payload is absent from its schema cache; both mean "this
+      // column does not exist", and nothing else does.
+      final missingColumn = e.code == '42703' || e.code == 'PGRST204';
+      if (!missingColumn) rethrow;
+
       final fallback = Map<String, dynamic>.from(update)
         ..removeWhere((k, _) => optionalCols.contains(k));
-      if (fallback.isNotEmpty) {
-        await _db.from('reports').update(fallback).eq('id', id);
-      }
+      // Nothing left to write means the missing column was not an optional one,
+      // so the retry would fail identically. Surface the original error rather
+      // than reporting a success that never happened.
+      if (fallback.isEmpty) rethrow;
+      await _db.from('reports').update(fallback).eq('id', id);
     }
     await _reload();
   }
