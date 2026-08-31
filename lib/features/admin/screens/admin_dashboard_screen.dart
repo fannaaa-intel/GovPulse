@@ -279,7 +279,10 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
       case 2:
         return const AdminEventsPage();
       case 3:
-        return AdminReportsPage(highlightId: highlightId);
+        return AdminReportsPage(
+          highlightId: highlightId,
+          deepLinkNonce: _deepLinkNonce,
+        );
       case 4:
         return AdminSuggestionsPage(highlightId: highlightId);
       case 5:

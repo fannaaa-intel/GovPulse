@@ -50,7 +50,18 @@ class AdminReportsPage extends ConsumerStatefulWidget {
   /// A report id to scroll to and flash once, when arriving from an insight row
   /// or a notification. Null for a normal open.
   final String? highlightId;
-  const AdminReportsPage({super.key, this.highlightId});
+
+  /// Bumped by the shell on every deep-link tap, so tapping the SAME
+  /// notification twice flashes twice. Without it the second tap delivers an
+  /// identical highlightId, nothing looks changed, and the request is dropped —
+  /// see DeepLinkHighlightMixin.rearmHighlight.
+  final int deepLinkNonce;
+
+  const AdminReportsPage({
+    super.key,
+    this.highlightId,
+    this.deepLinkNonce = 0,
+  });
 
   @override
   ConsumerState<AdminReportsPage> createState() => _AdminReportsPageState();
@@ -60,6 +71,50 @@ class _AdminReportsPageState extends ConsumerState<AdminReportsPage>
     with DeepLinkHighlightMixin {
   final _searchCtrl = TextEditingController();
   Timer? _debounce;
+
+  /// The deep-link target this page has already moved its filters for. Guards
+  /// against re-running the reveal on every rebuild, which would fight an admin
+  /// who deliberately changed bucket after arriving.
+  String? _revealedFor;
+
+  @override
+  void didUpdateWidget(covariant AdminReportsPage old) {
+    super.didUpdateWidget(old);
+    // A fresh tap on an already-open page: Flutter updates this State rather
+    // than rebuilding it, so nothing else re-arms the flash or the reveal.
+    if (widget.deepLinkNonce != old.deepLinkNonce) {
+      _revealedFor = null;
+      rearmHighlight();
+    }
+  }
+
+  /// Moves the filters so [id] is actually on screen, then lets the flash run.
+  ///
+  /// Order matters: flashing first would scroll to a key that does not exist
+  /// yet, because the row is still filtered out. That was the whole failure —
+  /// the tap worked, the target was absent, and nothing happened visibly.
+  void _revealAndFlash(String? id) {
+    if (id == null || id.isEmpty) return;
+    if (_revealedFor != id) {
+      _revealedFor = id;
+      final moved = ref.read(adminReportsProvider.notifier).revealReport(id);
+      if (moved) {
+        // The search box is a controller, not derived state — clearing the
+        // filter alone leaves stale text sitting in the field describing a
+        // narrowing that is no longer applied.
+        if (_searchCtrl.text.isNotEmpty) {
+          _debounce?.cancel();
+          _searchCtrl.clear();
+        }
+        // The reveal republished the list; flash on the frame that renders it.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) flashHighlightOnce(id);
+        });
+        return;
+      }
+    }
+    flashHighlightOnce(id);
+  }
 
   @override
   void dispose() {
@@ -153,8 +208,9 @@ class _AdminReportsPageState extends ConsumerState<AdminReportsPage>
     final filters = notifier.filters;
     final pad = MediaQuery.of(context).size.width < 600 ? 16.0 : 24.0;
 
-    // Rows exist only once the fetch resolves — flash the deep-link target then.
-    if (async.hasValue) flashHighlightOnce(widget.highlightId);
+    // Rows exist only once the fetch resolves — reveal and flash the deep-link
+    // target then. Before that there is nothing to reveal it out of.
+    if (async.hasValue) _revealAndFlash(widget.highlightId);
 
     return RefreshIndicator(
       onRefresh: () => ref.read(adminReportsProvider.notifier).refresh(),
@@ -1527,6 +1583,17 @@ class _ReportDetailDialog extends ConsumerStatefulWidget {
 class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
   late ReportStatus _status;
 
+  /// The report is finished with — resolved, rejected, or dismissed as spam.
+  ///
+  /// The single definition of "closed" for this pane, so the surfaces that must
+  /// stop offering work cannot drift apart. Resolved and rejected are both
+  /// terminal for the CITIZEN (the report is done or refused); dismissed is
+  /// terminal because the row was never real work in the first place.
+  bool get _isClosed =>
+      _status == ReportStatus.resolved ||
+      _status == ReportStatus.rejected ||
+      report.isDismissed;
+
   /// The report's attachments, mapped into the kit's neutral item so the hero
   /// thumb and the gallery are the same widgets the staff console uses.
   late Future<List<DetailMediaItem>> _mediaFuture;
@@ -2055,10 +2122,16 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
         // Renders nothing when the report was never endorsed.
         EndorsementReceiptStatus(reportId: r.id),
         const SizedBox(height: 6),
+        // Locked once the report is closed: the composer disappears, but the
+        // Approve / Reject controls on anything still pending do NOT — an
+        // update submitted moments before closure still needs deciding, and
+        // stranding it undecided would leave the office waiting forever. See
+        // ReportProgressUpdates.locked.
         ReportProgressUpdates(
           reportId: r.id,
           mode: ReportUpdatesMode.reviewer,
           authorName: 'LGU Admin',
+          locked: _isClosed,
         ),
         const SizedBox(height: 22),
         const Text(

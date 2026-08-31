@@ -343,7 +343,16 @@ DateTime? _parseTs(dynamic v) {
 /// keep an eye on what the offices are working, and park what's left. Each
 /// bucket answers one question, so they can never combine into a contradiction.
 enum ReportBucket {
-  /// Everything still in the LGU's hands — excludes spam and endorsed-out rows.
+  /// Every real report, whoever is holding it — including the ones endorsed out
+  /// to an external entity. Excludes only spam and merged duplicates.
+  ///
+  /// This used to exclude endorsed rows too, on the reasoning that "All" meant
+  /// the LGU's own live queue. Two things broke because of it. An admin
+  /// counting reports on the All tab was told a number that did not include
+  /// work the municipality had endorsed but is still answerable for. And a
+  /// progress-update notification deep-links to its report with the page on
+  /// All — where an endorsed report was not present, so the highlight found no
+  /// row and the tap did nothing at all, silently.
   all,
 
   /// Filed but not yet accepted, endorsed or rejected — the admin's to-do list.
@@ -365,9 +374,15 @@ enum ReportBucket {
 /// Whether [r] belongs in [bucket] — the single definition of the piles, kept
 /// pure so the rules are testable without a database behind them.
 ///
-/// [ReportBucket.all] is the LGU's live queue, so it deliberately OVERLAPS the
-/// needsTriage / working / resolved piles; what it excludes is work that isn't
-/// the LGU's any more (endorsed out) or isn't real (dismissed spam).
+/// [ReportBucket.all] is the whole ledger, so it deliberately OVERLAPS every
+/// other pile; what it excludes is only what isn't a ticket — dismissed spam
+/// and merged duplicates.
+///
+/// The narrower piles stay LGU-scoped and keep excluding endorsed rows, which
+/// is not an inconsistency: `working` and `resolved` answer "what are OUR
+/// offices holding", and an endorsed report has its own tab that answers the
+/// same question for the agency. Only `all` promises everything, so only `all`
+/// has to deliver it.
 bool reportInBucket(AdminReport r, ReportBucket bucket) {
   // A merged duplicate is not a ticket — it's a confirmation on someone else's.
   // Held out of EVERY bucket (including dismissed) so collapsing duplicates
@@ -389,7 +404,7 @@ bool reportInBucket(AdminReport r, ReportBucket bucket) {
           !r.isEndorsed &&
           r.status == ReportStatus.resolved;
     case ReportBucket.all:
-      return !r.isDismissed && !r.isEndorsed;
+      return !r.isDismissed;
   }
 }
 
@@ -448,6 +463,23 @@ class ReportFilters {
       anonymousOnly: anonymousOnly ?? this.anonymousOnly,
     );
   }
+
+  // Value equality so a caller can ask "did anything actually change?" without
+  // comparing five fields by hand. copyWith always returns a NEW instance, so
+  // identity comparison answers "yes" every time and would republish the state
+  // on every deep-link tap whether or not a filter moved.
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ReportFilters &&
+          other.bucket == bucket &&
+          other.status == status &&
+          other.query == query &&
+          other.sort == sort &&
+          other.anonymousOnly == anonymousOnly;
+
+  @override
+  int get hashCode => Object.hash(bucket, status, query, sort, anonymousOnly);
 }
 
 // ── Notifier ─────────────────────────────────────────────────────────────────
@@ -646,6 +678,59 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
     if (bucket == _filters.bucket) return;
     _filters = _filters.copyWith(bucket: bucket);
     _publish();
+  }
+
+  /// Makes [reportId] visible in the current view, moving the filters if it
+  /// isn't. Returns false when the report isn't in the fetched set at all.
+  ///
+  /// Deep links arrive from OUTSIDE this page — a notification, an insight row
+  /// — and land on whatever bucket and search the admin happened to leave
+  /// behind. Nothing reconciled the two, so the page would scroll to a row that
+  /// was filtered out and simply not flash, which reads as a broken tap rather
+  /// than as an active filter. That is exactly how the "post update" ping
+  /// looked dead: its report was endorsed, and the admin was sitting on a
+  /// bucket that (before this change) excluded endorsed rows.
+  ///
+  /// Clearing the search and status is deliberate and not overreach. The admin
+  /// asked to go and look at ONE row; a filter left over from a previous task
+  /// is not a preference worth honouring over the thing they just tapped.
+  bool revealReport(String reportId) {
+    final target = _all.where((r) => r.id == reportId).firstOrNull;
+    if (target == null) return false;
+
+    var next = _filters;
+    if (!reportInBucket(target, next.bucket)) {
+      // First bucket in tab order that contains it. `all` is checked first and
+      // now holds every non-dismissed report, so a dismissed or merged row is
+      // the only case that falls through to its own specific pile.
+      const order = [
+        ReportBucket.all,
+        ReportBucket.needsTriage,
+        ReportBucket.working,
+        ReportBucket.resolved,
+        ReportBucket.endorsed,
+        ReportBucket.dismissed,
+      ];
+      final found = order.where((b) => reportInBucket(target, b)).firstOrNull;
+      // A merged duplicate is in NO bucket by design (it's a confirmation on
+      // someone else's ticket, not a row of its own). Nothing to reveal.
+      if (found == null) return false;
+      next = next.copyWith(bucket: found);
+    }
+
+    if (next.query.isNotEmpty) next = next.copyWith(query: '');
+    if (next.status != null && next.status != target.status) {
+      next = next.copyWith(clearStatus: true);
+    }
+    if (next.anonymousOnly && !target.isAnonymous) {
+      next = next.copyWith(anonymousOnly: false);
+    }
+
+    if (next != _filters) {
+      _filters = next;
+      _publish();
+    }
+    return true;
   }
 
   /// Rows in [bucket], ignoring search / status / anonymous — the tab counts

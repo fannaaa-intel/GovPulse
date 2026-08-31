@@ -76,11 +76,18 @@ void main() {
     expect(_bucketsOf(r), {ReportBucket.all});
   });
 
-  test('endorsing hands it out of the LGU queue entirely', () {
-    // Endorsed rows drop out of All: they are not the LGU's work any more, so
-    // counting them in the live queue would overstate the backlog.
+  test('endorsing moves it out of the LGU piles but NOT out of All', () {
+    // CHANGED 2026-08-31. All used to exclude endorsed rows, on the reasoning
+    // that they were no longer the LGU's work. Two things broke because of it:
+    // the count on the All tab silently omitted work the municipality is still
+    // answerable for, and a progress-update notification deep-linked to a
+    // report the page could not display — the highlight found no row and the
+    // tap did nothing at all, which read as a broken notification.
+    //
+    // All now means all. `working` and `resolved` stay LGU-scoped, because the
+    // Endorsed tab answers the same question for the agency.
     final r = _report(status: ReportStatus.underReview, endorsedTo: 'DPWH');
-    expect(_bucketsOf(r), {ReportBucket.endorsed});
+    expect(_bucketsOf(r), {ReportBucket.all, ReportBucket.endorsed});
   });
 
   test('dismissed spam only ever appears in its own bucket', () {
@@ -133,5 +140,54 @@ void main() {
         expect(hits.length, lessThanOrEqualTo(1), reason: '$hits');
       });
     }
+  });
+
+  // ── The deep-link reachability contract ────────────────────────────────────
+  //
+  // AdminReportsNotifier.revealReport walks the buckets in tab order to find one
+  // that holds the report a notification points at, so the row can be shown and
+  // flashed. Its first candidate is `all`. If `all` ever stops holding a live
+  // report again, that tap silently goes back to doing nothing — the exact
+  // failure this replaced, and one no widget test would catch because nothing
+  // throws and nothing looks wrong.
+  //
+  // So the property is pinned here, on the pure rules, rather than left to be
+  // rediscovered from a screenshot.
+  group('every live report is reachable from All', () {
+    final live = <String, AdminReport>{
+      'pending': _report(),
+      'assigned': _report(assignedTo: 'Engineering Office'),
+      'under review': _report(
+        status: ReportStatus.underReview,
+        assignedTo: 'Engineering Office',
+      ),
+      'in progress': _report(
+        status: ReportStatus.inProgress,
+        assignedTo: 'Engineering Office',
+      ),
+      'resolved': _report(
+        status: ReportStatus.resolved,
+        assignedTo: 'Engineering Office',
+      ),
+      'rejected': _report(status: ReportStatus.rejected),
+      'endorsed': _report(endorsedTo: 'DPWH'),
+      'endorsed and in progress': _report(
+        status: ReportStatus.inProgress,
+        endorsedTo: 'DPWH',
+      ),
+    };
+
+    for (final entry in live.entries) {
+      test('${entry.key} is in All', () {
+        expect(reportInBucket(entry.value, ReportBucket.all), isTrue);
+      });
+    }
+
+    test('dismissed spam is the one live-ish row All still excludes', () {
+      expect(
+        reportInBucket(_report(dismissed: true), ReportBucket.all),
+        isFalse,
+      );
+    });
   });
 }
