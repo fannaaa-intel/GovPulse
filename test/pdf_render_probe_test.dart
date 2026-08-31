@@ -76,6 +76,26 @@ List<ReportMedia> _media(int n) => [
         ),
     ];
 
+/// A video sitting FIRST, then photos — the ordering that catches caption
+/// numbering drifting out of step with the attachments table.
+List<ReportMedia> _mixed() => [
+      ReportMedia(url: 'https://example.invalid/clip.mp4', mimeType: 'video/mp4'),
+      ReportMedia(
+          url: 'https://example.invalid/1.jpg',
+          mimeType: 'image/jpeg',
+          source: 'camera'),
+      ReportMedia(
+          url: 'https://example.invalid/2.jpg',
+          mimeType: 'image/jpeg',
+          source: 'upload'),
+    ];
+
+/// Nothing but a video: the report has an attachment, and the PDF has no way
+/// to show it.
+List<ReportMedia> _videoOnly() => [
+      ReportMedia(url: 'https://example.invalid/clip.mp4', mimeType: 'video/mp4'),
+    ];
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -100,6 +120,23 @@ void main() {
       );
       File('$_kOut\\letter_$n.pdf').writeAsBytesSync(bytes);
     }
+
+    // Mixed and video-only, which is where the caption/table numbering and the
+    // "cannot be printed" line have to hold.
+    File('$_kOut\\dossier_mixed.pdf').writeAsBytesSync(await buildReportPdf(
+      report: _report(media: 3),
+      media: _mixed(),
+      notes: const [],
+      client: _ShotClient(),
+      now: DateTime(2026, 8, 31, 10, 0),
+    ));
+    File('$_kOut\\dossier_videoonly.pdf').writeAsBytesSync(await buildReportPdf(
+      report: _report(media: 1),
+      media: _videoOnly(),
+      notes: const [],
+      client: _ShotClient(),
+      now: DateTime(2026, 8, 31, 10, 0),
+    ));
 
     for (final n in [0, 5]) {
       final bytes = await buildReportPdf(
