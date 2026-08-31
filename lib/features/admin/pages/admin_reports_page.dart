@@ -2738,6 +2738,14 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
                   onTap: _busy ? null : _endorse,
                 ),
               DetailActionButton(
+                // `busy` was missing here and on no other action button. The
+                // press was still SAFE — _beginAction refuses to start while
+                // _busy — but the officer got no spinner: they pressed Reject
+                // on a report an office was working, the row went dead with no
+                // sign of which control had claimed it, and the only feedback
+                // was the snackbar after the round trip. Every sibling shows
+                // its own spinner; this one silently did not.
+                busy: _running == _ReportAction.reject,
                 label: 'Reject Report',
                 icon: Icons.cancel_rounded,
                 color: AppColors.red,

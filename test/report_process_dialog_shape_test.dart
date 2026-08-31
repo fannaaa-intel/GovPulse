@@ -114,20 +114,44 @@ void main() {
       },
     );
 
-    testWidgets('the seal drops to the description row', (tester) async {
+    testWidgets('the phone form drops the seal entirely', (tester) async {
+      await _sized(tester, _kPhone);
+      await _open(tester, (ctx) => showEndorseEntityDialog(ctx));
+
+      // The seal cost the description ~70px of a ~390px screen, wrapping two
+      // readable lines into three or four narrow ones. It is decoration — it
+      // repeats what the title already says — and the description carries the
+      // irreversibility warning, which is the most important sentence here.
+      //
+      // The endorse seal is a send glyph; the only send_rounded left on the
+      // phone form is the one on the "Send Endorsement" button.
+      expect(
+        find.byIcon(Icons.send_rounded),
+        findsOneWidget,
+        reason: 'the header seal is gone; only the action button keeps its icon',
+      );
+    });
+
+    testWidgets('the description runs the full width', (tester) async {
       await _sized(tester, _kPhone);
       await _open(tester, (ctx) => showEndorseEntityDialog(ctx));
 
       final title = tester.getRect(find.text('Endorse to External Entity'));
-      // The seal illustrates the description, so it sits with it — below the
-      // row the chevron and title share.
-      final seal = tester.getRect(find.byIcon(Icons.send_rounded).first);
-
-      expect(
-        seal.top,
-        greaterThanOrEqualTo(title.top),
-        reason: 'the seal belongs on the second row, under the title',
+      final desc = tester.getRect(
+        find.textContaining('Send this report to the appropriate'),
       );
+
+      // Under the title row, and starting at the header's own left edge rather
+      // than indented past a seal.
+      expect(desc.top, greaterThanOrEqualTo(title.top));
+      expect(
+        desc.left,
+        lessThan(title.left),
+        reason: 'the description is no longer indented past the seal — it '
+            'starts left of where the title sits beside the chevron',
+      );
+      // And it is genuinely wide: most of the screen, not a narrow column.
+      expect(desc.width, greaterThan(_kPhone.width * 0.8));
     });
   });
 

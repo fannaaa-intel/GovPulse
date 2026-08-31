@@ -105,30 +105,37 @@ class AdminKeyboardCollapse extends StatelessWidget {
 }
 
 /// The shared phone-screen header for a report-process dialog: the back chevron
-/// and the TITLE share the top row, with the seal and the description below.
+/// and the TITLE on one row, the description on its own beneath them.
 ///
 /// ── The shape ─────────────────────────────────────────────────────────────
 ///     [<]  Accept & Assign
-///     (seal)  This report is valid and will be assigned to a department for
-///             action. This action cannot be undone.
+///     This report is valid and will be assigned to a department for action.
+///     This action cannot be undone.
 ///
 /// Back is chrome, so it stays at the top-left where every pushed screen in
-/// this app puts it — but it reads as the header's own row rather than as a
-/// separate band above it, and the title travels with it instead of being
-/// pushed down a line. The seal then leads the description, which is the part
-/// it actually illustrates.
+/// this app puts it, and the title travels with it rather than being pushed
+/// down a line.
 ///
-/// The three dialogs had drifted into three variations of this: one put the
-/// chevron on a row of its own above everything, the others crammed it (or an
-/// ✕) beside the seal, where it left the title about 60px of the width it
-/// needs. It lives here so they cannot drift apart again.
+/// ── Why the seal is not here on a phone ───────────────────────────────────
+/// It was, sitting to the left of the description — and it cost the copy about
+/// 70px of a ~390px screen, wrapping two readable lines into three or four
+/// narrow ones. The seal is decoration: it repeats what the title has already
+/// said in words, and the description is the part that states what pressing
+/// the button will actually do — including the irreversibility warning, which
+/// is the single most important sentence on the screen. Decoration does not
+/// get to squeeze the warning.
+///
+/// So on the phone the description runs the full width and the seal is
+/// dropped. The MODAL keeps it: there the dialog is 860px wide, the seal costs
+/// the copy nothing, and it gives an otherwise plain header a point of entry.
 class AdminDialogScreenHeader extends StatelessWidget {
-  /// The circular seal — the glyph or illustration that identifies the action.
+  /// The circular seal identifying the action. Drawn on the modal form only —
+  /// see the note above for why the phone form omits it.
   final Widget seal;
   final Widget title;
   final Widget description;
 
-  /// Modal (wide) form: no chevron, so the seal leads the title as before.
+  /// True on the phone/screen form.
   final bool full;
   final EdgeInsets padding;
 
@@ -144,7 +151,7 @@ class AdminDialogScreenHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Wide: seal left, title over description to its right — the modal shape
-    // this console has always drawn.
+    // this console has always drawn, and where the seal is free.
     if (!full) {
       return Padding(
         padding: padding,
@@ -171,28 +178,20 @@ class AdminDialogScreenHeader extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Row one: back, then the title beside it.
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               AdminDialogBack(onTap: () => Navigator.of(context).pop()),
               const SizedBox(width: 12),
               // Flexible, not Expanded-with-no-wrap: a long title at a large
-              // system text scale must wrap under itself rather than overflow
-              // the row.
+              // system text scale must wrap under itself rather than overflow.
               Flexible(child: title),
             ],
           ),
-          const SizedBox(height: 12),
-          // Row two: the seal leading the description it illustrates.
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              seal,
-              const SizedBox(width: 14),
-              Expanded(child: description),
-            ],
-          ),
+          const SizedBox(height: 10),
+          // Full width — no seal, no indent. The description is the sentence
+          // that says what the button does, so it gets the whole screen.
+          SizedBox(width: double.infinity, child: description),
         ],
       ),
     );

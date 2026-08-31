@@ -57,25 +57,30 @@ class ReportWorkLog extends StatefulWidget {
 /// Flutter change that moves the number fails the test rather than silently
 /// re-introducing the misalignment.
 ///
-/// ── Why this grew from 40 to 44 ─────────────────────────────────────────────
-/// At 40 the field was one thin line of 13.5sp text with 10px of padding, and
-/// beside it sat a 40x40 SOLID block of brand blue. The two were the same
-/// height and still read as mismatched: the button was a filled square with an
-/// 18px glyph floating in it while the field was a hairline outline, so the
-/// eye weighed the send control heavier than the thing being sent — which is
-/// the inconsistency image 8 shows, in both consoles.
+/// ── The imbalance this number alone could not fix ───────────────────────────
+/// The field and the button have always been the SAME HEIGHT — composer
+/// alignment was measured and pinned long ago. That was never the complaint.
 ///
-/// The fix is proportion, not alignment (the alignment was already exact, and
-/// composer_alignment_test pins it). A slightly taller field with more vertical
-/// padding gives the input the presence its role deserves, and the button —
-/// still an exact square of the same height, still built from this one number —
-/// now reads as its companion rather than as the loudest thing in the row.
+/// The complaint is WEIGHT. A one-line field is a pale outline on a near-white
+/// fill; beside it sat a fully saturated square of brand blue. Two shapes of
+/// equal height read as mismatched when one is a whisper and the other a
+/// shout, and the eye lands on the send button rather than on the note being
+/// written — which is backwards, because the note is the content and Send is
+/// the mechanism. Growing the field from 40 to 44 changed nothing about that;
+/// it just made both slightly taller.
 ///
-///   content padding   12 + 12  = 24
-///   one line @ 13.5sp x 1.2 lh ~ 16.2 -> 16 (Material rounds the line box)
-///   border            1 + 1    =  2
-///                              = 42 ... measured 44 with the dense field's own
-///                                floor, which is what the button matches.
+/// The fix is on three axes at once, all of them here so they cannot drift:
+///
+///   HEIGHT — 44, the field's own metric (12+12 padding, a ~16px line box at
+///            13.5sp, two 1px borders = 42, floored to 44 by the dense field).
+///            The button is an exact square of this, as it always was.
+///   WEIGHT — the button is no longer a solid slab at rest. It carries a soft
+///            tint of the accent until the field has something in it, then
+///            fills. Send is only meaningful with text to send, so the control
+///            now looks the way it behaves.
+///   SHAPE  — one radius, 12, on both. The field was 12 and the button 11: a
+///            1px difference nobody could name but which stopped the two from
+///            reading as one control.
 const double _kComposerFieldHeight = 44;
 
 class _WorkNote {
@@ -326,82 +331,113 @@ class _ReportWorkLogState extends State<ReportWorkLog> {
     // console and blue in the admin one, which reads as two different controls
     // rather than one control used by two people. Brand blue in both.
     const accent = AppColors.primaryBlue;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        Expanded(
-          child: TextField(
-            controller: _ctrl,
-            minLines: 1,
-            maxLines: 4,
-            maxLength: 500,
-            textInputAction: TextInputAction.newline,
-            style: const TextStyle(fontSize: 13.5, color: Color(0xFF1F2937)),
-            decoration: InputDecoration(
-              isDense: true,
-              counterText: '',
-              hintText: 'Add a note…',
-              hintStyle: const TextStyle(color: Color(0xFF9CA3AF)),
-              filled: true,
-              fillColor: const Color(0xFFF4F6FB),
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: Color(0xFFCBD3DF)),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: Color(0xFFCBD3DF)),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: accent),
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 8),
-        // Sized to the field's own resting height rather than to its icon's
-        // padding, and NOT nudged with a stray bottom margin.
-        //
-        // The two controls used to be built from unrelated numbers: the field
-        // measured 40px (10+10 padding, a ~16px line at 13.5sp, two 1px
-        // borders) while the button came out at 38 (10+10 around an 18px icon)
-        // and then a `Padding(bottom: 2)` lifted it further. Under
-        // CrossAxisAlignment.end that left the bottoms 2px apart and the
-        // centres 1px apart — visible as a send button floating slightly high,
-        // and worse as the field grew toward its 4-line maximum.
-        //
-        // A square of exactly _kComposerFieldHeight keeps the two bottom edges
-        // on one line at every line count, and keeps the button a circle-ish
-        // square rather than letting icon padding decide its shape.
-        SizedBox(
-          width: _kComposerFieldHeight,
-          height: _kComposerFieldHeight,
-          child: Material(
-            color: accent,
-            borderRadius: BorderRadius.circular(12),
-            clipBehavior: Clip.antiAlias,
-            child: InkWell(
-              onTap: _sending ? null : _send,
-              child: Center(
-                child: _sending
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Icon(Icons.send_rounded,
-                        size: 19, color: Colors.white),
+
+    // ── One radius for both halves ─────────────────────────────────────────
+    // The field was 12 and the button 11. Nobody could name the difference,
+    // but it stopped the pair from reading as one control.
+    const radius = 12.0;
+
+    // Rebuilt on every keystroke via the controller itself rather than a
+    // setState: the thread above can be long, and re-running the whole build
+    // to recolour one button is work the composer does not need to do.
+    return ValueListenableBuilder<TextEditingValue>(
+      valueListenable: _ctrl,
+      builder: (context, value, _) {
+        final hasText = value.text.trim().isNotEmpty;
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _ctrl,
+                minLines: 1,
+                maxLines: 4,
+                maxLength: 500,
+                textInputAction: TextInputAction.newline,
+                style: const TextStyle(
+                    fontSize: 13.5, color: Color(0xFF1F2937)),
+                decoration: InputDecoration(
+                  isDense: true,
+                  counterText: '',
+                  hintText: 'Add a note…',
+                  hintStyle: const TextStyle(color: Color(0xFF9CA3AF)),
+                  filled: true,
+                  fillColor: const Color(0xFFF4F6FB),
+                  // 12 + 12 — the height derivation on _kComposerFieldHeight
+                  // is built from these two numbers, so they move together.
+                  contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 12),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(radius),
+                    borderSide: const BorderSide(color: Color(0xFFCBD3DF)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(radius),
+                    borderSide: const BorderSide(color: Color(0xFFCBD3DF)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(radius),
+                    borderSide: const BorderSide(color: accent, width: 1.5),
+                  ),
+                ),
               ),
             ),
-          ),
-        ),
-      ],
+            const SizedBox(width: 8),
+            // ── The send button ────────────────────────────────────────────
+            //
+            // Sized to the field's own resting height, so the two bottom edges
+            // sit on one line at every line count and the button stays a
+            // square rather than letting icon padding decide its shape.
+            // composer_alignment_test pins that arithmetic.
+            //
+            // What changed is its WEIGHT, not its box. At rest it is a soft
+            // tint of the accent with the accent's own glyph; once there is
+            // something to send it fills. A solid slab of brand blue beside a
+            // pale outlined field made Send the loudest thing in the row, and
+            // the note — the actual content — the quietest. It also said
+            // "press me" while pressing it did nothing, because an empty note
+            // is refused by _send().
+            SizedBox(
+              width: _kComposerFieldHeight,
+              height: _kComposerFieldHeight,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 160),
+                curve: Curves.easeOut,
+                decoration: BoxDecoration(
+                  color: hasText
+                      ? accent
+                      : accent.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(radius),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: (_sending || !hasText) ? null : _send,
+                    child: Center(
+                      child: _sending
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : Icon(
+                              Icons.send_rounded,
+                              size: 19,
+                              color: hasText ? Colors.white : accent,
+                            ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 

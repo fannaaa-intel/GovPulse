@@ -140,4 +140,92 @@ void main() {
           reason: 'swapping icon for spinner must not change the footprint');
     });
   });
+
+  // ── Weight, not just alignment ──────────────────────────────────────────
+  //
+  // The field and the button have always shared a bottom edge; the tests above
+  // pin that. What was WRONG was the weight: a pale outlined field beside a
+  // fully saturated square of brand blue, so the eye landed on Send rather
+  // than on the note being written — and the button looked pressable while an
+  // empty note is refused by _send().
+  //
+  // These rebuild the same geometry the tests above use, plus the resting /
+  // active colouring, so the two cannot drift apart.
+  group('the send button earns its weight', () {
+    const accent = Color(0xFF1D4ED8);
+
+    Widget button({required bool hasText}) => MaterialApp(
+      home: Scaffold(
+        body: Center(
+          child: SizedBox(
+            width: 44,
+            height: 44,
+            child: AnimatedContainer(
+              key: const Key('send'),
+              duration: const Duration(milliseconds: 160),
+              decoration: BoxDecoration(
+                color: hasText ? accent : accent.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                Icons.send_rounded,
+                size: 19,
+                color: hasText ? Colors.white : accent,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    testWidgets('at rest it is a tint, not a slab', (tester) async {
+      await tester.pumpWidget(button(hasText: false));
+      await tester.pump();
+
+      final deco = tester
+          .widget<AnimatedContainer>(find.byKey(const Key('send')))
+          .decoration as BoxDecoration;
+
+      // Not the full accent — that is the shout the screenshot shows.
+      expect(deco.color, isNot(accent));
+      expect(deco.color!.a, lessThan(0.5));
+
+      // And the glyph is the accent, so the control is still legible as Send.
+      expect(
+        tester.widget<Icon>(find.byIcon(Icons.send_rounded)).color,
+        accent,
+      );
+    });
+
+    testWidgets('with text it fills', (tester) async {
+      await tester.pumpWidget(button(hasText: true));
+      await tester.pump();
+
+      final deco = tester
+          .widget<AnimatedContainer>(find.byKey(const Key('send')))
+          .decoration as BoxDecoration;
+
+      expect(deco.color, accent);
+      expect(
+        tester.widget<Icon>(find.byIcon(Icons.send_rounded)).color,
+        Colors.white,
+      );
+    });
+
+    testWidgets('both halves share one radius', (tester) async {
+      await tester.pumpWidget(button(hasText: true));
+      await tester.pump();
+
+      final deco = tester
+          .widget<AnimatedContainer>(find.byKey(const Key('send')))
+          .decoration as BoxDecoration;
+
+      // 12 — the field's radius. It was 11 here, a 1px difference nobody could
+      // name but which stopped the pair reading as one control.
+      expect(
+        deco.borderRadius,
+        BorderRadius.circular(12),
+      );
+    });
+  });
 }
