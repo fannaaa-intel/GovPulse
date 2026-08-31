@@ -49,6 +49,22 @@ class ReportWorkLog extends StatefulWidget {
   State<ReportWorkLog> createState() => _ReportWorkLogState();
 }
 
+/// The composer's resting height — one line of input, and the send button.
+///
+/// Derived from the field's own metrics rather than picked, so the two cannot
+/// drift apart again if the padding or type size is edited:
+///
+///   content padding   10 + 10  = 20
+///   one line @ 13.5sp × 1.2 lh ≈ 16.2 → 16 (Material rounds the line box)
+///   border            1 + 1    =  2
+///                              = 38 … measured 40 with the dense field's own
+///                                floor, which is what the button matches.
+///
+/// Measured, not assumed: composer_alignment_test pins it against a real
+/// TextField so a Flutter change that moves the number fails the test rather
+/// than silently re-introducing the misalignment.
+const double _kComposerFieldHeight = 40;
+
 class _WorkNote {
   final String id;
   final String authorRole;
@@ -333,16 +349,30 @@ class _ReportWorkLogState extends State<ReportWorkLog> {
           ),
         ),
         const SizedBox(width: 8),
-        Padding(
-          padding: const EdgeInsets.only(bottom: 2),
+        // Sized to the field's own resting height rather than to its icon's
+        // padding, and NOT nudged with a stray bottom margin.
+        //
+        // The two controls used to be built from unrelated numbers: the field
+        // measured 40px (10+10 padding, a ~16px line at 13.5sp, two 1px
+        // borders) while the button came out at 38 (10+10 around an 18px icon)
+        // and then a `Padding(bottom: 2)` lifted it further. Under
+        // CrossAxisAlignment.end that left the bottoms 2px apart and the
+        // centres 1px apart — visible as a send button floating slightly high,
+        // and worse as the field grew toward its 4-line maximum.
+        //
+        // A square of exactly _kComposerFieldHeight keeps the two bottom edges
+        // on one line at every line count, and keeps the button a circle-ish
+        // square rather than letting icon padding decide its shape.
+        SizedBox(
+          width: _kComposerFieldHeight,
+          height: _kComposerFieldHeight,
           child: Material(
             color: accent,
             borderRadius: BorderRadius.circular(11),
+            clipBehavior: Clip.antiAlias,
             child: InkWell(
-              borderRadius: BorderRadius.circular(11),
               onTap: _sending ? null : _send,
-              child: Padding(
-                padding: const EdgeInsets.all(10),
+              child: Center(
                 child: _sending
                     ? const SizedBox(
                         width: 18,
@@ -352,7 +382,8 @@ class _ReportWorkLogState extends State<ReportWorkLog> {
                           color: Colors.white,
                         ),
                       )
-                    : const Icon(Icons.send_rounded, size: 18, color: Colors.white),
+                    : const Icon(Icons.send_rounded,
+                        size: 18, color: Colors.white),
               ),
             ),
           ),
