@@ -955,8 +955,10 @@ class _SignupScreenState extends State<SignupScreen>
 
   // ── Web layout — compact (single centered column) ─────────────────────────
   Widget _webCompactScaffold(BuildContext context) {
-    final width = MediaQuery.of(context).size.width;
-    final double hPad = width < 600 ? 24 : 40;
+    // Below the threshold the glass card goes edge to edge and draws its own
+    // reading margin, so the page adds none.
+    final bool bleed = authIsFullBleed(context);
+    final double hPad = bleed ? 0 : 40;
 
     return Scaffold(
       backgroundColor: const Color(0xFFEFF3FB),
@@ -969,15 +971,18 @@ class _SignupScreenState extends State<SignupScreen>
               opacity: _fadeAnim,
               child: SlideTransition(
                 position: _slideAnim,
-                child: Center(
-                  child: SingleChildScrollView(
+                child: bleedOrCentre(
+                  bleed,
+                  SingleChildScrollView(
                     physics: const ClampingScrollPhysics(),
                     padding: EdgeInsets.symmetric(
                       horizontal: hPad,
-                      vertical: 36,
+                      vertical: bleed ? 0 : 36,
                     ),
                     child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 480),
+                      constraints: BoxConstraints(
+                        maxWidth: bleed ? double.infinity : 480,
+                      ),
                       child: WebGlassCard(child: _webFormContent(context)),
                     ),
                   ),

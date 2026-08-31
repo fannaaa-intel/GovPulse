@@ -129,7 +129,9 @@ class _GuestScreenState extends State<GuestScreen>
   Widget _webScaffold(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
     final bool wide = width >= kWebTwoPanelMinWidth;
-    final double hPad = wide ? 48 : (width < 600 ? 24 : 40);
+    // Edge to edge on a phone; the card draws its own reading margin there.
+    final bool bleed = authIsFullBleed(context);
+    final double hPad = bleed ? 0 : (wide ? 48 : 40);
 
     final Widget card = WebGlassCard(
       child: Column(
@@ -158,19 +160,24 @@ class _GuestScreenState extends State<GuestScreen>
 
     // The card area wraps the card in the entrance animation so content
     // slides up and fades regardless of whether we're in wide or compact mode.
-    final Widget cardArea = Center(
-      child: SingleChildScrollView(
+    final Widget cardScroll = SingleChildScrollView(
         physics: const ClampingScrollPhysics(),
-        padding: EdgeInsets.symmetric(horizontal: hPad, vertical: 44),
+        padding: EdgeInsets.symmetric(
+          horizontal: hPad,
+          vertical: bleed ? 0 : 44,
+        ),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 460),
+          constraints: BoxConstraints(
+            maxWidth: bleed ? double.infinity : 460,
+          ),
           child: FadeTransition(
             opacity: _fadeAnim,
             child: SlideTransition(position: _slideAnim, child: card),
           ),
         ),
-      ),
     );
+
+    final Widget cardArea = bleedOrCentre(bleed, cardScroll);
 
     if (wide) {
       return Scaffold(

@@ -88,18 +88,38 @@ class WebAuthScaffold extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool wide = MediaQuery.of(context).size.width >= kWebTwoPanelMinWidth;
 
-    final Widget cardArea = Center(
-      child: SingleChildScrollView(
+    // Below the phone threshold the card draws its own edges, so the page must
+    // not add a gutter outside it — otherwise "full bleed" is a full-bleed
+    // surface inset by 32px, which is just a card with no rim.
+    final bool bleed = authIsFullBleed(context);
+
+    final Widget scrollArea = SingleChildScrollView(
         padding: EdgeInsets.symmetric(
-          horizontal: wide ? WebUi.pagePadWide : WebUi.pagePadNarrow,
-          vertical: WebUi.pagePadVertical,
+          horizontal: bleed
+              ? 0
+              : (wide ? WebUi.pagePadWide : WebUi.pagePadNarrow),
+          vertical: bleed ? 0 : WebUi.pagePadVertical,
         ),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: WebUi.cardMaxWidth),
+          constraints: BoxConstraints(
+            maxWidth: bleed ? double.infinity : WebUi.cardMaxWidth,
+          ),
           child: card,
         ),
-      ),
     );
+
+            // A full-bleed page must not be vertically CENTRED: Center pins
+            // the scroll child to its own height, so the surface stops where
+            // the form stops and the backdrop shows through above and below —
+            // a full-width card rather than a page. Only the card layout wants
+            // centring.
+    final Widget cardArea = bleed
+        ? SizedBox(
+            width: double.infinity,
+            height: double.infinity,
+            child: scrollArea,
+          )
+        : Center(child: scrollArea);
 
     final Widget scaffold = wide
         ? Scaffold(
