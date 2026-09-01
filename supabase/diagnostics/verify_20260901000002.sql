@@ -5,17 +5,31 @@
 -- diagnostics/README.md).
 
 -- ── 1. Neither citizen trigger consults is_anonymous any more ──────────────
--- EXPECT: 2 rows, gates_on_anon = false for both.
-select p.proname,
-       (position('is_anonymous' in pg_get_functiondef(p.oid)) > 0) as gates_on_anon,
-       (position('user_id is not null' in pg_get_functiondef(p.oid)) > 0)
-         as still_requires_an_account
-  from pg_proc p
-  join pg_namespace n on n.oid = p.pronamespace
- where n.nspname = 'public'
-   and p.proname in ('notify_report_update_decision',
-                     'notify_citizen_of_approved_insert')
- order by p.proname;
+-- EXPECT: 2 rows, code_gates_on_anon = false for both,
+--         still_requires_an_account = true for both.
+--
+-- COMMENTS ARE STRIPPED FIRST, and that is not cosmetic. Both function bodies
+-- EXPLAIN at length why is_anonymous is deliberately not consulted, so a naive
+-- `position('is_anonymous' in pg_get_functiondef(...))` matches the prose
+-- defending the guarantee and reports a false failure. This bit once already:
+-- the first run after applying 20260901000002 flagged
+-- notify_report_update_decision as still gated when its WHERE clause was
+-- clean. Search the CODE, never the definition.
+with stripped as (
+  select p.proname,
+         regexp_replace(pg_get_functiondef(p.oid), '--[^
+]*', '', 'g') as code
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public'
+     and p.proname in ('notify_report_update_decision',
+                       'notify_citizen_of_approved_insert')
+)
+select proname,
+       (position('is_anonymous' in code) > 0)        as code_gates_on_anon,
+       (position('user_id is not null' in code) > 0) as still_requires_an_account
+  from stripped
+ order by proname;
 
 -- ── 2. Both triggers are still attached and enabled ────────────────────────
 -- EXPECT: 4 rows on report_updates, all 'enabled'. This migration replaces
