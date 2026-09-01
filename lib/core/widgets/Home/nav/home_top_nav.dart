@@ -88,9 +88,16 @@ class HomeTopNav extends StatefulWidget {
   /// therefore 26px off from the column they head, and at a glance the nav
   /// reads as crooked even though it is perfectly centred on the viewport.
   ///
-  /// The shell computes this from the rails it actually rendered, so the value
-  /// follows the layout instead of being a constant that goes stale the next
-  /// time a rail is resized, and it is zero whenever a rail is absent.
+  /// The shell computes this from the rails the LAYOUT calls for at the current
+  /// width, so the value follows the window instead of being a constant that
+  /// goes stale the next time a rail is resized.
+  ///
+  /// Note "the layout", not "what is on screen right now". An account page
+  /// stands the right sidebar down to hand its width to the form, and that must
+  /// NOT feed back into this: the nav would then jump 170px every time a
+  /// citizen opened My Submissions. The links belong to the window's
+  /// arrangement, not to one page's use of it — they hold still while you move
+  /// between pages and shift only when the shell itself changes shape.
   ///
   /// Defaults to 0, which is what every other caller gets — including the
   /// MOBILE app, which builds this widget on tablets (`resolveNavBand` returns

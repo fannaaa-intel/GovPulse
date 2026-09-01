@@ -21,6 +21,8 @@
 // would trade one visual bug for another. So this pins both halves: nothing
 // overflows at any width, AND the links stay centred whenever they fit.
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -362,6 +364,65 @@ void main() {
         );
       }
     }
+  });
+
+  test('the nav offset is derived from the LAYOUT, never from the page', () {
+    // ── What a citizen noticed ──────────────────────────────────────────────
+    // The shell stands the right sidebar down on an account page, to hand its
+    // width to the form. The first version of this offset was derived from the
+    // sidebar that was ON SCREEN, so opening My Submissions or Edit Profile
+    // changed the sum and the nav links slid 170px sideways — from -26 to +144
+    // — on a bar that has nothing to do with which page is below it.
+    //
+    // The links belong to the WINDOW's arrangement, not to one page's use of
+    // it. They hold still while you move between pages, and shift only when the
+    // shell itself changes shape.
+    //
+    // ── Why this reads the SOURCE ───────────────────────────────────────────
+    // The distinction is one identifier: `shellHasRightSidebar(layout)`, which
+    // depends on width alone, versus `showRightSidebar`, which is that AND
+    // `!_onAccountPage`. Both produce identical numbers on the feed, so a test
+    // that recomputed the arithmetic would pass on either and catch nothing —
+    // the difference only shows on an account page, and mounting the real shell
+    // needs a router, a session and a profile.
+    //
+    // Asserting the identifier is narrow, but it is the actual invariant, and
+    // it fails the moment someone reaches for the convenient flag.
+    final shell = File(
+      'lib/features/home/shell/citizen_shell.dart',
+    ).readAsStringSync();
+
+    final offsetBlock = RegExp(
+      r'final double rightRailWidth =(.*?);',
+      dotAll: true,
+    ).firstMatch(shell);
+
+    expect(
+      offsetBlock,
+      isNotNull,
+      reason:
+          'rightRailWidth feeds navLinksOffset in citizen_shell; if it was '
+          'renamed, re-point this test rather than deleting it',
+    );
+
+    final expr = offsetBlock!.group(1)!;
+    expect(
+      expr,
+      contains('shellHasRightSidebar(layout)'),
+      reason: 'the offset must ask the LAYOUT whether this width has a sidebar',
+    );
+    expect(
+      expr,
+      isNot(contains('showRightSidebar')),
+      reason:
+          'showRightSidebar is false on an account page too — using it here is '
+          'what made the nav jump 170px when a citizen opened My Submissions',
+    );
+    expect(
+      expr,
+      isNot(contains('_onAccountPage')),
+      reason: 'which page is open must not enter this sum at all',
+    );
   });
 
   testWidgets('every link is still reachable at 1024', (tester) async {

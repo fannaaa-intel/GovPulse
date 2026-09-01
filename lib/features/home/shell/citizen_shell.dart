@@ -1247,12 +1247,25 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
     // crooked nav, which is what it is: centred on the viewport, not on the
     // content.
     //
-    // Derived from the rails ACTUALLY RENDERED rather than from the constants,
-    // so it stays correct if either rail is resized and collapses to zero
-    // whenever a rail is absent — in drawer mode, and on an account page, where
-    // the sidebar stands down and the content really is centred on the window.
+    // Derived from the rails THIS WIDTH calls for rather than from bare
+    // constants, so it stays correct if either rail is resized and collapses to
+    // zero in drawer mode, where there are no rails at all.
     final double leftRailWidth = isDrawerMode ? 0 : kCitizenRailWidth;
-    final double rightRailWidth = showRightSidebar ? _kRightSidebarWidth : 0;
+    // ── Deliberately NOT `showRightSidebar` ──────────────────────────────────
+    // That flag is false on an account page too, because the sidebar stands
+    // down there to hand its width to the form. Feeding it into this offset
+    // would move the NAV every time you opened My Submissions or Edit Profile
+    // — a 170px jump, from -26 to +144, on a bar that has nothing to do with
+    // which page is below it.
+    //
+    // The links belong to the WINDOW's arrangement, not to one page's use of
+    // it: they sit still while you move between pages, and only shift when the
+    // shell itself changes shape (a resize across 1280, or into the drawer).
+    // So this asks the LAYOUT whether this width has a sidebar, and ignores
+    // whether the current page chose to show it.
+    final double rightRailWidth = shellHasRightSidebar(layout)
+        ? _kRightSidebarWidth
+        : 0;
     // The centre column spans [leftRail, width - rightRail]; its midpoint is
     // therefore offset from the window's by half the difference of the rails.
     final double navLinksOffset = (leftRailWidth - rightRailWidth) / 2;
