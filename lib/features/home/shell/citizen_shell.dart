@@ -311,6 +311,22 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
   /// how a shell is expected to behave (it pops a detail back to the list).
   /// Any other tab switches branch, keeping wherever that branch was left.
   ///
+  /// ── Settings is the exception ─────────────────────────────────────────────
+  /// The five ACCOUNT pages are nested INSIDE the Settings branch (see
+  /// [CitizenAccountPage]), so that branch remembers them the way My Reports
+  /// remembers a report detail. For My Reports that memory is the feature: the
+  /// tab is a PLACE, and coming back to the row you were reading is what you
+  /// want. Settings is not a place reached that way — it is only ever opened
+  /// from the user chip's "Settings" item, which names one specific
+  /// destination. Restoring the branch made that item open whichever account
+  /// page was last visited: open Edit Profile, go Home, click Settings, and
+  /// Edit Profile came back under a label that never said Edit Profile.
+  ///
+  /// So Settings always goes to its root, whether or not it is already
+  /// selected. Nothing is lost — these pages are forms and documents, not
+  /// scroll positions, and the rail reopens any of them in one click. The other
+  /// three branches keep their restore behaviour untouched.
+  ///
   /// My Reports is gated, matching the mobile nav. The check runs BEFORE
   /// `goBranch`, and a refusal simply returns — so the branch never switches.
   /// Nothing goes half-selected as a result: [HomeTopNav] derives its highlight
@@ -319,7 +335,9 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
   Future<void> _selectIndex(int index) async {
     if (index < 0 || index >= CitizenTab.values.length) return;
 
-    if (CitizenTab.values[index] == CitizenTab.myReports) {
+    final tab = CitizenTab.values[index];
+
+    if (tab == CitizenTab.myReports) {
       if (!await _requireVerified(
         'Only verified citizens can access My Reports.',
       )) {
@@ -328,7 +346,10 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
       if (!mounted) return;
     }
 
-    widget.navigationShell.goBranch(index, initialLocation: index == _index);
+    widget.navigationShell.goBranch(
+      index,
+      initialLocation: index == _index || tab == CitizenTab.settings,
+    );
   }
 
   // ── Chrome callbacks ──────────────────────────────────────────────────────

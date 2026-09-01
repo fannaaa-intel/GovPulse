@@ -187,4 +187,126 @@ void main() {
       expect(find.text('SHELL-CHROME'), findsOneWidget);
     });
   });
+
+  group("the chip's Settings always lands on /settings", () {
+    // The reported bug, in one sentence: open an account page, leave for
+    // another tab, then pick "Settings" from the user chip — and the account
+    // page came back instead of the Settings pane.
+    //
+    // Cause: these five are nested inside the Settings BRANCH, and a
+    // StatefulShellBranch restores wherever it was left. That is right for My
+    // Reports (a report detail is a place you want to return to) and wrong for
+    // Settings, which is only ever opened from a chip item naming one specific
+    // destination.
+    //
+    // [CitizenShell._selectIndex] is private and needs a session to build, so
+    // this pins the goBranch CONTRACT it relies on against the mirror tree —
+    // the same trade the routing group above makes.
+
+    /// What `_selectIndex` now does for the Settings tab.
+    ///
+    /// `StatefulNavigationShell.of` hands back the STATE, which is what
+    /// exposes `goBranch` — the shell holds the widget itself instead.
+    void selectSettings(StatefulNavigationShellState shell) =>
+        shell.goBranch(CitizenTab.settings.index, initialLocation: true);
+
+    testWidgets('after Home, Settings shows Settings — not the last account '
+        'page', (tester) async {
+      final log = <String>[];
+      final router = _mirrorRouter('/home', log);
+      await tester.pumpWidget(MaterialApp.router(routerConfig: router));
+      await tester.pumpAndSettle();
+
+      // 1. The rail opens an account page.
+      router.go(CitizenAccountPage.editProfile.path);
+      await tester.pumpAndSettle();
+      expect(find.text('ACCOUNT-edit-profile'), findsOneWidget);
+
+      // 2. The citizen goes back to Home.
+      final shell = StatefulNavigationShell.of(
+        tester.element(find.text('ACCOUNT-edit-profile')),
+      );
+      shell.goBranch(CitizenTab.home.index);
+      await tester.pumpAndSettle();
+      expect(find.text('BRANCH-home'), findsOneWidget);
+
+      // 3. Chip → Settings. Before the fix this restored the branch and Edit
+      //    Profile reappeared.
+      selectSettings(
+        StatefulNavigationShell.of(tester.element(find.text('BRANCH-home'))),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('BRANCH-settings'), findsOneWidget);
+      expect(
+        find.text('ACCOUNT-edit-profile'),
+        findsNothing,
+        reason: 'the chip says "Settings", so it must open Settings',
+      );
+    });
+
+    testWidgets('holds for every account page', (tester) async {
+      for (final page in CitizenAccountPage.values) {
+        final log = <String>[];
+        final router = _mirrorRouter('/home', log);
+        await tester.pumpWidget(MaterialApp.router(routerConfig: router));
+        await tester.pumpAndSettle();
+
+        router.go(page.path);
+        await tester.pumpAndSettle();
+        expect(find.text('ACCOUNT-${page.segment}'), findsOneWidget);
+
+        // Via Emergency this time, to show the escape route is not Home-only.
+        StatefulNavigationShell.of(
+          tester.element(find.text('ACCOUNT-${page.segment}')),
+        ).goBranch(CitizenTab.emergency.index);
+        await tester.pumpAndSettle();
+
+        selectSettings(
+          StatefulNavigationShell.of(
+            tester.element(find.text('BRANCH-emergency')),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('BRANCH-settings'), findsOneWidget, reason: page.path);
+        expect(find.text('ACCOUNT-${page.segment}'), findsNothing,
+            reason: page.path);
+      }
+    });
+
+    testWidgets('the other branches still restore where they were left', (
+      tester,
+    ) async {
+      // The fix must be surgical: only Settings resets. If My Reports stopped
+      // restoring, a report detail would be lost on every tab switch.
+      final log = <String>[];
+      final router = _mirrorRouter('/settings/about', log);
+      await tester.pumpWidget(MaterialApp.router(routerConfig: router));
+      await tester.pumpAndSettle();
+
+      // Settings is on an account page; move to My Reports and back to
+      // Settings the way the chip does.
+      StatefulNavigationShell.of(
+        tester.element(find.text('ACCOUNT-about')),
+      ).goBranch(CitizenTab.myReports.index);
+      await tester.pumpAndSettle();
+      expect(find.text('BRANCH-my-reports'), findsOneWidget);
+
+      selectSettings(
+        StatefulNavigationShell.of(
+          tester.element(find.text('BRANCH-my-reports')),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('BRANCH-settings'), findsOneWidget);
+
+      // My Reports, re-entered WITHOUT initialLocation, is still where it was.
+      StatefulNavigationShell.of(
+        tester.element(find.text('BRANCH-settings')),
+      ).goBranch(CitizenTab.myReports.index);
+      await tester.pumpAndSettle();
+      expect(find.text('BRANCH-my-reports'), findsOneWidget);
+    });
+  });
 }
