@@ -68,11 +68,49 @@ class _BleedFill extends StatelessWidget {
   const _BleedFill({required this.child});
 
   @override
-  Widget build(BuildContext context) => SizedBox(
-        width: double.infinity,
-        height: double.infinity,
-        child: child,
+  Widget build(BuildContext context) => LayoutBuilder(
+        // Measured HERE because here is the last place it is knowable. This
+        // sits outside the caller's scroll view, so its incoming maxHeight is
+        // the space genuinely available — the keyboard already subtracted by
+        // the Scaffold above, and the SafeArea's padding with it. One level
+        // down, inside the scroll view, that number is gone: a scroll view
+        // hands its child an unbounded height by definition.
+        //
+        // See [_VisibleHeight] for what reads it and why nothing else can
+        // work it out on its own.
+        builder: (context, constraints) => _VisibleHeight(
+          height: constraints.maxHeight,
+          child: SizedBox(
+            width: double.infinity,
+            height: double.infinity,
+            child: child,
+          ),
+        ),
       );
+}
+
+/// The height actually visible to the user, published for descendants that are
+/// inside a scroll view and therefore cannot measure it themselves.
+///
+/// Exists for one reason: a full-bleed [WebGlassCard] must fill the screen when
+/// the keyboard is down, and must NOT keep demanding the full screen when the
+/// keyboard is up — or it lays its own submit button out underneath the
+/// keyboard. Neither MediaQuery nor its own constraints can tell it which case
+/// it is in (see the long note in WebGlassCard's full-bleed branch), so the
+/// number is passed down from the one widget that does know.
+///
+/// Null when there is no [_BleedFill] ancestor, which is the honest answer:
+/// the card then falls back to the screen height it always used.
+class _VisibleHeight extends InheritedWidget {
+  final double height;
+  const _VisibleHeight({required this.height, required super.child});
+
+  static double? of(BuildContext context) => context
+      .dependOnInheritedWidgetOfExactType<_VisibleHeight>()
+      ?.height;
+
+  @override
+  bool updateShouldNotify(_VisibleHeight old) => old.height != height;
 }
 
 /// Soft radial glow with true alpha falloff (no hard circle edges).
@@ -197,25 +235,64 @@ class WebGlassCard extends StatelessWidget {
       // middle, and does nothing at all once the form is taller than the
       // screen — at which point the caller's scroll view takes over from its
       // top, so a long form never has its first field pushed off the screen.
+      // ── The height asked for is the VISIBLE height, not the screen ──────
+      //
+      // This read `MediaQuery.sizeOf(context).height`, which is the whole
+      // screen and does NOT shrink when the keyboard opens. So on an 800px
+      // phone with a 320px keyboard the card went on demanding 800px inside a
+      // viewport that was now 480px tall, and the `alignment: Alignment.center`
+      // below centred the form in that oversized box. The bottom third of the
+      // card — the part holding the submit button — was laid out underneath the
+      // keyboard, and what the citizen saw was a band of blank card gradient
+      // where the button should have been. It was scrollable, but only by the
+      // few pixels that did not help, so it read as broken rather than tall.
+      //
+      // ── Why not viewInsets, and why not LayoutBuilder ─────────────────────
+      // Both obvious fixes fail here, which is worth writing down because both
+      // look right:
+      //
+      //   * Subtracting `MediaQuery.viewInsets.bottom` does nothing. Scaffold
+      //     with resizeToAvoidBottomInset shrinks the body by the keyboard and
+      //     ZEROES the inset it passes down, but leaves MediaQuery.size at the
+      //     full screen height. Inside the body the pair is (800, 0), so the
+      //     subtraction gives back 800 — the number that caused the bug.
+      //
+      //   * Reading the incoming constraints does nothing either. The caller's
+      //     SingleChildScrollView hands its child an UNBOUNDED maxHeight, so a
+      //     LayoutBuilder here measures Infinity, not the 480 that exists one
+      //     level up outside the scroll view.
+      //
+      // The real height is known at [_BleedFill], which is outside the scroll
+      // view and IS given the shrunken constraint. It publishes it through
+      // [_VisibleHeight] so this card can read it without either of the above
+      // guesses. When there is no such ancestor — a caller that mounts this
+      // card without bleedOrCentre — the screen height stays the fallback,
+      // which is exactly the old behaviour.
+      final double available =
+          _VisibleHeight.of(context) ?? MediaQuery.sizeOf(context).height;
+
       return ConstrainedBox(
         constraints: BoxConstraints(
-          minHeight: MediaQuery.sizeOf(context).height,
+          // Never negative: a keyboard taller than its viewport is not a real
+          // configuration, but a negative minHeight throws and clamping costs
+          // nothing.
+          minHeight: available < 0 ? 0 : available,
         ),
         child: Container(
-        width: double.infinity,
-        alignment: Alignment.center,
-        padding: EdgeInsets.fromLTRB(20, p.top, 20, p.bottom),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Colors.white.withValues(alpha: 0.78),
-              Colors.white.withValues(alpha: 0.62),
-            ],
+          width: double.infinity,
+          alignment: Alignment.center,
+          padding: EdgeInsets.fromLTRB(20, p.top, 20, p.bottom),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Colors.white.withValues(alpha: 0.78),
+                Colors.white.withValues(alpha: 0.62),
+              ],
+            ),
           ),
-        ),
-        child: child,
+          child: child,
         ),
       );
     }

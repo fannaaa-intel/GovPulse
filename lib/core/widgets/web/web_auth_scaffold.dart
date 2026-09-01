@@ -108,18 +108,21 @@ class WebAuthScaffold extends StatelessWidget {
         ),
     );
 
-            // A full-bleed page must not be vertically CENTRED: Center pins
-            // the scroll child to its own height, so the surface stops where
-            // the form stops and the backdrop shows through above and below —
-            // a full-width card rather than a page. Only the card layout wants
-            // centring.
-    final Widget cardArea = bleed
-        ? SizedBox(
-            width: double.infinity,
-            height: double.infinity,
-            child: scrollArea,
-          )
-        : Center(child: scrollArea);
+    // A full-bleed page must not be vertically CENTRED: Center pins the scroll
+    // child to its own height, so the surface stops where the form stops and
+    // the backdrop shows through above and below — a full-width card rather
+    // than a page. Only the card layout wants centring.
+    //
+    // This used to inline that SizedBox / Center pair rather than call
+    // [bleedOrCentre], which was the same two lines and looked harmless — until
+    // the full-bleed branch grew a job beyond stretching. It now also measures
+    // the height still visible under an open keyboard and publishes it to the
+    // card, which is the only place that number survives (see web_glass_card).
+    // The copy here had no such measurement, so the four reset and
+    // verification screens that mount through this scaffold would have kept
+    // laying their submit button out underneath the keyboard while login and
+    // signup were fixed.
+    final Widget cardArea = bleedOrCentre(bleed, scrollArea);
 
     final Widget scaffold = wide
         ? Scaffold(
