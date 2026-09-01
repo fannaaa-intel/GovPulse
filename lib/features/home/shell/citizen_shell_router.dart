@@ -214,15 +214,25 @@ bool isCitizenAccountLocation(String location) =>
 const String _kSubmissionsTabParam = 'tab';
 const String _kSubmissionsHighlightParam = 'highlight';
 
+/// Marks an arrival that came straight from the citizen's own submission, so
+/// the screen knows to wait briefly for a row that may not be readable yet.
+/// See [MySubmissionsScreen.justSubmitted].
+const String _kSubmissionsJustSubmittedParam = 'new';
+
 /// Deep link into My Submissions on [tab] (0 Reports · 1 Suggestions ·
 /// 2 Feedback), optionally flashing [highlightId].
 ///
 /// Both omitted gives the bare path — [Uri] would otherwise emit a trailing
 /// `?`, which would make the location stop matching [isCitizenAccountLocation].
-String shellSubmissionsPath({int? tab, String? highlightId}) {
+String shellSubmissionsPath({
+  int? tab,
+  String? highlightId,
+  bool justSubmitted = false,
+}) {
   final query = <String, String>{
     if (tab != null) _kSubmissionsTabParam: '$tab',
     _kSubmissionsHighlightParam: ?highlightId,
+    if (justSubmitted) _kSubmissionsJustSubmittedParam: '1',
   };
   return Uri(
     path: CitizenAccountPage.submissions.path,
@@ -408,6 +418,8 @@ Widget _accountBodyFor(CitizenAccountPage page, GoRouterState state) {
           username: username,
           initialTab: int.tryParse(query[_kSubmissionsTabParam] ?? '') ?? 0,
           highlightId: query[_kSubmissionsHighlightParam],
+          justSubmitted:
+              query[_kSubmissionsJustSubmittedParam] == '1',
         ),
       );
     case CitizenAccountPage.support:

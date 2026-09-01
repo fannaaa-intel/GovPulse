@@ -414,7 +414,10 @@ void goToSubmissionList(
     final route = ModalRoute.of(context);
     final location = tab == 0
         ? CitizenTab.myReports.path
-        : shellSubmissionsPath(tab: tab);
+        // `justSubmitted` rides the URL so the screen knows the row it is
+        // looking for was written seconds ago and may not be readable yet.
+        // See [MySubmissionsScreen.justSubmitted].
+        : shellSubmissionsPath(tab: tab, justSubmitted: true);
 
     // ── Dismissed BY IDENTITY, not by popping the top ─────────────────────
     // `Navigator.pop` removes whatever is on top of the navigator, which is
@@ -458,7 +461,11 @@ void goToSubmissionList(
     arguments = username;
   } else {
     name = '/my_submissions';
-    arguments = MySubmissionsArgs(username: username, initialTab: tab);
+    arguments = MySubmissionsArgs(
+      username: username,
+      initialTab: tab,
+      justSubmitted: true,
+    );
   }
 
   // ── REPLACE, not pop-then-push ───────────────────────────────────────────

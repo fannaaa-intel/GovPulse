@@ -796,6 +796,7 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
             username: mySubs.username,
             initialTab: mySubs.initialTab,
             highlightId: mySubs.highlightId,
+            justSubmitted: mySubs.justSubmitted,
           ),
         ),
         transitionsBuilder: (_, anim, _, child) =>
