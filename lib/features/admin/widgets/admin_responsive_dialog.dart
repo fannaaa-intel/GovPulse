@@ -89,12 +89,28 @@ class AdminResponsiveDialog extends StatelessWidget {
       children: [
         _header(context, full),
         const Divider(height: 1, color: AdminUi.border),
-        Flexible(
-          child: SingleChildScrollView(
-            padding: EdgeInsets.fromLTRB(full ? 16 : 24, 18, full ? 16 : 24, 8),
-            child: child,
+        // Expanded on the phone form, Flexible on the modal.
+        //
+        // The modal is sized by its content and should stay only as tall as it
+        // needs — Flexible lets a short dialog be a short dialog. The phone
+        // form is the whole screen, so the same Flexible let the body shrink to
+        // its content and carried the action bar up with it: buttons stranded
+        // mid-screen with a field of empty white below them, rather than on the
+        // bottom edge where a phone's own sheets put them.
+        if (full)
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 18, 16, 8),
+              child: child,
+            ),
+          )
+        else
+          Flexible(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(24, 18, 24, 8),
+              child: child,
+            ),
           ),
-        ),
         if (actions.isNotEmpty) _actionBar(context, full),
       ],
     );
@@ -196,13 +212,35 @@ class AdminResponsiveDialog extends StatelessWidget {
   }
 
   Widget _actionBar(BuildContext context, bool full) {
+    // ── The bar sits ON the bottom of the screen, not above it ─────────────
+    //
+    // The full-bleed shell deliberately does NOT inset its bottom
+    // (AdminFullBleedDialog), so this bar's background and top border run to
+    // the true screen edge — the way a phone's own sheets meet the bottom of
+    // the display, rather than hovering with a strip of empty scaffold beneath.
+    //
+    // The inset is added to the bar's own PADDING instead, which is what keeps
+    // the buttons off the gesture area. So:
+    //
+    //   • gesture navigation → viewPadding.bottom is the home-indicator strip;
+    //     the fill covers it and the buttons sit above it
+    //   • button navigation  → the system bar already owns that space, the
+    //     inset is 0, and the bar simply meets it
+    //
+    // viewPadding, not padding: `padding` goes to zero while the keyboard is
+    // up (the inset is consumed by the keyboard), which would drop the buttons
+    // by that much at the exact moment they animate. viewPadding is the
+    // unchanging physical inset.
+    final bottomInset =
+        full ? MediaQuery.viewPaddingOf(context).bottom : 0.0;
+
     return Container(
       width: double.infinity,
       padding: EdgeInsets.fromLTRB(
         full ? 16 : 24,
         12,
         full ? 16 : 24,
-        full ? 12 : 20,
+        (full ? 12 : 20) + bottomInset,
       ),
       decoration: const BoxDecoration(
         border: Border(top: BorderSide(color: AdminUi.border)),

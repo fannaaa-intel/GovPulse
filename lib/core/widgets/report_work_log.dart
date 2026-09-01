@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../features/admin/widgets/admin_skeleton.dart';
 import '../theme/app_colors.dart';
 import 'no_scrollbar_behavior.dart';
 
@@ -412,7 +413,13 @@ class _ReportWorkLogState extends State<ReportWorkLog> {
       children: [
         Expanded(
           child: _loading
-              ? _loader()
+              // Filling, the pane's height is known, so the skeleton fills it
+              // rather than leaving a short stack floating in a tall pane —
+              // which would read as "this conversation is nearly empty" for
+              // the second before the real thread lands and contradicted it.
+              ? LayoutBuilder(
+                  builder: (context, c) => _loader(maxHeight: c.maxHeight),
+                )
               : _notes.isEmpty
                   ? Align(
                       alignment: Alignment.topLeft,
@@ -439,16 +446,86 @@ class _ReportWorkLogState extends State<ReportWorkLog> {
     );
   }
 
-  Widget _loader() => const Padding(
-        padding: EdgeInsets.symmetric(vertical: 14),
-        child: Center(
-          child: SizedBox(
-            width: 18,
-            height: 18,
-            child: CircularProgressIndicator(strokeWidth: 2),
+  /// Placeholder bubbles in the shape the thread is about to take.
+  ///
+  /// A centred spinner said "something is happening" and nothing else: the
+  /// pane sat empty, then filled all at once, and the layout jumped as it did.
+  /// Shaped placeholders answer the question the spinner could not — a
+  /// conversation is loading, it alternates sides, the newest is at the bottom
+  /// — and because they occupy the room the real bubbles will, nothing moves
+  /// when they arrive. Same primitives every other loading surface in this app
+  /// uses, and the same ones ReportProgressUpdates already loads with.
+  ///
+  /// ⚠ AdminShimmer's ShaderMask paints the card BEHIND it on web (see the
+  /// shimmer-shadermask note): every skeleton on white rendered as a solid
+  /// slab. That is why the sweep wraps the individual boxes here rather than
+  /// the whole column of bubbles.
+  Widget _loader({double? maxHeight}) {
+    // Alternating sides and mixed widths, because a column of identical
+    // full-width bars is not the shape of a conversation — it is the shape of
+    // a list, and it would mis-describe what is coming.
+    const all = <({bool mine, double factor, int lines})>[
+      (mine: false, factor: 0.62, lines: 2),
+      (mine: true, factor: 0.48, lines: 1),
+      (mine: false, factor: 0.70, lines: 2),
+      (mine: true, factor: 0.55, lines: 1),
+      (mine: false, factor: 0.66, lines: 2),
+      (mine: true, factor: 0.52, lines: 1),
+    ];
+
+    // Roughly what one placeholder occupies: author line + bubble + the gap
+    // under it. Used only to decide HOW MANY to draw, so it does not need to
+    // be exact — a two-line bubble is the taller case, which is the safe one
+    // to size against.
+    const perItem = 14.0 + 56.0 + 14.0;
+
+    final shapes = maxHeight == null || !maxHeight.isFinite
+        ? all.take(4).toList()
+        : all.take((maxHeight / perItem).floor().clamp(2, all.length)).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final s in shapes)
+          Align(
+            alignment: s.mine ? Alignment.centerRight : Alignment.centerLeft,
+            child: FractionallySizedBox(
+              widthFactor: s.factor,
+              alignment:
+                  s.mine ? Alignment.centerRight : Alignment.centerLeft,
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 14),
+                child: Column(
+                  crossAxisAlignment: s.mine
+                      ? CrossAxisAlignment.end
+                      : CrossAxisAlignment.start,
+                  children: [
+                    // The author line, at the size _bubble draws it.
+                    const AdminShimmer(
+                      child: Padding(
+                        padding: EdgeInsets.only(left: 3, right: 3, bottom: 5),
+                        child: SkeletonBox(width: 84, height: 9, radius: 4),
+                      ),
+                    ),
+                    // The bubble. Its height follows the line count so a
+                    // two-line placeholder stands as tall as the two-line note
+                    // that replaces it — 13.5sp at 1.42 plus 9+9 of padding,
+                    // which is _bubble's own arithmetic.
+                    AdminShimmer(
+                      child: SkeletonBox(
+                        width: double.infinity,
+                        height: s.lines == 1 ? 37 : 56,
+                        radius: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
-        ),
-      );
+      ],
+    );
+  }
 
   Widget _empty() => const Padding(
         padding: EdgeInsets.only(bottom: 10),

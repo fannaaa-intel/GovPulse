@@ -265,7 +265,23 @@ class AdminFullBleedDialog extends StatelessWidget {
       // The whole point — see the class note.
       resizeToAvoidBottomInset: true,
       // Flush to the viewport is not flush under a notch or a home indicator.
-      body: SafeArea(child: child),
+      //
+      // ⚠ bottom: false, and the action bar owns that inset instead.
+      //
+      // Insetting the bottom HERE lifts the whole column off the screen edge,
+      // so the pinned action bar drew its top border, its buttons and its
+      // background, and then stopped — leaving a band of bare scaffold
+      // underneath it. On a gesture-nav phone that band is the home-indicator
+      // strip; on a button-nav phone it is zero and nothing looks wrong, which
+      // is why this survived. Either way the bar was floating rather than
+      // sitting on the bottom of the screen the way a phone's own sheets do.
+      //
+      // The fix is not to drop the inset — a button under the home indicator is
+      // a button that swipes the app away instead of pressing. It is to move
+      // the inset INSIDE the bar, so the bar's fill reaches the true edge and
+      // its padding keeps the buttons clear of the gesture area. See
+      // AdminResponsiveDialog._actionBar, which reads viewPadding.bottom.
+      body: SafeArea(bottom: false, child: child),
     );
   }
 }
