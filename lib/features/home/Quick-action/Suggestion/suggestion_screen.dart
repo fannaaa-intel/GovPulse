@@ -17,6 +17,7 @@ import '../Report/location_picker_screen.dart';
 import '../../../../core/widgets/Home/Newsfeed/rate_limit_dialogs.dart';
 import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/services/gps_stamp_service.dart';
+import '../../../../core/services/image_compressor.dart';
 import '../../../../core/widgets/reveal_loading.dart';
 import '../../../../core/widgets/app_dialog.dart';
 import '../../../../core/utils/submission_id.dart';
@@ -3207,12 +3208,35 @@ class _SuggestionScreenState extends State<SuggestionForm>
       final List<Map<String, String>> mediaItems = [];
       for (int i = 0; i < _attachedFiles.length; i++) {
         final file = _attachedFiles[i];
-        final bytes = await file.readAsBytes();
+        final isVid = _isVideo(file);
         final ext = file.name.split('.').last.toLowerCase();
+
+        // Byte-for-byte the same treatment as the Report screen — see the
+        // comment there. Photos are downscaled and re-encoded; video passes
+        // through; the stored extension follows the bytes, not the filename.
+        final Uint8List bytes;
+        final String contentType;
+        final String outExt;
+        if (isVid) {
+          bytes = await file.readAsBytes();
+          contentType = 'video/$ext';
+          outExt = ext;
+        } else {
+          final out = await ImageCompressor.compressPicked(
+            file,
+            purpose: ImagePurpose.evidence,
+          );
+          bytes = out.bytes;
+          contentType = out.mime;
+          outExt = out.ext;
+        }
+
+        final stem = file.name.contains('.')
+            ? file.name.substring(0, file.name.lastIndexOf('.'))
+            : file.name;
         final fileName =
-            '${DateTime.now().millisecondsSinceEpoch}_${i}_${file.name}';
+            '${DateTime.now().millisecondsSinceEpoch}_${i}_$stem.$outExt';
         final storagePath = 'suggestions/$suggestionId/$fileName';
-        final contentType = _isVideo(file) ? 'video/$ext' : 'image/$ext';
 
         await supabase.storage
             .from('suggestion-media')

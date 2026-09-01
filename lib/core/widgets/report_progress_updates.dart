@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../features/admin/widgets/admin_skeleton.dart';
+import '../services/image_compressor.dart';
 import '../theme/app_colors.dart';
 import 'app_dialog.dart';
 import 'app_snackbar.dart';
@@ -450,22 +451,26 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
       final updateId = inserted['id'].toString();
 
       for (var i = 0; i < _staged.length; i++) {
-        final file = _staged[i];
-        final bytes = await file.readAsBytes();
-        final ext = file.name.contains('.')
-            ? file.name.split('.').last.toLowerCase()
-            : 'jpg';
+        // Downscaled and re-encoded before it leaves the device. The picker
+        // asks for quality 82, but quality alone leaves a 12 MP frame at ~3 MB
+        // — the pixel count is the cost, and only this pass caps it.
+        final out = await ImageCompressor.compressPicked(
+          _staged[i],
+          purpose: ImagePurpose.evidence,
+        );
         final path = 'updates/$updateId/'
-            '${DateTime.now().millisecondsSinceEpoch}_$i.$ext';
+            '${DateTime.now().millisecondsSinceEpoch}_$i.${out.ext}';
         await _supabase.storage.from(_kBucket).uploadBinary(
               path,
-              bytes,
-              fileOptions: FileOptions(contentType: 'image/$ext'),
+              out.bytes,
+              fileOptions: FileOptions(contentType: out.mime),
             );
+        // The row's mime_type must match what the bucket actually holds — the
+        // citizen's gallery decides between an image and a video viewer on it.
         await _supabase.from('report_update_media').insert({
           'update_id': updateId,
           'storage_path': path,
-          'mime_type': 'image/$ext',
+          'mime_type': out.mime,
           'uploaded_by': uid,
         });
       }

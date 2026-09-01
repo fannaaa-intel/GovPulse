@@ -3,6 +3,8 @@ import 'dart:typed_data';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/services/image_compressor.dart';
+
 /// The signed-in admin's editable identity (name / title / org / avatar),
 /// backed by `admin_profiles`. Email is read straight from the auth session.
 class AdminProfile {
@@ -119,22 +121,24 @@ class AdminProfileNotifier extends AsyncNotifier<AdminProfile> {
   /// its public URL. A timestamped path busts any cached image.
   Future<String> uploadAvatar(Uint8List bytes, String ext) async {
     final uid = _db.auth.currentUser?.id ?? 'admin';
-    final safe = ext.toLowerCase();
-    final path = '$uid/${DateTime.now().millisecondsSinceEpoch}.$safe';
 
-    final mime = switch (safe) {
-      'png' => 'image/png',
-      'webp' => 'image/webp',
-      'heic' => 'image/heic',
-      _ => 'image/jpeg',
-    };
+    // An avatar is never drawn larger than ~400px anywhere in the console, so
+    // it is capped hard. Done here rather than at the picker so it also covers
+    // callers that never touched ImagePicker.
+    final out = await ImageCompressor.compressBytes(
+      bytes,
+      purpose: ImagePurpose.avatar,
+      sourceMime: ImageCompressor.mimeForExtension(ext),
+      sourceExt: ext.toLowerCase(),
+    );
 
+    final path = '$uid/${DateTime.now().millisecondsSinceEpoch}.${out.ext}';
     await _db.storage
         .from(bucket)
         .uploadBinary(
           path,
-          bytes,
-          fileOptions: FileOptions(contentType: mime, upsert: true),
+          out.bytes,
+          fileOptions: FileOptions(contentType: out.mime, upsert: true),
         );
     return _db.storage.from(bucket).getPublicUrl(path);
   }

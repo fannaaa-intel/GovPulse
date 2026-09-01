@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart' show XFile;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/services/image_compressor.dart';
+
 import '../../admin/providers/admin_reports_provider.dart'
     show ReportStatus, reportStatusFromDb, reportStatusToDb, reportCategoryLabel;
 
@@ -439,18 +441,23 @@ class StaffRepository {
   Future<String> updatePhoto(Uint8List bytes, String ext) async {
     final uid = _uid;
     if (uid == null) throw 'Your session has expired. Please log in again.';
-    final safe = ext.toLowerCase();
-    final path = '$uid/${DateTime.now().millisecondsSinceEpoch}.$safe';
-    final mime = switch (safe) {
-      'png' => 'image/png',
-      'webp' => 'image/webp',
-      'heic' => 'image/heic',
-      _ => 'image/jpeg',
-    };
+
+    // Capped here rather than at the picker: this takes a plain Uint8List, so
+    // the picker's maxWidth never reaches it. Matches the admin console's
+    // avatar tier (admin/providers/admin_profile_provider.dart) — both render
+    // through the same AdminAvatar widget at the same sizes.
+    final out = await ImageCompressor.compressBytes(
+      bytes,
+      purpose: ImagePurpose.avatar,
+      sourceMime: ImageCompressor.mimeForExtension(ext),
+      sourceExt: ext.toLowerCase(),
+    );
+
+    final path = '$uid/${DateTime.now().millisecondsSinceEpoch}.${out.ext}';
     await _db.storage.from(_avatarBucket).uploadBinary(
           path,
-          bytes,
-          fileOptions: FileOptions(contentType: mime, upsert: true),
+          out.bytes,
+          fileOptions: FileOptions(contentType: out.mime, upsert: true),
         );
     final url = _db.storage.from(_avatarBucket).getPublicUrl(path);
     await _db.from('admin_profiles').update({
@@ -942,13 +949,15 @@ class StaffRepository {
     var failed = 0;
     for (var i = 0; i < images.length; i++) {
       try {
-        final f = images[i];
-        final bytes = await f.readAsBytes();
-        final ext = f.name.contains('.')
-            ? f.name.split('.').last.toLowerCase()
-            : 'jpg';
+        // Same pass the admin composer runs (admin/providers/
+        // community_updates_provider.dart) — the two write into the SAME
+        // bucket and the same feed, so they must not disagree on size.
+        final out = await ImageCompressor.compressPicked(
+          images[i],
+          purpose: ImagePurpose.content,
+        );
         final stamp = DateTime.now().millisecondsSinceEpoch;
-        final path = 'posts/$uid/${stamp}_$i.$ext';
+        final path = 'posts/$uid/${stamp}_$i.${out.ext}';
         // Two separately-permissioned steps. Reported apart, because "a photo
         // failed" does not say WHICH grant is missing — the storage bucket
         // policy (20260719000001 §4) and the community_post_images INSERT
@@ -956,9 +965,9 @@ class StaffRepository {
         try {
           await _db.storage.from('community-posts').uploadBinary(
                 path,
-                bytes,
+                out.bytes,
                 fileOptions:
-                    FileOptions(contentType: _imageMime(ext), upsert: false),
+                    FileOptions(contentType: out.mime, upsert: false),
               );
         } catch (e) {
           debugPrint('community post photo STORAGE upload failed for $path: $e '
@@ -1024,17 +1033,6 @@ class StaffRepository {
         .eq('id', postId)
         .eq('author_id', uid);
   }
-
-  static String _imageMime(String ext) => switch (ext) {
-        'jpg' || 'jpeg' || 'jfif' || 'pjpeg' || 'pjp' => 'image/jpeg',
-        'png' => 'image/png',
-        'gif' => 'image/gif',
-        'webp' => 'image/webp',
-        'heic' => 'image/heic',
-        'heif' => 'image/heif',
-        'bmp' => 'image/bmp',
-        _ => 'application/octet-stream',
-      };
 
   Future<List<StaffReportMedia>> fetchReportMedia(String reportId) async {
     // `source` was added by media_source_column.sql — retry without it if the

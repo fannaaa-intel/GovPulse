@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -5,6 +7,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../features/admin/widgets/admin_skeleton.dart';
+import '../services/image_compressor.dart';
 import '../theme/app_colors.dart';
 import 'app_dialog.dart';
 import 'media_viewer.dart';
@@ -177,13 +180,34 @@ class _ResolutionMediaSectionState extends State<ResolutionMediaSection> {
     try {
       for (var i = 0; i < files.length; i++) {
         final file = files[i];
-        final bytes = await file.readAsBytes();
-        final ext = file.name.contains('.')
+        final srcExt = file.name.contains('.')
             ? file.name.split('.').last.toLowerCase()
             : (isVideo ? 'mp4' : 'jpg');
-        final contentType = isVideo ? 'video/$ext' : 'image/$ext';
-        final path =
-            '${widget.reportId}/${DateTime.now().millisecondsSinceEpoch}_${i}_${file.name}';
+
+        // Photos are downscaled and re-encoded here; video is uploaded as-is,
+        // since transcoding needs a native codec this app does not ship.
+        final Uint8List bytes;
+        final String contentType;
+        final String outExt;
+        if (isVideo) {
+          bytes = await file.readAsBytes();
+          contentType = 'video/$srcExt';
+          outExt = srcExt;
+        } else {
+          final out = await ImageCompressor.compressPicked(
+            file,
+            purpose: ImagePurpose.evidence,
+          );
+          bytes = out.bytes;
+          contentType = out.mime;
+          outExt = out.ext;
+        }
+
+        final stem = file.name.contains('.')
+            ? file.name.substring(0, file.name.lastIndexOf('.'))
+            : file.name;
+        final path = '${widget.reportId}/'
+            '${DateTime.now().millisecondsSinceEpoch}_${i}_$stem.$outExt';
 
         await _supabase.storage.from(_bucket).uploadBinary(
               path,

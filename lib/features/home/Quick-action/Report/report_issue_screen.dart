@@ -19,6 +19,7 @@ import 'dart:async';
 import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/widgets/no_scrollbar_behavior.dart';
 import '../../../../core/services/gps_stamp_service.dart';
+import '../../../../core/services/image_compressor.dart';
 import '../../../../core/widgets/reveal_loading.dart';
 import '../../../../core/widgets/Home/Newsfeed/news_feed_helpers.dart'
     show formatTimeAgo;
@@ -3615,12 +3616,40 @@ class _ReportIssueScreenState extends State<ReportIssueForm>
       final List<Map<String, String>> mediaItems = [];
       for (int i = 0; i < _attachedFiles.length; i++) {
         final file = _attachedFiles[i];
-        final bytes = await file.readAsBytes();
+        final isVid = _isVideo(file);
         final ext = file.name.split('.').last.toLowerCase();
+
+        // Photos are downscaled and re-encoded on the way to the bucket; video
+        // is uploaded untouched (transcoding needs a native codec this app does
+        // not ship). The compressed result carries its own mime/extension —
+        // a HEIC that became a JPEG must NOT be stored as `image/heic`, or
+        // every browser that opens it downloads the file instead of showing it.
+        final Uint8List bytes;
+        final String contentType;
+        final String outExt;
+        if (isVid) {
+          bytes = await file.readAsBytes();
+          contentType = 'video/$ext';
+          outExt = ext;
+        } else {
+          final out = await ImageCompressor.compressPicked(
+            file,
+            purpose: ImagePurpose.evidence,
+          );
+          bytes = out.bytes;
+          contentType = out.mime;
+          outExt = out.ext;
+        }
+
+        // The stored name keeps the original stem but takes the extension the
+        // bytes are ACTUALLY in, so the object key never disagrees with its
+        // own content-type.
+        final stem = file.name.contains('.')
+            ? file.name.substring(0, file.name.lastIndexOf('.'))
+            : file.name;
         final fileName =
-            '${DateTime.now().millisecondsSinceEpoch}_${i}_${file.name}';
+            '${DateTime.now().millisecondsSinceEpoch}_${i}_$stem.$outExt';
         final storagePath = 'reports/$reportId/$fileName';
-        final contentType = _isVideo(file) ? 'video/$ext' : 'image/$ext';
 
         await supabase.storage
             .from('report-media')
