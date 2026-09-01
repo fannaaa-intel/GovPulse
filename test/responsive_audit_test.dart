@@ -43,6 +43,7 @@ import 'package:govpulse/features/home/Quick-action/Suggestion/suggestion_screen
 import 'package:govpulse/features/home/emergency/emergency_screen.dart';
 import 'package:govpulse/features/home/my_report/my_reports_screen.dart';
 import 'package:govpulse/features/home/newsfeed/news_feed_screen.dart';
+import 'package:govpulse/features/home/settings/my-submission/my_submissions_screen.dart';
 import 'package:govpulse/features/home/settings/settings_screen.dart';
 import 'package:govpulse/core/widgets/Home/home_enums.dart';
 import 'package:govpulse/core/widgets/Home/nav/app_bottom_nav.dart';
@@ -257,6 +258,13 @@ void main() {
         const EmergencyScreen(username: 'juandelacruz', isVerified: true),
     'SettingScreen': () => const SettingScreen(username: 'juandelacruz'),
     'MyReportsScreen': () => const MyReportsScreen(username: 'juandelacruz'),
+    // Added late: this screen was never in the sweep, and both overflows found
+    // on it — the tab strip and the LGU-response block — would have been caught
+    // years earlier if it had been. Its POPULATED form is swept separately in
+    // submission_lists_content_matrix_test, since the empty state this file
+    // renders cannot reach the tab badges.
+    'MySubmissionsScreen': () =>
+        const MySubmissionsScreen(username: 'juandelacruz'),
     // Guest mode, and not to test the guest feed: it is the one way to pump
     // this screen at all. Signed in, it calls `subscribeRealtime()` on
     // CommunityPostsProvider — a SINGLETON that deliberately outlives the
