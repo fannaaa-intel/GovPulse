@@ -18,6 +18,7 @@ import '../../../../core/widgets/reveal_loading.dart';
 import '../../../../core/widgets/app_dialog.dart';
 import '../../../../core/theme/mobile_metrics.dart';
 import '../../../../core/widgets/app_back_chevron.dart';
+import '../../../../core/router/legacy_nav.dart' show goToSubmissionList;
 
 /// Standalone Send Feedback page — the full-screen route the mobile app and the
 /// live web route open. Chrome only; the form itself is [FeedbackForm].
@@ -811,7 +812,9 @@ class _FeedbackScreenState extends State<FeedbackForm>
         "Feedback submitted successfully.",
         type: AppSnackType.success,
       );
-      Navigator.pop(context);
+      // Dismiss the form and land on My Submissions, Feedback tab, where the
+      // row that was just filed is.
+      goToSubmissionList(context, tab: 2, username: widget.username);
     } on StorageException catch (e) {
       if (!mounted) return;
       showFriendlyErrorDialog(context, 'File upload failed: ${e.message}');

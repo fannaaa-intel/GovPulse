@@ -493,6 +493,37 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
     _fetchAll();
   }
 
+  /// Honours a NEW [MySubmissionsScreen.initialTab] on an already-mounted
+  /// screen.
+  ///
+  /// [initState] alone is not enough on web. The shell reaches this page with
+  /// `go`, and [GoRoute] derives its page key from the PATH — which is
+  /// `/settings/submissions` for every tab, the tab being a query parameter. So
+  /// navigating here while already here rebuilds this State rather than
+  /// creating one, `initState` does not run again, and the tab silently stays
+  /// where it was.
+  ///
+  /// That is reachable in the ordinary way now: the quick actions open over the
+  /// whole shell, so a citizen can file a suggestion while standing on the
+  /// Feedback tab and be sent back to the tab they never left.
+  ///
+  /// Guarded on a CHANGE in `widget.initialTab`, not on it differing from
+  /// `_tab` — otherwise every unrelated rebuild would yank a citizen who had
+  /// since tapped another tab back to the one the URL named.
+  @override
+  void didUpdateWidget(MySubmissionsScreen old) {
+    super.didUpdateWidget(old);
+    if (old.initialTab != widget.initialTab) {
+      _selectTab(widget.initialTab.clamp(0, 2));
+    }
+    // A new deep-link target needs the same re-arming: same page key, same
+    // reused State, so the flash would otherwise only ever fire for the id
+    // this screen was first built with.
+    if (old.highlightId != widget.highlightId && widget.highlightId != null) {
+      _scrollToHighlight();
+    }
+  }
+
   @override
   void dispose() {
     MySubmissionsScreen.isOpen = false;

@@ -29,6 +29,7 @@ import '../../../../core/utils/picked_media.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../../../../core/theme/mobile_metrics.dart';
 import '../../../../core/widgets/app_back_chevron.dart';
+import '../../../../core/router/legacy_nav.dart' show goToSubmissionList;
 
 /// The split panel's SQUARE "Add file" tile — the first cell of the panel's
 /// 4-column attachment grid, sized to match the file tiles beside it.
@@ -3760,7 +3761,11 @@ class _ReportIssueScreenState extends State<ReportIssueForm>
               : "Thanks — your confirmation was added to the existing report.",
           type: AppSnackType.success,
         );
-        Navigator.pop(context);
+        // Dismiss the form and land on My Reports, where the row that was just
+        // filed is. A duplicate CONFIRMATION goes there too: it still inserts a
+        // report owned by this citizen (with duplicate_of set), so their list
+        // is where it shows up either way.
+        goToSubmissionList(context, tab: 0, username: widget.username);
       }
     } on StorageException catch (e) {
       if (mounted) {

@@ -25,6 +25,7 @@ import '../../../../core/utils/picked_media.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../../../../core/theme/mobile_metrics.dart';
 import '../../../../core/widgets/app_back_chevron.dart';
+import '../../../../core/router/legacy_nav.dart' show goToSubmissionList;
 
 // ── Video preview dialog (same as Report) ─────────────────────────────────────
 class _VideoPreviewDialog extends StatefulWidget {
@@ -3341,7 +3342,9 @@ class _SuggestionScreenState extends State<SuggestionForm>
           "Suggestion submitted successfully.",
           type: AppSnackType.success,
         );
-        Navigator.pop(context);
+        // Dismiss the form and land on My Submissions, Suggestions tab, where
+        // the row that was just filed is.
+        goToSubmissionList(context, tab: 1, username: widget.username);
       }
     } on StorageException catch (e) {
       if (mounted) {
