@@ -56,11 +56,58 @@ class WebCardGrid extends StatelessWidget {
           );
         }
         final cellW = (c.maxWidth - spacing * (cols - 1)) / cols;
-        return Wrap(
-          spacing: spacing,
-          runSpacing: runSpacing,
+
+        // ── Explicit rows, not a Wrap ────────────────────────────────────────
+        //
+        // A `Wrap` gives every child its own height, so two cards side by side
+        // ended wherever their own content ended: a card with a one-line
+        // address finished well above its neighbour with a two-line one, and
+        // the row's baseline came out ragged. It reads as cards that are not
+        // quite aligned rather than as a grid.
+        //
+        // Rows built by hand fix that. [IntrinsicHeight] measures the tallest
+        // card in the row and `CrossAxisAlignment.stretch` gives every card in
+        // it that height, so a row's cards start and end together whatever is
+        // inside them.
+        //
+        // The last row is PADDED to a full set of cells rather than centred or
+        // stretched: three cards in a two-column grid must leave the fourth
+        // slot empty and keep the third card the same width as the others.
+        // Letting it stretch to the full band — which is what a bare Row would
+        // do — is the other half of what looked wrong.
+        final rows = <Widget>[];
+        for (var start = 0; start < children.length; start += cols) {
+          final end = (start + cols) < children.length
+              ? start + cols
+              : children.length;
+          final row = children.sublist(start, end);
+          rows.add(
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (var i = 0; i < cols; i++) ...[
+                    if (i > 0) SizedBox(width: spacing),
+                    SizedBox(
+                      width: cellW,
+                      // The empty cells of a short last row hold the layout
+                      // open; nothing is drawn in them.
+                      child: i < row.length ? row[i] : const SizedBox.shrink(),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          );
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            for (final child in children) SizedBox(width: cellW, child: child),
+            for (var i = 0; i < rows.length; i++) ...[
+              rows[i],
+              if (i < rows.length - 1) SizedBox(height: runSpacing),
+            ],
           ],
         );
       },

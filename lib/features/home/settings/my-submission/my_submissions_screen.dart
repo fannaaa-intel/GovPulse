@@ -238,10 +238,15 @@ class MySubmissionsArgs {
   /// Id of the suggestion/feedback to scroll to and briefly highlight.
   final String? highlightId;
 
+  /// True when the citizen has just filed the thing on [initialTab] and is
+  /// being sent here to see it. See [MySubmissionsScreen.justSubmitted].
+  final bool justSubmitted;
+
   const MySubmissionsArgs({
     required this.username,
     this.initialTab = 0,
     this.highlightId,
+    this.justSubmitted = false,
   });
 }
 
@@ -260,11 +265,34 @@ class MySubmissionsScreen extends StatefulWidget {
   /// reply notification. Null for a normal open.
   final String? highlightId;
 
+  /// True when the citizen has just filed the thing on [initialTab].
+  ///
+  /// ── Why the screen has to be told ─────────────────────────────────────────
+  /// A submission's row is written moments before this screen opens, and the
+  /// first fetch can still miss it — a read issued that close to a write is not
+  /// guaranteed to see it, and feedback is the most exposed of the three
+  /// because its INSERT fires an AFTER trigger that makes an outbound HTTP call
+  /// (classify_feedback_on_insert). The citizen then lands on "No feedback
+  /// found" for the feedback they just sent, and it appears on reload.
+  ///
+  /// Realtime alone is not the answer: the tables have to be in the publication
+  /// and the socket has to be up, and neither is guaranteed — the screen's own
+  /// subscription is documented as best-effort with pull-to-refresh as the
+  /// fallback. "Pull to refresh" is not an acceptable answer to "where is the
+  /// thing I just sent".
+  ///
+  /// So this flag makes the recovery deterministic: when the tab it names comes
+  /// back empty, the screen retries a few times over a couple of seconds. It
+  /// costs nothing in the normal case, where the row is there on the first try
+  /// and no retry is scheduled at all.
+  final bool justSubmitted;
+
   const MySubmissionsScreen({
     super.key,
     required this.username,
     this.initialTab = 0,
     this.highlightId,
+    this.justSubmitted = false,
   });
 
   @override
@@ -278,6 +306,14 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
   late final Animation<Offset> _slideAnim;
   late final Animation<double> _fadeAnim;
   late final AnimationController _shimmerCtrl;
+
+  /// How many times [_settleAfterSubmission] re-fetches before accepting the
+  /// empty state, and how long it waits between tries. Four tries at 600ms
+  /// covers roughly two and a half seconds — long enough for a row that is
+  /// merely late, short enough that a genuinely empty tab is not held behind a
+  /// stale list.
+  static const int _kSettleTries = 4;
+  static const Duration _kSettleGap = Duration(milliseconds: 600);
 
   // ── Tab & filter state ─────────────────────────────────────────────────────
   int _tab = 0; // 0 = Reports, 1 = Suggestions, 2 = Feedback
@@ -530,6 +566,7 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
     _slideCtrl.dispose();
     _shimmerCtrl.dispose();
     _rtDebounce?.cancel();
+    _settleTimer?.cancel();
     if (_rtChannel != null) {
       Supabase.instance.client.removeChannel(_rtChannel!);
     }
@@ -642,6 +679,18 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
         return;
       }
 
+      // ── Subscribed BEFORE the queries, deliberately ──────────────────────
+      // This used to run after the rows came back, which left a window with no
+      // listener in it: the fetch would miss a row written moments earlier, the
+      // channel would open after that row's INSERT event had already gone by,
+      // and nothing would ever fetch again. That is what made a just-submitted
+      // item show an empty list until a manual reload.
+      //
+      // Subscribing first closes the window — an INSERT landing mid-fetch now
+      // arrives and schedules a refresh. Idempotent (`_rtSubscribed`), so the
+      // repeat calls every later refresh makes cost nothing.
+      _subscribeRealtime(userId);
+
       // Reports pull the full column set (`*`) so we can build a ReportItem for
       // the shared detail screen. Suggestions/feedback add `dismissed_at`
       // (spam_moderation migration) with a graceful fallback so an un-migrated
@@ -700,9 +749,9 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
         _feedbacks = results[2].map((e) => _Feedback.fromJson(e)).toList();
         _loading = false;
       });
-      _subscribeRealtime(userId);
       await _refreshReplyIndicators();
       _scrollToHighlight();
+      _settleAfterSubmission();
     } catch (_) {
       if (mounted) {
         setState(() {
@@ -764,6 +813,61 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
     // Landing straight on a tab (deep-link or normal) clears its dot.
     if (_tab == 1) _markTabSeen(1);
     if (_tab == 2) _markTabSeen(2);
+  }
+
+  // ── Waiting for a just-submitted row to show up ────────────────────────────
+
+  /// Retries left for [_settleAfterSubmission], and whether the budget has been
+  /// handed out yet.
+  ///
+  /// The two are separate on purpose. With only a counter, "0" means both "not
+  /// started" and "spent", so the run that exhausts the budget is followed by
+  /// one that re-arms it — a poll that never stops.
+  int _settleTries = 0;
+  bool _settleArmed = false;
+  Timer? _settleTimer;
+
+  /// Whether the tab the citizen was sent to has anything on it.
+  bool get _arrivalTabHasRows => switch (widget.initialTab.clamp(0, 2)) {
+    1 => _suggestions.isNotEmpty,
+    2 => _feedbacks.isNotEmpty,
+    _ => _reports.isNotEmpty,
+  };
+
+  /// Re-fetches, briefly, when a citizen sent here by their own submission
+  /// lands on an empty tab.
+  ///
+  /// See [MySubmissionsScreen.justSubmitted] for why this exists at all. The
+  /// shape matters:
+  ///
+  ///   • It only ever runs for an arrival from a submission, so an ordinary
+  ///     visit to a genuinely empty tab still settles immediately on the empty
+  ///     state and never flickers or spins.
+  ///   • It stops the moment a row appears, so the normal case — the row is
+  ///     there on the first fetch — schedules nothing.
+  ///   • It gives up after a few tries rather than polling forever. If the row
+  ///     is still not readable after that, the empty state is the honest
+  ///     answer and Refresh is right there.
+  ///
+  /// `showSpinner: false` throughout: the list must not fall back to the
+  /// skeleton behind a citizen who is already looking at it.
+  void _settleAfterSubmission() {
+    if (!widget.justSubmitted) return;
+    if (_arrivalTabHasRows) return;
+
+    // First miss arms the budget; later misses spend it. Once spent it stays
+    // spent — see the field's note.
+    if (!_settleArmed) {
+      _settleArmed = true;
+      _settleTries = _kSettleTries;
+    }
+    if (_settleTries <= 0) return;
+    _settleTries--;
+
+    _settleTimer?.cancel();
+    _settleTimer = Timer(_kSettleGap, () {
+      if (mounted) _fetchAll(showSpinner: false);
+    });
   }
 
   /// Persists the tab's newest reply timestamp as "seen" and drops its dot.

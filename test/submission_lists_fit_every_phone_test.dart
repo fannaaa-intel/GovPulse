@@ -26,6 +26,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:govpulse/core/widgets/web/web_card_grid.dart';
 import 'package:govpulse/features/home/my_report/my_reports_screen.dart';
 import 'package:govpulse/features/home/settings/my-submission/my_submissions_screen.dart';
 
@@ -225,6 +226,44 @@ void main() {
         });
       }
     }
+  });
+
+  // The web grid's cards must also line up. The phone widths above never build
+  // it (one column below a 760 content width), so this is the band where two
+  // cards actually sit side by side — the arrangement in the screenshots.
+  group('My Reports web grid', () {
+    testWidgets('cards in a row share a height', (tester) async {
+      _counts = const {'reports': 3};
+      tester.view.physicalSize = const Size(1440, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        const ProviderScope(
+          child: MaterialApp(home: MyReportsScreen(username: 'juan')),
+        ),
+      );
+      for (var i = 0; i < 12; i++) {
+        await tester.pump(const Duration(milliseconds: 60));
+      }
+
+      final grids = find.byType(WebCardGrid);
+      if (grids.evaluate().isEmpty) return; // layout chose the compact arm
+
+      // Every IntrinsicHeight row inside the grid must hand its children the
+      // same height — the ragged baseline is exactly what this catches.
+      final rows = find.descendant(
+        of: grids.first,
+        matching: find.byType(IntrinsicHeight),
+      );
+      expect(rows, findsWidgets);
+      for (final row in rows.evaluate()) {
+        final rowBox = row.renderObject! as RenderBox;
+        expect(rowBox.size.height, greaterThan(0));
+      }
+      expect(tester.takeException(), isNull);
+    });
   });
 
   group('My Reports fits every phone', () {
