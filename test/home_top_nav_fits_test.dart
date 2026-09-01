@@ -139,45 +139,93 @@ void main() {
     expect(failures, isEmpty, reason: '\n${failures.join('\n')}');
   });
 
-  testWidgets('the links do not MOVE at a width where they already fit', (
+  testWidgets('the links sit on the bar midpoint and never move', (
     tester,
   ) async {
-    // The half a fix could quietly break: making the links shrinkable must not
-    // relocate them at the widths where they were never a problem.
+    // ── The bug a citizen actually sees ──────────────────────────────────────
+    // The three pieces were one Row — brand, links in an Expanded, then the
+    // bell and profile chip — so the links were centred in the space LEFT OVER
+    // rather than on the bar. That space is not symmetric, and worse, it
+    // CHANGES after first paint: the chip renders the citizen's full name,
+    // which arrives asynchronously after login, so the chip grows and the links
+    // jump left while someone is looking at them. Measured at 1920 before the
+    // fix: x=790.5 while loading, x=717.7 once the name landed — a visible
+    // 73px lurch on every page open.
     //
-    // The number is measured, not derived. The links are NOT centred in the
-    // bar — they are centred in the space left between the brand on one side
-    // and the bell and profile chip on the other, and those two are not the
-    // same width, so the block sits left of the bar's true midpoint. That was
-    // already true before this fix, and reproducing it exactly is the point:
-    // 660.9 is what the pre-fix widget put here at 1440.
-    //
-    // Asserting the bar's midpoint instead would be asserting a design the
-    // widget has never had, and "fixing" the code to satisfy it would move the
-    // nav for every citizen.
-    tester.view.physicalSize = const Size(1440, 800);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.reset);
+    // Both halves are asserted, because either alone is satisfiable by a wrong
+    // layout: ON the midpoint (not merely stable somewhere off-centre), and the
+    // SAME across every state the bar passes through on the way to loaded.
+    for (final width in const [1024.0, 1280.0, 1440.0, 1920.0]) {
+      final positions = <String, double>{};
 
-    await tester.pumpWidget(_bar(_shellItems));
-    await tester.pump(const Duration(milliseconds: 400));
+      // The states in the order a citizen meets them, plus a long name as the
+      // stress case — a chip wide enough to have shoved the links hardest.
+      const states = <(String, String?, int)>[
+        ('loading', null, 0),
+        ('named', 'Mark Reduca', 0),
+        ('named + badge', 'Mark Reduca', 2),
+        ('long name', 'Bartolome Villanueva-Maglalang', 12),
+      ];
 
-    final home = tester.getRect(find.text('Home'));
-    final emergency = tester.getRect(find.text('Emergency'));
-    final linkBlockCentre = (home.left + emergency.right) / 2;
+      for (final (label, fullName, count) in states) {
+        tester.view.physicalSize = Size(width, 900);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
 
-    expect(
-      linkBlockCentre,
-      closeTo(660.9, 1.0),
-      reason:
-          'the links must land exactly where they always did at a width that '
-          'fits — the scroll view is only allowed to matter when they do not',
-    );
-    expect(
-      home.left,
-      greaterThan(0),
-      reason: 'and they are not packed against the brand',
-    );
+        await tester.pumpWidget(
+          MaterialApp(
+            debugShowCheckedModeBanner: false,
+            home: Scaffold(
+              body: Column(
+                children: [
+                  HomeTopNav(
+                    currentIndex: 0,
+                    onTap: (_) {},
+                    items: _shellItems,
+                    settingsIndex: 3,
+                    notificationCount: count,
+                    onNotificationTap: () {},
+                    onLogoutTap: () {},
+                    username: fullName == null ? '' : 'markreduca',
+                    fullName: fullName,
+                    verifStatus: fullName == null ? '' : 'verified',
+                  ),
+                  const Expanded(child: SizedBox.expand()),
+                ],
+              ),
+            ),
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 400));
+
+        final home = tester.getRect(find.text('Home'));
+        final emergency = tester.getRect(find.text('Emergency'));
+        positions[label] = (home.left + emergency.right) / 2;
+      }
+
+      for (final entry in positions.entries) {
+        expect(
+          entry.value,
+          closeTo(width / 2, 1.0),
+          reason:
+              'at ${width.toInt()}px in the "${entry.key}" state the links must '
+              'sit on the BAR midpoint, not in the leftover space beside the '
+              'chip',
+        );
+      }
+
+      final distinct = positions.values
+          .map((v) => v.toStringAsFixed(1))
+          .toSet();
+      expect(
+        distinct,
+        hasLength(1),
+        reason:
+            'at ${width.toInt()}px the links must land in the SAME place in '
+            'every state — the profile name arriving after login is what used '
+            'to shove them: $positions',
+      );
+    }
   });
 
   testWidgets('every link is still reachable at 1024', (tester) async {
