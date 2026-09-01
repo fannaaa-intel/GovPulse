@@ -127,19 +127,13 @@ class CitizenShell extends ConsumerStatefulWidget {
     required this.location,
   });
 
-  /// Switch the shell under [context] to [tab]. Used by Bodies that need to
-  /// send the user to another destination (Home's "View all" → NewsFeed).
-  static void goToTab(BuildContext context, CitizenTab tab) {
-    StatefulNavigationShell.of(context).goBranch(tab.index);
-  }
-
   /// Runs the quick action [key] — the same dispatch the left rail and the right
   /// sidebar use, so the caller inherits the verification and restriction gates
   /// rather than reimplementing them.
   ///
-  /// Peer of [goToTab], and there for the same reason: a Body mounted in the
-  /// centre column needs a shell-level behaviour it cannot otherwise name. The
-  /// feed's empty-state CTA is the first caller.
+  /// Exists because a Body mounted in the centre column needs a shell-level
+  /// behaviour it cannot otherwise name. The feed's empty-state CTA is the
+  /// caller.
   ///
   /// Does nothing when there is no shell above [context] — the GUEST feed is not
   /// in one — so callers must only offer the affordance when they know they are
