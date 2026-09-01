@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/services/image_compressor.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../admin/widgets/admin_responsive_dialog.dart';
 import '../theme/staff_ui.dart';
@@ -61,22 +62,25 @@ Future<String?> uploadCompletionPhotos(
 
   for (var i = 0; i < photos.length; i++) {
     try {
-      final file = photos[i];
-      final bytes = await file.readAsBytes();
-      final ext = file.name.contains('.')
-          ? file.name.split('.').last.toLowerCase()
-          : 'jpg';
+      // Same treatment as the Updates-tab composer next door
+      // (core/widgets/report_progress_updates.dart): the completion photos
+      // land in the same bucket and the same gallery, so they must not be a
+      // different size class from the progress ones.
+      final out = await ImageCompressor.compressPicked(
+        photos[i],
+        purpose: ImagePurpose.evidence,
+      );
       final path = 'updates/$updateId/'
-          '${DateTime.now().millisecondsSinceEpoch}_$i.$ext';
+          '${DateTime.now().millisecondsSinceEpoch}_$i.${out.ext}';
       await db.storage.from(_kBucket).uploadBinary(
             path,
-            bytes,
-            fileOptions: FileOptions(contentType: 'image/$ext'),
+            out.bytes,
+            fileOptions: FileOptions(contentType: out.mime),
           );
       await db.from('report_update_media').insert({
         'update_id': updateId,
         'storage_path': path,
-        'mime_type': 'image/$ext',
+        'mime_type': out.mime,
         'uploaded_by': uid,
       });
     } catch (_) {

@@ -15,6 +15,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/providers/user_profile_provider.dart';
 import '../../core/router/legacy_nav.dart';
+import '../../core/services/image_compressor.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/app_back_chevron.dart';
 import '../home/screen/home_screen.dart';
@@ -453,15 +454,31 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
 
       const bucket = 'verification-assets';
 
+      // These three are capped at the `identity` tier — 2000px and quality 88,
+      // markedly more generous than evidence. A reviewer has to read the small
+      // print on a licence and match a face against it, so the saving here
+      // comes from capping a 12 MP original, not from squeezing the encoder.
+      // The output is always JPEG, so the `.jpg` paths and the `image/jpeg`
+      // content-types below stay truthful.
+      //
+      // Neither the ID frames nor the face capture ever passed through a
+      // picker option: the ID screens crop their own frames and the face
+      // screen takes a CameraController still, so this is the only place the
+      // size of an identity photo is decided.
+
       // ── 1. Upload ID front ────────────────────────────────────────────
       String? idFrontPath;
       if (widget.frontImage != null) {
+        final front = await ImageCompressor.compressBytes(
+          widget.frontImage!,
+          purpose: ImagePurpose.identity,
+        );
         idFrontPath = '$uid/id-front.jpg';
         await supabase.storage
             .from(bucket)
             .uploadBinary(
               idFrontPath,
-              widget.frontImage!,
+              front.bytes,
               fileOptions: const FileOptions(
                 contentType: 'image/jpeg',
                 upsert: true,
@@ -472,12 +489,16 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
       // ── 2. Upload ID back ─────────────────────────────────────────────
       String? idBackPath;
       if (widget.backImage != null) {
+        final back = await ImageCompressor.compressBytes(
+          widget.backImage!,
+          purpose: ImagePurpose.identity,
+        );
         idBackPath = '$uid/id-back.jpg';
         await supabase.storage
             .from(bucket)
             .uploadBinary(
               idBackPath,
-              widget.backImage!,
+              back.bytes,
               fileOptions: const FileOptions(
                 contentType: 'image/jpeg',
                 upsert: true,
@@ -488,12 +509,16 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
       // ── 3. Upload face photo ──────────────────────────────────────────
       String? facePath;
       if (_capturedImageBytes != null) {
+        final face = await ImageCompressor.compressBytes(
+          _capturedImageBytes!,
+          purpose: ImagePurpose.identity,
+        );
         facePath = '$uid/face.jpg';
         await supabase.storage
             .from(bucket)
             .uploadBinary(
               facePath,
-              _capturedImageBytes!,
+              face.bytes,
               fileOptions: const FileOptions(
                 contentType: 'image/jpeg',
                 upsert: true,

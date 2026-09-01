@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/identity/official_display_name.dart';
+import '../../../core/services/image_compressor.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  Community Updates — admin data layer
@@ -535,20 +536,22 @@ class CommunityUpdatesRepository {
     required int startOrder,
   }) async {
     for (var i = 0; i < files.length; i++) {
-      final f = files[i];
-      final bytes = await f.readAsBytes();
-      final ext = f.name.contains('.')
-          ? f.name.split('.').last.toLowerCase()
-          : 'jpg';
+      // Downscaled and re-encoded before it reaches the bucket. A community
+      // photo is displayed in a feed card and a detail view and is never zoomed
+      // for detail, so 1600px is generous; the originals were 4-8 MB each.
+      final out = await ImageCompressor.compressPicked(
+        files[i],
+        purpose: ImagePurpose.content,
+      );
       final stamp = DateTime.now().millisecondsSinceEpoch;
-      final path = 'posts/$uid/${stamp}_$i.$ext';
+      final path = 'posts/$uid/${stamp}_$i.${out.ext}';
       await _sb.storage
           .from(_bucket)
           .uploadBinary(
             path,
-            bytes,
+            out.bytes,
             fileOptions: FileOptions(
-              contentType: _imageMime(ext),
+              contentType: out.mime,
               upsert: false,
             ),
           );
@@ -557,30 +560,6 @@ class CommunityUpdatesRepository {
         'storage_path': path,
         'display_order': startOrder + i,
       });
-    }
-  }
-
-  static String _imageMime(String ext) {
-    switch (ext) {
-      case 'jpg':
-      case 'jpeg':
-      case 'jfif':
-      case 'pjpeg':
-      case 'pjp':
-        return 'image/jpeg';
-      case 'png':
-        return 'image/png';
-      case 'gif':
-        return 'image/gif';
-      case 'webp':
-        return 'image/webp';
-      case 'heic':
-      case 'heif':
-        return 'image/$ext';
-      case 'bmp':
-        return 'image/bmp';
-      default:
-        return 'image/jpeg';
     }
   }
 

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/services/events_service.dart';
+import '../../../core/services/image_compressor.dart';
 
 /// Admin-side events store. Fetches the *entire* events table (RLS grants the
 /// admin the full view) and exposes create / edit / moderate / delete actions.
@@ -138,30 +139,26 @@ class AdminEventsNotifier extends AsyncNotifier<List<EventModel>> {
   /// public URL (what the citizen app renders directly).
   Future<String> uploadImage(Uint8List bytes, String ext) async {
     final uid = _db.auth.currentUser?.id ?? 'admin';
-    final safeExt = ext.toLowerCase();
-    final path = '$uid/${DateTime.now().millisecondsSinceEpoch}.$safeExt';
 
-    final String mime;
-    switch (safeExt) {
-      case 'png':
-        mime = 'image/png';
-        break;
-      case 'webp':
-        mime = 'image/webp';
-        break;
-      case 'heic':
-        mime = 'image/heic';
-        break;
-      default:
-        mime = 'image/jpeg';
-    }
+    // Downscaled here rather than at the picker, because the picker option is
+    // only honoured for bytes that came THROUGH the picker — and every caller
+    // of this method hands over a plain Uint8List. A cover renders at most a
+    // few hundred pixels tall in the citizen feed; a 12 MP original was being
+    // stored to draw it.
+    final out = await ImageCompressor.compressBytes(
+      bytes,
+      purpose: ImagePurpose.content,
+      sourceMime: ImageCompressor.mimeForExtension(ext),
+      sourceExt: ext.toLowerCase(),
+    );
 
+    final path = '$uid/${DateTime.now().millisecondsSinceEpoch}.${out.ext}';
     await _db.storage
         .from(bucket)
         .uploadBinary(
           path,
-          bytes,
-          fileOptions: FileOptions(contentType: mime, upsert: true),
+          out.bytes,
+          fileOptions: FileOptions(contentType: out.mime, upsert: true),
         );
     return _db.storage.from(bucket).getPublicUrl(path);
   }

@@ -10,6 +10,7 @@ import '../../../core/theme/citizen_ui.dart';
 import '../../../core/widgets/Home/Account/account_web_kit.dart';
 import '../../../core/constants/aparri_barangays.dart';
 import '../../../core/widgets/loading/loading_overlay.dart';
+import '../../../core/services/image_compressor.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../../core/widgets/app_snackbar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -233,32 +234,29 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
       String? newPhotoPath;
 
       if (_pickedFile != null && _pickedBytes != null) {
-        final ext = _pickedFile!.path.split('.').last;
-        final filePath =
-            '${user.id}/profile_${DateTime.now().millisecondsSinceEpoch}.$ext';
+        final srcExt = _pickedFile!.path.split('.').last.toLowerCase();
 
-        String mimeType;
-        switch (ext.toLowerCase()) {
-          case 'jpg':
-          case 'jpeg':
-            mimeType = 'image/jpeg';
-            break;
-          case 'png':
-            mimeType = 'image/png';
-            break;
-          case 'webp':
-            mimeType = 'image/webp';
-            break;
-          default:
-            mimeType = 'image/jpeg';
-        }
+        // An avatar is drawn in a 96px circle nearly everywhere and at ~400px
+        // on the profile page itself, so it is capped hard. The picker's
+        // maxWidth already asks for 800px, but that option is only honoured for
+        // bytes that came through the picker — and it does nothing about the
+        // encoder — so the cap is enforced here, where the object is created.
+        final out = await ImageCompressor.compressBytes(
+          _pickedBytes!,
+          purpose: ImagePurpose.avatar,
+          sourceMime: ImageCompressor.mimeForExtension(srcExt),
+          sourceExt: srcExt,
+        );
+
+        final filePath = '${user.id}/profile_'
+            '${DateTime.now().millisecondsSinceEpoch}.${out.ext}';
 
         await supabase.storage
             .from('profile-photos')
             .uploadBinary(
               filePath,
-              _pickedBytes!,
-              fileOptions: FileOptions(contentType: mimeType, upsert: true),
+              out.bytes,
+              fileOptions: FileOptions(contentType: out.mime, upsert: true),
             );
         newPhotoPath = filePath;
       }

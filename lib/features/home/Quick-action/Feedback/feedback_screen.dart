@@ -13,6 +13,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/Home/Newsfeed/rate_limit_dialogs.dart';
 import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/services/gps_stamp_service.dart';
+import '../../../../core/services/image_compressor.dart';
 import '../../../../core/widgets/reveal_loading.dart';
 import '../../../../core/widgets/app_dialog.dart';
 import '../../../../core/theme/mobile_metrics.dart';
@@ -691,18 +692,29 @@ class _FeedbackScreenState extends State<FeedbackForm>
       final List<String> photoUrls = [];
       final List<String> photoSources = [];
       for (final photo in _photos) {
-        final bytes = _photoCache[photo.path] ?? await photo.readAsBytes();
-        final ext = photo.path.split('.').last.toLowerCase();
-        final mimeType = ext == 'png' ? 'image/png' : 'image/jpeg';
+        final raw = _photoCache[photo.path] ?? await photo.readAsBytes();
+        final srcExt = photo.path.split('.').last.toLowerCase();
+
+        // Compressed from the CACHED bytes rather than re-read from the file:
+        // for a camera capture the cache holds the GPS-stamped frame, and the
+        // file at `photo.path` is the same one — but going through the cache
+        // keeps this correct if the stamp ever writes elsewhere, and saves a
+        // second read of a multi-megabyte file on mobile.
+        final out = await ImageCompressor.compressBytes(
+          raw,
+          purpose: ImagePurpose.evidence,
+          sourceMime: ImageCompressor.mimeForExtension(srcExt),
+          sourceExt: srcExt,
+        );
         final path =
             'feedback/${userId ?? 'anon'}/'
-            '${DateTime.now().millisecondsSinceEpoch}.$ext';
+            '${DateTime.now().millisecondsSinceEpoch}.${out.ext}';
         await supabase.storage
             .from('feedback-assets')
             .uploadBinary(
               path,
-              bytes,
-              fileOptions: FileOptions(contentType: mimeType),
+              out.bytes,
+              fileOptions: FileOptions(contentType: out.mime),
             );
         photoUrls.add(
           supabase.storage.from('feedback-assets').getPublicUrl(path),

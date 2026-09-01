@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../core/services/image_compressor.dart';
 import '../../core/theme/citizen_ui.dart';
 import '../../core/widgets/media_viewer.dart';
 import '../admin/widgets/admin_skeleton.dart';
@@ -395,10 +396,13 @@ class _ScanPageState extends State<ScanPage> {
     if (room <= 0) return;
 
     try {
-      // Re-encoded on the way in. The originals off a modern phone are 4-8MB
-      // each and the officer is on mobile data at the roadside; 1600px at
-      // quality 82 is plenty to show a patched road and a fraction of the
-      // bytes.
+      // The picker's own options are asked for as a first pass, but they are
+      // not the guarantee — ImageCompressor below is. The picker only ever
+      // sees bytes it produced itself, and on some platforms honours neither
+      // option; the officer is on mobile data at the roadside and these bytes
+      // are then base64-encoded into the Edge Function body, which inflates
+      // them by a further third. That makes this the single most expensive
+      // upload path in the app, so it gets the pass unconditionally.
       final picked = await _picker.pickMultiImage(
         imageQuality: 82,
         maxWidth: 1600,
@@ -421,17 +425,27 @@ class _ScanPageState extends State<ScanPage> {
           continue;
         }
 
-        final bytes = await f.readAsBytes();
-        if (bytes.isEmpty) {
+        final raw = await f.readAsBytes();
+        if (raw.isEmpty) {
           rejection = 'That file could not be read. Try taking it again.';
           continue;
         }
-        if (bytes.length > _kMaxPhotoBytes) {
+
+        // Compressed BEFORE the size check, so a photo the officer would
+        // otherwise be told to retake is simply made to fit. The check stays
+        // as the backstop for the one that could not be re-encoded.
+        final out = await ImageCompressor.compressBytes(
+          raw,
+          purpose: ImagePurpose.evidence,
+          sourceMime: mime,
+          sourceExt: ext,
+        );
+        if (out.bytes.length > _kMaxPhotoBytes) {
           rejection = 'Each photo must be under 8 MB.';
           continue;
         }
         accepted.add(
-          _StagedPhoto(name: f.name, mime: mime, bytes: bytes),
+          _StagedPhoto(name: f.name, mime: out.mime, bytes: out.bytes),
         );
       }
 
