@@ -1559,6 +1559,10 @@ class _RespondPanelState extends State<RespondPanel> {
   bool _sending = false;
   bool _savingNote = false;
 
+  /// Why the last send was refused, or null. Set only on a press — the form
+  /// must not open already complaining about a box nobody has touched.
+  String? _replyError;
+
   @override
   void dispose() {
     _replyCtrl.dispose();
@@ -1566,8 +1570,17 @@ class _RespondPanelState extends State<RespondPanel> {
   }
 
   Future<void> _send() async {
-    if (_replyCtrl.text.trim().isEmpty) return;
-    setState(() => _sending = true);
+    // Was a bare `return`: pressing "Send response" on an empty box did
+    // nothing at all — no message, no highlight — which reads as a dead
+    // button rather than as a refusal, so the admin presses it again.
+    if (_replyCtrl.text.trim().isEmpty) {
+      setState(() => _replyError = 'Write a reply before sending.');
+      return;
+    }
+    setState(() {
+      _replyError = null;
+      _sending = true;
+    });
     try {
       await widget.onSendResponse(_replyCtrl.text.trim());
       _replyCtrl.clear(); // only on success
@@ -1622,6 +1635,12 @@ class _RespondPanelState extends State<RespondPanel> {
           widget.respondedAt == null
               ? 'Write a reply the citizen will receive…'
               : 'Send another reply…',
+          errorText: _replyError,
+          onChanged: (v) {
+            if (_replyError != null && v.trim().isNotEmpty) {
+              setState(() => _replyError = null);
+            }
+          },
         ),
         const SizedBox(height: 10),
         Align(
@@ -1765,11 +1784,22 @@ class _RespondPanelState extends State<RespondPanel> {
         ),
       );
 
-  Widget _field(TextEditingController c, String hint) {
+  Widget _field(
+    TextEditingController c,
+    String hint, {
+    String? errorText,
+    ValueChanged<String>? onChanged,
+  }) {
+    // Red on the ENABLED border too, not only the error/focused pair: the
+    // field an admin has tabbed away from is the one they need to find again.
+    final side = BorderSide(
+      color: errorText != null ? AppColors.red : AdminUi.border,
+    );
     return TextField(
       controller: c,
       maxLines: 4,
       minLines: 3,
+      onChanged: onChanged,
       style: const TextStyle(fontSize: 13),
       decoration: InputDecoration(
         hintText: hint,
@@ -1777,17 +1807,29 @@ class _RespondPanelState extends State<RespondPanel> {
         filled: true,
         fillColor: AdminUi.subtle,
         contentPadding: const EdgeInsets.all(12),
+        errorText: errorText,
+        errorStyle: const TextStyle(fontSize: 12, color: AppColors.red),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: AdminUi.border),
+          borderSide: side,
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: AdminUi.border),
+          borderSide: side,
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: AppColors.primaryBlue),
+          borderSide: BorderSide(
+            color: errorText != null ? AppColors.red : AppColors.primaryBlue,
+          ),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: AppColors.red),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: AppColors.red),
         ),
       ),
     );

@@ -234,6 +234,13 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
   bool _loading = true;
   bool _sending = false;
 
+  /// Why the last post attempt was refused, or null.
+  ///
+  /// Set only when Post is actually pressed — an empty composer is the normal
+  /// state of this panel, so complaining about it on arrival would scold an
+  /// officer who has done nothing wrong.
+  String? _composerError;
+
   /// The id of the update whose approve/return decision is in flight.
   ///
   /// Per-update rather than a bare bool: the reviewer sees a LIST of pending
@@ -417,7 +424,15 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
   /// the trade: the words are the update.
   Future<void> _submit() async {
     final text = _body.text.trim();
-    if (text.isEmpty || _sending) return;
+    if (_sending) return;
+    // Was `if (text.isEmpty || _sending) return;` — an enabled Post button
+    // that did nothing on an empty box, which reads as broken rather than as
+    // refused.
+    if (text.isEmpty) {
+      setState(() => _composerError = 'Write what has happened before posting.');
+      return;
+    }
+    setState(() => _composerError = null);
     final uid = _supabase.auth.currentUser?.id;
     if (uid == null) return;
 
@@ -538,47 +553,66 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
 
   Future<String?> _askReason() async {
     final ctrl = TextEditingController();
+    // StatefulBuilder so the dialog can hold one piece of state — whether the
+    // reason box has been complained about. Without it the Return button had
+    // nowhere to put an error, which is how it ended up silently doing nothing.
+    String? error;
     final result = await showAppDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Return this update'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Tell the office what to fix. They see this and can resubmit.',
-              style: TextStyle(fontSize: 13),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: ctrl,
-              maxLines: 3,
-              autofocus: true,
-              decoration: const InputDecoration(
-                hintText: 'e.g. Please attach a photo of the finished work.',
-                border: OutlineInputBorder(),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('Return this update'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Tell the office what to fix. They see this and can resubmit.',
+                style: TextStyle(fontSize: 13),
               ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: ctrl,
+                maxLines: 3,
+                autofocus: true,
+                onChanged: (v) {
+                  if (error != null && v.trim().isNotEmpty) {
+                    setLocal(() => error = null);
+                  }
+                },
+                decoration: InputDecoration(
+                  hintText: 'e.g. Please attach a photo of the finished work.',
+                  border: const OutlineInputBorder(),
+                  errorText: error,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: AppColors.red),
+              // The server also refuses a blank reason, so this only saves the
+              // round trip — but it must SAY so. It used to `return` silently,
+              // which reads as a broken button, and the office never found out
+              // why their update was not being returned.
+              onPressed: () {
+                final v = ctrl.text.trim();
+                if (v.isEmpty) {
+                  setLocal(
+                    () => error = 'Say what needs fixing before returning it.',
+                  );
+                  return;
+                }
+                Navigator.pop(ctx, v);
+              },
+              child: const Text('Return'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.red),
-            // The server also refuses a blank reason — this only saves the
-            // round trip.
-            onPressed: () {
-              final v = ctrl.text.trim();
-              if (v.isEmpty) return;
-              Navigator.pop(ctx, v);
-            },
-            child: const Text('Return'),
-          ),
-        ],
       ),
     );
     // Disposed after the route's exit transition, not the instant `await`
@@ -820,9 +854,25 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
               contentPadding:
                   const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
               border: _inputBorder(Colors.black12),
-              enabledBorder: _inputBorder(Colors.black12),
-              focusedBorder: _inputBorder(AppColors.primaryBlue, 1.5),
+              // Red on the enabled border too, so the field stays marked after
+              // focus moves away from it.
+              enabledBorder: _inputBorder(
+                _composerError != null ? AppColors.red : Colors.black12,
+              ),
+              focusedBorder: _inputBorder(
+                _composerError != null ? AppColors.red : AppColors.primaryBlue,
+                1.5,
+              ),
+              errorBorder: _inputBorder(AppColors.red),
+              focusedErrorBorder: _inputBorder(AppColors.red, 1.5),
+              errorText: _composerError,
+              errorStyle: const TextStyle(fontSize: 12, color: AppColors.red),
             ),
+            onChanged: (v) {
+              if (_composerError != null && v.trim().isNotEmpty) {
+                setState(() => _composerError = null);
+              }
+            },
           ),
           if (_staged.isNotEmpty) ...[
             const SizedBox(height: 10),

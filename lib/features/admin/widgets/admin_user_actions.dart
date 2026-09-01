@@ -822,11 +822,39 @@ class _MessageFormState extends State<_MessageForm> {
   final _title = TextEditingController();
   final _body = TextEditingController();
 
+  /// Per-field complaints, set only once Send has actually been pressed.
+  ///
+  /// Both start null so the form does not open already scolding an admin who
+  /// has not done anything yet — the button carries the state until they press
+  /// it, the same bargain _StaffCompletionDialog makes with its `_touched`
+  /// flag.
+  String? _titleError;
+  String? _bodyError;
+
   @override
   void dispose() {
     _title.dispose();
     _body.dispose();
     super.dispose();
+  }
+
+  void _submit() {
+    final t = _title.text.trim();
+    final b = _body.text.trim();
+
+    // ── The defect this replaces ─────────────────────────────────────────
+    // This was `if (t.isEmpty || b.isEmpty) return;`. Pressing Send on a
+    // half-filled form did NOTHING: no message, no highlight, no closed
+    // dialog. An admin cannot tell that apart from a dead button or a dropped
+    // network, so the honest reading of the screen was "this feature is
+    // broken" — and the message they were trying to send never went.
+    setState(() {
+      _titleError = t.isEmpty ? 'Add a short headline.' : null;
+      _bodyError = b.isEmpty ? 'Write the message to send.' : null;
+    });
+    if (_titleError != null || _bodyError != null) return;
+
+    Navigator.pop(context, _MessageResult(t, b));
   }
 
   @override
@@ -841,7 +869,18 @@ class _MessageFormState extends State<_MessageForm> {
         children: [
           const _FieldLabel('Title'),
           const SizedBox(height: 6),
-          _TextInput(controller: _title, hint: 'Short headline'),
+          _TextInput(
+            controller: _title,
+            hint: 'Short headline',
+            errorText: _titleError,
+            // Cleared as they type rather than on the next press, so the
+            // complaint disappears the moment it stops being true.
+            onChanged: (v) {
+              if (_titleError != null && v.trim().isNotEmpty) {
+                setState(() => _titleError = null);
+              }
+            },
+          ),
           const SizedBox(height: 14),
           const _FieldLabel('Message'),
           const SizedBox(height: 6),
@@ -849,6 +888,12 @@ class _MessageFormState extends State<_MessageForm> {
             controller: _body,
             hint: 'What do you want to say?',
             maxLines: 4,
+            errorText: _bodyError,
+            onChanged: (v) {
+              if (_bodyError != null && v.trim().isNotEmpty) {
+                setState(() => _bodyError = null);
+              }
+            },
           ),
         ],
       ),
@@ -860,12 +905,11 @@ class _MessageFormState extends State<_MessageForm> {
         const SizedBox(width: 8),
         FilledButton(
           style: FilledButton.styleFrom(backgroundColor: AppColors.primaryBlue),
-          onPressed: () {
-            final t = _title.text.trim();
-            final b = _body.text.trim();
-            if (t.isEmpty || b.isEmpty) return;
-            Navigator.pop(context, _MessageResult(t, b));
-          },
+          // Deliberately NOT disabled-when-empty. A greyed-out button says
+          // "not yet" without saying what is missing, and on a two-field form
+          // where one is filled that reads as the button being broken. Let it
+          // be pressed, then say which field is wrong.
+          onPressed: _submit,
           child: Text(widget.broadcast ? 'Broadcast' : 'Send'),
         ),
       ],
@@ -1120,6 +1164,24 @@ class _TextInput extends StatelessWidget {
 
   /// Optional trailing widget (e.g. a password visibility toggle).
   final Widget? suffix;
+
+  /// What is wrong with the current value, or null when it is fine.
+  ///
+  /// Set this rather than leaving a submit button to fail silently. A primary
+  /// button that is enabled, gets pressed, and does nothing is the worst of the
+  /// three available behaviours: the admin cannot tell a validation refusal
+  /// from a dead button or a lost network, so they press it again, and again.
+  ///
+  /// Rendering it HERE — on the field, not only as one line under the form —
+  /// is what says WHICH box to go back to; a form-level "fill in the required
+  /// fields" leaves them hunting.
+  final String? errorText;
+
+  /// Called on every keystroke, so a form can clear [errorText] the moment the
+  /// admin starts fixing the thing it complained about. Without it the message
+  /// sits there contradicting a field that is now filled in.
+  final ValueChanged<String>? onChanged;
+
   const _TextInput({
     required this.controller,
     required this.hint,
@@ -1127,14 +1189,18 @@ class _TextInput extends StatelessWidget {
     this.obscure = false,
     this.keyboard,
     this.suffix,
+    this.errorText,
+    this.onChanged,
   });
   @override
   Widget build(BuildContext context) {
+    final invalid = errorText != null;
     return TextField(
       controller: controller,
       maxLines: obscure ? 1 : maxLines,
       obscureText: obscure,
       keyboardType: keyboard,
+      onChanged: onChanged,
       style: const TextStyle(fontSize: 14, color: AdminUi.textPrimary),
       decoration: InputDecoration(
         hintText: hint,
@@ -1151,9 +1217,21 @@ class _TextInput extends StatelessWidget {
           minWidth: 40,
           minHeight: 40,
         ),
+        errorText: errorText,
+        errorStyle: const TextStyle(fontSize: 12, color: AppColors.red),
         border: _inputBorder(AdminUi.border),
-        enabledBorder: _inputBorder(AdminUi.border),
-        focusedBorder: _inputBorder(AppColors.primaryBlue, 1.4),
+        // The red must be on the ENABLED border too, not just the error/focused
+        // pair: an invalid field the admin has since tabbed away from is
+        // exactly the one they need to find again.
+        enabledBorder: _inputBorder(
+          invalid ? AppColors.red : AdminUi.border,
+        ),
+        focusedBorder: _inputBorder(
+          invalid ? AppColors.red : AppColors.primaryBlue,
+          1.4,
+        ),
+        errorBorder: _inputBorder(AppColors.red),
+        focusedErrorBorder: _inputBorder(AppColors.red, 1.4),
       ),
     );
   }

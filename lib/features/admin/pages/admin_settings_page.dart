@@ -180,7 +180,18 @@ class _ModerationCardState extends ConsumerState<_ModerationCard> {
 
   Future<void> _addTerm() async {
     final input = _termCtrl.text.trim();
-    if (input.isEmpty) return;
+    // Was a bare `return`: pressing Add on an empty box did nothing at all,
+    // which reads as a dead button. Every other outcome of this action already
+    // answers with a snackbar (added / already banned / failed), so the
+    // refusal answers the same way rather than introducing a second idiom.
+    if (input.isEmpty) {
+      showAdminSnackBar(
+        context,
+        'Type a word to ban first.',
+        type: AdminSnackType.error,
+      );
+      return;
+    }
     // Snapshot the current list so we can tell a genuinely new word from one
     // that normalized to an already-banned root (e.g. "8080" → "bobo").
     final before =
