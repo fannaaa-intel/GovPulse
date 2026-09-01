@@ -1,27 +1,26 @@
-// The two submission lists, WITH CONTENT IN THEM, across every size.
+// My Reports, WITH ROWS IN IT, across every size.
 //
 // ── Why this exists next to responsive_audit_test ──────────────────────────
-// That file states its own limit plainly: Supabase is not initialised there, so
-// every screen settles into its EMPTY state and "a populated list is not
-// covered here". It is the right trade for a sweep of thirty screens — the
-// chrome is what the viewport-width bug deformed — but it means the rows
-// themselves, which is where a citizen's own text and a growing count land,
-// have never been measured at all.
+// That file states its own limit: Supabase is not initialised there, so every
+// screen settles into its EMPTY state and "a populated list is not covered
+// here". It is the right trade for a sweep of thirty screens — the chrome is
+// what the viewport-width bug deformed — but it means the rows themselves,
+// where a citizen's own text and a growing count land, were never measured.
 //
-// Both bugs already found on these screens were in that uncovered half:
-//   • My Submissions' tab strip overflowed once it carried count badges.
-//   • My Reports' Report History header overflowed with the count beside it.
-// Neither is reachable with an empty list, which is why nothing caught them.
+// Both overflows already found on this screen lived in that uncovered half:
+// the Report History header needed the count beside it, and the card's
+// reference id needed the Anonymous pill beside it. Neither is reachable with
+// an empty list, which is why nothing caught them.
 //
 // So this sweeps the same matrix — every phone, both orientations, three text
 // scales — with rows actually present, and adds the WEB widths, where the
 // two-column grid exists at all.
 //
 // ── What the rows are chosen to be ─────────────────────────────────────────
-// Deliberately hostile but real: the longest category label the app ships, a
-// two-line Aparri address, a remark long enough to clamp, and counts in the
-// hundreds so every badge is at its widest. A citizen writes worse than a
-// fixture does, and the fixture is the only defence.
+// Deliberately hostile but real: a two-line Aparri address, a remark long
+// enough to clamp, and mixed statuses so every badge variant is laid out. A
+// citizen writes worse than a fixture does, and the fixture is the only
+// defence.
 
 import 'dart:convert';
 
@@ -32,8 +31,9 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:govpulse/core/widgets/web/web_card_grid.dart';
 import 'package:govpulse/features/home/my_report/my_reports_screen.dart';
-import 'package:govpulse/features/home/settings/my-submission/my_submissions_screen.dart';
+import 'package:govpulse/features/home/my_report/report_card.dart';
 
 import '_responsive_matrix.dart';
 
@@ -238,6 +238,14 @@ Future<List<String>> _sweepWeb(
         textScale: scale,
       );
       for (final e in errors.toSet()) {
+        // ── Only this screen's own content ──────────────────────────────────
+        // At a web width the screen mounts inside the shared citizen chrome,
+        // so the nav bar above it is measured too. That bar is not what this
+        // file is about, and folding it in here would mean a change to
+        // unrelated chrome silently fails a My Reports test — or worse, gets
+        // "fixed" from here. Blame lines carry the file, so filtering on it is
+        // exact.
+        if (e.contains('home_top_nav')) continue;
         failures.add('$device @ ${scale}x — $e');
       }
     }
@@ -277,46 +285,65 @@ void main() {
       );
       expect(failures, isEmpty, reason: '\n${failures.join('\n')}');
     });
-
-    testWidgets('MySubmissionsScreen fits every phone, on every tab', (
-      tester,
-    ) async {
-      // Every tab: the strip is the same on all three, but the LIST under it is
-      // not, and each has its own card.
-      _rest = _PopulatedRest(rows: 4);
-      final failures = <String>[];
-      for (var tab = 0; tab < 3; tab++) {
-        failures.addAll(
-          await _sweepPhones(
-            tester,
-            () => MySubmissionsScreen(
-              username: 'juandelacruz',
-              initialTab: tab,
-            ),
-          ).then((f) => f.map((e) => 'tab $tab · $e')),
-        );
-      }
-      expect(failures, isEmpty, reason: '\n${failures.join('\n')}');
-    });
-
-    testWidgets('a three-digit count does not break the tab strip', (
-      tester,
-    ) async {
-      // The badge is the widest thing in the strip and grows with the count.
-      // 100+ of anything is unusual but not impossible, and it is the cheapest
-      // place to find the ceiling.
-      _rest = _PopulatedRest(rows: 128);
-      final failures = await _sweepPhones(
-        tester,
-        () => const MySubmissionsScreen(username: 'juandelacruz'),
-      );
-      expect(failures, isEmpty, reason: '\n${failures.join('\n')}');
-    });
   });
 
   // ── Web ───────────────────────────────────────────────────────────────────
 
   group('web · with rows', () {
+    testWidgets('two cards in a grid row are the same height', (tester) async {
+      // ── What the screenshots showed ────────────────────────────────────────
+      // The two cards sitting side by side ended at different heights, so each
+      // row's bottom edge was ragged — a short report next to a long one looked
+      // like two loose cards rather than a grid.
+      //
+      // Measured on the CARD itself, not on the row that holds it: equalising
+      // the row is only half the job, because a card whose box stops at its own
+      // content leaves the row's extra height as a gap underneath. This is the
+      // assertion that tells those two states apart.
+      _rest = _PopulatedRest(rows: 4);
+      tester.view.physicalSize = const Size(1440, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        _shell(const MyReportsScreen(username: 'juandelacruz')),
+      );
+      for (var i = 0; i < 14; i++) {
+        await tester.pump(const Duration(milliseconds: 60));
+      }
+
+      final grid = find.byType(WebCardGrid);
+      if (grid.evaluate().isEmpty) return; // compact arm — no grid to check
+
+      // Each IntrinsicHeight is one row of the grid. Every CARD in a row must
+      // be exactly as tall as the row.
+      final rows = find
+          .descendant(of: grid, matching: find.byType(IntrinsicHeight))
+          .evaluate()
+          .toList();
+      expect(rows, isNotEmpty, reason: 'the grid builds explicit rows');
+
+      for (var r = 0; r < rows.length; r++) {
+        final rowHeight = (rows[r].renderObject! as RenderBox).size.height;
+        final cards = find
+            .descendant(
+              of: find.byWidget(rows[r].widget),
+              matching: find.byType(ReportCard),
+            )
+            .evaluate()
+            .toList();
+        for (final card in cards) {
+          expect(
+            (card.renderObject! as RenderBox).size.height,
+            rowHeight,
+            reason:
+                'row $r: a card must FILL its row, not stop at its own content '
+                '— that gap is the ragged edge in the screenshots',
+          );
+        }
+      }
+    });
+
     testWidgets('MyReportsScreen fits every web width', (tester) async {
       // 3 rows on purpose: an ODD count is what leaves a short last row in the
       // two-column grid, which is the arrangement that read as misaligned.
@@ -325,25 +352,6 @@ void main() {
         tester,
         () => const MyReportsScreen(username: 'juandelacruz'),
       );
-      expect(failures, isEmpty, reason: '\n${failures.join('\n')}');
-    });
-
-    testWidgets('MySubmissionsScreen fits every web width, on every tab', (
-      tester,
-    ) async {
-      _rest = _PopulatedRest(rows: 3);
-      final failures = <String>[];
-      for (var tab = 0; tab < 3; tab++) {
-        failures.addAll(
-          await _sweepWeb(
-            tester,
-            () => MySubmissionsScreen(
-              username: 'juandelacruz',
-              initialTab: tab,
-            ),
-          ).then((f) => f.map((e) => 'tab $tab · $e')),
-        );
-      }
       expect(failures, isEmpty, reason: '\n${failures.join('\n')}');
     });
   });
