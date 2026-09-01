@@ -22,6 +22,7 @@ import '../../admin/widgets/admin_dialog_keyboard.dart';
 import '../../admin/widgets/admin_responsive_dialog.dart';
 import '../theme/staff_ui.dart';
 import '../widgets/staff_common.dart';
+import '../widgets/staff_completion_dialog.dart';
 import '../../../core/widgets/app_dialog.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1484,6 +1485,18 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
 
   Future<void> _apply(ReportStatus s) async {
     if (s == _status || _busy) return;
+
+    // ── Resolving is not a status change ──────────────────────────────────
+    // It is the moment the citizen is told the work is finished, so it carries
+    // the account of what was done and — optionally — the photographs. Both go
+    // in one transaction with the status (staff_resolve_report), because a
+    // resolved report with no explanation is the failure this replaced, and
+    // half of it is worse than none of it.
+    if (s == ReportStatus.resolved) {
+      await _resolveWithCompletion();
+      return;
+    }
+
     setState(() {
       _busy = true;
       _applying = s;
@@ -1507,6 +1520,61 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
         });
         showAppSnackBar(context, '$e', type: AppSnackType.error);
       }
+    }
+  }
+
+  /// Ask for the completion account, then resolve and file it together.
+  ///
+  /// The dialog collects; the RPC decides. The note is required in BOTH places
+  /// — here so the officer is told before they commit, and in the RPC because a
+  /// UI-only gate is not a gate.
+  Future<void> _resolveWithCompletion() async {
+    final result = await showStaffCompletionDialog(
+      context,
+      office: _owner ?? widget.department ?? 'this office',
+    );
+    // The dialog was open for as long as the officer took to write; a status
+    // chip or a poll may have claimed the pane meanwhile.
+    if (result == null || !mounted || _busy) return;
+
+    setState(() {
+      _busy = true;
+      _applying = ReportStatus.resolved;
+    });
+    try {
+      final updateId = await ref
+          .read(widget.queue.notifier)
+          .resolveWithCompletion(widget.report.id, result.body);
+
+      // Photos attach to the update the RPC just wrote. A failure here leaves
+      // the report resolved and accounted for in words — worth reporting, but
+      // not worth failing the whole act over, and exactly how the scan page
+      // treats it.
+      String? photoError;
+      if (result.photos.isNotEmpty) {
+        photoError = await uploadCompletionPhotos(updateId, result.photos);
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _status = ReportStatus.resolved;
+        _busy = false;
+        _applying = null;
+      });
+      showAppSnackBar(
+        context,
+        photoError ??
+            'Report resolved. The Municipality reviews your completion note '
+                'before the citizen sees it.',
+        type: photoError == null ? AppSnackType.success : AppSnackType.error,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _applying = null;
+      });
+      showAppSnackBar(context, '$e', type: AppSnackType.error);
     }
   }
 

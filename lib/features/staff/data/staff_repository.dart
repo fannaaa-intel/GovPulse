@@ -349,6 +349,32 @@ DateTime? _ts(dynamic v) {
   return null;
 }
 
+/// A refusal from `staff_resolve_report` that the officer can do something
+/// about, as opposed to a thrown Postgres error.
+///
+/// The RPC returns `{ok: false, error: ...}` for the cases that are a race or
+/// an omission rather than a fault — the note was blank, someone else resolved
+/// it first, the admin rejected it meanwhile. Each has its own sentence,
+/// because "could not resolve" tells an officer nothing about whether to
+/// retype, reload, or stop.
+class StaffResolveFailure implements Exception {
+  final String code;
+  const StaffResolveFailure(this.code);
+
+  @override
+  String toString() => switch (code) {
+        'body_required' =>
+          'Describe what was done before marking this resolved.',
+        'already_resolved' => 'This report has already been resolved.',
+        'report_rejected' =>
+          'The Municipality rejected this report, so it cannot be resolved.',
+        'already_advanced' =>
+          'The report changed while you were writing. Reload and try again.',
+        'not_found' => 'This report no longer exists.',
+        _ => 'Could not resolve the report. Try again.',
+      };
+}
+
 // ── Repository ───────────────────────────────────────────────────────────────
 
 class StaffRepository {
@@ -727,6 +753,28 @@ class StaffRepository {
   Future<void> setReportStatus(String id, ReportStatus status) async {
     await _db.rpc('staff_set_report_status',
         params: {'p_report': id, 'p_status': reportStatusToDb(status)});
+  }
+
+  /// Resolve a report AND write its completion update, in one transaction.
+  ///
+  /// Not [setReportStatus] with `resolved`: that path is now refused by the
+  /// database (migration 20260901000001). Resolving is the moment the citizen
+  /// is told the work is finished, and a closed report with no account of what
+  /// was done — and so no completion gallery, which §11 of 20260829000001 keys
+  /// on an approved completion update existing — is the failure that split
+  /// the two halves apart in the first place.
+  ///
+  /// Returns the new update's id so the caller can attach photos to it, the
+  /// same shape `advance_endorsement` returns to the agency scan page.
+  /// Throws [StaffResolveFailure] on a refusal the officer can act on.
+  Future<String> resolveReportWithCompletion(String id, String body) async {
+    final res = await _db.rpc('staff_resolve_report',
+        params: {'p_report': id, 'p_body': body});
+    final map = Map<String, dynamic>.from(res as Map);
+    if (map['ok'] != true) {
+      throw StaffResolveFailure(map['error']?.toString() ?? 'unknown');
+    }
+    return map['update_id'].toString();
   }
 
   /// Bounce a mis-routed report back to the admin's triage desk. Leaves an audit

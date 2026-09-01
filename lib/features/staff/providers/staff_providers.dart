@@ -373,6 +373,11 @@ final staffConversationsStaleProvider = StateProvider<bool>((_) => false);
 /// ARE async notifiers of the same state, so this costs nothing.
 abstract class StaffReportQueue extends AsyncNotifier<List<StaffReport>> {
   Future<void> setStatus(String id, ReportStatus status);
+
+  /// Resolve AND account for the work in one transaction. Returns the new
+  /// completion update's id, so photos can be attached to it.
+  /// See StaffRepository.resolveReportWithCompletion.
+  Future<String> resolveWithCompletion(String id, String body);
   Future<void> returnToTriage(String id, String reason);
   Future<void> refresh();
 }
@@ -450,6 +455,18 @@ class StaffReportsNotifier extends AsyncNotifier<List<StaffReport>>
     final next =
         await AsyncValue.guard(() => _repo.fetchDepartmentReports(dept));
     if (next.hasValue) state = next;
+  }
+
+  @override
+  Future<String> resolveWithCompletion(String id, String body) async {
+    final updateId = await _repo.resolveReportWithCompletion(id, body);
+    final dept = ref.read(staffDepartmentProvider);
+    if (dept != null) {
+      final next =
+          await AsyncValue.guard(() => _repo.fetchDepartmentReports(dept));
+      if (next.hasValue) state = next;
+    }
+    return updateId;
   }
 
   @override
@@ -538,6 +555,18 @@ class StaffEndorsementsNotifier extends AsyncNotifier<List<StaffReport>>
     if (dept == null) return;
     final next = await AsyncValue.guard(() => _repo.fetchEndorsedReports(dept));
     if (next.hasValue) state = next;
+  }
+
+  @override
+  Future<String> resolveWithCompletion(String id, String body) async {
+    final updateId = await _repo.resolveReportWithCompletion(id, body);
+    final dept = ref.read(staffDepartmentProvider);
+    if (dept != null) {
+      final next =
+          await AsyncValue.guard(() => _repo.fetchEndorsedReports(dept));
+      if (next.hasValue) state = next;
+    }
+    return updateId;
   }
 
   @override

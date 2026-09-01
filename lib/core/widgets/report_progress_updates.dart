@@ -241,7 +241,6 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
   /// every row at once.
   String? _deciding;
   bool _unavailable = false;
-  bool _completion = false;
 
   /// Both must hold: the right role, AND a report still open to be worked on.
   /// See [ReportProgressUpdates.locked].
@@ -429,7 +428,18 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
           .insert({
             'report_id': widget.reportId,
             'body': text,
-            'kind': _completion ? 'completion' : 'progress',
+            // ── Always 'progress' from a composer ────────────────────────
+            // A completion is not something anyone TYPES; it is what resolving
+            // a report produces, written by staff_resolve_report /
+            // advance_endorsement in the same transaction as the status change
+            // (migrations 20260901000001 and 20260831000000). The composer's
+            // old Progress/Completion picker let the two drift: a "completion"
+            // update on a report still reading in_progress, or a resolved
+            // report with no account of the work — and because §11 of
+            // 20260829000001 keys the citizen's completion gallery on an
+            // APPROVED completion update, that second case left the resident a
+            // closed report, no explanation and no photographs.
+            'kind': 'progress',
             'author_id': uid,
             'author_role': _canReview ? 'admin' : 'staff',
             'author_name': widget.authorName,
@@ -464,7 +474,6 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
       _body.clear();
       setState(() {
         _staged.clear();
-        _completion = false;
         _sending = false;
       });
       await _load();
@@ -756,10 +765,23 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
 
   // -- Composer ---------------------------------------------------------------
   //
-  // The old version put an unlabelled "Completion" chip between two buttons
-  // with nothing to say what it did -- a control the user had to click to find
-  // out. It is now a labelled either/or with its consequence spelled out, on
-  // its own row, above the actions rather than mixed in among them.
+  // ── WHAT IS NO LONGER HERE ────────────────────────────────────────────────
+  //
+  // A Progress/Completion picker used to sit above the actions. It is gone, and
+  // not because it was hard to read — it was the wrong control to offer at all.
+  // Picking "Completion" wrote `kind = 'completion'` on the row and touched
+  // NOTHING else, so the two halves of "the work is finished" were separate and
+  // optional: a completion update on a report still reading in_progress, or a
+  // report resolved with no account of the work. The second is the one the
+  // citizen feels — §11 of 20260829000001 keys their completion gallery on an
+  // approved completion update existing, so resolving without writing one left
+  // a resident with a closed report, no explanation and no photographs.
+  //
+  // A completion is now what RESOLVING produces, written in the same
+  // transaction as the status change by staff_resolve_report (20260901000001)
+  // and advance_endorsement (20260831000000). Everything typed here is a
+  // progress note. The agency scan page reached this conclusion first:
+  // "conflating them would let an agency close a report by writing a sentence."
   //
   // ── ONE BOX, NOT THREE ────────────────────────────────────────────────────
   //
@@ -802,8 +824,6 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
               focusedBorder: _inputBorder(AppColors.primaryBlue, 1.5),
             ),
           ),
-          const SizedBox(height: 10),
-          _kindPicker(),
           if (_staged.isNotEmpty) ...[
             const SizedBox(height: 10),
             _stagedStrip(),
@@ -882,81 +902,6 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
           const SizedBox(height: 14),
           const Divider(height: 1, thickness: 1, color: Color(0x14000000)),
         ],
-    );
-  }
-
-  /// Progress vs completion, as a labelled either/or with its consequence
-  /// stated. Two segments rather than a lone toggle: a single unselected chip
-  /// gives no hint that an alternative exists, which is exactly how the old
-  /// "Completion" chip read.
-  Widget _kindPicker() {
-    Widget seg(String label, IconData icon, bool completion) {
-      final selected = _completion == completion;
-      return Expanded(
-        child: InkWell(
-          onTap: () => setState(() => _completion = completion),
-          borderRadius: BorderRadius.circular(8),
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-            decoration: BoxDecoration(
-              color: selected
-                  ? AppColors.primaryBlue.withValues(alpha: 0.10)
-                  : Colors.white,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: selected ? AppColors.primaryBlue : Colors.black12,
-                width: selected ? 1.4 : 1,
-              ),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(icon,
-                    size: 15,
-                    color: selected ? AppColors.primaryBlue : Colors.black45),
-                const SizedBox(width: 6),
-                Flexible(
-                  child: Text(
-                    label,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w700,
-                      color:
-                          selected ? AppColors.primaryBlue : Colors.black54,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            seg('Progress', Icons.timelapse_rounded, false),
-            const SizedBox(width: 8),
-            seg('Completion', Icons.verified_rounded, true),
-          ],
-        ),
-        const SizedBox(height: 6),
-        Text(
-          _completion
-              ? 'Marks the work finished. Completion photos reach the citizen '
-                  'once this is approved.'
-              : 'A routine update on work in progress.',
-          style: const TextStyle(
-            fontSize: 11.5,
-            height: 1.35,
-            color: Colors.black54,
-          ),
-        ),
-      ],
     );
   }
 
