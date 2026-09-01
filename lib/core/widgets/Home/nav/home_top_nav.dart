@@ -77,6 +77,27 @@ class HomeTopNav extends StatefulWidget {
   /// named chip cannot fit alongside its hamburger.
   final bool avatarOnlyChip;
 
+  /// Shifts the centred nav links by this many logical pixels, so they line up
+  /// with the CONTENT below rather than with the window.
+  ///
+  /// ── Why the two are not the same thing ────────────────────────────────────
+  /// The citizen web shell is three columns: a 288px left rail, the centre
+  /// column, and a 340px right sidebar. Those rails are not the same width, so
+  /// the centre column's midpoint sits 26px LEFT of the window's — the feed is
+  /// not where the middle of the screen is. Links centred on the window are
+  /// therefore 26px off from the column they head, and at a glance the nav
+  /// reads as crooked even though it is perfectly centred on the viewport.
+  ///
+  /// The shell computes this from the rails it actually rendered, so the value
+  /// follows the layout instead of being a constant that goes stale the next
+  /// time a rail is resized, and it is zero whenever a rail is absent.
+  ///
+  /// Defaults to 0, which is what every other caller gets — including the
+  /// MOBILE app, which builds this widget on tablets (`resolveNavBand` returns
+  /// `topNav` at >= 900 wide with a >= 600 shortest side, so an iPad in
+  /// landscape lands here). Those call sites have no rails and must not move.
+  final double linksOffset;
+
   const HomeTopNav({
     super.key,
     required this.currentIndex,
@@ -92,6 +113,7 @@ class HomeTopNav extends StatefulWidget {
     this.settingsIndex = 4,
     this.avatarOnlyChip = false,
     this.flatChrome,
+    this.linksOffset = 0,
   });
 
   /// The standalone destination set. Unchanged.
@@ -163,9 +185,12 @@ class _HomeTopNavState extends State<HomeTopNav> {
       child: Stack(
         alignment: Alignment.center,
         children: [
-          // Centred on the bar itself — the layer whose position must never
-          // depend on anything beside it.
-          _centredLinks(),
+          // Centred on the bar, then nudged onto the CONTENT's midpoint — see
+          // [linksOffset]. Zero for every caller that has no rails.
+          Transform.translate(
+            offset: Offset(widget.linksOffset, 0),
+            child: _centredLinks(),
+          ),
           _edgeControls(flat),
         ],
       ),

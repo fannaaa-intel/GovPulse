@@ -1238,6 +1238,25 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
     // reason. They are one click away — Home — rather than gone.
     final showRightSidebar = shellHasRightSidebar(layout) && !_onAccountPage;
 
+    // ── Line the nav links up with the CENTRE COLUMN, not the window ─────────
+    //
+    // The body below is [left rail | centre | right sidebar], and the rails are
+    // NOT the same width — 288 against 340. So the centre column's midpoint
+    // sits 26px left of the window's, and nav links centred on the window are
+    // 26px off from the column they head. On a wide screen that reads as a
+    // crooked nav, which is what it is: centred on the viewport, not on the
+    // content.
+    //
+    // Derived from the rails ACTUALLY RENDERED rather than from the constants,
+    // so it stays correct if either rail is resized and collapses to zero
+    // whenever a rail is absent — in drawer mode, and on an account page, where
+    // the sidebar stands down and the content really is centred on the window.
+    final double leftRailWidth = isDrawerMode ? 0 : kCitizenRailWidth;
+    final double rightRailWidth = showRightSidebar ? _kRightSidebarWidth : 0;
+    // The centre column spans [leftRail, width - rightRail]; its midpoint is
+    // therefore offset from the window's by half the difference of the rails.
+    final double navLinksOffset = (leftRailWidth - rightRailWidth) / 2;
+
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: CitizenUi.pageBg,
@@ -1296,6 +1315,9 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
                                     (label: tab.label, index: tab.index),
                             ],
                             settingsIndex: CitizenTab.settings.index,
+                            // See [navLinksOffset]: centres the links on the
+                            // feed rather than on the viewport.
+                            linksOffset: navLinksOffset,
                             notificationCount: unreadCount,
                             onNotificationTap: () => _showNotifications(width),
                             // The shared flow, same as Settings and the nav chrome use.

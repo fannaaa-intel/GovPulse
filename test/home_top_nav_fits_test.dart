@@ -139,22 +139,32 @@ void main() {
     expect(failures, isEmpty, reason: '\n${failures.join('\n')}');
   });
 
-  testWidgets('the links sit on the bar midpoint and never move', (
+  testWidgets('the links sit on the CONTENT midpoint and never move', (
     tester,
   ) async {
-    // ── The bug a citizen actually sees ──────────────────────────────────────
-    // The three pieces were one Row — brand, links in an Expanded, then the
-    // bell and profile chip — so the links were centred in the space LEFT OVER
-    // rather than on the bar. That space is not symmetric, and worse, it
-    // CHANGES after first paint: the chip renders the citizen's full name,
-    // which arrives asynchronously after login, so the chip grows and the links
-    // jump left while someone is looking at them. Measured at 1920 before the
-    // fix: x=790.5 while loading, x=717.7 once the name landed — a visible
-    // 73px lurch on every page open.
+    // ── Two bugs, one assertion ─────────────────────────────────────────────
     //
-    // Both halves are asserted, because either alone is satisfiable by a wrong
-    // layout: ON the midpoint (not merely stable somewhere off-centre), and the
-    // SAME across every state the bar passes through on the way to loaded.
+    // 1. MOVEMENT. The bar used to be a single Row — brand, links in an
+    //    `Expanded`, then the bell and profile chip — so the links were centred
+    //    in the space LEFT OVER. That space changes after first paint: the chip
+    //    renders the citizen's full name, which arrives asynchronously after
+    //    login, so the chip grows and the links jump. Measured at 1920 before
+    //    the fix: x=790.5 while loading, x=717.7 once the name landed. A 73px
+    //    lurch on every page open.
+    //
+    // 2. ALIGNMENT. Centring them on the WINDOW then looked wrong for a
+    //    different reason: the shell's rails are 288 and 340, so the centre
+    //    column's midpoint is 26px left of the window's. Links centred on the
+    //    viewport are 26px off from the feed they head, and at a glance the nav
+    //    reads as crooked. `linksOffset` moves them onto the content.
+    //
+    // Both halves are asserted, since either alone is satisfiable by a wrong
+    // layout: ON the content midpoint, and the SAME across every state the bar
+    // passes through on the way to loaded.
+    const leftRail = 288.0;
+    const rightRail = 340.0;
+    const offset = (leftRail - rightRail) / 2;
+
     for (final width in const [1024.0, 1280.0, 1440.0, 1920.0]) {
       final positions = <String, double>{};
 
@@ -189,8 +199,20 @@ void main() {
                     username: fullName == null ? '' : 'markreduca',
                     fullName: fullName,
                     verifStatus: fullName == null ? '' : 'verified',
+                    linksOffset: offset,
                   ),
-                  const Expanded(child: SizedBox.expand()),
+                  // The shell's real shape below the bar, so "the content
+                  // midpoint" is a thing this test can actually measure rather
+                  // than a number copied from the layout.
+                  const Expanded(
+                    child: Row(
+                      children: [
+                        SizedBox(width: leftRail),
+                        Expanded(child: SizedBox.expand()),
+                        SizedBox(width: rightRail),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -203,14 +225,15 @@ void main() {
         positions[label] = (home.left + emergency.right) / 2;
       }
 
+      final contentMid = (leftRail + (width - rightRail)) / 2;
       for (final entry in positions.entries) {
         expect(
           entry.value,
-          closeTo(width / 2, 1.0),
+          closeTo(contentMid, 1.0),
           reason:
               'at ${width.toInt()}px in the "${entry.key}" state the links must '
-              'sit on the BAR midpoint, not in the leftover space beside the '
-              'chip',
+              'sit over the CENTRE COLUMN, not over the middle of the window — '
+              'the rails are not the same width, so those are 26px apart',
         );
       }
 
@@ -225,6 +248,119 @@ void main() {
             'every state — the profile name arriving after login is what used '
             'to shove them: $positions',
       );
+    }
+  });
+
+  testWidgets('with no rails the links centre on the window', (tester) async {
+    // linksOffset defaults to 0, and that default is load-bearing: this widget
+    // is NOT web-only. `resolveNavBand` returns topNav for any device at least
+    // 900 wide with a shortest side of at least 600, so the MOBILE app builds
+    // it on a tablet — an iPad in landscape lands here. There are no rails
+    // there, so the content IS the window and the links must not be nudged.
+    tester.view.physicalSize = const Size(1024, 768);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(_bar(_shellItems));
+    await tester.pump(const Duration(milliseconds: 400));
+
+    final home = tester.getRect(find.text('Home'));
+    final emergency = tester.getRect(find.text('Emergency'));
+    expect(
+      (home.left + emergency.right) / 2,
+      closeTo(1024 / 2, 1.0),
+      reason: 'no rails means no offset — the tablet layout must not move',
+    );
+  });
+
+  testWidgets('the offset tracks the layout across every shell band', (
+    tester,
+  ) async {
+    // ── The half a constant would get wrong ─────────────────────────────────
+    // The nudge is not a fixed 26px. The shell drops the RIGHT SIDEBAR below
+    // 1280 (kShellThreeColumnMin) while keeping the left rail, and with only
+    // one rail the centre column's midpoint moves the other way — the offset
+    // swings from -26 to +144. A hard-coded value would line the nav up on a
+    // desktop and leave it 170px out in the 920–1280 band, which is an ordinary
+    // laptop window.
+    //
+    // The shell derives it from the rails it actually rendered, so this sweeps
+    // both bands and both text scales and asserts the links land over the
+    // centre column in all of them.
+    const leftRail = 288.0;
+    const rightRail = 340.0;
+
+    for (final width in const [920.0, 960.0, 1024.0, 1279.0, 1280.0, 1920.0]) {
+      // Mirrors shellHasRightSidebar: three columns only at/above 1280.
+      final rw = width >= 1280 ? rightRail : 0.0;
+      final offset = (leftRail - rw) / 2;
+      final contentMid = (leftRail + (width - rw)) / 2;
+
+      for (final scale in const [1.0, 1.3]) {
+        tester.view.physicalSize = Size(width, 900);
+        tester.view.devicePixelRatio = 1.0;
+        tester.platformDispatcher.textScaleFactorTestValue = scale;
+        addTearDown(tester.view.reset);
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            debugShowCheckedModeBanner: false,
+            home: Scaffold(
+              body: Column(
+                children: [
+                  HomeTopNav(
+                    currentIndex: 0,
+                    onTap: (_) {},
+                    items: _shellItems,
+                    settingsIndex: 3,
+                    notificationCount: 2,
+                    onNotificationTap: () {},
+                    onLogoutTap: () {},
+                    username: 'markreduca',
+                    fullName: 'Mark Reduca',
+                    verifStatus: 'verified',
+                    linksOffset: offset,
+                  ),
+                  Expanded(
+                    child: Row(
+                      children: [
+                        const SizedBox(width: leftRail),
+                        const Expanded(child: SizedBox.expand()),
+                        SizedBox(width: rw),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 400));
+
+        final home = tester.getRect(find.text('Home'));
+        final emergency = tester.getRect(find.text('Emergency'));
+
+        expect(
+          (home.left + emergency.right) / 2,
+          closeTo(contentMid, 1.0),
+          reason:
+              'at ${width.toInt()}px @ ${scale}x the links must sit over the '
+              'centre column — the offset is ${offset.toStringAsFixed(0)} in '
+              'this band, not a constant',
+        );
+        // And the nudge must never push a link off the bar.
+        expect(
+          home.left,
+          greaterThan(0),
+          reason: 'the first link stays on the bar at ${width.toInt()}px',
+        );
+        expect(
+          emergency.right,
+          lessThan(width),
+          reason: 'the last link stays on the bar at ${width.toInt()}px',
+        );
+      }
     }
   });
 
