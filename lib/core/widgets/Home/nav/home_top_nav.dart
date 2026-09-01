@@ -144,25 +144,67 @@ class _HomeTopNavState extends State<HomeTopNav> {
       child: Row(
         children: [
           const _BrandLogo(),
+          // ── The links scroll instead of running off the bar ──────────────
+          //
+          // This was a `Center` around a `MainAxisSize.min` Row. Neither can
+          // shrink: the Row takes the links' natural width and the Center hands
+          // it that width whatever is actually available. So once the brand,
+          // the links, the bell and the profile chip together wanted more than
+          // the bar, the links simply ran off the right-hand edge — under the
+          // profile chip, where the last one could not be clicked.
+          //
+          // A horizontal scroll view is the fix rather than ellipsizing a
+          // label: a nav item reading 'My Repo…' is a worse control than one
+          // the citizen can reach by dragging, and a nav bar is the last place
+          // to hide a destination.
+          //
+          // `Center` is kept INSIDE the scroll view, and that is what preserves
+          // the design: a scroll view sizes its child to the child's natural
+          // width when that fits, so at every ordinary desktop width the links
+          // are laid out and centred exactly as before and nothing moves. Only
+          // once they genuinely do not fit does the view start scrolling, and a
+          // Center inside an over-wide viewport is a no-op.
           Expanded(
-            child: Center(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  for (final item in (widget.items ?? HomeTopNav.defaultItems))
-                    _NavLink(
-                      label: item.label,
-                      isActive: _isHighlighted(item.index),
-                      onEnter: () {
-                        setState(() => _hoveredIndex = item.index);
-                        _onNavZoneEntered();
-                      },
-                      onExit: () => setState(() {
-                        if (_hoveredIndex == item.index) _hoveredIndex = null;
-                      }),
-                      onTap: () => widget.onTap(item.index),
+            child: LayoutBuilder(
+              builder: (context, slot) => SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                // No bounce: a nav bar that springs on a trackpad flick reads
+                // as a broken control rather than as a scrollable strip.
+                physics: const ClampingScrollPhysics(),
+                // ── minWidth is what keeps the links CENTRED ────────────────
+                // A horizontal scroll view gives its child unbounded width, so
+                // the child settles at its natural size and a `Center` inside
+                // it has nothing left to centre against — the links end up
+                // packed at the left. Handing the child a minimum of the slot
+                // it was given restores the old behaviour exactly while it
+                // fits, and stops constraining anything once the links are
+                // wider than the slot, which is when scrolling takes over.
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minWidth: slot.maxWidth),
+                  child: Center(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (final item
+                            in (widget.items ?? HomeTopNav.defaultItems))
+                          _NavLink(
+                            label: item.label,
+                            isActive: _isHighlighted(item.index),
+                            onEnter: () {
+                              setState(() => _hoveredIndex = item.index);
+                              _onNavZoneEntered();
+                            },
+                            onExit: () => setState(() {
+                              if (_hoveredIndex == item.index) {
+                                _hoveredIndex = null;
+                              }
+                            }),
+                            onTap: () => widget.onTap(item.index),
+                          ),
+                      ],
                     ),
-                ],
+                  ),
+                ),
               ),
             ),
           ),
