@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/home/screen/home_screen.dart';
+import '../../features/home/settings/my-submission/my_submissions_screen.dart'
+    show MySubmissionsArgs;
 import '../../features/home/shell/citizen_shell_router.dart';
 import '../network/network_wrapper.dart';
 import 'app_router.dart';
@@ -350,4 +352,136 @@ void goToCitizenHome(
   } else {
     Navigator.of(context).pushReplacement<void, void>(route);
   }
+}
+
+// ── After a submission lands ────────────────────────────────────────────────
+//
+// A citizen who has just filed something is not trying to get back to the feed;
+// they are trying to see the thing they filed. So the three quick actions no
+// longer merely dismiss themselves on success — they dismiss themselves AND go
+// to the list the new row is in: a report to My Reports, a suggestion or a
+// piece of feedback to the matching tab of My Submissions.
+//
+// ── Why one helper for both platforms ──────────────────────────────────────
+// The forms are hosted in two quite different ways, and neither of them is the
+// call site's business:
+//
+//   • mobile — the form is a route pushed over HomePage, so the destination is
+//     a second push and the dismissal is a pop.
+//   • web — the form is a dialog over the shell (see
+//     showCitizenSplitPanelDialog), so the destination is a `go` into the
+//     shell's own branches and the dismissal is popping the dialog.
+//
+// Putting the split here keeps it in the one file that already owns "which
+// router am I under", and leaves each form with a single unconditional call.
+//
+// ── Why the navigator and router are captured FIRST ────────────────────────
+// Both branches destroy the calling context: the pop tears down the very form
+// that is calling this. A lookup afterwards would run against a defunct
+// context. This is the same hazard [pushLegacyOn] and [goClearingPageless] are
+// each documented for, handled the same way — resolve both BEFORE popping.
+//
+// ── Why the pop is unconditional and not `onClose` ─────────────────────────
+// The split-panel's `close` callback consults the form's discard guard, which
+// asks "discard this submission?" — the wrong question once the row is already
+// in the database. Popping the dialog directly is what the success path always
+// did; only the navigation after it is new.
+
+/// Dismisses a just-submitted quick-action form and lands the citizen on the
+/// list their new row appears in.
+///
+/// [tab] is the My Submissions tab — 0 Reports · 1 Suggestions · 2 Feedback —
+/// and matches [MySubmissionsArgs.initialTab]. Tab 0 is special: a REPORT has
+/// its own dedicated screen (My Reports on mobile, the My Reports branch of the
+/// shell on web) which is richer than the submissions list's Reports tab, so
+/// that is where a report goes.
+///
+/// [username] is only read on mobile, where the legacy routes still take a name
+/// rather than resolving identity from the profile provider.
+void goToSubmissionList(
+  BuildContext context, {
+  required int tab,
+  required String username,
+}) {
+  assert(tab >= 0 && tab <= 2, 'tab must be 0 (Reports), 1 or 2.');
+
+  if (kIsWeb) {
+    // All three resolved BEFORE anything is dismissed — see the note above.
+    final navigator = Navigator.of(context);
+    final router = GoRouter.of(context);
+    // The form's OWN route: the split-panel dialog when hosted as one, and the
+    // shell's page when the form is somewhere with no dialog around it.
+    final route = ModalRoute.of(context);
+    final location = tab == 0
+        ? CitizenTab.myReports.path
+        : shellSubmissionsPath(tab: tab);
+
+    // ── Dismissed BY IDENTITY, not by popping the top ─────────────────────
+    // `Navigator.pop` removes whatever is on top of the navigator, which is
+    // only the split panel while the split panel is certainly on top — the
+    // confusion [AppDialogHandle] exists to prevent, and worth avoiding here
+    // for the same reason even though nothing is currently pushed over a
+    // submitting form.
+    //
+    // `settings is! Page` is the same test [goClearingPageless] uses to tell
+    // go_router's own routes from imperatively-pushed ones: the split panel is
+    // pageless, so this removes it, while a form hosted AS a go_router page has
+    // nothing to dismiss and the `go` below is the whole navigation. Removing a
+    // page-based route by hand would desync go_router from its match list.
+    if (route != null && route.isActive && route.settings is! Page) {
+      if (route.isCurrent) {
+        navigator.pop();
+      } else {
+        navigator.removeRoute(route);
+      }
+    }
+
+    // ── Why this waits a frame ────────────────────────────────────────────
+    // Identical to [goClearingPageless]: the dismissal leaves the navigator
+    // mid-operation with `_debugLocked` still set, and a `go` in the same turn
+    // re-resolves the match list and deactivates that Navigator, which trips
+    // the `!_debugLocked` assert in dispose and aborts the frame — leaving the
+    // citizen on a blank page instead of their submission. The router was
+    // captured above, so the callback holds no BuildContext and does not care
+    // that the form is gone by the time it runs.
+    WidgetsBinding.instance.addPostFrameCallback((_) => router.go(location));
+    WidgetsBinding.instance.scheduleFrame();
+    return;
+  }
+
+  // ── Mobile ───────────────────────────────────────────────────────────────
+  final navigator = Navigator.of(context);
+  final String name;
+  final Object arguments;
+  if (tab == 0) {
+    name = '/my_reports';
+    arguments = username;
+  } else {
+    name = '/my_submissions';
+    arguments = MySubmissionsArgs(username: username, initialTab: tab);
+  }
+
+  // ── REPLACE, not pop-then-push ───────────────────────────────────────────
+  // Both leave the same stack — HomePage with the list on top, so Back returns
+  // to Home exactly as it did before this feature and never to the form that
+  // was just submitted. `pushReplacement` is chosen for the TRANSITION.
+  //
+  // Popping first plays the form route's 300ms reverse fade, and the push then
+  // covers it mid-fade: two route animations racing over one hand-off, which
+  // reads as a flicker of Home between the form and the list. A replacement is
+  // one route change — the old route is removed without its reverse transition
+  // once the new one is in place.
+  //
+  // The result is the convention the rest of the app already uses (see
+  // `_instant` / `_slideUp` in app_router): the route swap is instant, and the
+  // motion the citizen actually sees is the destination's OWN entry animation
+  // — MyReportsScreen's `_entryCtrl` fade+slide, MySubmissionsScreen's
+  // `_slideCtrl`. No double-slide, nothing sliding out from under them.
+  //
+  // `PopScope` is not a concern: the forms guard with `canPop: false` and a
+  // discard prompt, but that only intercepts `maybePop` and the system back
+  // gesture — never an imperative pop or replacement. Which is correct here;
+  // the row is already in the database, so "discard this?" is the wrong
+  // question, and it is why the success path was an imperative pop before too.
+  navigator.pushReplacement<void, void>(_legacyRoute<void>(name, arguments));
 }

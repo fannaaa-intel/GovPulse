@@ -240,7 +240,20 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
     super.dispose();
   }
 
-  /// Live-refresh the list when the admin/staff move any of my reports.
+  /// Live-refresh the list when any of my reports changes.
+  ///
+  /// ── Why `all` and not just `update` ───────────────────────────────────────
+  /// This listened for UPDATE alone, which was enough while the only thing that
+  /// could change the list from elsewhere was admin/staff moving a report's
+  /// status. It stopped being enough once submitting a report SENDS the citizen
+  /// here: on web this pane is a [StatefulShellRoute.indexedStack] branch, so it
+  /// stays mounted for the whole session and `initState`'s fetch does not run
+  /// again on arrival. A citizen who had opened My Reports earlier, then filed a
+  /// report, would land on a list with their new report missing from it — the
+  /// navigation working perfectly and appearing to have done nothing.
+  ///
+  /// INSERT is what closes that, so the row arrives on the socket the moment it
+  /// is written. Matches My Submissions, which already subscribes with `all`.
   void _subscribe() {
     final supabase = Supabase.instance.client;
     final userId = supabase.auth.currentUser?.id;
@@ -248,7 +261,7 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
     _channel = supabase
         .channel('my_reports:$userId')
         .onPostgresChanges(
-          event: PostgresChangeEvent.update,
+          event: PostgresChangeEvent.all,
           schema: 'public',
           table: 'reports',
           filter: PostgresChangeFilter(
