@@ -135,12 +135,11 @@ Future<(_StackObserver, GlobalKey<NavigatorState>)> _submit(
   final observer = _StackObserver();
   final navKey = GlobalKey<NavigatorState>();
 
-  // A phone viewport. The default 800x600 test window is a size no handset has
-  // and the app's web arm never sees either (`kIsWeb` is false here), and My
-  // Reports' toolbar overflows in it — a pre-existing responsive edge that has
-  // nothing to do with where a submission lands. Same thing
-  // my_reports_filter_stability_test does, for the same reason. Tall so nothing
-  // has to scroll to be found.
+  // A phone viewport: this is the MOBILE arm (`kIsWeb` is false in the VM), and
+  // the default 800x600 test window is a size no handset has. Same thing
+  // my_reports_filter_stability_test does. Tall so nothing has to scroll to be
+  // found. Both destinations are held to every supported phone width by
+  // submission_lists_fit_every_phone_test.
   tester.view.physicalSize = const Size(390, 2400);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.resetPhysicalSize);
@@ -173,16 +172,6 @@ Future<(_StackObserver, GlobalKey<NavigatorState>)> _submit(
   await tester.tap(find.text('SUBMIT'));
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 400));
-
-  // ── Pre-existing overflows on the destinations are not this test's business
-  // Both lists have a horizontal overflow of a few pixels in their toolbar /
-  // tab strip at some widths — My Submissions' tab strip by ~6px at 390, My
-  // Reports' toolbar at the default test window. Neither is in the responsive
-  // audit, neither is caused by where a submission lands, and neither should
-  // fail a test about navigation. Claimed here so it cannot mask a real one:
-  // anything that is NOT an overflow is re-thrown.
-  final err = tester.takeException();
-  if (err != null && !'$err'.contains('overflowed')) throw err;
 
   return (observer, navKey);
 }
@@ -334,11 +323,6 @@ void main() {
         await tester.pump(const Duration(milliseconds: 40));
         depths.add(observer.stack.length);
       }
-
-      // See _submit: the destination's own pre-existing tab-strip overflow is
-      // not what this is about.
-      final err = tester.takeException();
-      if (err != null && !'$err'.contains('overflowed')) throw err;
 
       expect(
         depths,
