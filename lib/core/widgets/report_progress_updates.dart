@@ -8,6 +8,7 @@ import '../theme/app_colors.dart';
 import 'app_dialog.dart';
 import 'app_snackbar.dart';
 import 'media_viewer.dart';
+import 'no_scrollbar_behavior.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  Progress updates — the running account under a report's status
@@ -170,6 +171,41 @@ class ReportProgressUpdates extends StatefulWidget {
   /// decide an update that was submitted just before the report closed.
   final bool locked;
 
+  /// Take the height the parent gives, and spend it on the LIST.
+  ///
+  /// ── WHY THIS IS NOT THE SAME "fill" THE WORK LOG HAS ────────────────────
+  /// Both panels outgrow their pane, but they are not the same shape and the
+  /// fix cannot be. A work-log thread is a conversation: one-line composer at
+  /// the bottom, newest message at the end, so filling means "the thread takes
+  /// everything and the composer holds the floor".
+  ///
+  /// This panel is a REVIEW QUEUE with a form on top of it. The composer is a
+  /// multi-line field, a kind picker, a staged-photo strip and two buttons —
+  /// close to 300px before a single update is drawn. Handing the whole column
+  /// a fixed height and letting it divide itself would spend most of that
+  /// height on the form and squeeze the queue into the remainder, which is the
+  /// opposite of what a reviewer opened the tab for.
+  ///
+  /// So the composer keeps its natural height at the top, and only the list
+  /// below it expands and scrolls. The office writing an update sees the same
+  /// form it always did; the admin triaging sees as much of the queue as the
+  /// pane can show, with the newest waiting item already in view.
+  ///
+  /// The parent must give a BOUNDED height when this is set. Left false the
+  /// panel sizes to its content exactly as before, which is what the citizen
+  /// screen and the narrow single-column layouts still want.
+  final bool fill;
+
+  /// Rendered at the END of the update list, inside whatever scrolls it.
+  ///
+  /// For the consoles this carries the completion gallery on a resolved
+  /// report. It is passed in rather than stacked by the caller because of
+  /// [fill]: below a filling panel it would be a fixed block pinned to the
+  /// pane floor, taking height from the queue it sits under and never
+  /// scrolling away. Inside the list it behaves like what it is — the last
+  /// entry in the record.
+  final Widget? footer;
+
   const ReportProgressUpdates({
     super.key,
     required this.reportId,
@@ -180,6 +216,8 @@ class ReportProgressUpdates extends StatefulWidget {
     this.maxVisible,
     this.padding,
     this.locked = false,
+    this.fill = false,
+    this.footer,
   });
 
   @override
@@ -566,87 +604,125 @@ class _ReportProgressUpdatesState extends State<ReportProgressUpdates> {
       return const SizedBox.shrink();
     }
 
-    final content = Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (widget.chrome) ...[
-            Row(
-              children: [
-                const Icon(Icons.timeline_rounded,
-                    size: 18, color: AppColors.primaryBlue),
-                const SizedBox(width: 8),
-                const Expanded(
-                  child: Text(
-                    'Progress updates',
-                    style:
-                        TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700),
+    // ── The head: heading and composer ─────────────────────────────────────
+    //
+    // Split out of the list because when filling, these two keep their natural
+    // height while the list takes what is left. See [ReportProgressUpdates.fill]
+    // for why this panel divides itself the opposite way round from the work
+    // log's thread.
+    final head = <Widget>[
+      if (widget.chrome) ...[
+        Row(
+          children: [
+            const Icon(Icons.timeline_rounded,
+                size: 18, color: AppColors.primaryBlue),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text(
+                'Progress updates',
+                style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700),
+              ),
+            ),
+            if (_updates.isNotEmpty)
+              Text(
+                '${_updates.length}',
+                style: const TextStyle(fontSize: 12, color: Colors.black54),
+              ),
+          ],
+        ),
+        const SizedBox(height: 12),
+      ],
+      if (_canPost) ...[
+        _composer(),
+        const SizedBox(height: 12),
+      ],
+    ];
+
+    // ── The list: everything the head does not own ─────────────────────────
+    //
+    // Built as a flat child list rather than a Column so the filling layout can
+    // hand the same widgets straight to a ListView. Both shapes render exactly
+    // these, in this order; only who scrolls them differs.
+    final list = <Widget>[
+      if (_loading)
+        // Shaped placeholders, not a spinner: the list that lands has a known
+        // shape, so the layout should not jump when it arrives. Same
+        // primitives every other surface in this app loads with.
+        const AdminShimmer(
+          child: Column(
+            children: [
+              _UpdateSkeleton(),
+              SizedBox(height: 10),
+              _UpdateSkeleton(),
+            ],
+          ),
+        )
+      else if (_updates.isEmpty)
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 14),
+          child: Text(
+            'No updates yet.',
+            style: TextStyle(fontSize: 13, color: Colors.black54),
+          ),
+        )
+      else if (_canReview && _pending.isNotEmpty) ...[
+        // -- Why the reviewer's list is split ---------------------------
+        // Approve / Return only render on a PENDING card, so a reviewer
+        // looking at a report whose updates are all decided sees a list of
+        // cards with no controls and no explanation of why -- which is
+        // exactly what the admin console showed. Separating the queue from
+        // the history makes "there is nothing waiting on you" a statement
+        // the page makes, rather than something the reader has to infer.
+        _sectionLabel(
+          'Waiting for your decision',
+          count: _pending.length,
+          color: const Color(0xFFB45309),
+        ),
+        const SizedBox(height: 8),
+        for (final u in _pending) _updateTile(u),
+        if (_decided.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          _sectionLabel('Earlier updates', count: _decided.length),
+          const SizedBox(height: 8),
+          for (final u in _decided) _updateTile(u),
+        ],
+      ] else ...[
+        if (_canReview) ...[
+          _allClearBanner(),
+          const SizedBox(height: 12),
+        ],
+        for (final u in _visible) _updateTile(u),
+        if (_hiddenCount > 0) _viewAllButton(),
+      ],
+      if (widget.footer != null) ...[
+        const SizedBox(height: 20),
+        widget.footer!,
+      ],
+    ];
+
+    final content = widget.fill
+        ? Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ...head,
+              Expanded(
+                // The bar is hidden, the scrolling is not — a track down the
+                // inside edge of a pane reads as a seam in the card rather
+                // than as a control. Matches the work log's thread.
+                child: ScrollConfiguration(
+                  behavior: const NoScrollbarBehavior(),
+                  child: ListView(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    children: list,
                   ),
                 ),
-                if (_updates.isNotEmpty)
-                  Text(
-                    '${_updates.length}',
-                    style: const TextStyle(fontSize: 12, color: Colors.black54),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 12),
-          ],
-          if (_canPost) ...[
-            _composer(),
-            const SizedBox(height: 12),
-          ],
-          if (_loading)
-            // Shaped placeholders, not a spinner: the list that lands has a
-            // known shape, so the layout should not jump when it arrives. Same
-            // primitives every other surface in this app loads with.
-            const AdminShimmer(
-              child: Column(
-                children: [
-                  _UpdateSkeleton(),
-                  SizedBox(height: 10),
-                  _UpdateSkeleton(),
-                ],
               ),
-            )
-          else if (_updates.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 14),
-              child: Text(
-                'No updates yet.',
-                style: TextStyle(fontSize: 13, color: Colors.black54),
-              ),
-            )
-          else if (_canReview && _pending.isNotEmpty) ...[
-            // -- Why the reviewer's list is split ---------------------------
-            // Approve / Return only render on a PENDING card, so a reviewer
-            // looking at a report whose updates are all decided sees a list of
-            // cards with no controls and no explanation of why -- which is
-            // exactly what the admin console showed. Separating the queue from
-            // the history makes "there is nothing waiting on you" a statement
-            // the page makes, rather than something the reader has to infer.
-            _sectionLabel(
-              'Waiting for your decision',
-              count: _pending.length,
-              color: const Color(0xFFB45309),
-            ),
-            const SizedBox(height: 8),
-            for (final u in _pending) _updateTile(u),
-            if (_decided.isNotEmpty) ...[
-              const SizedBox(height: 6),
-              _sectionLabel('Earlier updates', count: _decided.length),
-              const SizedBox(height: 8),
-              for (final u in _decided) _updateTile(u),
             ],
-          ] else ...[
-            if (_canReview) ...[
-              _allClearBanner(),
-              const SizedBox(height: 12),
-            ],
-            for (final u in _visible) _updateTile(u),
-            if (_hiddenCount > 0) _viewAllButton(),
-          ],
-        ],
-      );
+          )
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [...head, ...list],
+          );
 
     // The heading sits OUTSIDE the padded content on purpose: the citizen
     // screen runs a divider across the full card width and then insets the
@@ -1265,11 +1341,14 @@ class _AllUpdatesSheet extends StatelessWidget {
                 // white below them. The comment here used to claim the sizing
                 // the code did not do.
                 Flexible(
-                  child: ListView.builder(
-                    shrinkWrap: true,
-                    padding: const EdgeInsets.fromLTRB(14, 12, 14, 18),
-                    itemCount: updates.length,
-                    itemBuilder: (_, i) => tile(updates[i]),
+                  child: ScrollConfiguration(
+                    behavior: const NoScrollbarBehavior(),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      padding: const EdgeInsets.fromLTRB(14, 12, 14, 18),
+                      itemCount: updates.length,
+                      itemBuilder: (_, i) => tile(updates[i]),
+                    ),
                   ),
                 ),
               ],

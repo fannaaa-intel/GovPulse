@@ -1441,6 +1441,12 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
 
   int _trackerTab = _kTabTimeline;
 
+  /// Whether the showing tab divides a fixed height itself. See the admin
+  /// console's twin — one getter, because a layout branch that disagreed with
+  /// the others would hand a filling pane infinity and throw.
+  bool get _tabFills =>
+      _trackerTab == _kTabNotes || _trackerTab == _kTabUpdates;
+
   /// Which PANE is showing, when the layout is too narrow to seat both side by
   /// side: 0 = Report Details, 1 = Update Report Status.
   int _paneTab = 0;
@@ -1617,22 +1623,21 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
     );
     final copy = _stageCopy();
 
+    final fills = _tabFills;
     final notes = _trackerTab == _kTabNotes;
 
     return DetailPane(
       title: 'Update Report Status',
-      fill: notes,
+      fill: fills,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: notes ? MainAxisSize.max : MainAxisSize.min,
+        mainAxisSize: fills ? MainAxisSize.max : MainAxisSize.min,
         children: [
-          // The stepper, the stage card and the status control describe where
-          // the report IS. The notes tab is a conversation, not a reading of
-          // the lifecycle, and on this console those three cost ~405px of a
-          // 900px dialog — enough that internal notes never appeared at all.
-          // They are one tab away, and the status control is still the
-          // office's one write wherever it is actually being used.
-          if (!notes) ...[
+          // The stepper and stage card describe where the report IS — read
+          // against Timeline, dead weight above a working tab. On this console
+          // they and the status control cost ~405px of a 900px dialog, enough
+          // that internal notes never appeared at all.
+          if (!fills) ...[
             const SizedBox(height: 4),
             ReportStepperRail(stages: stages),
             const SizedBox(height: 20),
@@ -1644,6 +1649,16 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
               facts: _routingFacts(),
             ),
             const SizedBox(height: 18),
+          ],
+          // ── The status control is NOT dropped on Updates ──────────────────
+          // It goes on the notes tab, where the conversation is private and
+          // moving the lifecycle is a separate act. On Updates it stays: this
+          // is the office's one write, and posting "the work is done" and
+          // moving the report to Resolved are the same moment of work. Making
+          // an officer change tabs between them would invite exactly the
+          // half-finished state where the citizen sees a completion note on a
+          // report still marked In progress.
+          if (!notes) ...[
             _StatusControl(
               flow: _flow,
               current: _status,
@@ -1672,7 +1687,7 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
             const SizedBox(height: 14),
             ReportTimelineProgress(stages: stages),
           ] else if (_trackerTab == _kTabUpdates)
-            _updatesTab()
+            Expanded(child: _updatesTab())
           else
             Expanded(child: _notesTab()),
         ],
@@ -1688,6 +1703,10 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
   /// fixed: the whole danger on this screen is an officer mistaking one box
   /// for the other. A tab boundary is a stronger separation than a caption.
   Widget _updatesTab() {
+    // Rides inside the scrolling list, not pinned under it — see the admin
+    // console's twin and ReportProgressUpdates.footer.
+    final resolved = _status == ReportStatus.resolved;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1696,16 +1715,21 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
         // finished weeks earlier — an invitation to file progress against a
         // closed report, which is either a mistake about to happen or a note
         // nobody will read. The history stays; only the composer goes.
-        ReportProgressUpdates(
-          reportId: widget.report.id,
-          mode: ReportUpdatesMode.author,
-          authorName: widget.department ?? 'Staff',
-          locked: _isClosed,
+        Expanded(
+          child: ReportProgressUpdates(
+            reportId: widget.report.id,
+            mode: ReportUpdatesMode.author,
+            authorName: widget.department ?? 'Staff',
+            locked: _isClosed,
+            fill: true,
+            footer: resolved
+                ? ResolutionMediaSection(
+                    reportId: widget.report.id,
+                    canEdit: true,
+                  )
+                : null,
+          ),
         ),
-        if (_status == ReportStatus.resolved) ...[
-          const SizedBox(height: 20),
-          ResolutionMediaSection(reportId: widget.report.id, canEdit: true),
-        ],
       ],
     );
   }
@@ -1891,7 +1915,7 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
     // The status pane showing notes therefore gets the height directly and
     // divides it itself; everything else keeps the scroll it has always had.
     Widget activePane() {
-      final fills = _paneTab == 1 && _trackerTab == _kTabNotes;
+      final fills = _paneTab == 1 && _tabFills;
       if (fills) {
         return Padding(
           padding: const EdgeInsets.all(14),
@@ -1958,7 +1982,7 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
             if (c.maxWidth < kReportDetailTwoPaneFrom) {
               // See the admin console's twin: `min` + `Flexible` leaves the
               // child unbounded, which a filling pane cannot size against.
-              final fills = _paneTab == 1 && _trackerTab == _kTabNotes;
+              final fills = _paneTab == 1 && _tabFills;
               return Column(
                 mainAxisSize: fills ? MainAxisSize.max : MainAxisSize.min,
                 children: [
@@ -1986,7 +2010,7 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
                   child: AdminTwoPaneRow(
                     main: _statusPane(),
                     side: _detailsPane(),
-                    mainFills: _trackerTab == _kTabNotes,
+                    mainFills: _tabFills,
                   ),
                 ),
                 // Pinned rather than scrolled with the pane — the way out stays

@@ -1734,6 +1734,20 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
 
   int _trackerTab = _kTabTimeline;
 
+  /// Whether the showing tab divides a fixed height itself rather than
+  /// stacking into a scroll.
+  ///
+  /// Both working tabs do, for the same reason and by opposite means: the
+  /// notes thread takes everything and pins its composer to the floor, while
+  /// Updates keeps its form at the top and gives the rest to the review queue.
+  /// Timeline is read top to bottom and still stacks.
+  ///
+  /// One getter rather than the condition repeated at each of the four layout
+  /// branches — a filling pane needs a BOUNDED height, and a branch that
+  /// disagreed with the others would hand it infinity and throw.
+  bool get _tabFills =>
+      _trackerTab == _kTabNotes || _trackerTab == _kTabUpdates;
+
   /// Which PANE is showing, when the layout is too narrow to seat both side by
   /// side: 0 = Report Details, 1 = Update Report Status. Stacking the two into
   /// one column made a phone scroll through both; the tabs keep each to about a
@@ -2223,16 +2237,16 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
       acceptedByName: r.assignedByName,
     );
     final copy = _stageCopy();
-    final notes = _trackerTab == _kTabNotes;
+    final fills = _tabFills;
 
     return DetailPane(
       title: 'Update Report Status',
-      fill: notes,
+      fill: fills,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: notes ? MainAxisSize.max : MainAxisSize.min,
+        mainAxisSize: fills ? MainAxisSize.max : MainAxisSize.min,
         children: [
-          if (!notes) ...[
+          if (!fills) ...[
             const SizedBox(height: 4),
             ReportStepperRail(stages: stages),
             const SizedBox(height: 20),
@@ -2262,10 +2276,12 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
             ),
             const SizedBox(height: 14),
             ReportTimelineProgress(stages: stages),
-          ] else if (_trackerTab == _kTabUpdates)
-            _updatesTab()
+          ]
+          // Both working tabs divide the pane's height themselves — see
+          // DetailPane.fill and ReportProgressUpdates.fill.
+          else if (_trackerTab == _kTabUpdates)
+            Expanded(child: _updatesTab())
           else
-            // The one tab that fills rather than stacks — see DetailPane.fill.
             Expanded(child: _notesTab()),
         ],
       ),
@@ -2286,6 +2302,12 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
             'department, their progress notes and completion photos appear here.',
       );
     }
+    // The completion gallery is part of the record, not part of the queue, so
+    // it rides INSIDE the scrolling list rather than pinning below it — a
+    // resolved report would otherwise give a fixed block of photos the bottom
+    // of the pane and leave the updates a sliver above them.
+    final resolved = _status == ReportStatus.resolved;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2299,16 +2321,18 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
         // update submitted moments before closure still needs deciding, and
         // stranding it undecided would leave the office waiting forever. See
         // ReportProgressUpdates.locked.
-        ReportProgressUpdates(
-          reportId: r.id,
-          mode: ReportUpdatesMode.reviewer,
-          authorName: 'LGU Admin',
-          locked: _isClosed,
+        Expanded(
+          child: ReportProgressUpdates(
+            reportId: r.id,
+            mode: ReportUpdatesMode.reviewer,
+            authorName: 'LGU Admin',
+            locked: _isClosed,
+            fill: true,
+            footer: resolved
+                ? ResolutionMediaSection(reportId: r.id, canEdit: true)
+                : null,
+          ),
         ),
-        if (_status == ReportStatus.resolved) ...[
-          const SizedBox(height: 20),
-          ResolutionMediaSection(reportId: r.id, canEdit: true),
-        ],
       ],
     );
   }
@@ -2830,7 +2854,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
     // height directly and divides it itself. Everything else keeps the scroll
     // it has always had. See AdminTwoPaneRow.mainFills for the desktop twin.
     Widget activePane() {
-      final fills = _paneTab == 1 && _trackerTab == _kTabNotes;
+      final fills = _paneTab == 1 && _tabFills;
       if (fills) {
         return Padding(
           padding: const EdgeInsets.all(14),
@@ -2901,7 +2925,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
               // every other tab — it lets a short pane leave the dialog short
               // rather than stretching it to a fixed 900 — but it leaves the
               // child unbounded, which the notes tab cannot size against.
-              final fills = _paneTab == 1 && _trackerTab == _kTabNotes;
+              final fills = _paneTab == 1 && _tabFills;
               return Column(
                 mainAxisSize: fills ? MainAxisSize.max : MainAxisSize.min,
                 children: [
@@ -2932,7 +2956,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
                     // Only the notes tab divides a fixed height itself; every
                     // other tab is a column that may outgrow the row and needs
                     // the scroll view.
-                    mainFills: _trackerTab == _kTabNotes,
+                    mainFills: _tabFills,
                   ),
                 ),
                 // Floats over the details pane's title row (left-aligned, so
