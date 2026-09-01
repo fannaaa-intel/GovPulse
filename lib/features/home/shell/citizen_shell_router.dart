@@ -880,12 +880,30 @@ final GoRouter citizenRouter = GoRouter(
                   // These are what the left rail's ACCOUNT section opens. They
                   // used to be dialogs; see [CitizenAccountPage] for why they
                   // are not any more.
+                  //
+                  // ── pageBuilder, not builder: no transition ───────────────
+                  // These share the Settings branch's navigator, so moving
+                  // between /settings and an account page is a route change on
+                  // that navigator — and the default page animates. Because the
+                  // branch is torn down when you leave it and rebuilt from its
+                  // saved location when you return, coming back to Settings
+                  // from another tab rebuilt the branch at the account page and
+                  // then played a ~460ms cross-fade down to /settings, painting
+                  // BOTH pages on top of each other the whole way. That fade is
+                  // the flash; the destination was already correct.
+                  //
+                  // An instant cut is also simply right here. The shell keeps
+                  // its nav, rail and sidebar fixed and swaps only the centre
+                  // column — nothing else in it slides or fades, and a phone's
+                  // push animation was never the idiom for a pane.
                   if (tab == CitizenTab.settings)
                     for (final page in CitizenAccountPage.values)
                       GoRoute(
                         path: page.segment,
-                        builder: (context, state) =>
-                            _accountBodyFor(page, state),
+                        pageBuilder: (context, state) => NoTransitionPage(
+                          key: state.pageKey,
+                          child: _accountBodyFor(page, state),
+                        ),
                       ),
                 ],
               ),
