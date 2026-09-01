@@ -144,25 +144,43 @@ class _HomeTopNavState extends State<HomeTopNav> {
       child: Row(
         children: [
           const _BrandLogo(),
+          // ── The links scroll rather than overflow ────────────────────────
+          // This was a `Center` around a `MainAxisSize.min` Row, which cannot
+          // shrink: the links took their natural width and anything left over
+          // ran off the bar. At a 1024 viewport that is 9px at the default text
+          // size and 220px at Android's largest — the nav links pushed out
+          // under the profile chip, unreachable.
+          //
+          // A scroll view is the right answer rather than ellipsizing a link:
+          // a nav label reading 'My Repo…' is a worse control than one the
+          // citizen can reach by dragging. It still CENTRES whenever the links
+          // fit, which is every ordinary desktop width, so nothing moves in the
+          // common case.
           Expanded(
-            child: Center(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  for (final item in (widget.items ?? HomeTopNav.defaultItems))
-                    _NavLink(
-                      label: item.label,
-                      isActive: _isHighlighted(item.index),
-                      onEnter: () {
-                        setState(() => _hoveredIndex = item.index);
-                        _onNavZoneEntered();
-                      },
-                      onExit: () => setState(() {
-                        if (_hoveredIndex == item.index) _hoveredIndex = null;
-                      }),
-                      onTap: () => widget.onTap(item.index),
-                    ),
-                ],
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              // Centres while there is room, scrolls once there is not.
+              physics: const ClampingScrollPhysics(),
+              child: Center(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (final item
+                        in (widget.items ?? HomeTopNav.defaultItems))
+                      _NavLink(
+                        label: item.label,
+                        isActive: _isHighlighted(item.index),
+                        onEnter: () {
+                          setState(() => _hoveredIndex = item.index);
+                          _onNavZoneEntered();
+                        },
+                        onExit: () => setState(() {
+                          if (_hoveredIndex == item.index) _hoveredIndex = null;
+                        }),
+                        onTap: () => widget.onTap(item.index),
+                      ),
+                  ],
+                ),
               ),
             ),
           ),

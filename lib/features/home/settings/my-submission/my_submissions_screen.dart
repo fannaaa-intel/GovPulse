@@ -1054,13 +1054,21 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
             ),
           ),
           SizedBox(width: w * 0.035),
-          Text(
-            'My Submissions',
-            style: TextStyle(
-              fontSize: w * 0.052,
-              fontWeight: FontWeight.w700,
-              color: kScreenTitleColor,
-              letterSpacing: -0.3,
+          // Flexed: the chevron beside it is a fixed w*0.09 box, so at a large
+          // accessibility text scale the title had nowhere to go and ran off
+          // the edge. A page title is the one string that must stay readable,
+          // so it takes every pixel that is left and only ellipsizes past that.
+          Expanded(
+            child: Text(
+              'My Submissions',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: w * 0.052,
+                fontWeight: FontWeight.w700,
+                color: kScreenTitleColor,
+                letterSpacing: -0.3,
+              ),
             ),
           ),
         ],
@@ -1992,12 +2000,19 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
             children: [
               _ResponderAvatar(photoUrl: responderPhotoUrl, size: w * 0.052),
               SizedBox(width: w * 0.02),
-              Text(
-                'LGU Response',
-                style: TextStyle(
-                  fontSize: w * 0.028,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.primaryBlue,
+              // The avatar is a fixed box and whatever follows this label is
+              // laid out beside it, so the label is what has to give at a large
+              // text scale rather than pushing the row past its card.
+              Flexible(
+                child: Text(
+                  'LGU Response',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: w * 0.028,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.primaryBlue,
+                  ),
                 ),
               ),
               if (reviewedAt != null) ...[

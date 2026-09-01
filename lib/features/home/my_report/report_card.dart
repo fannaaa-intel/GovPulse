@@ -301,13 +301,25 @@ class ReportCard extends StatelessWidget {
                         ),
                       ),
                       SizedBox(height: w * .007),
+                      // ── The id yields, the Anonymous pill does not ──────
+                      // Both were rigid, so on a small phone at a large text
+                      // scale — and in the web grid's narrower cell — the pill
+                      // was pushed past the edge. The pill is a whole word in a
+                      // bordered chip: clipped it reads as a broken control,
+                      // and it is the part that carries meaning about who filed
+                      // the report. The reference id degrades far more
+                      // gracefully, so that is what ellipsizes.
                       Row(
                         children: [
-                          Text(
-                            'RPT-${report.id}',
-                            style: ReportUi.label(
-                              ww,
-                              color: ReportUi.textTertiary,
+                          Flexible(
+                            child: Text(
+                              'RPT-${report.id}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: ReportUi.label(
+                                ww,
+                                color: ReportUi.textTertiary,
+                              ),
                             ),
                           ),
                           if (report.isAnonymous) ...[
