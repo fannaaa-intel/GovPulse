@@ -1003,19 +1003,38 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
                   child: Container(
                     color: Colors.transparent,
                     padding: EdgeInsets.symmetric(vertical: w * 0.03),
+                    // ── Why the label flexes ──────────────────────────────
+                    // Each tab is an `Expanded`, so it gets exactly a third of
+                    // the width whatever is in it. Inside sat an unyielding Row
+                    // — label, count badge, and on Suggestions and Feedback an
+                    // unseen-reply dot — which overflowed that third by ~6px at
+                    // EVERY supported width, not just narrow ones: the type and
+                    // the padding are both fractions of `w`, so the ratio does
+                    // not improve on a bigger phone.
+                    //
+                    // The badge and the dot are the parts that must stay whole:
+                    // a clipped count is a wrong number, and a half-drawn dot is
+                    // just a smudge. So the label takes what is left and
+                    // ellipsizes. `Flexible`, not `Expanded` — a short label
+                    // like 'Reports' should stay centred with its badge beside
+                    // it rather than being stretched away from it.
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Text(
-                          tabs[i].$1,
-                          style: TextStyle(
-                            fontSize: w * 0.031,
-                            fontWeight: isActive
-                                ? FontWeight.w700
-                                : FontWeight.w500,
-                            color: isActive
-                                ? AppColors.primaryBlue
-                                : const Color(0xFF6B7280),
+                        Flexible(
+                          child: Text(
+                            tabs[i].$1,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: w * 0.031,
+                              fontWeight: isActive
+                                  ? FontWeight.w700
+                                  : FontWeight.w500,
+                              color: isActive
+                                  ? AppColors.primaryBlue
+                                  : const Color(0xFF6B7280),
+                            ),
                           ),
                         ),
                         if (!_loading) ...[

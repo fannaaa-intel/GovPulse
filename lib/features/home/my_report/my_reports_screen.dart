@@ -577,10 +577,20 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Same shape as the mobile card's header, and flexed for the same
+        // reason — a `Spacer` still lets both Texts claim their natural width,
+        // so a narrow pane overflows exactly as the card did.
         Row(
           children: [
-            Text('Report History', style: _T.title(ww, color: _T.textPrimary)),
-            const Spacer(),
+            Expanded(
+              child: Text(
+                'Report History',
+                style: _T.title(ww, color: _T.textPrimary),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 8),
             Text(
               '$count ${count == 1 ? 'report' : 'reports'}',
               style: _T.caption(ww, color: _T.textSecondary),
@@ -1013,13 +1023,29 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
           children: [
             Padding(
               padding: EdgeInsets.fromLTRB(w * .04, w * .04, w * .04, 0),
+              // ── Why the title flexes and the count does not ──────────────
+              // Both were bare Text in a `spaceBetween` Row, which gives each
+              // its natural width and overflows once they do not both fit. On
+              // mobile they never did: `ww` is `w * 1.18` (see the call site),
+              // so the type is sized as though the screen were 18% wider, while
+              // the Row is only `w * .84` after the card's gutter and padding.
+              //
+              // The count is the part that must stay whole — it is a number and
+              // a word, and an ellipsis in it would be unreadable — so the
+              // title takes what is left and ellipsizes. In practice it never
+              // has to: 'Report History' fits at every supported width once it
+              // is allowed to stop reserving space it does not need.
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    'Report History',
-                    style: _T.title(ww, color: _T.textPrimary),
+                  Expanded(
+                    child: Text(
+                      'Report History',
+                      style: _T.title(ww, color: _T.textPrimary),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
+                  SizedBox(width: w * .02),
                   Text(
                     '${reports.length} ${reports.length == 1 ? 'report' : 'reports'}',
                     style: _T.caption(ww, color: _T.textSecondary),
