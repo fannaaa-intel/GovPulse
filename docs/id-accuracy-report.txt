@@ -1,0 +1,45 @@
+
+════════════════════════════════════════════════════════════════════════════════════════════════
+  GovPulse — ID VERIFICATION ACCURACY (synthetic corpus)
+════════════════════════════════════════════════════════════════════════════════════════════════
+  Measured on OCR-level fixtures: character recognition is ASSUMED correct except where
+  a case injects misreads. These are UPPER BOUNDS for field extraction on real photos.
+
+  BY ID TYPE
+────────────────────────────────────────────────────────────────────────────────────────────────
+  GROUP                    CASES  DECIDE  F-ACC  F-REJ   FIELDS  AUTOFILL  BAD-FILL  (OLD f-acc)
+────────────────────────────────────────────────────────────────────────────────────────────────
+  Driver's License ID          8  100.0%      0      0   100.0%    100.0%         0       2
+  PRC ID                       1  100.0%      0      0   100.0%    100.0%         0       0
+  PhilHealth ID                2  100.0%      0      0   100.0%    100.0%         0       0
+  PhilSys ID                  15  100.0%      0      0   100.0%    100.0%         0       3
+  Philippine Passport ID       2  100.0%      0      0   100.0%    100.0%         0       1
+  Postal ID                    1  100.0%      0      0   100.0%    100.0%         0       0
+  SSS ID                       1  100.0%      0      0   100.0%    100.0%         0       0
+  TIN ID                       2  100.0%      0      0   100.0%    100.0%         0       1
+  UMID ID                      2  100.0%      0      0   100.0%    100.0%         0       0
+
+  BY SITUATION
+────────────────────────────────────────────────────────────────────────────────────────────────
+  GROUP                    CASES  DECIDE  F-ACC  F-REJ   FIELDS  AUTOFILL  BAD-FILL  (OLD f-acc)
+────────────────────────────────────────────────────────────────────────────────────────────────
+  blank                        6  100.0%      0      0      n/a       n/a         0       4
+  clean                       11  100.0%      0      0   100.0%    100.0%         0       0
+  expired                      3  100.0%      0      0   100.0%    100.0%         0       3
+  ocr_noise                    7  100.0%      0      0   100.0%    100.0%         0       0
+  partial                      3  100.0%      0      0   100.0%    100.0%         0       0
+  unreadable                   2  100.0%      0      0      n/a       n/a         0       0
+  wrong_type                   2  100.0%      0      0      n/a       n/a         0       0
+
+────────────────────────────────────────────────────────────────────────────────────────────────
+  OVERALL
+────────────────────────────────────────────────────────────────────────────────────────────────
+  Cases                : 34
+  Decision accuracy    : 100.0%
+  False accepts        : 0  (old rule: 7)
+  False rejects        : 0
+  Field accuracy       : 100.0% (59/59)
+  Auto-fill precision  : 100.0% (59/59)
+  WRONG auto-fills     : 0   <- the number that must stay 0
+  Withheld (blank)     : 0   <- cost of caution; user types these
+

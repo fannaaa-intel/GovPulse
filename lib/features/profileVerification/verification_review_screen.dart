@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import '../../core/widgets/Home/Account/account_web_kit.dart';
+import '../../core/services/id_check_service.dart';
 import '../../core/widgets/app_dialog.dart' show kWebDialogMaxWidth;
 import 'package:flutter/services.dart';
 import '../../core/router/legacy_nav.dart';
@@ -13,6 +14,10 @@ class VerificationReviewScreen extends StatefulWidget {
   final String selectedId;
   final Uint8List? frontImage;
   final Uint8List? backImage;
+
+  /// Carried, not read: the automated ID check travels with the wizard so the
+  /// SUBMIT step can store it. This screen has no use for it.
+  final IdSubmissionCheck? idCheck;
   final Map<String, String>? extractedData;
 
   const VerificationReviewScreen({
@@ -21,6 +26,7 @@ class VerificationReviewScreen extends StatefulWidget {
     required this.selectedId,
     this.frontImage,
     this.backImage,
+    this.idCheck,
     this.extractedData,
   });
 
@@ -405,6 +411,7 @@ class _VerificationReviewScreenState extends State<VerificationReviewScreen>
                             'street': _streetController.text.trim(),
                             'frontImage': widget.frontImage,
                             'backImage': widget.backImage,
+          'idCheck': widget.idCheck?.toRouteArg(),
                           },
                         );
                       }

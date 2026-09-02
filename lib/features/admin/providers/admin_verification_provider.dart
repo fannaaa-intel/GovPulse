@@ -71,6 +71,28 @@ class AdminVerification {
   final DateTime? reviewedAt;
   final DateTime? createdAt;
 
+  // ── Automated ID check ────────────────────────────────────────────────────
+  //
+  // All four fields are NULL for submissions that were never checked — rows
+  // predating migration 20260902000000, and any submission taken while the
+  // checker was unavailable. That is rendered as "not checked", never as a
+  // verdict: telling a reviewer a submission passed when nothing examined it
+  // is worse than telling them nothing.
+
+  /// 0-100 for the WORST-scoring side of the two ID captures.
+  final int? checkScore;
+
+  /// `auto_accept` | `review` | `reject`.
+  final String? checkVerdict;
+
+  /// `{code, detail, delta}` entries explaining the score, written for a
+  /// reviewer to act on directly.
+  final List<Map<String, dynamic>> checkReasons;
+
+  /// Upload-only signals (`no_camera_metadata`, `png_likely_screenshot`).
+  /// Always empty for a live camera capture.
+  final List<String> checkSourceFlags;
+
   const AdminVerification({
     required this.id,
     required this.userId,
@@ -95,7 +117,33 @@ class AdminVerification {
     this.reviewerNotes,
     this.reviewedAt,
     this.createdAt,
+    this.checkScore,
+    this.checkVerdict,
+    this.checkReasons = const [],
+    this.checkSourceFlags = const [],
   });
+
+  /// True when an automated check actually ran on this submission.
+  bool get hasCheck => checkVerdict != null;
+
+  /// The reasons worth a reviewer's attention: anything that LOWERED the score
+  /// or flagged a mismatch. A reviewer does not need to read that the keywords
+  /// matched — they need the four lines explaining why this one was held back.
+  List<Map<String, dynamic>> get concerningReasons => [
+    for (final r in checkReasons)
+      if (((r['delta'] as num?)?.toInt() ?? 0) < 0 ||
+          const {
+            'type_mismatch',
+            'expired',
+            'uncorroborated',
+            'id_number_absent',
+            'keywords_missing',
+            'no_text',
+            'dob_implausible',
+            'verifier_unavailable',
+          }.contains(r['code']))
+        r,
+  ];
 
   String get fullName {
     final middle = (middleName != null && middleName!.isNotEmpty)
@@ -232,7 +280,11 @@ class AdminVerificationNotifier extends AsyncNotifier<List<AdminVerification>> {
           'id, user_id, selected_id_type, id_number, first_name, middle_name, '
           'last_name, suffix, gender, birthdate, birthplace, civil_status, '
           'contact_number, barangay, street, id_front_path, id_back_path, '
-          'face_photo_path, status, reviewer_notes, reviewed_at, created_at',
+          'face_photo_path, status, reviewer_notes, reviewed_at, created_at, '
+          // The projection is explicit, so a new column that is not named here
+          // arrives as null and the automated check silently disappears from
+          // the console — indistinguishable from "never checked".
+          'check_score, check_verdict, check_reasons, check_source_flags',
         );
 
     // Status is filtered client-side (the page fetches the full queue so it can
@@ -321,7 +373,25 @@ class AdminVerificationNotifier extends AsyncNotifier<List<AdminVerification>> {
       reviewerNotes: r['reviewer_notes'] as String?,
       reviewedAt: _parseTs(r['reviewed_at']),
       createdAt: _parseTs(r['created_at']),
+      checkScore: (r['check_score'] as num?)?.toInt(),
+      checkVerdict: r['check_verdict'] as String?,
+      checkReasons: _parseReasons(r['check_reasons']),
+      checkSourceFlags: _parseFlags(r['check_source_flags']),
     );
+  }
+
+  /// `check_reasons` is JSONB, which PostgREST hands back already decoded.
+  static List<Map<String, dynamic>> _parseReasons(dynamic v) {
+    if (v is! List) return const [];
+    return [
+      for (final e in v)
+        if (e is Map) Map<String, dynamic>.from(e),
+    ];
+  }
+
+  static List<String> _parseFlags(dynamic v) {
+    if (v is! List) return const [];
+    return [for (final e in v) e.toString()];
   }
 
   static DateTime? _parseTs(dynamic v) {

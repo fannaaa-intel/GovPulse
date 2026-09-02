@@ -431,7 +431,17 @@ class IdVerificationService {
 
       print('[ID-VERIFY] Extracted fields: $extractedData');
 
-      if (!isValid && matched.isNotEmpty) {
+      // A card whose branding did not survive the capture, but which still
+      // yielded a name AND a date of birth, is almost certainly a real ID that
+      // was photographed badly — glare across the header is the single most
+      // common way a genuine card loses its keywords.
+      //
+      // This block used to read `if (!isValid && matched.isNotEmpty)`, which
+      // is unreachable: `isValid` IS `matched.isNotEmpty` two lines above, so
+      // the condition simplifies to `matched.isEmpty && matched.isNotEmpty`.
+      // The fallback it implements had therefore never run once. The intended
+      // condition is the one below.
+      if (!isValid) {
         final hasName =
             (extractedData['firstName']?.isNotEmpty ?? false) ||
             (extractedData['lastName']?.isNotEmpty ?? false);

@@ -1,9 +1,10 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, Uint8List;
 import 'package:flutter/material.dart';
 import 'package:dotted_border/dotted_border.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../../core/router/legacy_nav.dart';
+import '../../core/services/id_check_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/citizen_ui.dart';
 import '../../core/widgets/Home/Account/account_web_kit.dart';
@@ -72,6 +73,15 @@ class _VerificationUploadIdScreenState extends State<VerificationUploadIdScreen>
   late final Animation<Offset> _slideAnim;
   late final Animation<double> _fadeAnim;
 
+  /// True while `verify-id` is checking a picked image.
+  ///
+  /// A round trip with a multi-megabyte image is slow enough that without this
+  /// the screen looks frozen after the file dialog closes. It is also the
+  /// re-entrancy guard: this flag is read by [_pickIdImagesForWeb] itself, not
+  /// only by the widget tree, so a second tap cannot start a parallel pick
+  /// while the first is still in flight.
+  bool _checking = false;
+
   @override
   void initState() {
     super.initState();
@@ -113,18 +123,28 @@ class _VerificationUploadIdScreenState extends State<VerificationUploadIdScreen>
   /// screen produces — front and back as [Uint8List] plus an `extractedData`
   /// map — so every later step of the wizard is untouched.
   ///
-  /// The one unavoidable difference: `extractedData` is EMPTY, because OCR
-  /// cannot run here. That is already a supported state — the review screen
-  /// reads `widget.extractedData ?? {}` and simply leaves the fields blank for
-  /// the user to type, which is also what happens on mobile whenever a scan
-  /// reads nothing confidently.
+  /// `extractedData` is no longer empty. It used to be — ML Kit needs
+  /// `dart:io`, so OCR could not run on this path and every uploaded ID was
+  /// accepted with no checks and no auto-fill. [IdCheckService] calls the
+  /// `verify-id` Edge Function instead, which runs the same rules the mobile
+  /// camera path uses, server-side, for both images.
+  ///
+  /// A refusal here is advisory, not fatal: if the checker cannot be reached
+  /// it returns `review` and the upload proceeds to a human exactly as before.
   Future<void> _pickIdImagesForWeb() async {
+    if (_checking) return;
     final picker = ImagePicker();
 
     try {
       final front = await picker.pickImage(source: ImageSource.gallery);
       if (front == null) return;
       final frontBytes = await front.readAsBytes();
+      if (!mounted) return;
+
+      // Checked BEFORE asking for the back, so a user who picked the wrong
+      // file is told immediately rather than after choosing two images.
+      final frontCheck = await _checkOrExplain(frontBytes, isFront: true);
+      if (frontCheck == null) return;
       if (!mounted) return;
 
       // The OS file dialog cannot say which side it wants, so the prompt has to
@@ -144,6 +164,17 @@ class _VerificationUploadIdScreenState extends State<VerificationUploadIdScreen>
       final backBytes = await back.readAsBytes();
       if (!mounted) return;
 
+      final backCheck = await _checkOrExplain(backBytes, isFront: false);
+      if (backCheck == null) return;
+      if (!mounted) return;
+
+      // Front wins on conflict: it carries the name and number the review form
+      // is built around, and the back mostly repeats them.
+      final merged = <String, String>{
+        ...backCheck.fields,
+        ...frontCheck.fields,
+      };
+
       pushLegacy(
         context,
         '/verification_review',
@@ -152,7 +183,13 @@ class _VerificationUploadIdScreenState extends State<VerificationUploadIdScreen>
           'selectedId': widget.selectedId,
           'frontImage': frontBytes,
           'backImage': backBytes,
-          'extractedData': const <String, String>{},
+          'extractedData': merged,
+          // Rides the wizard to the submit step, where it is stored for the
+          // reviewer. The WORST of the two sides wins — see [combine].
+          'idCheck': IdSubmissionCheck.combine(
+            frontCheck,
+            backCheck,
+          )?.toRouteArg(),
         },
       );
     } catch (e) {
@@ -162,6 +199,44 @@ class _VerificationUploadIdScreenState extends State<VerificationUploadIdScreen>
         "Couldn't read that image. Please try another file.",
         type: AppSnackType.error,
       );
+    }
+  }
+
+  /// Verifies one picked image, or explains why it cannot be used.
+  ///
+  /// Returns the result to carry forward, or null if the user must pick again.
+  ///
+  /// Only [IdVerdict.reject] stops the flow. A `review` verdict PROCEEDS — the
+  /// submission simply reaches a human with the reasons attached, which is
+  /// where every upload went before this function existed. Blocking on
+  /// `review` would reject genuine users whose ID photographed poorly, and
+  /// that is the failure mode that loses real citizens.
+  Future<IdCheckResult?> _checkOrExplain(
+    Uint8List bytes, {
+    required bool isFront,
+  }) async {
+    setState(() => _checking = true);
+    try {
+      final result = await IdCheckService.check(
+        imageBytes: bytes,
+        idType: widget.selectedId,
+        isFront: isFront,
+        source: 'upload',
+      );
+
+      if (result.verdict != IdVerdict.reject) return result;
+      if (!mounted) return null;
+
+      // Names the actual problem — the wrong ID type, an unreadable photo —
+      // rather than a generic failure the user cannot act on.
+      showAppSnackBar(
+        context,
+        result.userMessage,
+        type: AppSnackType.error,
+      );
+      return null;
+    } finally {
+      if (mounted) setState(() => _checking = false);
     }
   }
 
@@ -340,17 +415,34 @@ class _VerificationUploadIdScreenState extends State<VerificationUploadIdScreen>
                     CircleAvatar(
                       radius: 28,
                       backgroundColor: CitizenUi.accent,
-                      child: Icon(
-                        camera
-                            ? Icons.camera_alt_outlined
-                            : Icons.upload_file_outlined,
-                        color: Colors.white,
-                        size: 28,
-                      ),
+                      // Checking a multi-megabyte image server-side takes long
+                      // enough that a static icon reads as a dead button.
+                      child: _checking
+                          ? const SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.4,
+                                valueColor: AlwaysStoppedAnimation(
+                                  Colors.white,
+                                ),
+                              ),
+                            )
+                          : Icon(
+                              camera
+                                  ? Icons.camera_alt_outlined
+                                  : Icons.upload_file_outlined,
+                              color: Colors.white,
+                              size: 28,
+                            ),
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      camera ? 'Open camera' : 'Choose files',
+                      _checking
+                          ? 'Checking your ID…'
+                          : camera
+                          ? 'Open camera'
+                          : 'Choose files',
                       style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
@@ -359,7 +451,9 @@ class _VerificationUploadIdScreenState extends State<VerificationUploadIdScreen>
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      camera
+                      _checking
+                          ? 'Reading the details off your card'
+                          : camera
                           ? 'Scan the front and back of your ID'
                           : 'Pick the front and back from your computer',
                       textAlign: TextAlign.center,

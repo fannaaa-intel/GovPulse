@@ -31,6 +31,7 @@ import '../../features/profileVerification/verification_screen.dart';
 import '../../features/profileVerification/verification_id_selection_screen.dart';
 import '../../features/profileVerification/verification_photo_instruction_screen.dart';
 import '../../features/profileVerification/verification_upload_id_screen.dart';
+import '../services/id_check_service.dart';
 import '../../features/profileVerification/verification_scan_screen.dart';
 import '../../features/profileVerification/verification_review_screen.dart';
 import '../../features/profileVerification/verification_identity_screen.dart';
@@ -686,6 +687,7 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
             selectedId: args['selectedId'] as String,
             frontImage: args['frontImage'] as Uint8List?,
             backImage: args['backImage'] as Uint8List?,
+            idCheck: IdSubmissionCheck.fromRouteArg(args['idCheck']),
             extractedData: args['extractedData'] as Map<String, String>?,
           ),
         ),
@@ -719,6 +721,7 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
             street: args['street'] as String,
             frontImage: args['frontImage'] as Uint8List?,
             backImage: args['backImage'] as Uint8List?,
+            idCheck: IdSubmissionCheck.fromRouteArg(args['idCheck']),
           ),
         ),
         transitionsBuilder: (_, anim, _, child) =>
@@ -748,6 +751,7 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
             street: args['street'] as String,
             frontImage: args['frontImage'] as Uint8List?,
             backImage: args['backImage'] as Uint8List?,
+            idCheck: IdSubmissionCheck.fromRouteArg(args['idCheck']),
           ),
         ),
         transitionsBuilder: (_, anim, _, child) =>

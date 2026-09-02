@@ -15,7 +15,9 @@ import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/providers/user_profile_provider.dart';
 import '../../core/router/legacy_nav.dart';
+import '../../core/services/id_check_service.dart';
 import '../../core/services/image_compressor.dart';
+import '../../core/services/selfie_quality.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/app_back_chevron.dart';
 import '../home/screen/home_screen.dart';
@@ -47,6 +49,15 @@ class VerificationFaceScanScreen extends StatefulWidget {
   final Uint8List? frontImage;
   final Uint8List? backImage;
 
+  /// What the automated check concluded about the two ID captures.
+  ///
+  /// Threaded from the scan/upload screen through three route hops to be
+  /// stored with the submission. Null when nothing checked the ID — the mobile
+  /// camera path uses ML Kit rather than the Edge Function, and a checker
+  /// outage produces nothing — and a null is written as NULL, which the
+  /// console renders as "not checked" rather than inventing a verdict.
+  final IdSubmissionCheck? idCheck;
+
   const VerificationFaceScanScreen({
     super.key,
     required this.username,
@@ -65,6 +76,7 @@ class VerificationFaceScanScreen extends StatefulWidget {
     required this.street,
     this.frontImage,
     this.backImage,
+    this.idCheck,
   });
 
   @override
@@ -120,11 +132,23 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
       performanceMode: FaceDetectorMode.fast,
       enableContours: false,
       enableLandmarks: false,
-      enableClassification: false,
+      // Turned ON so the quality gate can see whether the eyes were open at
+      // the moment of capture — the one selfie fault a person genuinely does
+      // not notice themselves. Classification is the cheap ML Kit extra
+      // (contours and landmarks are the expensive ones, and both stay off),
+      // and the detection LOOP ignores it: only the final capture is graded.
+      enableClassification: true,
       enableTracking: false,
       minFaceSize: 0.05,
     ),
   );
+
+  /// What the quality gate said about the captured selfie, if anything.
+  ///
+  /// Null until a still has been graded. Drives the retake prompt; the photo
+  /// is kept either way, because the gate ADVISES the citizen rather than
+  /// discarding their capture behind their back.
+  SelfieCheckResult? _selfieCheck;
 
   // ── Scan state ────────────────────────────────────────────────────────────
   _ScanState _scanState = _ScanState.initializing;
@@ -222,6 +246,101 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
     }
   }
 
+  /// MOBILE only: runs ML Kit over the captured still and normalises the
+  /// result for [SelfieQuality].
+  ///
+  /// ML Kit reports bounding boxes in IMAGE PIXELS; the gate's thresholds are
+  /// fractions of the frame, so one set of numbers works at any resolution.
+  /// Dividing here is what makes "the face fills at least 18% of the height"
+  /// mean the same thing on a 12MP phone and a 2MP one.
+  ///
+  /// Returns an empty list on any failure, which the caller treats as "no face
+  /// found" — correct on mobile, where the detector genuinely did look.
+  Future<List<FaceBox>> _detectFacesForGrading(String path) async {
+    try {
+      final input = InputImage.fromFilePath(path);
+      final faces = await _faceDetector.processImage(input);
+      if (faces.isEmpty) return const [];
+
+      final decoded = await decodeImageFromList(
+        await File(path).readAsBytes(),
+      );
+      final w = decoded.width.toDouble();
+      final h = decoded.height.toDouble();
+      if (w <= 0 || h <= 0) return const [];
+
+      return [
+        for (final f in faces)
+          FaceBox(
+            left: f.boundingBox.left / w,
+            top: f.boundingBox.top / h,
+            width: f.boundingBox.width / w,
+            height: f.boundingBox.height / h,
+            // Null when classification produced nothing — the gate treats a
+            // missing signal as "not a problem", never as closed eyes.
+            eyeOpenProbability:
+                (f.leftEyeOpenProbability != null &&
+                    f.rightEyeOpenProbability != null)
+                // BOTH eyes: the lower of the two, because one closed eye is
+                // still a blink in the photo the reviewer has to work with.
+                ? (f.leftEyeOpenProbability! < f.rightEyeOpenProbability!
+                      ? f.leftEyeOpenProbability!
+                      : f.rightEyeOpenProbability!)
+                : null,
+            yawDegrees: f.headEulerAngleY,
+            rollDegrees: f.headEulerAngleZ,
+          ),
+      ];
+    } catch (e) {
+      debugPrint('[FACE] grading detection failed: $e');
+      return const [];
+    }
+  }
+
+  /// Grades a captured selfie and stores the result in [_selfieCheck].
+  ///
+  /// ── What runs where ──────────────────────────────────────────────────────
+  /// MOBILE gets the full check: ML Kit locates the face, and the image itself
+  /// supplies sharpness and brightness.
+  ///
+  /// WEB has no ML Kit, so there is no face box — and rather than guess, the
+  /// face-shaped checks are simply ABSENT. What web can still measure is the
+  /// image: a black frame or a motion-blurred one is catchable without knowing
+  /// where the face is, and those are two of the most common unusable selfies.
+  /// Passing an empty `faces` list would report "no face" on every web capture,
+  /// which is why this returns [SelfieCheckResult.notChecked] when there is
+  /// nothing face-shaped to judge and no image fault either.
+  ///
+  /// NEVER throws and never blocks: a capture that could not be examined
+  /// passes. Refusing a citizen because the app's own detector failed is the
+  /// worse error.
+  Future<void> _gradeSelfie(Uint8List bytes, {required List<FaceBox> faces}) async {
+    try {
+      final m = SelfieQuality.measure(bytes);
+
+      // Web: no detector, so only the image-quality bands can speak. With no
+      // faces to judge, an empty list would mean "no face found" — a different
+      // claim entirely — so the face bands are skipped by handing the gate a
+      // single synthetic well-framed box. Its geometry can never fail, leaving
+      // brightness and sharpness as the only possible issues.
+      final effectiveFaces = faces.isEmpty && kIsWeb
+          ? const [
+              FaceBox(left: 0.3, top: 0.24, width: 0.4, height: 0.5),
+            ]
+          : faces;
+
+      final result = SelfieQuality.check(
+        faces: effectiveFaces,
+        sharpness: m.sharpness,
+        brightness: m.brightness,
+      );
+      if (mounted) setState(() => _selfieCheck = result);
+    } catch (e) {
+      debugPrint('[FACE] quality check failed: $e');
+      if (mounted) setState(() => _selfieCheck = SelfieCheckResult.notChecked);
+    }
+  }
+
   /// The web shutter. Manual, because nothing here is watching for a face.
   Future<void> _webCapture() async {
     final controller = _cameraController;
@@ -236,6 +355,7 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
         _uploadError = null;
         _scanState = _ScanState.done;
       });
+      await _gradeSelfie(bytes, faces: const []);
     } catch (e) {
       debugPrint('[FACE/WEB] capture failed: $e');
       if (!mounted) return;
@@ -269,6 +389,7 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
         _uploadError = null;
         _scanState = _ScanState.done;
       });
+      await _gradeSelfie(bytes, faces: const []);
     } catch (_) {
       if (!mounted) return;
       setState(
@@ -298,6 +419,14 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
         try {
           final XFile photo = await _cameraController!.takePicture();
           final bytes = await File(photo.path).readAsBytes();
+
+          // Graded on THIS frame, before the file is deleted — the detection
+          // loop only ever answered "is a face there", and the still actually
+          // submitted can differ from the frame that satisfied the loop (the
+          // user relaxes, blinks, or lowers the phone during the hold). The
+          // photo the reviewer receives is the one worth judging.
+          final faces = await _detectFacesForGrading(photo.path);
+
           try {
             File(photo.path).deleteSync();
           } catch (_) {}
@@ -306,6 +435,7 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
               _capturedImageBytes = bytes;
               _scanState = _ScanState.done;
             });
+            await _gradeSelfie(bytes, faces: faces);
             return;
           }
         } catch (_) {}
@@ -407,6 +537,7 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
     if (kIsWeb) {
       setState(() {
         _capturedImageBytes = null;
+        _selfieCheck = null;
         _uploadError = null;
         _scanState = _ScanState.waitingForFace;
       });
@@ -420,6 +551,7 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
     setState(() {
       _scanState = _ScanState.waitingForFace;
       _capturedImageBytes = null;
+      _selfieCheck = null;
       _uploadError = null;
     });
     _startDetectionLoop();
@@ -546,6 +678,13 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
         'id_back_path': idBackPath,
         'face_photo_path': facePath,
         'status': 'pending',
+        // What the automated check concluded, so the REVIEWER can see it.
+        // Without this the scoring was computed, used to decide whether to let
+        // the citizen continue, and then discarded — a submission flagged
+        // `review` looked identical in the console to one that scored 95.
+        // Spread, not null-assigned: an unchecked submission leaves these
+        // columns NULL, which the console renders honestly as "not checked".
+        ...?widget.idCheck?.toSubmissionColumns(),
       });
 
       await NotificationService.add(
@@ -761,10 +900,16 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
             children: [
               AccountPageTitle(
                 title: 'Add a selfie',
+                // "so we can match it" read as a promise of automatic face
+                // matching. Nothing in the app does that — no face recognition
+                // exists anywhere in it, and a REVIEWER makes the comparison.
+                // The note lower down this same screen already says so; this
+                // makes the two agree.
                 subtitle: _webUsesCamera
-                    ? 'Take a photo of your face so we can match it to your ID.'
-                    : 'Choose a clear photo of your face so we can match it to '
-                          'your ID.',
+                    ? 'Take a photo of your face so our team can match it to '
+                          'your ID.'
+                    : 'Choose a clear photo of your face so our team can match '
+                          'it to your ID.',
                 onBack: _isUploading ? null : () => Navigator.pop(context),
                 backLabel: 'Back to identity verification',
               ),
@@ -811,6 +956,16 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
 
               if (_uploadError != null) ...[
                 AccountErrorStrip(_uploadError!),
+                const SizedBox(height: kAccountSectionGap),
+              ],
+
+              // The quality gate ADVISES; it never discards the photo or
+              // disables Submit. A citizen who has tried three times in a dim
+              // room must still be able to send what they have and let a
+              // reviewer decide — blocking them here is how a verification
+              // flow silently loses the people it exists to serve.
+              if (_selfieCheck != null && !_selfieCheck!.ok) ...[
+                _SelfieHintStrip(hint: _selfieCheck!.hint!),
                 const SizedBox(height: kAccountSectionGap),
               ],
 
@@ -992,6 +1147,46 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
     await _initWebCamera();
   }
 
+  /// The live preview, cover-fitted into a [w] x [h] box without distortion.
+  ///
+  /// A bare `CameraPreview` here was stretched. Both callers put it inside a
+  /// tight `SizedBox` shaped like the OVAL (1 : 1.36), and a tight constraint
+  /// overrides the `AspectRatio` that `CameraPreview` builds internally - the
+  /// ratio is not violated so much as ignored, so a 9:16 stream was drawn at
+  /// the oval's 0.735 instead of its native 0.562. That is a 31% horizontal
+  /// stretch: every face in the framing oval looked wider than it is.
+  ///
+  /// The frozen still next to it has always used `BoxFit.cover`, so the stretch
+  /// also meant the preview and the photo it produced disagreed - the user
+  /// framed one face and got another. This gives the preview the same cover
+  /// treatment, so the two finally match.
+  Widget _coverPreview(double w, double h) {
+    final controller = _cameraController!;
+    final preview = controller.value.previewSize;
+    if (preview == null) return CameraPreview(controller);
+
+    // Web reports the video track's own size, already in the orientation the
+    // user is holding. Mobile hands back a landscape sensor buffer that
+    // `CameraPreview` transposes for a portrait screen, so match that here.
+    final src = kIsWeb
+        ? preview
+        : Size(preview.height, preview.width);
+
+    return SizedBox(
+      width: w,
+      height: h,
+      child: FittedBox(
+        fit: BoxFit.cover,
+        clipBehavior: Clip.hardEdge,
+        child: SizedBox(
+          width: src.width,
+          height: src.height,
+          child: CameraPreview(controller),
+        ),
+      ),
+    );
+  }
+
   /// The oval, at a size the CARD gives it rather than the viewport.
   ///
   /// Same framing guide the phone shows, kept because it is the right shape
@@ -1047,7 +1242,7 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
                                   height: previewH,
                                 ))
                         : live
-                        ? CameraPreview(_cameraController!)
+                        ? _coverPreview(previewW, previewH)
                         : Container(color: CitizenUi.pageBg),
                   ),
                   // Painted OVER the clip so the stroke is not eaten by it.
@@ -1138,7 +1333,7 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
                             height: ovalH,
                           ),
                         )
-                      : CameraPreview(_cameraController!),
+                      : _coverPreview(ovalW, ovalH),
                 ),
               ),
             ),
@@ -1329,6 +1524,13 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
           height: 1.5,
         ),
       ),
+
+      // ── Selfie quality advice ─────────────────────────────────────────
+      // Advisory only: Submit stays enabled below. See the web arm for why.
+      if (_selfieCheck != null && !_selfieCheck!.ok) ...[
+        const SizedBox(height: 8),
+        _SelfieHintStrip(hint: _selfieCheck!.hint!),
+      ],
 
       // ── Error message ─────────────────────────────────────────────────
       if (_uploadError != null) ...[
@@ -1817,4 +2019,48 @@ class _WebFaceNote extends StatelessWidget {
       ),
     ],
   );
+}
+
+/// One line of advice about the selfie just captured.
+///
+/// Deliberately AMBER, not red, and deliberately not an error strip: the photo
+/// was accepted and Submit is still enabled. This tells the citizen how to get
+/// a better result if they want one, which is a different message from "you
+/// did something wrong" — and a very different one from "you may not proceed".
+class _SelfieHintStrip extends StatelessWidget {
+  final String hint;
+  const _SelfieHintStrip({required this.hint});
+
+  static const _amber = Color(0xFFB26A00);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: _amber.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: _amber.withValues(alpha: 0.30)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.lightbulb_outline_rounded, size: 15, color: _amber),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              hint,
+              style: const TextStyle(
+                fontSize: 12,
+                color: _amber,
+                height: 1.4,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

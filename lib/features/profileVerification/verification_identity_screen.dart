@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import '../../core/widgets/Home/Account/account_web_kit.dart';
+import '../../core/services/id_check_service.dart';
 import 'package:flutter/services.dart';
 import '../../core/router/legacy_nav.dart';
 import '../../core/theme/app_colors.dart';
@@ -28,6 +29,10 @@ class VerificationIdentityScreen extends StatefulWidget {
   final Uint8List? frontImage;
   final Uint8List? backImage;
 
+  /// Carried, not read: the automated ID check travels with the wizard so the
+  /// SUBMIT step can store it. This screen has no use for it.
+  final IdSubmissionCheck? idCheck;
+
   const VerificationIdentityScreen({
     super.key,
     required this.username,
@@ -46,6 +51,7 @@ class VerificationIdentityScreen extends StatefulWidget {
     required this.street,
     this.frontImage,
     this.backImage,
+    this.idCheck,
   });
 
   @override
@@ -220,6 +226,7 @@ class _VerificationIdentityScreenState extends State<VerificationIdentityScreen>
           'street': widget.street,
           'frontImage': widget.frontImage,
           'backImage': widget.backImage,
+          'idCheck': widget.idCheck?.toRouteArg(),
         },
       ),
       style: accountPrimaryButtonStyle().copyWith(
@@ -446,6 +453,7 @@ class _VerificationIdentityScreenState extends State<VerificationIdentityScreen>
             'street': widget.street,
             'frontImage': widget.frontImage,
             'backImage': widget.backImage,
+          'idCheck': widget.idCheck?.toRouteArg(),
           },
         );
       },

@@ -411,6 +411,183 @@ IconData _statusIcon(VerificationStatus s) {
   }
 }
 
+/// What the automated ID check concluded, for the reviewer.
+///
+/// ── Why this is on screen at all ──────────────────────────────────────────
+/// The check runs on every capture path and can say things a photo does not:
+/// that the declared type does not match the wording on the card, that the
+/// card expired in 2019, that the "ID" carried a heading and nothing else, or
+/// that an uploaded file looks like a screenshot. Until this panel existed all
+/// of it was computed, used to decide whether to let the citizen continue, and
+/// then thrown away — a submission flagged `review` looked exactly like one
+/// that scored 95.
+///
+/// ── Why an unchecked submission says so ───────────────────────────────────
+/// Rows predating the check, and any taken while the checker was down, have no
+/// verdict. Those render as "Not checked" rather than as a pass. Telling a
+/// reviewer a submission cleared an examination that never happened is worse
+/// than telling them nothing at all.
+class _AutomatedCheckPanel extends StatelessWidget {
+  final AdminVerification v;
+  const _AutomatedCheckPanel({required this.v});
+
+  static const _verdictMeta = <String, (String, IconData, Color)>{
+    'auto_accept': ('Passed automated checks', Icons.verified_rounded, Color(0xFF1B873F)),
+    'review': ('Needs a closer look', Icons.flag_rounded, Color(0xFFB26A00)),
+    'reject': ('Failed automated checks', Icons.gpp_bad_rounded, Color(0xFFC62828)),
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    if (!v.hasCheck) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 18),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.help_outline_rounded,
+              size: 15,
+              color: AdminUi.textMuted,
+            ),
+            const SizedBox(width: 7),
+            Expanded(
+              child: Text(
+                'Not checked automatically — review the photos directly.',
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AdminUi.textMuted,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final meta =
+        _verdictMeta[v.checkVerdict] ??
+        ('Checked', Icons.info_outline_rounded, AdminUi.textMuted);
+    final (label, icon, colour) = meta;
+    final concerns = v.concerningReasons;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 18),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: colour.withValues(alpha: 0.07),
+          borderRadius: BorderRadius.circular(AdminUi.controlRadius),
+          border: Border.all(color: colour.withValues(alpha: 0.28)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 16, color: colour),
+                const SizedBox(width: 7),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: colour,
+                    ),
+                  ),
+                ),
+                if (v.checkScore != null)
+                  Text(
+                    '${v.checkScore}/100',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: colour,
+                    ),
+                  ),
+              ],
+            ),
+
+            // Only the reasons that COST the submission points. A reviewer does
+            // not need to be told the keywords matched; they need the lines
+            // explaining why this one was held back.
+            if (concerns.isNotEmpty) ...[
+              const SizedBox(height: 9),
+              for (final r in concerns)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.only(top: 5, right: 6),
+                        child: Icon(
+                          Icons.circle,
+                          size: 5,
+                          color: AdminUi.textSecondary,
+                        ),
+                      ),
+                      Expanded(
+                        child: Text(
+                          (r['detail'] ?? '').toString(),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            height: 1.35,
+                            color: AdminUi.textSecondary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+
+            // Upload-only. A live camera capture can never be a screenshot, so
+            // an empty list here is meaningful rather than missing data.
+            if (v.checkSourceFlags.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final f in v.checkSourceFlags)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AdminUi.surface,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: AdminUi.border),
+                      ),
+                      child: Text(
+                        _flagLabel(f),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: AdminUi.textSecondary,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Turns a machine flag into something a reviewer can act on.
+  static String _flagLabel(String code) => switch (code) {
+    'no_camera_metadata' => 'No camera data — may be a screenshot',
+    'png_likely_screenshot' => 'PNG file — likely a screenshot',
+    _ => code,
+  };
+}
+
 class _StatusPill extends StatelessWidget {
   final VerificationStatus status;
   const _StatusPill(this.status);
@@ -1259,6 +1436,11 @@ class _VerificationDetailDialogState
             ],
           ),
           const SizedBox(height: 18),
+          // Placed FIRST, above the photos and the typed fields, because it is
+          // the one thing on this screen a reviewer cannot work out for
+          // themselves by looking. Everything below is evidence; this is the
+          // machine's reading of it.
+          _AutomatedCheckPanel(v: v),
           const Divider(height: 1, color: AdminUi.border),
           const SizedBox(height: 18),
           _IconSection(

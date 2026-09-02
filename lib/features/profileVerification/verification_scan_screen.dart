@@ -5,9 +5,45 @@ import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'package:image/image.dart' as img;
 import '../../core/router/legacy_nav.dart';
+import '../../core/services/id_check_service.dart';
 import '../../core/services/id_verification_service.dart';
 import '../../core/widgets/app_dialog.dart' show kWebDialogMaxWidth;
 import '../../core/widgets/app_back_chevron.dart';
+
+/// The size the live preview actually occupies, in the camera's own pixels,
+/// given what the platform reports as `previewSize`.
+///
+/// ── Why this is not just "swap width and height" ─────────────────────────
+/// It used to be. `SizedBox(width: previewSize.height, height: previewSize
+/// .width)` is right on MOBILE and wrong on WEB, and the difference is where
+/// the 100x zoom on mobile web came from.
+///
+/// On mobile the platform hands back a LANDSCAPE buffer (1920x1080) no matter
+/// how the phone is held, and `CameraPreview` compensates: for a portrait
+/// orientation it builds `AspectRatio(1 / controller.aspectRatio)`, i.e. the
+/// transposed 9:16. Transposing the SizedBox to match is what makes the two
+/// agree, and the `BoxFit.cover` around them then fills a portrait screen with
+/// a portrait box - roughly 1:1, no zoom.
+///
+/// On web there is no sensor orientation to compensate for. camera_web reports
+/// the video track's own settings (`getVideoSize`), which a mobile browser
+/// already gives PORTRAIT - 1080x1920 - because the track is what the screen
+/// is showing. `CameraPreview` cannot tell, so it transposes anyway and asks
+/// for 16:9; the old SizedBox transposed a second time and asked for 16:9 too.
+/// Consistent, and both landscape. `BoxFit.cover` then had to scale a 1920x1080
+/// box to cover a ~390x780 viewport: it takes the LARGER ratio, 780/1080 =
+/// 0.72, rendering 1386x780 into a 390-wide window. Under a quarter of the
+/// frame survives, and the video element is `object-fit: cover` inside that
+/// oversized box as well, so the crops multiply. That is the "uncontrollable
+/// zoom": not a zoom setting at all, a preview scaled to the wrong axis.
+///
+/// So: transpose only when the platform's buffer needs it. On web, report the
+/// track's size as given - already in the orientation the user is holding.
+@visibleForTesting
+Size previewSourceSize(Size previewSize, {required bool isWeb}) {
+  if (isWeb) return previewSize;
+  return Size(previewSize.height, previewSize.width);
+}
 
 class VerificationScanScreen extends StatefulWidget {
   final String username;
@@ -64,6 +100,15 @@ class _VerificationScanScreenState extends State<VerificationScanScreen>
   Uint8List? frontImage;
   Uint8List? backImage;
   Map<String, String> _extractedData = {};
+
+  /// WEB only: the server's verdict on each captured side.
+  ///
+  /// Held across the two captures because the front is scanned and accepted
+  /// before the back is even taken, and the SUBMIT step needs both to store a
+  /// combined result for the reviewer. Cleared alongside [frontImage] whenever
+  /// the flow restarts, so a rejected retake cannot carry a stale verdict.
+  IdCheckResult? _frontCheck;
+  IdCheckResult? _backCheck;
 
   // Brief tap-to-focus indicator
   Offset? _focusPoint;
@@ -766,12 +811,16 @@ class _VerificationScanScreenState extends State<VerificationScanScreen>
   }
 
   Widget _buildCameraPreview() {
+    final source = previewSourceSize(
+      _controller!.value.previewSize!,
+      isWeb: kIsWeb,
+    );
     return SizedBox.expand(
       child: FittedBox(
         fit: BoxFit.cover,
         child: SizedBox(
-          width: _controller!.value.previewSize!.height,
-          height: _controller!.value.previewSize!.width,
+          width: source.width,
+          height: source.height,
           child: CameraPreview(_controller!),
         ),
       ),
@@ -882,22 +931,52 @@ class _VerificationScanScreenState extends State<VerificationScanScreen>
       // runtime, from inside this try block, where it would look to the user
       // like the shutter simply did nothing.
       //
-      // A null result means "not checked", NOT "failed": the scan is accepted
-      // and `extractedData` stays empty, so the review screen shows blank
-      // fields for the user to type. That is an already-supported state - it
-      // is exactly what the web file-picker path has always produced, and
-      // what mobile produces whenever a scan reads nothing confidently.
-      final result = kIsWeb
-          ? null
-          : await IdVerificationService.verify(
-              imageBytes: fixed,
-              selectedIdType: widget.selectedId,
-              isFront: isFront,
-            );
+      // WEB now goes to `verify-id` instead of being skipped. It used to
+      // return null here ("not checked"), which meant a mobile-web scan was
+      // accepted with no validation and no auto-fill at all. The Edge Function
+      // runs the SAME rules server-side, so both platforms agree.
+      IdVerificationResult? result;
+      IdCheckResult? webResult;
+      if (kIsWeb) {
+        webResult = await IdCheckService.check(
+          imageBytes: fixed,
+          idType: widget.selectedId,
+          isFront: isFront,
+          source: 'camera',
+        );
+      } else {
+        result = await IdVerificationService.verify(
+          imageBytes: fixed,
+          selectedIdType: widget.selectedId,
+          isFront: isFront,
+        );
+      }
       if (mounted) setState(() => _isVerifying = false);
 
       await animFuture;
       if (mounted) setState(() => _showScanLine = false);
+
+      // ── WEB: only an outright REJECT stops the scan ───────────────────
+      //
+      // A `review` verdict proceeds. The submission reaches a human with the
+      // reasons attached, which is where every web scan went before this
+      // existed; blocking on `review` would turn away genuine users whose card
+      // photographed badly, and that loses real citizens.
+      if (webResult != null && webResult.verdict == IdVerdict.reject) {
+        if (!mounted) return;
+        await _showInvalidIdDialog(webResult.userMessage);
+        if (mounted) {
+          setState(() {
+            _isCapturing = false;
+            isFront = true;
+            frontImage = null;
+            _extractedData = {};
+            _frontCheck = null;
+            _backCheck = null;
+          });
+        }
+        return;
+      }
 
       // ── Validity check BEFORE any data is merged ──────────────────────
       // `result != null` is the web arm only: on mobile the service always
@@ -911,14 +990,24 @@ class _VerificationScanScreenState extends State<VerificationScanScreen>
             isFront = true; // restart from front
             frontImage = null; // discard accepted front
             _extractedData = {}; // wipe any partial data
+            _frontCheck = null;
+            _backCheck = null;
           });
         }
         return;
       }
 
       // ── Only merge data from a verified scan ──────────────────────────
+      //
+      // On web these are the server's GATED fields: values that survived the
+      // auto-fill confidence check, not everything OCR produced. A blank the
+      // user types is a keystroke; a wrong value they skim past becomes their
+      // permanent record.
       for (final entry
-          in (result?.extractedData ?? const <String, String>{}).entries) {
+          in (result?.extractedData ??
+                  webResult?.fields ??
+                  const <String, String>{})
+              .entries) {
         final existing = _extractedData[entry.key];
         if (existing == null || existing.isEmpty) {
           _extractedData[entry.key] = entry.value;
@@ -927,6 +1016,7 @@ class _VerificationScanScreenState extends State<VerificationScanScreen>
 
       if (isFront) {
         frontImage = fixed;
+        _frontCheck = webResult;
         if (mounted) {
           setState(() {
             isFront = false;
@@ -935,6 +1025,7 @@ class _VerificationScanScreenState extends State<VerificationScanScreen>
         }
       } else {
         backImage = fixed;
+        _backCheck = webResult;
         if (!mounted) return;
         // WEB: this is a PUSH, not a replacement - the scan screen stays alive
         // underneath the rest of the wizard, and on web an undisposed
@@ -962,6 +1053,13 @@ class _VerificationScanScreenState extends State<VerificationScanScreen>
             'frontImage': frontImage,
             'backImage': backImage,
             'extractedData': _extractedData,
+            // Null on mobile: that path checks with ML Kit rather than the
+            // Edge Function, so there is no server verdict to carry and the
+            // column is left NULL rather than invented.
+            'idCheck': IdSubmissionCheck.combine(
+              _frontCheck,
+              _backCheck,
+            )?.toRouteArg(),
           },
         );
 
@@ -987,6 +1085,8 @@ class _VerificationScanScreenState extends State<VerificationScanScreen>
           frontImage = null;
           backImage = null;
           _extractedData = {};
+          _frontCheck = null;
+          _backCheck = null;
           _isCapturing = false;
         });
         await _ensureCameraForResume();
@@ -999,6 +1099,8 @@ class _VerificationScanScreenState extends State<VerificationScanScreen>
           isFront = true; // also reset on exception
           frontImage = null;
           _extractedData = {};
+          _frontCheck = null;
+          _backCheck = null;
         });
       }
     }
@@ -1147,9 +1249,21 @@ class _VerificationScanScreenState extends State<VerificationScanScreen>
     final screenW = screenSize.width;
     final screenH = screenSize.height;
 
-    // Camera sensor is landscape (rawW > rawH)
-    // Preview is shown as portrait via cover fit
-    // So we treat imgW = rawW, imgH = rawH directly
+    // The crop has to reproduce the geometry the PREVIEW used, because the
+    // frame the user lined the ID up inside is positioned in screen space.
+    // Deriving cover from the decoded bytes' own dimensions is what keeps the
+    // two in step on both platforms, and only because the bytes arrive in the
+    // same orientation the preview showed:
+    //
+    //   MOBILE - a landscape sensor buffer, previewed through the transposed
+    //   SizedBox in [previewSourceSize] and captured the same way.
+    //   WEB - camera_web's takePicture sizes its canvas from the video
+    //   element's own videoWidth/videoHeight, so a portrait track yields
+    //   portrait bytes, which is now exactly what the preview shows too.
+    //
+    // Before [previewSourceSize] the web preview was transposed to landscape
+    // while these bytes stayed portrait, so this scale was computed against a
+    // frame that had never been on screen and the crop missed the card.
     final coverScale = (screenW / rawW) > (screenH / rawH)
         ? screenW / rawW
         : screenH / rawH;
