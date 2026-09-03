@@ -52,7 +52,7 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyDQfk5acL8myb1OyWQU4n29O8wXL_KgHWc',
-    appId: '1:778312829212:android:19e0857f840a4f190152d9',
+    appId: '1:778312829212:android:0435c73a6b63404a0152d9',
     messagingSenderId: '778312829212',
     projectId: 'prototype-8d371',
     storageBucket: 'prototype-8d371.firebasestorage.app',
@@ -64,7 +64,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '778312829212',
     projectId: 'prototype-8d371',
     storageBucket: 'prototype-8d371.firebasestorage.app',
-    iosBundleId: 'com.example.govpulse',
+    iosBundleId: 'com.govpulse.app',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
@@ -73,7 +73,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '778312829212',
     projectId: 'prototype-8d371',
     storageBucket: 'prototype-8d371.firebasestorage.app',
-    iosBundleId: 'com.example.govpulse',
+    iosBundleId: 'com.govpulse.app',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(

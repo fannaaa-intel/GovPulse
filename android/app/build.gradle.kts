@@ -9,7 +9,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.govpulse"
+    namespace = "com.govpulse.app"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = "29.0.14206865"
 
@@ -24,7 +24,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.govpulse"
+        applicationId = "com.govpulse.app"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

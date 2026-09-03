@@ -336,7 +336,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
                 // fetching native double-resolution tiles so the map is crisp.
                 urlTemplate:
                     'https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}{r}.png?key=$_mapTilerKey',
-                userAgentPackageName: 'com.example.govpulse',
+                userAgentPackageName: 'com.govpulse.app',
                 retinaMode: RetinaMode.isHighDensity(context),
               ),
               if (_markerPosition != null)

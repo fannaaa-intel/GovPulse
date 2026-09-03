@@ -8,7 +8,7 @@
 PRODUCT_NAME = govpulse
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.example.govpulse
+PRODUCT_BUNDLE_IDENTIFIER = com.govpulse.app
 
 // The copyright displayed in application information
-PRODUCT_COPYRIGHT = Copyright © 2026 com.example. All rights reserved.
+PRODUCT_COPYRIGHT = Copyright © 2026 GovPulse. All rights reserved.

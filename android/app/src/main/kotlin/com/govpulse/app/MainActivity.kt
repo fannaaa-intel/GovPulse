@@ -1,4 +1,4 @@
-package com.example.govpulse
+package com.govpulse.app
 
 import io.flutter.embedding.android.FlutterActivity
 
