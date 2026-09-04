@@ -1452,6 +1452,18 @@ class _SettingScreenState extends ConsumerState<SettingsBody>
           width: width,
           onTap: () => pushLegacy(context, '/about'),
         ),
+        // The intro otherwise shows once per install and can never be seen
+        // again without reinstalling. 'replay' makes the route pop back here
+        // instead of replacing itself with /login, which would sign the user
+        // out of their own account.
+        _buildTile(
+          imagePath: 'assets/images/settings/helpcenter.webp',
+          iconBgColor: AppColors.primaryBlue,
+          title: 'Replay intro',
+          subtitle: 'See the welcome tour again',
+          width: width,
+          onTap: () => pushLegacy(context, '/intro', arguments: 'replay'),
+        ),
         _buildTile(
           imagePath: 'assets/images/settings/location.webp',
           iconBgColor: AppColors.green,
