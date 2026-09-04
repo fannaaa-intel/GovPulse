@@ -28,37 +28,37 @@ class _IntroScreenState extends State<IntroScreen>
       "image": "assets/images/storyboard/all_in_one.webp",
       "title": "Your LGU in One App",
       "desc":
-          "Your all-in-one app for Aparri.\nGet news, access LGU services, send reports, and share feedback — all in one place.",
+          "Your all-in-one app for Aparri.\nNews, services, reports and feedback, all in one place.",
     },
     {
       "image": "assets/images/storyboard/report.webp",
       "title": "Report an Issue",
       "desc":
-          "Spot a problem in your community?\nSend a photo and location, then follow your report until it is resolved.",
+          "Spot a problem in your community?\nSend a photo and location, then follow it to resolved.",
     },
     {
       "image": "assets/images/storyboard/feedback.webp",
       "title": "Suggest & Rate",
       "desc":
-          "Your feedback improves public services.\nShare suggestions and rate the service you received.",
+          "Your feedback improves public services.\nShare suggestions and rate the service you got.",
     },
     {
       "image": "assets/images/storyboard/news_events.webp",
       "title": "News & Events",
       "desc":
-          "Receive official updates instantly.\nStay on top of announcements, advisories, and events across Aparri.",
+          "Receive official updates instantly.\nAnnouncements, advisories and events across Aparri.",
     },
     {
       "image": "assets/images/storyboard/kuya_gov.webp",
       "title": "Ask Kuya Gov",
       "desc":
-          "Questions about LGU services?\nAsk Kuya Gov and get clear answers, any time of day.",
+          "Questions about LGU services?\nAsk Kuya Gov for clear answers, any time of day.",
     },
     {
       "image": "assets/images/storyboard/emergency_call.webp",
       "title": "Emergency, One Tap",
       "desc":
-          "Help when it matters most.\nReach emergency responders quickly, straight from the app.",
+          "Help when it matters most.\nReach emergency responders straight from the app.",
     },
   ];
 
@@ -135,7 +135,7 @@ class _IntroScreenState extends State<IntroScreen>
                     constraints: BoxConstraints(minHeight: c.maxHeight),
                     child: Padding(
                       padding: EdgeInsets.symmetric(
-                        horizontal: isTablet ? 40 : 28,
+                        horizontal: isTablet ? 40 : 20,
                       ),
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -435,31 +435,28 @@ class _IntroScreenState extends State<IntroScreen>
                       16.0,
                     ),
                   ),
-                  // Flexible so the body can give on a short viewport. Without
-                  // it the fixed title + 3-line body overflow the column on a
-                  // 480px-tall screen; the line height is what goes first, and
-                  // the ellipsis is the last resort rather than a clipped
-                  // paragraph.
-                  Flexible(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Text(
-                        data["desc"]!,
-                        textAlign: TextAlign.center,
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 4,
-                        style: TextStyle(
-                          fontSize: descSize,
-                          height: MediaQuery.of(context).size.height < 560
-                              ? 1.35
-                              : 1.7,
-                          fontWeight: FontWeight.w400,
-                          color: const Color(0xFF4A4A4A),
-                        ),
+                  // The body sizes to its content and the illustration above
+                  // gives instead (its Expanded absorbs what is left). The
+                  // reverse - a Flexible body under a fixed-flex image and a
+                  // trailing Spacer - squeezed the text until every page
+                  // ellipsized mid-sentence.
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Text(
+                      data["desc"]!,
+                      textAlign: TextAlign.center,
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 6,
+                      style: TextStyle(
+                        fontSize: descSize,
+                        height: MediaQuery.of(context).size.height < 560
+                            ? 1.35
+                            : 1.7,
+                        fontWeight: FontWeight.w400,
+                        color: const Color(0xFF4A4A4A),
                       ),
                     ),
                   ),
-                  const Spacer(),
                 ],
               ),
             ),

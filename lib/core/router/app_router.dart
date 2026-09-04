@@ -461,6 +461,11 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
     // ── Intro ────────────────────────────────────────────────────────────────
 
     case '/intro':
+      // Replay (from Settings) has to leave by a plain pop. The first-launch
+      // exits below replace the route with /login or /signup, which is right
+      // before anyone is signed in — but a signed-in citizen replaying the
+      // intro would be thrown out of their own account by it.
+      final bool introIsReplay = settings.arguments == 'replay';
       return _webFade(
         Builder(
           builder: (ctx) => IntroScreen(
@@ -468,12 +473,20 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
               final prefs = await SharedPreferences.getInstance();
               await prefs.setBool('seenOnboarding', true);
               if (!ctx.mounted) return;
+              if (introIsReplay) {
+                Navigator.of(ctx).pop();
+                return;
+              }
               pushReplacementLegacy(ctx, '/login');
             },
             onSignUpClick: () async {
               final prefs = await SharedPreferences.getInstance();
               await prefs.setBool('seenOnboarding', true);
               if (!ctx.mounted) return;
+              if (introIsReplay) {
+                Navigator.of(ctx).pop();
+                return;
+              }
               pushReplacementLegacy(ctx, '/signup');
             },
           ),
