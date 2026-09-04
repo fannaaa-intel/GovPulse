@@ -1,9 +1,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.CAMERA"/>
+    <!-- Emergency screen dials the listed responder numbers directly, without
+         the dialer's confirmation step. 911/112 deliberately do NOT use this
+         path (see emergency_screen.dart) - they open the dialer pre-filled so
+         an accidental tap cannot place a live call to emergency services.
+         Removing CALL_PHONE silently downgrades every listed number to that
+         pre-fill fallback, which still "works" and so hides the regression. -->
     <uses-permission android:name="android.permission.CALL_PHONE"/>
-    <uses-permission android:name="android.permission.CALL_PRIVILEGED" />
-    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/>
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>

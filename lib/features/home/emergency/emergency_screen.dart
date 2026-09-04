@@ -92,6 +92,20 @@ Widget _catIconChip(IconData icon, Color color, double box) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Main Screen
 // ─────────────────────────────────────────────────────────────────────────────
+/// Whether [number] opens the dialer pre-filled instead of calling outright.
+///
+/// The screen dials on two tiers, deliberately. Every hotline in the list —
+/// LGU, barangay, police, fire, medical — fires ACTION_CALL and connects on the
+/// one tap: that immediacy is the point of the feature. The true emergency
+/// numbers are the exception and get ACTION_DIAL, so a pocket tap cannot open a
+/// live line to emergency services; the citizen still taps call themselves.
+///
+/// Top level, rather than a method on the state, only so a test can reach it.
+/// Both tiers end in a platform intent a widget test cannot observe, so without
+/// an assertion here the two paths could be swapped and the suite would still
+/// pass.
+bool usesPreFilledDialer(String number) => number == '911' || number == '112';
+
 class EmergencyScreen extends StatelessWidget {
   final String username;
   final bool isVerified;
@@ -360,8 +374,7 @@ class _EmergencyScreenState extends State<EmergencyBody>
       return;
     }
     if (Platform.isAndroid) {
-      final isEmergency = number == '911' || number == '112';
-      if (isEmergency) {
+      if (usesPreFilledDialer(number)) {
         // Best possible for emergency — pre-fills dialer, one tap to call
         await AndroidIntent(
           action: 'android.intent.action.DIAL',
@@ -445,6 +458,7 @@ class _EmergencyScreenState extends State<EmergencyBody>
     final view = View.of(context);
     return view.physicalSize.width / view.devicePixelRatio < _kDialableBelow;
   }
+
 
   void _copyNumber(String number) {
     Clipboard.setData(ClipboardData(text: number));
