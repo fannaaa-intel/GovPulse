@@ -412,17 +412,27 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
   }
 
   Future<void> _start() async {
-    // Warm up the intro screen's assets (logo + onboarding GIFs) while the
-    // splash animation plays, so they're decoded before intro appears and
-    // don't "pop"/resize a moment after the screen shows.
+    // Warm up the intro screen's assets (logo + the first onboarding frames)
+    // while the splash animation plays, so they're decoded before intro appears
+    // and don't "pop"/resize a moment after the screen shows.
+    //
+    // Only the first two of the six frames are warmed: page one is what the
+    // intro actually renders, page two covers the first swipe. Warming all six
+    // would put ~1 MB of decoding on the launch path for pages the user may
+    // never reach — the rest decode lazily as they're swiped to.
     if (mounted) {
       precacheImage(
         const AssetImage('assets/images/applogocrop.webp'),
         context,
       );
-      precacheImage(const AssetImage('assets/images/onboard1.gif'), context);
-      precacheImage(const AssetImage('assets/images/onboard2.gif'), context);
-      precacheImage(const AssetImage('assets/images/onboard3.gif'), context);
+      precacheImage(
+        const AssetImage('assets/images/storyboard/all_in_one.webp'),
+        context,
+      );
+      precacheImage(
+        const AssetImage('assets/images/storyboard/report.webp'),
+        context,
+      );
     }
 
     // Fire the check immediately, in parallel — don't block on it.
