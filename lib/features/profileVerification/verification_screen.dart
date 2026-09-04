@@ -64,8 +64,13 @@ class _VerificationScreenState extends State<VerificationScreen>
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: CitizenUi.sharedStroke),
       ),
+      // mainAxisSize.min + Flexible text: the grid gives each card a fixed
+      // height from its aspect ratio, and on a narrow phone the icon plus two
+      // two-line labels are taller than that. The labels give first, rather
+      // than the column overflowing its cell.
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: [
           SizedBox(
             height: 35,
@@ -73,24 +78,28 @@ class _VerificationScreenState extends State<VerificationScreen>
             child: Image.asset(icon, fit: BoxFit.contain),
           ),
           const SizedBox(height: 6),
-          Text(
-            title,
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 12.5,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF1F2937),
+          Flexible(
+            child: Text(
+              title,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF1F2937),
+              ),
             ),
           ),
           const SizedBox(height: 3),
-          Text(
-            subtitle,
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 10.5, color: Color(0xFF6B7280)),
+          Flexible(
+            child: Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 10.5, color: Color(0xFF6B7280)),
+            ),
           ),
         ],
       ),
@@ -107,16 +116,10 @@ class _VerificationScreenState extends State<VerificationScreen>
 
         /// ILLUSTRATION
         Center(
-          child: ColorFiltered(
-            colorFilter: const ColorFilter.mode(
-              Color(0xFFF3F4F6),
-              BlendMode.modulate,
-            ),
-            child: Image.asset(
-              "assets/images/verification/getver.gif",
-              height: 150,
-              fit: BoxFit.contain,
-            ),
+          child: Image.asset(
+            "assets/images/verification/getverified.webp",
+            height: 150,
+            fit: BoxFit.contain,
           ),
         ),
 
@@ -156,37 +159,51 @@ class _VerificationScreenState extends State<VerificationScreen>
                 const SizedBox(height: 14),
 
                 /// GRID
-                GridView(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 14,
-                    mainAxisSpacing: 12,
-                    childAspectRatio: 1.3,
-                  ),
-                  children: [
-                    _featureCard(
-                      icon: "assets/images/verification/access.webp",
-                      title: "Access Full Services",
-                      subtitle: "Unlock all LGU features",
-                    ),
-                    _featureCard(
-                      icon: "assets/images/verification/checksec.webp",
-                      title: "Secure & Trusted",
-                      subtitle: "Safe and protected account",
-                    ),
-                    _featureCard(
-                      icon: "assets/images/verification/faster.webp",
-                      title: "Faster Transaction",
-                      subtitle: "Quick processing of request",
-                    ),
-                    _featureCard(
-                      icon: "assets/images/verification/verified.webp",
-                      title: "Verified Access",
-                      subtitle: "Be recognized as a verified citizen",
-                    ),
-                  ],
+                //
+                // The aspect ratio has to loosen as the screen narrows: the
+                // cards keep their content height (icon + two labels) while the
+                // cell width shrinks, so a fixed 1.3 leaves them 40px short on
+                // a 320px phone.
+                Builder(
+                  builder: (context) {
+                    final double w = MediaQuery.of(context).size.width;
+                    final double ratio = w < 340
+                        ? 0.95
+                        : (w < 380 ? 1.08 : 1.3);
+                    return GridView(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      gridDelegate:
+                          SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        crossAxisSpacing: 14,
+                        mainAxisSpacing: 12,
+                        childAspectRatio: ratio,
+                      ),
+                      children: [
+                        _featureCard(
+                          icon: "assets/images/verification/access.webp",
+                          title: "Access Full Services",
+                          subtitle: "Unlock all LGU features",
+                        ),
+                        _featureCard(
+                          icon: "assets/images/verification/checksec.webp",
+                          title: "Secure & Trusted",
+                          subtitle: "Safe and protected account",
+                        ),
+                        _featureCard(
+                          icon: "assets/images/verification/faster.webp",
+                          title: "Faster Transaction",
+                          subtitle: "Quick processing of request",
+                        ),
+                        _featureCard(
+                          icon: "assets/images/verification/verified.webp",
+                          title: "Verified Access",
+                          subtitle: "Be recognized as a verified citizen",
+                        ),
+                      ],
+                    );
+                  },
                 ),
 
                 const SizedBox(height: 12),
@@ -206,6 +223,10 @@ class _VerificationScreenState extends State<VerificationScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       /// HEADER
+                      //
+                      // Expanded, like the items below it: without it the
+                      // label cannot wrap and pushes the row 41px past the
+                      // card on a 320px phone.
                       Row(
                         children: const [
                           Icon(
@@ -214,12 +235,14 @@ class _VerificationScreenState extends State<VerificationScreen>
                             color: Color(0xFF6B7280),
                           ),
                           SizedBox(width: 6),
-                          Text(
-                            "Important Information",
-                            style: TextStyle(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF374151),
+                          Expanded(
+                            child: Text(
+                              "Important Information",
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF374151),
+                              ),
                             ),
                           ),
                         ],
@@ -408,19 +431,13 @@ class _VerificationScreenState extends State<VerificationScreen>
                   ),
 
                   Center(
-                    child: ColorFiltered(
-                      colorFilter: const ColorFilter.mode(
-                        CitizenUi.pageBg,
-                        BlendMode.modulate,
-                      ),
-                      child: Image.asset(
-                        'assets/images/verification/getver.gif',
-                        // The phone draws this at 150 inside a 480 column. The
-                        // web measure is 880, so it keeps roughly the same share
-                        // of the page instead of shrinking into the middle of it.
-                        height: stack ? 150 : 180,
-                        fit: BoxFit.contain,
-                      ),
+                    child: Image.asset(
+                      'assets/images/verification/getverified.webp',
+                      // The phone draws this at 150 inside a 480 column. The
+                      // web measure is 880, so it keeps roughly the same share
+                      // of the page instead of shrinking into the middle of it.
+                      height: stack ? 150 : 180,
+                      fit: BoxFit.contain,
                     ),
                   ),
                   const SizedBox(height: kAccountSectionGap),
