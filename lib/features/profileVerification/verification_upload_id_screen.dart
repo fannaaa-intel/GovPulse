@@ -16,39 +16,39 @@ import '../../core/widgets/modal/verification_required_dialog.dart'
 const Map<String, Map<String, String>> idImages = {
   "PhilSys ID": {
     "front": "assets/images/idcards/phfront.webp",
-    "back": "assets/images/idcards/phfront.webp",
+    "back": "assets/images/idcards/phback.webp",
   },
   "Driver's License ID": {
     "front": "assets/images/idcards/driversfront.webp",
-    "back": "assets/images/idcards/driversfront.webp",
+    "back": "assets/images/idcards/driversback.webp",
   },
   "Postal ID": {
     "front": "assets/images/idcards/postalfront.webp",
-    "back": "assets/images/idcards/postalfront.webp",
+    "back": "assets/images/idcards/postalback.webp",
   },
   "Philippine Passport ID": {
     "front": "assets/images/idcards/philpassfront.webp",
-    "back": "assets/images/idcards/philpassfront.webp",
+    "back": "assets/images/idcards/philpassback.webp",
   },
   "PhilHealth ID": {
     "front": "assets/images/idcards/phealthfront.webp",
-    "back": "assets/images/idcards/phealthfront.webp",
+    "back": "assets/images/idcards/phealthback.webp",
   },
   "PRC ID": {
     "front": "assets/images/idcards/prcharap.webp",
-    "back": "assets/images/idcards/prcharap.webp",
+    "back": "assets/images/idcards/prcback.webp",
   },
   "SSS ID": {
     "front": "assets/images/idcards/sssfront.webp",
-    "back": "assets/images/idcards/sssfront.webp",
+    "back": "assets/images/idcards/sssback.webp",
   },
   "TIN ID": {
     "front": "assets/images/idcards/tinfront.webp",
-    "back": "assets/images/idcards/tinfront.webp",
+    "back": "assets/images/idcards/tinback.webp",
   },
   "UMID ID": {
     "front": "assets/images/idcards/umidharap.webp",
-    "back": "assets/images/idcards/umidharap.webp",
+    "back": "assets/images/idcards/umidback.webp",
   },
 };
 
@@ -279,7 +279,7 @@ class _VerificationUploadIdScreenState extends State<VerificationUploadIdScreen>
         idImages[widget.selectedId] ??
         {
           'front': 'assets/images/idcards/phfront.webp',
-          'back': 'assets/images/idcards/phfront.webp',
+          'back': 'assets/images/idcards/phback.webp',
         };
 
     return Scaffold(
@@ -517,7 +517,7 @@ class _VerificationUploadIdScreenState extends State<VerificationUploadIdScreen>
         idImages[widget.selectedId] ??
         {
           "front": "assets/images/idcards/phfront.webp",
-          "back": "assets/images/idcards/phfront.webp",
+          "back": "assets/images/idcards/phback.webp",
         };
 
     return Scaffold(
