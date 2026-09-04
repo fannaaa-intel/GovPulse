@@ -425,14 +425,19 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
         const AssetImage('assets/images/applogocrop.webp'),
         context,
       );
-      precacheImage(
-        const AssetImage('assets/images/storyboard/all_in_one.webp'),
-        context,
-      );
-      precacheImage(
-        const AssetImage('assets/images/storyboard/report.webp'),
-        context,
-      );
+      // Mobile only, matching the !kIsWeb guard on the intro itself below: on
+      // web the onboarding branch never runs, so warming its frames would pull
+      // ~275 KB over the network for a screen that platform never shows.
+      if (!kIsWeb) {
+        precacheImage(
+          const AssetImage('assets/images/storyboard/all_in_one.webp'),
+          context,
+        );
+        precacheImage(
+          const AssetImage('assets/images/storyboard/report.webp'),
+          context,
+        );
+      }
     }
 
     // Fire the check immediately, in parallel — don't block on it.

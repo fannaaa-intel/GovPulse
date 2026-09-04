@@ -823,16 +823,9 @@ class _SettingScreenState extends ConsumerState<SettingsBody>
             title: 'About GovPulse',
             onTap: () => pushLegacy(context, '/about'),
           ),
-        // The intro otherwise shows once per install and can never be seen
-        // again without reinstalling. 'replay' makes the route pop back here
-        // instead of replacing itself with /login, which would sign the user
-        // out of their own account.
-        AccountRow(
-          icon: Icons.slideshow_rounded,
-          title: 'Replay intro',
-          subtitle: 'See the welcome tour again',
-          onTap: () => pushLegacy(context, '/intro', arguments: 'replay'),
-        ),
+        // No "Replay intro" here: the splash skips onboarding entirely on web
+        // (`if (!kIsWeb)` in splash_screen.dart), so the tour is a mobile-only
+        // flow and the row belongs only in _buildAboutSection.
         AccountRow(
           icon: Icons.place_outlined,
           title: 'Location',
