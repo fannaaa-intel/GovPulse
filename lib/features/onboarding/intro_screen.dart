@@ -25,22 +25,40 @@ class _IntroScreenState extends State<IntroScreen>
 
   final List<Map<String, String>> pages = [
     {
-      "image": "assets/images/onboard1.gif",
+      "image": "assets/images/storyboard/all_in_one.webp",
       "title": "Your LGU in One App",
       "desc":
           "Your all-in-one app for Aparri.\nGet news, access LGU services, send reports, and share feedback — all in one place.",
     },
     {
-      "image": "assets/images/onboard2.gif",
-      "title": "Stay Updated & Connected",
+      "image": "assets/images/storyboard/report.webp",
+      "title": "Report an Issue",
       "desc":
-          "Receive official updates instantly.\nSubmit concerns, track reports, and connect with your local government easily.",
+          "Spot a problem in your community?\nSend a photo and location, then follow your report until it is resolved.",
     },
     {
-      "image": "assets/images/onboard3.gif",
-      "title": "Better Services for Everyone",
+      "image": "assets/images/storyboard/feedback.webp",
+      "title": "Suggest & Rate",
       "desc":
-          "Your feedback improves public services.\nTogether, we build a faster, more responsive, connected community.",
+          "Your feedback improves public services.\nShare suggestions and rate the service you received.",
+    },
+    {
+      "image": "assets/images/storyboard/news_events.webp",
+      "title": "News & Events",
+      "desc":
+          "Receive official updates instantly.\nStay on top of announcements, advisories, and events across Aparri.",
+    },
+    {
+      "image": "assets/images/storyboard/kuya_gov.webp",
+      "title": "Ask Kuya Gov",
+      "desc":
+          "Questions about LGU services?\nAsk Kuya Gov and get clear answers, any time of day.",
+    },
+    {
+      "image": "assets/images/storyboard/emergency_call.webp",
+      "title": "Emergency, One Tap",
+      "desc":
+          "Help when it matters most.\nReach emergency responders quickly, straight from the app.",
     },
   ];
 
@@ -347,17 +365,11 @@ class _IntroScreenState extends State<IntroScreen>
                 children: [
                   Expanded(
                     flex: 5,
-                    child: ColorFiltered(
-                      colorFilter: const ColorFilter.mode(
-                        Color(0xFFF4F7FB),
-                        BlendMode.modulate,
-                      ),
-                      child: Image.asset(
-                        data["image"]!,
-                        fit: BoxFit.contain,
-                        filterQuality: FilterQuality.high,
-                        gaplessPlayback: true,
-                      ),
+                    child: Image.asset(
+                      data["image"]!,
+                      fit: BoxFit.contain,
+                      filterQuality: FilterQuality.high,
+                      gaplessPlayback: true,
                     ),
                   ),
                   SizedBox(

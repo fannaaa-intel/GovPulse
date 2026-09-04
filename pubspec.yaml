@@ -91,6 +91,7 @@ flutter:
     - assets/images/idicons/
     - assets/images/idcards/
     - assets/images/verification/
+    - assets/images/storyboard/
     - assets/images/
 
 flutter_icons:
