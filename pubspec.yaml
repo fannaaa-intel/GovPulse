@@ -13,7 +13,6 @@ dependencies:
   
   firebase_core: ^3.0.0
   firebase_auth: ^5.0.0
-  lottie: ^2.7.0
   cupertino_icons: ^1.0.8
   supabase_flutter: ^2.0.0
   http: ^1.2.0
