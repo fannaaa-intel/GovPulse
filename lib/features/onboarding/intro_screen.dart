@@ -97,11 +97,15 @@ class _IntroScreenState extends State<IntroScreen>
     final bool isTablet = w >= 600;
     final double contentMax = isTablet ? 520.0 : w;
 
-    // Spacing scales with height so short phones don't overflow
-    final double topGap = (h * 0.034).clamp(12.0, 32.0);
-    final double logoGap = (h * 0.030).clamp(10.0, 28.0);
-    final double dotsGap = (h * 0.012).clamp(6.0, 14.0);
-    final double bottomGap = (h * 0.028).clamp(10.0, 28.0);
+    // Spacing scales with height so short phones don't overflow. The lower
+    // bounds have to stay small: on a short viewport (a 480px-tall phone, a
+    // split-screen window) the column still has to fit, and gaps are the only
+    // part that can give — the illustration, title and body all have their own
+    // minimums.
+    final double topGap = (h * 0.034).clamp(6.0, 32.0);
+    final double logoGap = (h * 0.030).clamp(6.0, 28.0);
+    final double dotsGap = (h * 0.012).clamp(4.0, 14.0);
+    final double bottomGap = (h * 0.028).clamp(6.0, 28.0);
 
     // Logo
     final double logoWidth = (w * 0.42).clamp(120.0, 220.0);
@@ -197,25 +201,34 @@ class _IntroScreenState extends State<IntroScreen>
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 // Skip / Back
-                                TextButton(
-                                  onPressed: () {
-                                    if (_currentPage == 0) {
-                                      widget.onLoginClick();
-                                    } else {
-                                      _controller.previousPage(
-                                        duration: const Duration(
-                                          milliseconds: 500,
-                                        ),
-                                        curve: Curves.easeOutBack,
-                                      );
-                                    }
-                                  },
-                                  child: Text(
-                                    _currentPage == 0 ? "Skip" : "Back",
-                                    style: TextStyle(
-                                      fontSize: skipLabelSz,
-                                      fontWeight: FontWeight.w500,
-                                      color: const Color(0xFF1A237E),
+                                //
+                                // Flexible so the label yields space on narrow
+                                // screens: the Next/Get Started button beside it
+                                // has a fixed width, so without this the row
+                                // overflows on a 320px phone.
+                                Flexible(
+                                  child: TextButton(
+                                    onPressed: () {
+                                      if (_currentPage == 0) {
+                                        widget.onLoginClick();
+                                      } else {
+                                        _controller.previousPage(
+                                          duration: const Duration(
+                                            milliseconds: 500,
+                                          ),
+                                          curve: Curves.easeOutBack,
+                                        );
+                                      }
+                                    },
+                                    child: Text(
+                                      _currentPage == 0 ? "Skip" : "Back",
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: skipLabelSz,
+                                        fontWeight: FontWeight.w500,
+                                        color: const Color(0xFF1A237E),
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -271,12 +284,23 @@ class _IntroScreenState extends State<IntroScreen>
                                             child: Row(
                                               mainAxisSize: MainAxisSize.min,
                                               children: [
-                                                Text(
-                                                  "Get Started",
-                                                  style: TextStyle(
-                                                    fontSize: btnLabelSz,
-                                                    fontWeight: FontWeight.w600,
-                                                    color: Colors.white,
+                                                // Flexible + ellipsis: the
+                                                // button has a fixed width, and
+                                                // "Get Started" plus the icon
+                                                // and padding exceeds it on a
+                                                // 320px phone.
+                                                Flexible(
+                                                  child: Text(
+                                                    "Get Started",
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: TextStyle(
+                                                      fontSize: btnLabelSz,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                      color: Colors.white,
+                                                    ),
                                                   ),
                                                 ),
                                                 const SizedBox(width: 8),
@@ -396,16 +420,27 @@ class _IntroScreenState extends State<IntroScreen>
                       16.0,
                     ),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: Text(
-                      data["desc"]!,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: descSize,
-                        height: 1.7,
-                        fontWeight: FontWeight.w400,
-                        color: const Color(0xFF4A4A4A),
+                  // Flexible so the body can give on a short viewport. Without
+                  // it the fixed title + 3-line body overflow the column on a
+                  // 480px-tall screen; the line height is what goes first, and
+                  // the ellipsis is the last resort rather than a clipped
+                  // paragraph.
+                  Flexible(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Text(
+                        data["desc"]!,
+                        textAlign: TextAlign.center,
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 4,
+                        style: TextStyle(
+                          fontSize: descSize,
+                          height: MediaQuery.of(context).size.height < 560
+                              ? 1.35
+                              : 1.7,
+                          fontWeight: FontWeight.w400,
+                          color: const Color(0xFF4A4A4A),
+                        ),
                       ),
                     ),
                   ),
