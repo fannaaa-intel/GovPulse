@@ -234,15 +234,30 @@ class _IntroScreenState extends State<IntroScreen>
                                 ),
 
                                 // Next / Get Started
-                                SizedBox(
-                                  width: btnWidth,
-                                  height: btnRowH,
+                                //
+                                // Width follows the control rather than a fixed
+                                // 60% of the screen: pages 1-5 show a round
+                                // arrow, the last page a wide pill. A fixed box
+                                // sized for the pill left ~200px of dead space
+                                // beside the arrow on every other page, which
+                                // read as the row jumping on the last page.
+                                // The pill still gets its full width because
+                                // btnWidth is the maximum, not the minimum.
+                                ConstrainedBox(
+                                  constraints: BoxConstraints(
+                                    maxWidth: btnWidth,
+                                    minHeight: btnRowH,
+                                    maxHeight: btnRowH,
+                                  ),
                                   child: AnimatedSwitcher(
                                     duration: const Duration(milliseconds: 450),
                                     switchInCurve: Curves.easeOutCubic,
                                     switchOutCurve: Curves.easeInCubic,
                                     layoutBuilder: (cur, prev) => Stack(
                                       alignment: Alignment.centerRight,
+                                      // Shrink to the visible control so the
+                                      // arrow does not reserve the pill's width.
+                                      fit: StackFit.passthrough,
                                       children: [...prev, ?cur],
                                     ),
                                     transitionBuilder: (child, anim) {
