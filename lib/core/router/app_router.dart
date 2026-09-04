@@ -64,27 +64,21 @@ final RouteObserver<ModalRoute<void>> homeRouteObserver =
 
 // ─── Transition helpers ───────────────────────────────────────────────────────
 
-// Web-only fade: smooth crossfade on web, native platform transition on mobile.
-// This is the ONLY helper that needs the kIsWeb guard — mobile routes are
-// completely unaffected because PageRouteBuilder is only returned on web.
-Route<dynamic> _webFade(Widget child) {
-  if (!kIsWeb) {
-    // Instant on mobile — avoids the slide-from-right "flick" between
-    // reset-password method/email/phone/verify screens. Content-level
-    // slide-up (if any) is handled by the screen's own AnimationController.
-    return PageRouteBuilder(
-      transitionDuration: Duration.zero,
-      reverseTransitionDuration: Duration.zero,
-      pageBuilder: (_, _, _) => NetworkWrapper(child: child),
-      transitionsBuilder: (_, _, _, child) => child,
-    );
-  }
+/// Crossfade, used by the intro.
+///
+/// The intro is opened and dismissed on its own rather than being a step in a
+/// pushed sequence, so a hard cut between Settings and a full-bleed tour reads
+/// as a glitch. 220ms each way, eased both directions.
+Route<dynamic> _fade(Widget child) {
+  const d = Duration(milliseconds: 220);
   return PageRouteBuilder(
-    transitionDuration: const Duration(milliseconds: 200),
-    reverseTransitionDuration: const Duration(milliseconds: 200),
+    transitionDuration: d,
+    reverseTransitionDuration: d,
     pageBuilder: (_, _, _) => NetworkWrapper(child: child),
-    transitionsBuilder: (_, anim, _, child) =>
-        FadeTransition(opacity: anim, child: child),
+    transitionsBuilder: (_, anim, _, child) => FadeTransition(
+      opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),
+      child: child,
+    ),
   );
 }
 
@@ -466,7 +460,8 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
       // before anyone is signed in — but a signed-in citizen replaying the
       // intro would be thrown out of their own account by it.
       final bool introIsReplay = settings.arguments == 'replay';
-      return _webFade(
+      // Crossfade in and out, so replaying from Settings does not cut hard.
+      return _fade(
         Builder(
           builder: (ctx) => IntroScreen(
             onLoginClick: () async {
