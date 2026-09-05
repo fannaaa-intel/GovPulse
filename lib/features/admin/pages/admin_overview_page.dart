@@ -1269,6 +1269,12 @@ class _StatusDonut extends StatelessWidget {
     final visible = segments.where((s) => s.value > 0).toList();
 
     return Row(
+      // Donut + legend are one unit, and the pair is narrower than the card on
+      // a desktop. The Row must stay at its default MainAxisSize.max so there
+      // IS free space for center to distribute — shrink-wrapping it with .min
+      // leaves nothing to centre and the pair stays pinned left, which is the
+      // trap this looked like it had fixed.
+      mainAxisAlignment: MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         SizedBox(
@@ -3488,26 +3494,34 @@ class _DonutSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Mirrors _StatusDonut exactly — centred, with the legend column capped at
+    // the same width. A skeleton whose bars run the full width of the card
+    // promises a layout the loaded chart doesn't deliver, so the content
+    // visibly jumps sideways the moment the data lands.
     return const SizedBox(
       height: 140,
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           SkeletonCircle(size: 120),
           SizedBox(width: 18),
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SkeletonBox(width: double.infinity, height: 11),
-                SizedBox(height: 12),
-                SkeletonBox(width: double.infinity, height: 11),
-                SizedBox(height: 12),
-                SkeletonBox(width: 120, height: 11),
-                SizedBox(height: 12),
-                SkeletonBox(width: 90, height: 11),
-              ],
+          Flexible(
+            child: SizedBox(
+              width: 320,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SkeletonBox(width: double.infinity, height: 11),
+                  SizedBox(height: 12),
+                  SkeletonBox(width: double.infinity, height: 11),
+                  SizedBox(height: 12),
+                  SkeletonBox(width: 120, height: 11),
+                  SizedBox(height: 12),
+                  SkeletonBox(width: 90, height: 11),
+                ],
+              ),
             ),
           ),
         ],

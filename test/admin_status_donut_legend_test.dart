@@ -5,12 +5,16 @@
 // card is narrow enough that the bug never showed, which is exactly why this
 // has to be measured at desktop width rather than looked at on mobile.
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:govpulse/features/admin/pages/admin_overview_page.dart';
 import 'package:govpulse/features/admin/providers/admin_dashboard_provider.dart';
+import 'package:govpulse/features/admin/widgets/admin_skeleton.dart';
 import 'package:govpulse/features/admin/providers/admin_reports_provider.dart';
 
 class _FakeDashboard extends AdminDashboardNotifier {
@@ -103,6 +107,57 @@ double _gapFor(WidgetTester tester, String label) {
   return tester.getRect(pct).left - glyphEnd;
 }
 
+/// Never resolves, so the dashboard stays on its skeletons for as long as the
+/// test needs to measure them.
+class _StuckDashboard extends AdminDashboardNotifier {
+  @override
+  Future<AdminDashboardData> build() => Completer<AdminDashboardData>().future;
+}
+
+Future<void> _pumpLoading(WidgetTester tester, Size size) async {
+  tester.view
+    ..physicalSize = size
+    ..devicePixelRatio = 1.0;
+  addTearDown(tester.view.reset);
+
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [adminDashboardProvider.overrideWith(() => _StuckDashboard())],
+      child: const MaterialApp(
+        home: Scaffold(body: AdminOverviewPage(selectedIndex: 0)),
+      ),
+    ),
+  );
+  // A single frame: pumpAndSettle would spin forever on the shimmer.
+  await tester.pump();
+}
+
+/// Slack on each side of the donut+legend pair inside the card that holds it.
+///
+/// Everything is scoped to the Status-breakdown card: at desktop width the
+/// dashboard also renders an AI rail on the right that contains its own "0%"
+/// text, and an unscoped finder happily measures against THAT — reporting a
+/// nonsense negative slack. Measuring against the pair's own Row is equally
+/// useless, since mainAxisSize.min shrink-wraps it to ~0 slack either way.
+({double left, double right}) _slack(WidgetTester tester) {
+  final card = find
+      .ancestor(
+        of: find.text('Status breakdown').first,
+        matching: find.byType(Column, skipOffstage: false),
+      )
+      .first;
+  final frame = tester.getRect(card);
+  final pieBox = tester.getRect(
+    find.descendant(of: card, matching: find.byType(PieChart)).first,
+  );
+  final pct = tester.getRect(
+    find
+        .descendant(of: card, matching: find.text('0%', skipOffstage: false))
+        .last,
+  );
+  return (left: pieBox.left - frame.left, right: frame.right - pct.right);
+}
+
 void main() {
   // 1440 is an ordinary laptop; the dashboard's right rail means the card is
   // still several hundred pixels wide, which is where the split showed.
@@ -154,5 +209,84 @@ void main() {
     // teardown. Verified identical with and without the legend change.
     final pending = tester.takeException();
     if (pending != null && !'$pending'.contains('overflowed')) throw pending;
+  });
+
+  // The pair is narrower than a desktop card, so the leftover width has to be
+  // split evenly. Before centring it all pooled to the RIGHT of the legend and
+  // the chart looked shoved into the corner of its own card.
+  testWidgets('the donut and legend sit centred in a wide card', (
+    tester,
+  ) async {
+    await _pump(tester, const Size(1440, 1400));
+    final s = _slack(tester);
+    // Require real slack before checking symmetry — a pair stretched edge to
+    // edge has 0px on both sides and would sail through a difference check.
+    expect(
+      s.left,
+      greaterThan(40),
+      reason:
+          'the donut starts ${s.left.round()}px from the card edge — the pair '
+          'is still pinned left rather than centred.',
+    );
+    expect(
+      (s.left - s.right).abs(),
+      lessThan(24),
+      reason:
+          'slack is ${s.left.round()}px left vs ${s.right.round()}px right — '
+          'the chart is not centred in its card.',
+    );
+  });
+
+  // The skeleton has to occupy the same footprint as the chart it stands in
+  // for. It used to be a full-width Expanded while the real donut is a capped,
+  // centred pair, so the content visibly jumped sideways when data landed.
+  testWidgets('the loading skeleton sits where the real donut will', (
+    tester,
+  ) async {
+    await _pumpLoading(tester, const Size(1440, 1400));
+
+    final card = find
+        .ancestor(
+          of: find.text('Status breakdown').first,
+          matching: find.byType(Column, skipOffstage: false),
+        )
+        .first;
+    final frame = tester.getRect(card);
+    final circle = tester.getRect(
+      find.descendant(of: card, matching: find.byType(SkeletonCircle)).first,
+    );
+    // Measure the widest bar's PAINTED right edge. The bars sit in a fixed
+    // 320px SizedBox, so measuring that box reads 320 whether or not the
+    // legend is capped — it was the reason an earlier version of this test
+    // passed against the very layout it was meant to reject.
+    final bars = find.descendant(of: card, matching: find.byType(SkeletonBox));
+    var barRight = 0.0;
+    for (var i = 0; i < tester.widgetList(bars).length; i++) {
+      final r = tester.getRect(bars.at(i));
+      if (r.right > barRight) barRight = r.right;
+    }
+
+    final left = circle.left - frame.left;
+    final right = frame.right - barRight;
+
+    // Symmetry alone is not enough: a full-width skeleton has 0px slack on
+    // BOTH sides, so a difference check reads a perfect 0 and passes on the
+    // exact layout this rejects. Require real slack first, then symmetry.
+    expect(
+      left,
+      greaterThan(40),
+      reason:
+          'the skeleton starts ${left.round()}px from the card edge — it is '
+          'still stretching edge to edge instead of sitting as a capped, '
+          'centred pair the way the loaded donut does.',
+    );
+    expect(
+      (left - right).abs(),
+      lessThan(24),
+      reason:
+          'skeleton slack is ${left.round()}px left vs ${right.round()}px '
+          'right — it does not sit where the loaded chart does, so the card '
+          'shifts when the data arrives.',
+    );
   });
 }
