@@ -574,10 +574,20 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
         children: [
           Row(
             children: [
-              const _CardTitle('Reports over time'),
-              const Spacer(),
+              // _CardTitle already ellipsizes, but an unbounded Row handed it
+              // its full intrinsic width, so it overflowed instead of eliding
+              // — 78px past a phone-width card once the platform text scale
+              // pushed the title and the caption past the available room.
+              // Expanded gives it a ceiling to elide against AND absorbs the
+              // slack the old Spacer provided, so the caption still sits hard
+              // right. The caption is short and fixed, so the title is the
+              // half that should give.
+              const Expanded(child: _CardTitle('Reports over time')),
+              const SizedBox(width: 12),
               Text(
                 'last $_rangeDays days',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontSize: 11, color: AdminUi.textMuted),
               ),
             ],
@@ -1759,6 +1769,10 @@ class _AiHeaderCard extends StatelessWidget {
                         color: AppColors.primaryBlue.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(20),
                       ),
+                      // The Wrap above can only move this badge to its own
+                      // line; it cannot make the badge narrower. At large text
+                      // on a 320px phone "On-device NLP" alone is wider than
+                      // the rail, so the label itself has to be able to give.
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -1768,12 +1782,16 @@ class _AiHeaderCard extends StatelessWidget {
                             color: AppColors.primaryBlue,
                           ),
                           const SizedBox(width: 4),
-                          Text(
-                            label,
-                            style: const TextStyle(
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.primaryBlue,
+                          Flexible(
+                            child: Text(
+                              label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.primaryBlue,
+                              ),
                             ),
                           ),
                         ],
@@ -3158,21 +3176,34 @@ class _NlpSectionLabel extends StatelessWidget {
       children: [
         Icon(icon, size: 15, color: AdminUi.textMuted),
         const SizedBox(width: 6),
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 12.5,
-            fontWeight: FontWeight.w600,
-            color: AdminUi.textSecondary,
+        // Label and hint were both rigid with a Spacer between them, so a
+        // narrow card had no way to give: "Urgency triage · 3 reports" ran
+        // 50px past a 320px phone. The label takes the slack the Spacer used
+        // to and elides into it; the hint is short, and shrink-wraps.
+        Expanded(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+              color: AdminUi.textSecondary,
+            ),
           ),
         ),
         if (hint != null) ...[
-          const Spacer(),
-          Text(
-            hint!,
-            style: TextStyle(
-              fontSize: 10.5,
-              color: AdminUi.textMuted.withValues(alpha: 0.9),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              hint!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                fontSize: 10.5,
+                color: AdminUi.textMuted.withValues(alpha: 0.9),
+              ),
             ),
           ),
         ],
