@@ -1314,48 +1314,58 @@ class _StatusDonut extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 18),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final s in segments)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 9,
-                        height: 9,
-                        decoration: BoxDecoration(
-                          color: s.color,
-                          shape: BoxShape.circle,
+        // The legend is a label/percent PAIR, not a bar chart. In an unbounded
+        // Expanded it ate the whole width of a desktop card, stranding each
+        // percent against the far edge ~585px from the swatch it belongs to,
+        // so the two halves of one row read as two unrelated columns. Capping
+        // the width keeps the pair together; Flexible still lets it shrink on
+        // a phone, where the old Expanded only looked right because the card
+        // happened to be narrow.
+        Flexible(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 320),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final s in segments)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 9,
+                          height: 9,
+                          decoration: BoxDecoration(
+                            color: s.color,
+                            shape: BoxShape.circle,
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          s.label,
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            s.label,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AdminUi.textSecondary,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          total == 0
+                              ? '0%'
+                              : '${(s.value / total * 100).round()}%',
                           style: const TextStyle(
                             fontSize: 12,
+                            fontWeight: FontWeight.w600,
                             color: AdminUi.textSecondary,
                           ),
                         ),
-                      ),
-                      Text(
-                        total == 0
-                            ? '0%'
-                            : '${(s.value / total * 100).round()}%',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: AdminUi.textSecondary,
-                        ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
       ],

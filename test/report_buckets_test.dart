@@ -36,15 +36,14 @@ AdminReport _report({
 }
 
 /// Every bucket [r] belongs to, for readable whole-set assertions.
-Set<ReportBucket> _bucketsOf(AdminReport r) =>
-    {for (final b in ReportBucket.values) if (reportInBucket(r, b)) b};
+Set<ReportBucket> _bucketsOf(AdminReport r) => {
+  for (final b in ReportBucket.values)
+    if (reportInBucket(r, b)) b,
+};
 
 void main() {
   test('a freshly filed report is the admin\'s to-do', () {
-    expect(
-      _bucketsOf(_report()),
-      {ReportBucket.all, ReportBucket.needsTriage},
-    );
+    expect(_bucketsOf(_report()), {ReportBucket.all, ReportBucket.needsTriage});
   });
 
   test('accepting into an office moves it from triage to working', () {
@@ -189,5 +188,40 @@ void main() {
         isFalse,
       );
     });
+  });
+
+  // The header sits directly above the bucket rail, so the two have to agree.
+  // They didn't: the header counted every non-duplicate row (dismissed spam
+  // included) while `all` excluded dismissed, so a console with one dismissed
+  // report read "4 reports" over an `All` pill showing 3 — and no tab the
+  // admin could press accounted for the missing one. Counts are how they judge
+  // whether the queue is being worked, so a phantom row is not cosmetic.
+  test('the header total and the All tab count the same ledger', () {
+    final rows = [
+      _report(),
+      _report(status: ReportStatus.inProgress, assignedTo: 'Engineering'),
+      _report(status: ReportStatus.resolved, assignedTo: 'Engineering'),
+      _report(dismissed: true),
+    ];
+
+    // What the All tab shows.
+    final inAll = rows.where((r) => reportInBucket(r, ReportBucket.all)).length;
+    // What the header shows, by the same rule the provider now applies.
+    final header = rows.where((r) => !r.isDuplicate && !r.isDismissed).length;
+
+    expect(inAll, 3, reason: 'dismissed spam stays out of the working queue');
+    expect(
+      header,
+      inAll,
+      reason:
+          'the header promised a report the bucket rail cannot show — the '
+          'admin has no tab to press to find it',
+    );
+  });
+
+  test('a dismissed report is reachable in exactly the Dismissed tab', () {
+    // The row is not lost, just moved: it must still be findable, which is
+    // what makes excluding it from the header honest rather than a cover-up.
+    expect(_bucketsOf(_report(dismissed: true)), {ReportBucket.dismissed});
   });
 }

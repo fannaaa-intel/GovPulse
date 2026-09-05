@@ -642,7 +642,13 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
   /// Header stats count TICKETS, so merged confirmations are excluded — the same
   /// rule the buckets use. Otherwise collapsing five reports into one would
   /// shorten the list while the total above it stubbornly still said five.
-  Iterable<AdminReport> get _tickets => _all.where((r) => !r.isDuplicate);
+  ///
+  /// Dismissed spam is excluded for the same reason: the header sits directly
+  /// above the bucket rail, so "4 reports" over an `All` pill reading 3 is a
+  /// contradiction the admin cannot resolve — no tab they can press accounts
+  /// for the missing row. The header describes the same ledger `all` does.
+  Iterable<AdminReport> get _tickets =>
+      _all.where((r) => !r.isDuplicate && !r.isDismissed);
 
   int get totalCount => _tickets.length;
   int get anonymousCount => _tickets.where((r) => r.isAnonymous).length;
@@ -755,9 +761,9 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
         });
 
   /// Active reports (not spam, not endorsed out) that have aged past their SLA.
-  int get overdueCount => _tickets
-      .where((r) => !r.isDismissed && !r.isEndorsed && r.isOverdue)
-      .length;
+  /// [_tickets] already drops dismissed spam, so only the endorsed cut is left.
+  int get overdueCount =>
+      _tickets.where((r) => !r.isEndorsed && r.isOverdue).length;
 
   void _publish() => state = AsyncValue.data(_view());
 
