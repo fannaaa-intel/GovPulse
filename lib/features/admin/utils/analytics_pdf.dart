@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -25,6 +27,8 @@ import '../providers/admin_suggestions_provider.dart';
 /// Build and present the print-ready analytics report for the given window.
 /// The lists are expected to be already filtered to the last [rangeDays] days;
 /// [dashboard] carries the AI forecast (which uses its own rolling windows).
+///
+/// Layout lives in [buildAnalyticsPdf]; this only presents what that returns.
 Future<void> exportAnalyticsPdf({
   required int rangeDays,
   required DateTime now,
@@ -32,6 +36,54 @@ Future<void> exportAnalyticsPdf({
   required List<AdminFeedback> feedback,
   required List<AdminSuggestion> suggestions,
   required AdminDashboardData dashboard,
+  // The equivalent window immediately before this one, used only to say
+  // whether each headline number moved. Empty is a valid state (a new LGU, or
+  // the first month of use) and simply omits the comparison lines.
+  List<AdminReport> priorReports = const [],
+  List<AdminFeedback> priorFeedback = const [],
+  List<AdminSuggestion> priorSuggestions = const [],
+  // True when the underlying queries hit their row cap, so this document covers
+  // only the most recent submissions in the period rather than all of them.
+  bool truncated = false,
+}) async {
+  final bytes = await buildAnalyticsPdf(
+    rangeDays: rangeDays,
+    now: now,
+    reports: reports,
+    feedback: feedback,
+    suggestions: suggestions,
+    dashboard: dashboard,
+    priorReports: priorReports,
+    priorFeedback: priorFeedback,
+    priorSuggestions: priorSuggestions,
+    truncated: truncated,
+  );
+
+  final stamp = DateFormat('yyyyMMdd').format(now);
+  // Export/save the file directly — no print dialog. On web this downloads the
+  // PDF; on mobile it opens the share sheet (Save to Files, email, etc.).
+  await Printing.sharePdf(
+    bytes: bytes,
+    filename: 'GovPulse-Findings-${rangeDays}d-$stamp.pdf',
+  );
+}
+
+/// The document itself, as bytes.
+///
+/// Split from [exportAnalyticsPdf] so the layout can be exercised without a
+/// share sheet behind a platform channel — this report prints free-form AI text
+/// and font-coverage bugs are only visible in the built document.
+Future<Uint8List> buildAnalyticsPdf({
+  required int rangeDays,
+  required DateTime now,
+  required List<AdminReport> reports,
+  required List<AdminFeedback> feedback,
+  required List<AdminSuggestion> suggestions,
+  required AdminDashboardData dashboard,
+  List<AdminReport> priorReports = const [],
+  List<AdminFeedback> priorFeedback = const [],
+  List<AdminSuggestion> priorSuggestions = const [],
+  bool truncated = false,
 }) async {
   final doc = pw.Document(
     title: 'GovPulse Analytics Findings Report',
@@ -45,25 +97,23 @@ Future<void> exportAnalyticsPdf({
       footer: pdfFooter,
       build: (context) => [
         _titleBlock(rangeDays, now),
+        if (truncated) ...[pw.SizedBox(height: 12), _coverageCaveat()],
         pw.SizedBox(height: 20),
-        ..._reportsSection(reports, rangeDays),
+        // Each section returns its heading already bound to the block beneath
+        // it (see _sectionOpener), so MultiPage can break between rows without
+        // ever stranding a numbered heading at the foot of a page.
+        ..._reportsSection(reports, priorReports, rangeDays),
         pw.SizedBox(height: 22),
-        ..._feedbackSection(feedback),
+        ..._feedbackSection(feedback, priorFeedback),
         pw.SizedBox(height: 22),
-        ..._suggestionsSection(suggestions),
+        ..._suggestionsSection(suggestions, priorSuggestions),
         pw.SizedBox(height: 22),
         ..._aiSection(dashboard),
       ],
     ),
   );
 
-  final stamp = DateFormat('yyyyMMdd').format(now);
-  // Export/save the file directly — no print dialog. On web this downloads the
-  // PDF; on mobile it opens the share sheet (Save to Files, email, etc.).
-  await Printing.sharePdf(
-    bytes: await doc.save(),
-    filename: 'GovPulse-Findings-${rangeDays}d-$stamp.pdf',
-  );
+  return doc.save();
 }
 
 // ══ Cover / title ═════════════════════════════════════════════════════════════
@@ -92,43 +142,64 @@ pw.Widget _titleBlock(int rangeDays, DateTime now) {
   );
 }
 
-pw.Widget pdfMetaChip(String label, String value) {
+/// Printed under the masthead when the data behind the document was capped.
+///
+/// The queries return the most recent 200 rows; past that, the oldest
+/// submissions in the window were never fetched. Saying so on the page is the
+/// difference between a report that is incomplete and one that is wrong.
+pw.Widget _coverageCaveat() {
   return pw.Container(
-    padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+    width: double.infinity,
+    padding: const pw.EdgeInsets.all(8),
     decoration: pw.BoxDecoration(
-      color: pdfSubtle,
+      border: pw.Border.all(color: pdfInk, width: 0.8),
       borderRadius: pw.BorderRadius.circular(4),
     ),
+    child: pw.Text(
+      pdfSafe(
+        'PARTIAL COVERAGE - This period contains more submissions than the '
+        'console retrieves in one pass. The figures below cover the most '
+        'recent submissions in the period, not all of them, and should be '
+        'read as indicative rather than as a complete count.',
+      ),
+      style: pw.TextStyle(fontSize: 8.5, color: pdfInk, lineSpacing: 1.5),
+    ),
+  );
+}
+
+/// A section heading bound to the block that opens it.
+///
+/// `MultiPage` breaks between the top-level widgets it is given, so a heading
+/// emitted as its own widget can land as the last thing on a page with its
+/// content overleaf — which is how "2. Citizen Feedback" ended up alone at the
+/// foot of page 1. `pw.Inseparable` is the only thing that prevents this; a
+/// `pw.Column` does NOT stop a page break.
+pw.Widget _sectionOpener(String heading, pw.Widget opening) {
+  return pw.Inseparable(
     child: pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        pw.Text(
-          pdfSafe(label.toUpperCase()),
-          style: pw.TextStyle(
-            fontSize: 6.5,
-            color: pdfMuted,
-            fontWeight: pw.FontWeight.bold,
-            letterSpacing: 0.4,
-          ),
-        ),
-        pw.SizedBox(height: 1),
-        pw.Text(
-          pdfSafe(value),
-          style: pw.TextStyle(fontSize: 9, color: pdfInk),
-        ),
-      ],
+      children: [pdfH1(heading), opening],
     ),
   );
 }
 
 // ══ Reports ═══════════════════════════════════════════════════════════════════
 
-List<pw.Widget> _reportsSection(List<AdminReport> reports, int rangeDays) {
+List<pw.Widget> _reportsSection(
+  List<AdminReport> reports,
+  List<AdminReport> prior,
+  int rangeDays,
+) {
   final total = reports.length;
-  final out = <pw.Widget>[pdfH1('1. Citizen Reports')];
+  final out = <pw.Widget>[];
 
   if (total == 0) {
-    out.add(pdfEmpty('No reports were submitted in this period.'));
+    out.add(
+      _sectionOpener(
+        '1. Citizen Reports',
+        pdfEmpty('No reports were submitted in this period.'),
+      ),
+    );
     return out;
   }
 
@@ -146,20 +217,25 @@ List<pw.Widget> _reportsSection(List<AdminReport> reports, int rangeDays) {
   // Category + barangay tallies.
   final byCategory = _tally(reports.map((r) => r.category));
   final byBarangay = _tally(
-    reports.map((r) => (r.barangay?.trim().isNotEmpty ?? false)
-        ? r.barangay!.trim()
-        : 'Unspecified'),
+    reports.map(
+      (r) => (r.barangay?.trim().isNotEmpty ?? false)
+          ? r.barangay!.trim()
+          : 'Unspecified',
+    ),
   );
   final anonymous = reports.where((r) => r.isAnonymous).length;
   final withMedia = reports.where((r) => r.mediaCount > 0).length;
   final perDay = total / rangeDays;
 
   out.add(
-    pdfSummaryLine(
-      '$total report${total == 1 ? '' : 's'} submitted over $rangeDays days '
-      '(avg ${perDay.toStringAsFixed(1)}/day). '
-      'Resolution rate ${_pct(resolutionRate)} ($resolved resolved). '
-      '$anonymous submitted anonymously; $withMedia included photos/video.',
+    _sectionOpener(
+      '1. Citizen Reports',
+      pdfSummaryLine(
+        '$total report${total == 1 ? '' : 's'} submitted over $rangeDays days '
+        '(avg ${perDay.toStringAsFixed(1)}/day). '
+        'Resolution rate ${_pct(resolutionRate)} ($resolved resolved). '
+        '$anonymous submitted anonymously; $withMedia included photos/video.',
+      ),
     ),
   );
 
@@ -203,6 +279,41 @@ List<pw.Widget> _reportsSection(List<AdminReport> reports, int rangeDays) {
     ),
   );
 
+  // Where the volume actually concentrates. The two tables above answer "what"
+  // and "where" separately; an LGU dispatches a crew to a *pair*, so the pair
+  // is what the report has to name. Only shown once there is more than one of
+  // either — with a single category or a single barangay the cross-tab just
+  // restates the table above it.
+  if (byCategory.length > 1 || byBarangay.length > 1) {
+    final pairs = <String, int>{};
+    for (final r in reports) {
+      final brgy = (r.barangay?.trim().isNotEmpty ?? false)
+          ? r.barangay!.trim()
+          : 'Unspecified';
+      pairs['$brgy|${r.category}'] = (pairs['$brgy|${r.category}'] ?? 0) + 1;
+    }
+    final ranked = pairs.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    out.add(pdfH2('Concentration (barangay x category)'));
+    out.add(
+      pdfTable(
+        ['Barangay', 'Category', 'Reports', 'Share'],
+        [
+          for (final e in ranked.take(8))
+            [
+              e.key.split('|').first,
+              e.key.split('|').last,
+              '${e.value}',
+              _pct(e.value / total),
+            ],
+        ],
+        numeric: const {2, 3},
+        flex: const {0: 2.2, 1: 2.6, 2: 1.0, 3: 1.0},
+      ),
+    );
+  }
+
   // Findings.
   final topCat = byCategory.first;
   final topBrgy = byBarangay.first;
@@ -210,17 +321,41 @@ List<pw.Widget> _reportsSection(List<AdminReport> reports, int rangeDays) {
       (statusCounts[ReportStatus.pending] ?? 0) +
       (statusCounts[ReportStatus.underReview] ?? 0) +
       (statusCounts[ReportStatus.inProgress] ?? 0);
+  // Movement against the equivalent window before this one.
+  final priorResolved = prior
+      .where((r) => r.status == ReportStatus.resolved)
+      .length;
+  final volumeDelta = _deltaPhrase(
+    now: total,
+    before: prior.length,
+    unit: '$rangeDays days',
+  );
+  final ratePhrase = prior.isEmpty
+      ? null
+      : _deltaPoints(
+          now: resolutionRate * 100,
+          before: (priorResolved / prior.length) * 100,
+          unit: '$rangeDays days',
+        );
+
   out.add(
     pdfFindings([
+      if (volumeDelta != null) 'Report volume is $volumeDelta.',
       '"${topCat.key}" is the most-reported category '
           '(${topCat.value}, ${_pct(topCat.value / total)} of reports).',
       if (topBrgy.key != 'Unspecified')
         '${topBrgy.key} is the leading hotspot with ${topBrgy.value} '
             'report${topBrgy.value == 1 ? '' : 's'}.',
-      'Resolution rate stands at ${_pct(resolutionRate)}; '
+      'Resolution rate stands at ${_pct(resolutionRate)}'
+          '${ratePhrase == null ? '' : ' - $ratePhrase'}; '
           '$pending report${pending == 1 ? '' : 's'} remain open.',
-      '${_pct(anonymous / total)} of reports were anonymous — '
-          'identity-based follow-up is not possible for these.',
+      if (anonymous > 0)
+        '${_pct(anonymous / total)} of reports were anonymous '
+            '($anonymous of $total) - identity-based follow-up is not '
+            'possible for these.'
+      else
+        'Every report carries an identifiable submitter, so all of them are '
+            'open to direct follow-up.',
     ]),
   );
 
@@ -229,11 +364,19 @@ List<pw.Widget> _reportsSection(List<AdminReport> reports, int rangeDays) {
 
 // ══ Feedback ══════════════════════════════════════════════════════════════════
 
-List<pw.Widget> _feedbackSection(List<AdminFeedback> feedback) {
-  final out = <pw.Widget>[pdfH1('2. Citizen Feedback')];
+List<pw.Widget> _feedbackSection(
+  List<AdminFeedback> feedback,
+  List<AdminFeedback> prior,
+) {
+  final out = <pw.Widget>[];
 
   if (feedback.isEmpty) {
-    out.add(pdfEmpty('No feedback was submitted in this period.'));
+    out.add(
+      _sectionOpener(
+        '2. Citizen Feedback',
+        pdfEmpty('No feedback was submitted in this period.'),
+      ),
+    );
     return out;
   }
 
@@ -243,8 +386,9 @@ List<pw.Widget> _feedbackSection(List<AdminFeedback> feedback) {
       : rated.map((f) => f.overallRating).reduce((a, b) => a + b) /
             rated.length;
   final lowRated = feedback.where((f) => f.isLowRated).length;
-  final responded =
-      feedback.where((f) => f.status == FeedbackStatus.responded).length;
+  final responded = feedback
+      .where((f) => f.status == FeedbackStatus.responded)
+      .length;
 
   // Rating distribution 1..5.
   final dist = <int, int>{for (var i = 1; i <= 5; i++) i: 0};
@@ -276,19 +420,25 @@ List<pw.Widget> _feedbackSection(List<AdminFeedback> feedback) {
   final officeSum = <String, double>{};
   final officeN = <String, int>{};
   for (final f in rated) {
-    officeSum[f.officeLabel] = (officeSum[f.officeLabel] ?? 0) + f.overallRating;
+    officeSum[f.officeLabel] =
+        (officeSum[f.officeLabel] ?? 0) + f.overallRating;
     officeN[f.officeLabel] = (officeN[f.officeLabel] ?? 0) + 1;
   }
   final offices = officeN.keys.toList()
-    ..sort((a, b) => (officeSum[a]! / officeN[a]!)
-        .compareTo(officeSum[b]! / officeN[b]!));
+    ..sort(
+      (a, b) =>
+          (officeSum[a]! / officeN[a]!).compareTo(officeSum[b]! / officeN[b]!),
+    );
 
   out.add(
-    pdfSummaryLine(
-      '${feedback.length} response${feedback.length == 1 ? '' : 's'} '
-      '(${rated.length} rated). '
-      'Average satisfaction ${avgOverall == null ? '—' : '${avgOverall.toStringAsFixed(1)} / 5'}. '
-      '$responded responded to · $lowRated low-rated (1–2 / 5).',
+    _sectionOpener(
+      '2. Citizen Feedback',
+      pdfSummaryLine(
+        '${feedback.length} response${feedback.length == 1 ? '' : 's'} '
+        '(${rated.length} rated). '
+        'Average satisfaction ${avgOverall == null ? _blank : '${avgOverall.toStringAsFixed(1)} / 5'}. '
+        '$responded responded to · $lowRated low-rated (1–2 / 5).',
+      ),
     ),
   );
 
@@ -302,7 +452,7 @@ List<pw.Widget> _feedbackSection(List<AdminFeedback> feedback) {
             '$i / 5',
             feedbackRatingLabel(i),
             '${dist[i]}',
-            rated.isEmpty ? '—' : _pct((dist[i] ?? 0) / rated.length),
+            rated.isEmpty ? _blank : _pct((dist[i] ?? 0) / rated.length),
           ],
       ],
       numeric: const {2, 3},
@@ -317,14 +467,9 @@ List<pw.Widget> _feedbackSection(List<AdminFeedback> feedback) {
         for (final e in aspects.entries)
           [
             e.key,
-            e.value == null ? '—' : '${e.value!.toStringAsFixed(1)} / 5',
+            e.value == null ? _blank : '${e.value!.toStringAsFixed(1)} / 5',
             '${feedback.where((f) {
-              final v = {
-                'Staff attitude': f.aspectStaff,
-                'Wait time': f.aspectWait,
-                'Process clarity': f.aspectClarity,
-                'Facility': f.aspectFacility,
-              }[e.key];
+              final v = {'Staff attitude': f.aspectStaff, 'Wait time': f.aspectWait, 'Process clarity': f.aspectClarity, 'Facility': f.aspectFacility}[e.key];
               return v != null && v > 0;
             }).length}',
           ],
@@ -340,7 +485,11 @@ List<pw.Widget> _feedbackSection(List<AdminFeedback> feedback) {
         ['Office', 'Avg rating', 'Responses'],
         [
           for (final o in offices)
-            [o, '${(officeSum[o]! / officeN[o]!).toStringAsFixed(1)} / 5', '${officeN[o]}'],
+            [
+              o,
+              '${(officeSum[o]! / officeN[o]!).toStringAsFixed(1)} / 5',
+              '${officeN[o]}',
+            ],
         ],
         numeric: const {1, 2},
       ),
@@ -350,11 +499,24 @@ List<pw.Widget> _feedbackSection(List<AdminFeedback> feedback) {
   // Findings — weakest dimension, worst office.
   final ranked = aspects.entries.where((e) => e.value != null).toList()
     ..sort((a, b) => a.value!.compareTo(b.value!));
+  // Satisfaction against the previous window of the same length.
+  final priorRated = prior.where((f) => f.overallRating > 0).toList();
+  final priorAvg = priorRated.isEmpty
+      ? null
+      : priorRated.map((f) => f.overallRating).reduce((a, b) => a + b) /
+            priorRated.length;
+  final satisfactionDelta = _deltaPoints(
+    now: avgOverall,
+    before: priorAvg,
+    unit: 'period',
+  );
+
   out.add(
     pdfFindings([
       if (avgOverall != null)
         'Overall satisfaction is ${avgOverall.toStringAsFixed(1)} / 5 '
-            'across ${rated.length} rated response${rated.length == 1 ? '' : 's'}.',
+            'across ${rated.length} rated response${rated.length == 1 ? '' : 's'}'
+            '${satisfactionDelta == null ? '' : ' - $satisfactionDelta'}.',
       if (ranked.isNotEmpty)
         'Weakest dimension: "${ranked.first.key}" '
             '(${ranked.first.value!.toStringAsFixed(1)} / 5) — prioritise improvement here.',
@@ -371,25 +533,37 @@ List<pw.Widget> _feedbackSection(List<AdminFeedback> feedback) {
 
 // ══ Suggestions ═══════════════════════════════════════════════════════════════
 
-List<pw.Widget> _suggestionsSection(List<AdminSuggestion> suggestions) {
-  final out = <pw.Widget>[pdfH1('3. Citizen Suggestions')];
+List<pw.Widget> _suggestionsSection(
+  List<AdminSuggestion> suggestions,
+  List<AdminSuggestion> prior,
+) {
+  final out = <pw.Widget>[];
 
   if (suggestions.isEmpty) {
-    out.add(pdfEmpty('No suggestions were submitted in this period.'));
+    out.add(
+      _sectionOpener(
+        '3. Citizen Suggestions',
+        pdfEmpty('No suggestions were submitted in this period.'),
+      ),
+    );
     return out;
   }
 
   final total = suggestions.length;
-  final responded =
-      suggestions.where((s) => s.status == SuggestionStatus.responded).length;
+  final responded = suggestions
+      .where((s) => s.status == SuggestionStatus.responded)
+      .length;
   final anonymous = suggestions.where((s) => s.isAnonymous).length;
   final byCategory = _tally(suggestions.map((s) => s.category));
 
   out.add(
-    pdfSummaryLine(
-      '$total suggestion${total == 1 ? '' : 's'} submitted. '
-      '$responded responded to (${_pct(responded / total)}). '
-      '$anonymous anonymous.',
+    _sectionOpener(
+      '3. Citizen Suggestions',
+      pdfSummaryLine(
+        '$total suggestion${total == 1 ? '' : 's'} submitted. '
+        '$responded responded to (${_pct(responded / total)}). '
+        '$anonymous anonymous.',
+      ),
     ),
   );
 
@@ -418,8 +592,14 @@ List<pw.Widget> _suggestionsSection(List<AdminSuggestion> suggestions) {
   );
 
   final topCat = byCategory.first;
+  final volumeDelta = _deltaPhrase(
+    now: total,
+    before: prior.length,
+    unit: 'period',
+  );
   out.add(
     pdfFindings([
+      if (volumeDelta != null) 'Suggestion volume is $volumeDelta.',
       '"${topCat.key}" is the most common suggestion theme '
           '(${topCat.value}, ${_pct(topCat.value / total)}).',
       'The LGU has closed the loop on ${_pct(responded / total)} of suggestions.',
@@ -435,23 +615,31 @@ List<pw.Widget> _suggestionsSection(List<AdminSuggestion> suggestions) {
 
 List<pw.Widget> _aiSection(AdminDashboardData d) {
   final nlp = d.nlp;
-  final out = <pw.Widget>[pdfH1('4. AI Forecast & Insights')];
+  final out = <pw.Widget>[];
 
   if (!nlp.hasData) {
     out.add(
-      pdfEmpty('Not enough classified feedback or reports to generate insights yet.'),
+      _sectionOpener(
+        '4. AI Forecast & Insights',
+        pdfEmpty(
+          'Not enough classified feedback or reports to generate insights yet.',
+        ),
+      ),
     );
     return out;
   }
 
   out.add(
-    pdfSummaryLine(
-      nlp.usesAi
-          ? 'Hybrid AI analysis: ${nlp.aiClassified} feedback and '
-                '${nlp.reportsAiClassified} reports were model-classified; the rest '
-                'use the on-device rule-based fallback.'
-          : 'On-device rule-based analysis (the AI classifier is not deployed or '
-                'was unavailable for this window).',
+    _sectionOpener(
+      '4. AI Forecast & Insights',
+      pdfSummaryLine(
+        nlp.usesAi
+            ? 'Hybrid AI analysis: ${nlp.aiClassified} feedback and '
+                  '${nlp.reportsAiClassified} reports were model-classified; the rest '
+                  'use the on-device rule-based fallback.'
+            : 'On-device rule-based analysis (the AI classifier is not deployed or '
+                  'was unavailable for this window).',
+      ),
     ),
   );
 
@@ -467,15 +655,30 @@ List<pw.Widget> _aiSection(AdminDashboardData d) {
     pdfTable(
       ['Metric', 'Value'],
       [
-        ['Prior 30-day average', nlp.priorAvg == null ? '—' : '${nlp.priorAvg!.toStringAsFixed(2)} / 5'],
-        ['Recent 30-day average', nlp.recentAvg == null ? '—' : '${nlp.recentAvg!.toStringAsFixed(2)} / 5'],
+        [
+          'Prior 30-day average',
+          nlp.priorAvg == null
+              ? _blank
+              : '${nlp.priorAvg!.toStringAsFixed(2)} / 5',
+        ],
+        [
+          'Recent 30-day average',
+          nlp.recentAvg == null
+              ? _blank
+              : '${nlp.recentAvg!.toStringAsFixed(2)} / 5',
+        ],
         [
           'Change',
           nlp.trendDelta == null
-              ? '—'
+              ? _blank
               : '${nlp.trendDelta! >= 0 ? '+' : ''}${nlp.trendDelta!.toStringAsFixed(2)} pts',
         ],
-        ['Forecast (next period)', nlp.forecastRating == null ? '—' : '${nlp.forecastRating!.toStringAsFixed(2)} / 5'],
+        [
+          'Forecast (next period)',
+          nlp.forecastRating == null
+              ? _blank
+              : '${nlp.forecastRating!.toStringAsFixed(2)} / 5',
+        ],
         ['Trend', trendLabel],
       ],
       numeric: const {1},
@@ -533,7 +736,10 @@ List<pw.Widget> _aiSection(AdminDashboardData d) {
               f.suggestion,
             ],
         ],
-        flex: const {0: 1.4, 1: 2.4, 2: 1.6, 3: 4.5},
+        // Focus carries two stacked lines (title + scope), so it needs more
+        // room than the metric beside it; the action is prose and keeps the
+        // most. Priority is one short word and needs the least.
+        flex: const {0: 1.0, 1: 2.9, 2: 1.5, 3: 4.0},
       ),
     );
   }
@@ -549,6 +755,46 @@ List<pw.Widget> _aiSection(AdminDashboardData d) {
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
+/// A period-over-period movement, phrased for a written report.
+///
+/// Returns null when there is nothing to compare against — the prior window is
+/// empty (a new deployment) or both numbers are zero. Callers drop a null
+/// rather than printing "no change from 0", which reads as a finding when it is
+/// really an absence of data.
+String? _deltaPhrase({
+  required num now,
+  required num before,
+  required String unit,
+}) {
+  if (now == before) {
+    return before == 0 ? null : 'unchanged from the previous $unit';
+  }
+  if (before == 0) return 'up from none in the previous $unit';
+  if (now == 0) return 'down from $before in the previous $unit';
+
+  final diff = now - before;
+  final pct = (diff.abs() / before) * 100;
+  final direction = diff > 0 ? 'up' : 'down';
+  // Reads as "up 50% (2 -> 3)": the proportion for scale, the raw counts so a
+  // small base cannot dress a single extra report up as a crisis.
+  return '$direction ${pct.toStringAsFixed(0)}% ($before -> $now) '
+      'vs the previous $unit';
+}
+
+/// The same, for an average that is already a rate/score rather than a count.
+String? _deltaPoints({
+  required double? now,
+  required double? before,
+  required String unit,
+}) {
+  if (now == null || before == null) return null;
+  final diff = now - before;
+  if (diff.abs() < 0.05) return 'level with the previous $unit';
+  final direction = diff > 0 ? 'up' : 'down';
+  return '$direction ${diff.abs().toStringAsFixed(1)} points '
+      'from ${before.toStringAsFixed(1)} in the previous $unit';
+}
+
 String _rangeLabel(int days) => switch (days) {
   7 => 'Last 7 days',
   30 => 'Last 30 days',
@@ -556,7 +802,17 @@ String _rangeLabel(int days) => switch (days) {
   _ => 'Last $days days',
 };
 
-String _pct(double share) => '${(share * 100).toStringAsFixed(0)}%';
+/// A share as a whole-number percentage.
+///
+/// Returns the em-dash placeholder for a non-finite input rather than printing
+/// "NaN%" or "Infinity%". Several callers divide by a denominator that is
+/// non-zero only because the section early-returns on an empty list — this
+/// keeps a future caller from putting arithmetic garbage in a filed document.
+String _pct(double share) =>
+    share.isFinite ? '${(share * 100).toStringAsFixed(0)}%' : _blank;
+
+/// The placeholder for "no value". One constant so every table agrees.
+const _blank = '\u2014'; // em dash, mapped to "-" by pdfSafe on the page.
 
 String _severityLabel(String severity) => switch (severity) {
   'high' => 'HIGH',

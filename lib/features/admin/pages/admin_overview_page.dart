@@ -444,6 +444,15 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
       ).subtract(Duration(days: _rangeDays - 1));
       bool inRange(DateTime? t) => t != null && !t.isBefore(start);
 
+      // The window immediately before this one, same length. It is what turns
+      // the report's findings from a restatement of the tables ("resolution
+      // rate is 33%") into something an LGU can act on ("resolution rate is
+      // 33%, down from 60%"). No extra query: the providers already hand back
+      // the full history and the current window is a filter over it.
+      final priorStart = start.subtract(Duration(days: _rangeDays));
+      bool inPriorRange(DateTime? t) =>
+          t != null && !t.isBefore(priorStart) && t.isBefore(start);
+
       // Dismissed (spam) rows never appear in the report, regardless of the
       // admin's current "Show dismissed" filter state.
       final reports = reportsAll
@@ -456,6 +465,16 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
           .where((s) => inRange(s.createdAt) && !s.isDismissed)
           .toList();
 
+      final priorReports = reportsAll
+          .where((r) => inPriorRange(r.createdAt) && !r.isDismissed)
+          .toList();
+      final priorFeedback = feedbackAll
+          .where((f) => inPriorRange(f.createdAt) && !f.isDismissed)
+          .toList();
+      final priorSuggestions = suggestionsAll
+          .where((s) => inPriorRange(s.createdAt) && !s.isDismissed)
+          .toList();
+
       if (!mounted) return;
       if (reports.isEmpty && feedback.isEmpty && suggestions.isEmpty) {
         showAdminSnackBar(
@@ -466,12 +485,26 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
         return;
       }
 
+      // The providers fetch newest-first with a hard .limit(200). If any of them
+      // came back full, the oldest rows of the window were never fetched, and a
+      // report that silently under-counts is worse than one that says so — an
+      // LGU files these. Surfaced on the document itself, not just here.
+      const providerRowCap = 200;
+      final truncated =
+          reportsAll.length >= providerRowCap ||
+          feedbackAll.length >= providerRowCap ||
+          suggestionsAll.length >= providerRowCap;
+
       await exportAnalyticsPdf(
         rangeDays: _rangeDays,
         now: now,
+        truncated: truncated,
         reports: reports,
         feedback: feedback,
         suggestions: suggestions,
+        priorReports: priorReports,
+        priorFeedback: priorFeedback,
+        priorSuggestions: priorSuggestions,
         dashboard: dashboard,
       );
 

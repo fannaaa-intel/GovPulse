@@ -21,24 +21,126 @@ final pdfMuted = PdfColor.fromInt(0xFF6B7280);
 final pdfLine = PdfColor.fromInt(0xFFE5E7EB);
 final pdfSubtle = PdfColor.fromInt(0xFFF3F4F6);
 
-/// PDF-safe text. The bundled Helvetica font only covers Latin-1, so any glyph
-/// outside it (en/em dashes, bullets, the ★ rating mark, and the smart quotes /
-/// ellipses the AI summaries emit) renders as a blank "tofu" box. Map them to
-/// safe equivalents before they reach the page.
-String pdfSafe(String s) => s
-    .replaceAll('★', ' / 5')
-    .replaceAll('–', '-')
-    .replaceAll('—', '-')
-    .replaceAll('•', '-')
-    .replaceAll('·', '-')
-    .replaceAll('“', '"')
-    .replaceAll('”', '"')
-    .replaceAll('‘', "'")
-    .replaceAll('’', "'")
-    .replaceAll('…', '...')
-    .replaceAll('→', '->')
-    .replaceAll('≥', '>=')
-    .replaceAll('≤', '<=');
+/// Glyphs that have a good ASCII/Latin-1 equivalent. Anything mapped here keeps
+/// its meaning on the page; anything *not* mapped and outside Latin-1 is caught
+/// by the backstop in [pdfSafe] below.
+///
+/// Kept deliberately small: this is for characters where a blind substitution
+/// would lose information (a "->" really does read as an arrow), not a general
+/// transliteration table.
+const _pdfGlyphMap = <String, String>{
+  // Dashes and hyphens. The AI narrative is the main source of these — models
+  // emit U+2011 (non-breaking hyphen) and U+2212 (minus) freely.
+  '–': '-', // – en dash
+  '—': '-', // — em dash
+  '‐': '-', // ‐ hyphen
+  '‑': '-', // ‑ non-breaking hyphen
+  '−': '-', // − minus
+  // Quotes and punctuation.
+  '“': '"', // “
+  '”': '"', // ”
+  '„': '"', // „
+  '‘': "'", // ‘
+  '’': "'", // ’
+  '‚': "'", // ‚
+  '…': '...', // …
+  '•': '-', // • bullet
+  '·': '-', // · middle dot (Latin-1, but reads as a separator here)
+  '′': "'", // ′ prime
+  '″': '"', // ″ double prime
+  // Symbols that carry meaning.
+  '★': ' / 5', // ★ rating mark
+  '☆': ' / 5', // ☆
+  '→': '->', // →
+  '←': '<-', // ←
+  '≥': '>=', // ≥
+  '≤': '<=', // ≤
+  '≠': '!=', // ≠
+  '≈': '~', // ≈
+  '₱': 'PHP ', // ₱ peso — the LGU currency, and NOT in Latin-1
+  '€': 'EUR ', // €
+  '™': '(TM)', // ™
+  '℗': '(P)', // ℗
+  // Whitespace that isn't a space. Escaped rather than pasted literally:
+  // these are invisible in an editor, and a bare one in source is
+  // indistinguishable from the space beside it.
+  '\u00A0': ' ', // non-breaking space
+  '\u2007': ' ', // figure space
+  '\u202F': ' ', // narrow no-break space
+  '\u2009': ' ', // thin space
+  '\u200B': '', // zero-width space
+  '\u200C': '', // zero-width non-joiner
+  '\u200D': '', // zero-width joiner
+  '\uFEFF': '', // BOM / zero-width no-break space
+};
+
+/// PDF-safe text.
+///
+/// The standard-14 PDF fonts this document uses (Helvetica, Times) are Type1
+/// fonts whose encoding covers **exactly U+0000-U+00FF** — `isRuneSupported`
+/// in the `pdf` package is literally a `0x00..0xff` range check. Every
+/// codepoint above that renders as a blank "tofu" box on the page.
+///
+/// This runs in two passes:
+///
+///  1. Map the glyphs that have a meaningful equivalent (see [_pdfGlyphMap]).
+///  2. **Backstop:** drop anything still outside Latin-1.
+///
+/// Pass 2 is the important one. Section 4 of the findings report prints text
+/// written by the AI model, which is free-form output that will keep finding
+/// new glyphs a hand-maintained list has never seen — an allowlist is the only
+/// version of this that stays correct. Combining marks are dropped rather than
+/// replaced (so "é" typed as e+U+0301 degrades to "e", not "e?"); anything
+/// else unmapped becomes "?" so a dropped character is visible to whoever
+/// proofreads the document rather than silently changing the text.
+String pdfSafe(String s) {
+  if (s.isEmpty) return s;
+
+  // Fast path: pure ASCII, which is the overwhelming majority of the document.
+  var needsWork = false;
+  for (final unit in s.codeUnits) {
+    if (unit > 0x7F) {
+      needsWork = true;
+      break;
+    }
+  }
+  if (!needsWork) return s;
+
+  var mapped = s;
+  for (final entry in _pdfGlyphMap.entries) {
+    if (mapped.contains(entry.key)) {
+      mapped = mapped.replaceAll(entry.key, entry.value);
+    }
+  }
+
+  final buf = StringBuffer();
+  for (final rune in mapped.runes) {
+    if (rune <= 0xFF) {
+      buf.writeCharCode(rune);
+      continue;
+    }
+    // Combining marks (and the variation selectors / joiners that decorate
+    // emoji) add nothing on their own — dropping one leaves the base letter
+    // readable, where a "?" would corrupt the word.
+    if (_isCombining(rune) || _isFormatting(rune)) continue;
+    buf.write('?');
+  }
+  return buf.toString();
+}
+
+/// Unicode combining-mark blocks: diacritics that modify the preceding letter.
+bool _isCombining(int rune) =>
+    (rune >= 0x0300 && rune <= 0x036F) || // combining diacritical marks
+    (rune >= 0x1AB0 && rune <= 0x1AFF) ||
+    (rune >= 0x1DC0 && rune <= 0x1DFF) ||
+    (rune >= 0x20D0 && rune <= 0x20FF) ||
+    (rune >= 0xFE20 && rune <= 0xFE2F);
+
+/// Zero-width formatting characters and emoji modifiers, which carry no ink.
+bool _isFormatting(int rune) =>
+    (rune >= 0xFE00 && rune <= 0xFE0F) || // variation selectors
+    (rune >= 0xE0100 && rune <= 0xE01EF) ||
+    (rune >= 0x1F3FB && rune <= 0x1F3FF); // skin-tone modifiers
 
 /// The masthead: wordmark, document title, a row of meta chips, and the issuing
 /// LGU. Ruled off with a heavy black underline — the document's only strong
@@ -198,9 +300,15 @@ pw.Widget pdfFindings(List<String> items, {String heading = 'Findings'}) {
             children: [
               // A drawn dot rather than a "•" glyph — the built-in font has no
               // bullet, so the character alone would render as a blank box.
+              //
+              // The dot needs BOTH a width and an alignment. Without the
+              // alignment the inner box stretches to fill the 10pt gutter and
+              // the "circle" prints as a stubby arrow-like smear rather than a
+              // bullet — which is what it did on every report filed so far.
               pw.Container(
                 width: 10,
                 padding: const pw.EdgeInsets.only(top: 4),
+                alignment: pw.Alignment.topLeft,
                 child: pw.Container(
                   width: 3,
                   height: 3,
