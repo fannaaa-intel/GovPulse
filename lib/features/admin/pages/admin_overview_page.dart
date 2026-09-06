@@ -36,6 +36,28 @@ const int _kTabReports = kActivityTabReports;
 const int _kTabSuggestions = kActivityTabSuggestions;
 const int _kTabFeedback = kActivityTabFeedback;
 
+/// How many activity rows the dashboard card previews.
+///
+/// The card is a summary, not the feed: the provider hands it the newest ten,
+/// and drawing all ten made the card ~600px of unbroken list that pushed Top
+/// categories and Satisfaction off the fold. Worse, the loading skeleton drew
+/// four, so every refresh jumped the card by six rows and shoved everything
+/// below it down the page. Five is the whole card — skeleton, loaded rows and
+/// the "+N more" footer all size to this one number, so the card's height is
+/// the same before and after the data lands. The rest of the stream lives
+/// behind "View all", which is a scrolling sheet built for it.
+const int _kActivityPreviewRows = 5;
+
+/// Minimum height of one activity row's content, avatar and text alike.
+///
+/// A floor rather than an intrinsic height for two reasons: a long title must
+/// not make its row taller than its neighbours, and the loading skeleton has
+/// to reserve the same space the real row will take. 44px clears the 36px
+/// avatar and two stacked text lines at normal system text; above that the row
+/// is allowed to grow, because at large accessibility text sizes a hard height
+/// clips the subtitle instead of the layout absorbing it.
+const double _kActivityRowContentHeight = 44;
+
 class AdminOverviewPage extends ConsumerStatefulWidget {
   final int selectedIndex;
 
@@ -945,10 +967,14 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
     final loading = async.isLoading && data == null;
 
     Widget body;
+    int hidden = 0;
     if (loading) {
       body = AdminShimmer(
         child: Column(
-          children: List.generate(4, (_) => const _ActivitySkeletonRow()),
+          children: List.generate(
+            _kActivityPreviewRows,
+            (i) => _ActivitySkeletonRow(isLast: i == _kActivityPreviewRows - 1),
+          ),
         ),
       );
     } else if (data == null) {
@@ -962,7 +988,10 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
         icon: Icons.history_rounded,
       );
     } else {
-      final items = data.recentActivity;
+      final all = data.recentActivity;
+      hidden = all.length - _kActivityPreviewRows;
+      if (hidden < 0) hidden = 0;
+      final items = all.take(_kActivityPreviewRows).toList();
       body = Column(
         children: [
           for (int i = 0; i < items.length; i++)
@@ -999,6 +1028,20 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
           ),
           const SizedBox(height: 16),
           body,
+          // The card is a preview, so the rows it dropped have to be visible
+          // as a count — otherwise the newest five look like the whole feed
+          // and "View all" reads as a no-op. Only drawn when something is
+          // actually hidden, so a quiet week does not grow a dead footer.
+          if (hidden > 0 && widget.onNavigate != null) ...[
+            const SizedBox(height: 4),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: _LinkButton(
+                label: '+$hidden more',
+                onTap: _openActivityFeed,
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1620,48 +1663,66 @@ class _ActivityRow extends StatelessWidget {
             left: 4,
             right: 4,
           ),
-          child: Row(
-            children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.12),
-                  shape: BoxShape.circle,
+          // A MINIMUM content height, not a fixed one. The floor is what makes
+          // every row the same height at normal text, so the card's height is
+          // predictable and the skeleton can reserve it exactly. It stays a
+          // floor because at large system text the two stacked lines are
+          // genuinely taller than 44px, and a hard height clipped them — the
+          // responsive sweep caught that as a 2px overflow at 1.3x.
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              minHeight: _kActivityRowContentHeight,
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    activityKindIcon(item.kind),
+                    size: 16,
+                    color: color,
+                  ),
                 ),
-                child: Icon(activityKindIcon(item.kind), size: 16, color: color),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item.title,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        color: AdminUi.textPrimary,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          color: AdminUi.textPrimary,
+                        ),
                       ),
-                    ),
-                    Text(
-                      item.subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AdminUi.textMuted,
+                      Text(
+                        item.subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AdminUi.textMuted,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                _relativeTime(item.timestamp),
-                style: const TextStyle(fontSize: 11, color: AppColors.grey),
-              ),
-            ],
+                const SizedBox(width: 8),
+                Text(
+                  _relativeTime(item.timestamp),
+                  style: const TextStyle(fontSize: 11, color: AppColors.grey),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -3561,28 +3622,50 @@ class _DonutSkeleton extends StatelessWidget {
   }
 }
 
+/// The loading placeholder for one [_ActivityRow].
+///
+/// Padding mirrors _ActivityRow's exactly — including the last row's trimmed
+/// bottom — and the content is boxed to [_kActivityRowContentHeight] because
+/// the two are drawn at the same spot a few hundred milliseconds apart. Left
+/// to shrink-wrap, the skeleton came out 50px against a real row's 73 (an
+/// activity title wraps to two lines at card width, so the row is sized by its
+/// text, not by its 36px avatar) — five of those was a 120px jump the moment
+/// the data landed, which is the same lurch the row cap exists to stop.
 class _ActivitySkeletonRow extends StatelessWidget {
-  const _ActivitySkeletonRow();
+  /// Matches _ActivityRow.isLast: the final row drops its trailing gap.
+  final bool isLast;
+  const _ActivitySkeletonRow({this.isLast = false});
 
   @override
   Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.only(bottom: 14),
-      child: Row(
-        children: [
-          SkeletonCircle(size: 36),
-          SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _Skeleton(width: 140, height: 11),
-                SizedBox(height: 6),
-                _Skeleton(width: 90, height: 10),
-              ],
+    return Padding(
+      padding: EdgeInsets.only(
+        top: 4,
+        bottom: isLast ? 4 : 14,
+        left: 4,
+        right: 4,
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(
+          minHeight: _kActivityRowContentHeight,
+        ),
+        child: const Row(
+          children: [
+            SkeletonCircle(size: 36),
+            SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _Skeleton(width: 140, height: 11),
+                  SizedBox(height: 6),
+                  _Skeleton(width: 90, height: 10),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
