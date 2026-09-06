@@ -1406,8 +1406,46 @@ class _ReportDetail extends ConsumerStatefulWidget {
 }
 
 class _ReportDetailState extends ConsumerState<_ReportDetail> {
-  late ReportStatus _status = widget.report.status;
   bool _busy = false;
+
+  /// The report as it stands NOW.
+  ///
+  /// The detail opens on a snapshot from the list and then STAYS OPEN — across
+  /// the queue's 30s poll, across the console's silentRefresh, and so across
+  /// writes made by someone else: the admin rejecting the report, or another
+  /// officer in the same department queue resolving it. Rendering from
+  /// `widget.report` left those invisible, and [_isClosed] — the guard that
+  /// takes the status chips, the return-to-triage button and both composers
+  /// away from finished work — was reading a status frozen at tap time, so on a
+  /// report closed underneath the officer it never fired. One tap then reopened
+  /// completed work and pushed a backwards status change to the resident.
+  ///
+  /// Falls back to the snapshot only when the row has left this queue entirely
+  /// (returned to triage, or re-endorsed to another office), where there is
+  /// nothing live to read and the pane must still render what it was opened on.
+  ///
+  /// This is the staff twin of the admin console's `report` getter, which has
+  /// resolved through `byId` for the same reason.
+  StaffReport get report {
+    final rows = ref.watch(widget.queue).valueOrNull;
+    if (rows != null) {
+      for (final r in rows) {
+        if (r.id == widget.report.id) return r;
+      }
+    }
+    return widget.report;
+  }
+
+  /// The status every pane renders from: the LIVE row's, never a snapshot.
+  ///
+  /// There is deliberately no locally-held copy to prefer. Each write on this
+  /// pane goes through its queue notifier, which refetches the department's
+  /// reports and republishes BEFORE returning — so by the time the officer's
+  /// own change has landed, [report] already carries it and a local copy would
+  /// only be a second source of truth to drift. The same read is what lets a
+  /// change made ELSEWHERE (the admin rejecting, a colleague resolving) reach a
+  /// pane that is already open.
+  ReportStatus get _status => report.status;
 
   /// The status whose chip was pressed and is now being written.
   ///
@@ -1480,11 +1518,26 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
   /// The office that owns this report — the agency it was endorsed to, or the
   /// department it was assigned to.
   String? get _owner => widget.endorsement
-      ? (widget.report.endorsedToDepartment ?? widget.department)
-      : (widget.report.assignedToDepartment ?? widget.department);
+      ? (report.endorsedToDepartment ?? widget.department)
+      : (report.assignedToDepartment ?? widget.department);
 
   Future<void> _apply(ReportStatus s) async {
     if (s == _status || _busy) return;
+
+    // The chips are locked on a closed report, so this is the race, not the
+    // button: the officer had the pane open on live work and the admin
+    // rejected it (or a colleague resolved it) between the frame they read and
+    // the tap. Refusing silently would read as a dead control, so it says what
+    // happened — and why the pane in front of them has just changed.
+    if (_isClosed) {
+      showAppSnackBar(
+        context,
+        'This report was closed while you had it open — no further status '
+        'changes can be made.',
+        type: AppSnackType.error,
+      );
+      return;
+    }
 
     // ── Resolving is not a status change ──────────────────────────────────
     // It is the moment the citizen is told the work is finished, so it carries
@@ -1505,7 +1558,6 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
       await ref.read(widget.queue.notifier).setStatus(widget.report.id, s);
       if (mounted) {
         setState(() {
-          _status = s;
           _busy = false;
           _applying = null;
         });
@@ -1557,7 +1609,6 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
 
       if (!mounted) return;
       setState(() {
-        _status = ReportStatus.resolved;
         _busy = false;
         _applying = null;
       });
@@ -1584,6 +1635,22 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
     // officer took to type a reason, and a status chip may have claimed the
     // pane in the meantime.
     if (reason == null || !mounted || _busy) return;
+
+    // The widest window on this pane: the dialog stood open for as long as the
+    // officer took to write a reason, and a poll during it can bring back a
+    // report the admin has since rejected. Bouncing THAT to triage would
+    // reopen a closed report and drag the resident's status backwards — the
+    // exact thing hiding the button on a closed report exists to prevent.
+    if (_isClosed) {
+      showAppSnackBar(
+        context,
+        'This report was closed while you had it open — it can no longer be '
+        'returned to triage.',
+        type: AppSnackType.error,
+      );
+      return;
+    }
+
     setState(() {
       _busy = true;
       _returning = true;
@@ -1614,7 +1681,7 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
   /// The facts behind the routing, shown in the stage card's inset strip: when
   /// the report reached this office, and which office owns it.
   List<({String label, String value})> _routingFacts() {
-    final r = widget.report;
+    final r = report;
     return [
       (
         label: widget.endorsement ? 'Endorsed on' : 'Routed on',
@@ -1680,7 +1747,7 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
   /// Left pane — the stepper, the stage card, the status control that is the
   /// office's one write on the lifecycle, and the Timeline / Work log tabs.
   Widget _statusPane() {
-    final r = widget.report;
+    final r = report;
     final stages = buildReportStagesFrom(
       status: _status,
       // A report only reaches an office once the admin has passed triage.
@@ -1835,7 +1902,7 @@ class _ReportDetailState extends ConsumerState<_ReportDetail> {
 
   /// Right pane — what was reported, and the one action an office has on it.
   Widget _detailsPane() {
-    final r = widget.report;
+    final r = report;
     return DetailPane(
       title: 'Report Details',
       child: Column(
