@@ -47,6 +47,7 @@ import '../../../core/widgets/citizen_guard_modals.dart';
 import '../../../core/providers/user_profile_provider.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../../../core/theme/citizen_ui.dart';
+import '../../../core/widgets/tutorial/quick_action_tutorial.dart';
 
 class HomePage extends ConsumerStatefulWidget {
   final String username;
@@ -63,6 +64,39 @@ class _HomePageState extends ConsumerState<HomePage>
 
   late final AnimationController _entryCtrl;
   static const int _navIndex = 0;
+
+  // ── First-run Quick Action tour ───────────────────────────────────────────
+  /// Anchors the tour's spotlight to the real Quick Action card, so the
+  /// highlight is measured from live geometry rather than recomputed constants.
+  final GlobalKey _quickActionsKey = GlobalKey();
+
+  /// While the tour runs, the real card is held invisible and a copy is drawn
+  /// on the overlay. It stays in the tree (rather than being removed) so the
+  /// page keeps its exact layout and scroll extent, which is what lets the
+  /// settle land pixel-exactly back on the original position.
+  bool _tourActive = false;
+
+  /// The tour is attempted once per mount. `_entryCtrl.forward` is called from
+  /// two places — a post-frame callback when the profile is already cached, and
+  /// the provider listener when it resolves — so without this a fast profile
+  /// load would try to start the tour twice.
+  bool _tourAttempted = false;
+
+  /// Scrolls the mobile body. Owned here (rather than left implicit) so the
+  /// first-run tour can bring the Quick Action card into view before it hands
+  /// the screen back — otherwise the card vanishes from the middle of the
+  /// screen and reappears wherever it happens to live, with nothing connecting
+  /// the two, and the citizen has to go looking for what they were just shown.
+  final ScrollController _mobileScrollCtrl = ScrollController();
+
+  /// The exact `width` the real Quick Action card was last built with.
+  ///
+  /// The overlay copy MUST be built from this same number. The card's every
+  /// dimension is a multiple of it, and it is `min(width, _kMobileContentMax)`
+  /// — not `uiScaleWidthOf(size)`, which is the shortest side and diverges on a
+  /// wide handset. Rebuilding the copy from the wrong one makes the card change
+  /// size the instant the float begins.
+  double _quickActionsWidth = 0;
 
   // ── Responsive bands ──────────────────────────────────────────────────────
   // The rule lives in `nav_band.dart` (resolveNavBand), shared with
@@ -116,6 +150,17 @@ class _HomePageState extends ConsumerState<HomePage>
       vsync: this,
       duration: const Duration(milliseconds: 900),
     );
+    // The tour cannot start until the card is on screen AND has stopped
+    // moving. Home arrives in three stages: a skeleton while the profile
+    // loads (the card is not in the tree at all), then a 900ms staggered
+    // entry in which Quick Actions is index 2, landing at roughly 360-860ms.
+    // Hooking the controller's completion rather than a fixed delay is what
+    // keeps this correct on a slow first frame, where a Future.delayed would
+    // fire while the card is still sliding and measure a moving target.
+    _entryCtrl.addStatusListener((status) {
+      if (status == AnimationStatus.completed) _maybeStartQuickActionTour();
+    });
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       precacheImage(const AssetImage('assets/images/bg.webp'), context);
     });
@@ -151,6 +196,105 @@ class _HomePageState extends ConsumerState<HomePage>
     WidgetsBinding.instance.addPostFrameCallback((_) => _onGuardStatus());
   }
 
+  /// Starts the first-run Quick Action tour, if this is genuinely a first run
+  /// on a surface that can host it.
+  ///
+  /// Called from `_entryCtrl`'s completion listener, so by the time it runs the
+  /// card is laid out and has stopped moving.
+  Future<void> _maybeStartQuickActionTour() async {
+    if (_tourAttempted || !mounted) return;
+    _tourAttempted = true;
+
+    // Phone only. The tablet/web bodies render HomeQuickActionsSectionWeb,
+    // whose layout the anchor key is not attached to, and the float has no
+    // meaning in a two-column dashboard.
+    final band = resolveNavBand(MediaQuery.sizeOf(context));
+    if (band != NavBand.phone) return;
+
+    // Portrait only: the float needs vertical room the landscape viewport
+    // does not have.
+    if (MediaQuery.orientationOf(context) == Orientation.landscape) return;
+
+    // Never over a blocking modal. The account guard owns the screen when a
+    // suspension or restriction notice is up.
+    if (_guardModalOpen) return;
+
+    // The mobile body has never been built, so there is no card to float.
+    if (_quickActionsWidth <= 0) return;
+
+    // One more frame so anything scheduled alongside the entry animation has
+    // settled before the card's rect is read.
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+
+    await QuickActionTutorial.maybeShow(
+      context,
+      anchorKey: _quickActionsKey,
+      ghostBuilder: (_) => HomeQuickActionsSection(
+        // Same width the real card was built with — see _quickActionsWidth.
+        width: _quickActionsWidth,
+        // The copy is painted under an IgnorePointer; taps during the tour are
+        // the overlay's, so this callback is never reached.
+        onActionTap: (_) {},
+      ),
+      onVisibilityChanged: (visible) {
+        if (mounted) setState(() => _tourActive = visible);
+      },
+      onReveal: _revealQuickActions,
+    );
+  }
+
+  /// Scrolls the Quick Action card into view and reports where it landed.
+  ///
+  /// Called by the tour just before it settles, so the card the citizen was
+  /// being shown is on screen when the overlay lets go.
+  Future<Rect?> _revealQuickActions() async {
+    if (!mounted || !_mobileScrollCtrl.hasClients) return null;
+
+    final ctx = _quickActionsKey.currentContext;
+    if (ctx == null) return null;
+    final box = ctx.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return null;
+
+    final media = MediaQuery.of(context);
+    final screenH = media.size.height;
+    final safeTop = media.padding.top;
+    final safeBottom = media.padding.bottom;
+
+    final cardTop = box.localToGlobal(Offset.zero).dy;
+    final cardH = box.size.height;
+
+    // Centre the card in the space between the status bar and the gesture bar
+    // when it fits; otherwise show it from just below the status bar and let
+    // the bottom run off, since the top rows are the ones being introduced.
+    final usable = screenH - safeTop - safeBottom;
+    final desiredTop = cardH >= usable
+        ? safeTop + 12
+        : safeTop + (usable - cardH) / 2;
+
+    final pos = _mobileScrollCtrl.position;
+    final target = (pos.pixels + (cardTop - desiredTop)).clamp(
+      pos.minScrollExtent,
+      pos.maxScrollExtent,
+    );
+
+    // Animated, not a jump: this scroll is the visual bridge between the
+    // floating card and its real home, so it has to be seen to be understood.
+    if ((target - pos.pixels).abs() > 0.5) {
+      await _mobileScrollCtrl.animateTo(
+        target,
+        duration: const Duration(milliseconds: 420),
+        curve: Curves.easeOutCubic,
+      );
+    }
+    if (!mounted) return null;
+
+    // Re-measure AFTER the scroll: this is the rect the tour settles onto.
+    final settled = _quickActionsKey.currentContext?.findRenderObject();
+    if (settled is! RenderBox || !settled.hasSize) return null;
+    return settled.localToGlobal(Offset.zero) & settled.size;
+  }
+
   bool _guardModalOpen = false;
   String? _shownRestrictionSig;
 
@@ -180,6 +324,11 @@ class _HomePageState extends ConsumerState<HomePage>
   void dispose() {
     CitizenGuard.I.status.removeListener(_onGuardStatus);
     homeRouteObserver.unsubscribe(this);
+    // The tour's own exit path clears its static running flag, but a Home
+    // disposed mid-tour never reaches it. Left stuck true, no tour could start
+    // again for the life of the process.
+    if (_tourActive) QuickActionTutorial.abandon();
+    _mobileScrollCtrl.dispose();
     _entryCtrl.dispose();
     super.dispose();
   }
@@ -635,8 +784,13 @@ class _HomePageState extends ConsumerState<HomePage>
     final double cardPull = (width * 0.05).clamp(14.0, 28.0);
     final double sectionGap = (width * 0.05).clamp(16.0, 28.0);
     final double contentW = math.min(width, _kMobileContentMax);
+    // Recorded, not recomputed, so the tour's overlay copy is guaranteed to be
+    // built from the identical number. Assigned during build on purpose: it is
+    // a cached layout input, never read to decide what this build renders.
+    _quickActionsWidth = contentW;
 
     return SingleChildScrollView(
+      controller: _mobileScrollCtrl,
       physics: const BouncingScrollPhysics(),
       child: Column(
         children: [
@@ -681,9 +835,20 @@ class _HomePageState extends ConsumerState<HomePage>
                   SizedBox(height: sectionGap),
                   _animated(
                     2,
-                    HomeQuickActionsSection(
-                      width: contentW,
-                      onActionTap: _handleQuickAction,
+                    // Held invisible (not removed) while the tour paints its
+                    // own copy on the overlay: the card keeps its slot, so the
+                    // page's layout and scroll extent never change and the
+                    // settle lands exactly back on this rect.
+                    Visibility(
+                      visible: !_tourActive,
+                      maintainSize: true,
+                      maintainAnimation: true,
+                      maintainState: true,
+                      child: HomeQuickActionsSection(
+                        key: _quickActionsKey,
+                        width: contentW,
+                        onActionTap: _handleQuickAction,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 16),
