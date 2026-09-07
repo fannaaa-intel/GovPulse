@@ -405,20 +405,23 @@ class _IntroScreenState extends State<IntroScreen>
                   Expanded(
                     flex: 5,
                     // No cacheWidth/cacheHeight here on purpose: the frames
-                    // are ~400px square and the box is 650-1000 physical px,
-                    // so ResizeImage (allowUpscaling: false) would clamp any
+                    // are ~330-390px and the box is 650-1000 physical px, so
+                    // ResizeImage (allowUpscaling: false) would clamp any
                     // target back to the intrinsic size and buy nothing.
                     //
-                    // These still render soft, and nothing here can fix it.
-                    // The drawn artwork is only ~385x340 real pixels inside
-                    // each frame; the box wants 751 physical px on a Pixel 7
-                    // and 1001 on an S23 Ultra, so it is a 2-2.6x upscale on
-                    // every phone. Cropping the dead transparent margin (done
-                    // in the assets) removed ~45% empty canvas but added no
-                    // detail - the artwork measured 385x341 before and after,
-                    // 49.6 dB PSNR between the two. The real fix is a
-                    // re-export from the vector source at ~1000px, or Lottie,
-                    // which is resolution-independent and usually smaller.
+                    // The frames are rebuilt from the original GIFs in
+                    // assets/images/origstoryboard (not shipped) by keying
+                    // their white background to alpha and re-encoding
+                    // LOSSLESS. That matters more than resolution here: this
+                    // is flat vector art, so it needs only ~100 colours, and
+                    // the lossy VP8 encode it replaced was smearing every
+                    // edge to fake ~7800. Same reason there is no upscale -
+                    // there is no higher-res master, and 2x would cost 9-14x
+                    // the bytes for detail that does not exist in the source.
+                    //
+                    // filterQuality stays high because the GPU still scales
+                    // these ~2x on a phone; that upscale is now the only
+                    // softness left in the path.
                     child: Image.asset(
                       data["image"]!,
                       fit: BoxFit.contain,

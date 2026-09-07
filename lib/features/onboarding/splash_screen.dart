@@ -418,7 +418,7 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
     //
     // Only the first two of the six frames are warmed: page one is what the
     // intro actually renders, page two covers the first swipe. Warming all six
-    // would put ~2.8 MB of decoding on the launch path for pages the user may
+    // would put ~2.4 MB of decoding on the launch path for pages the user may
     // never reach — the rest decode lazily as they're swiped to.
     if (mounted) {
       precacheImage(
@@ -427,7 +427,7 @@ class _GovPulseSplashScreenState extends State<GovPulseSplashScreen>
       );
       // Mobile only, matching the !kIsWeb guard on the intro itself below: on
       // web the onboarding branch never runs, so warming its frames would pull
-      // ~880 KB over the network for a screen that platform never shows.
+      // ~780 KB over the network for a screen that platform never shows.
       if (!kIsWeb) {
         precacheImage(
           const AssetImage('assets/images/storyboard/all_in_one.webp'),
