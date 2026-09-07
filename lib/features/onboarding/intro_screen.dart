@@ -404,6 +404,21 @@ class _IntroScreenState extends State<IntroScreen>
                 children: [
                   Expanded(
                     flex: 5,
+                    // No cacheWidth/cacheHeight here on purpose: the frames
+                    // are ~400px square and the box is 650-1000 physical px,
+                    // so ResizeImage (allowUpscaling: false) would clamp any
+                    // target back to the intrinsic size and buy nothing.
+                    //
+                    // These still render soft, and nothing here can fix it.
+                    // The drawn artwork is only ~385x340 real pixels inside
+                    // each frame; the box wants 751 physical px on a Pixel 7
+                    // and 1001 on an S23 Ultra, so it is a 2-2.6x upscale on
+                    // every phone. Cropping the dead transparent margin (done
+                    // in the assets) removed ~45% empty canvas but added no
+                    // detail - the artwork measured 385x341 before and after,
+                    // 49.6 dB PSNR between the two. The real fix is a
+                    // re-export from the vector source at ~1000px, or Lottie,
+                    // which is resolution-independent and usually smaller.
                     child: Image.asset(
                       data["image"]!,
                       fit: BoxFit.contain,
