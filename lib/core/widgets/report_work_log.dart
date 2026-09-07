@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../features/admin/widgets/admin_skeleton.dart';
@@ -796,36 +797,70 @@ class _ReportWorkLogState extends State<ReportWorkLog> {
                   // field exactly _kComposerFieldHeight tall including the
                   // shell's own padding and border — see that constant.
                   padding: const EdgeInsets.symmetric(horizontal: 6),
-                  child: TextField(
-                    controller: _ctrl,
-                    focusNode: _focus,
-                    minLines: 1,
-                    maxLines: 4,
-                    maxLength: 500,
-                    textCapitalization: TextCapitalization.sentences,
-                    textInputAction: TextInputAction.newline,
-                    style: const TextStyle(
-                      fontSize: 13.5,
-                      color: Color(0xFF1F2937),
-                      height: 1.35,
-                    ),
-                    decoration: const InputDecoration(
-                      isDense: true,
-                      counterText: '',
-                      hintText: 'Add a note…',
-                      hintStyle: TextStyle(
+                  // ── ENTER SENDS; SHIFT+ENTER BREAKS THE LINE ──────────
+                  //
+                  // Without this the note composer was the only send-shaped
+                  // control in the product where the obvious key did nothing:
+                  // a desk officer typing a note and pressing Enter got a
+                  // blank second line, and the note sat unsent until they
+                  // found the button. Every other composer here already reads
+                  // Enter this way (the citizen chat bar, the staff
+                  // conversation reply), so the note thread was the outlier.
+                  //
+                  // This is safe on a phone. A soft keyboard's return key
+                  // arrives as a TextInputAction through the text-input
+                  // channel, not as a hardware [KeyDownEvent], so [maxLines]
+                  // and [TextInputAction.newline] still give a touch user the
+                  // newline. It is the physical Enter — desktop and web, where
+                  // the complaint came from — that sends.
+                  //
+                  // KeyDownEvent only: a KeyUpEvent for the same press would
+                  // otherwise post the note a second time. See
+                  // note_composer_enter_sends_test.dart.
+                  child: Focus(
+                    onKeyEvent: (node, event) {
+                      if (event is KeyDownEvent &&
+                          event.logicalKey == LogicalKeyboardKey.enter &&
+                          !HardwareKeyboard.instance.isShiftPressed) {
+                        // _send() refuses an empty or in-flight note itself,
+                        // so Enter on an empty field is swallowed rather than
+                        // inserting the break it just suppressed.
+                        _send();
+                        return KeyEventResult.handled;
+                      }
+                      return KeyEventResult.ignored;
+                    },
+                    child: TextField(
+                      controller: _ctrl,
+                      focusNode: _focus,
+                      minLines: 1,
+                      maxLines: 4,
+                      maxLength: 500,
+                      textCapitalization: TextCapitalization.sentences,
+                      textInputAction: TextInputAction.newline,
+                      style: const TextStyle(
                         fontSize: 13.5,
-                        color: Color(0xFF9CA3AF),
+                        color: Color(0xFF1F2937),
+                        height: 1.35,
                       ),
-                      // Every edge and fill now belongs to the shell. A
-                      // border here would draw a second box inside the first.
-                      filled: false,
-                      isCollapsed: true,
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      contentPadding: EdgeInsets.symmetric(
-                        vertical: _kComposerFieldPad,
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        counterText: '',
+                        hintText: 'Add a note…',
+                        hintStyle: TextStyle(
+                          fontSize: 13.5,
+                          color: Color(0xFF9CA3AF),
+                        ),
+                        // Every edge and fill now belongs to the shell. A
+                        // border here would draw a second box inside the first.
+                        filled: false,
+                        isCollapsed: true,
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        contentPadding: EdgeInsets.symmetric(
+                          vertical: _kComposerFieldPad,
+                        ),
                       ),
                     ),
                   ),
