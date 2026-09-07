@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/Home/citizen_page_header.dart';
 import '../../../core/widgets/app_snackbar.dart';
 import '../../../core/widgets/loading/loading_overlay.dart';
 import '../../../core/widgets/modal/verification_required_dialog.dart';
@@ -554,7 +555,7 @@ class _SettingScreenState extends ConsumerState<SettingsBody>
               constraints: const BoxConstraints(maxWidth: 480),
               child: Column(
                 children: [
-                  _buildHeader(width),
+                  CitizenPageHeader(title: 'Settings', width: width),
                   Expanded(
                     child: LoadingOverlay.bodyOrSkeleton(
                       isLoading: profileLoading,
@@ -914,54 +915,6 @@ class _SettingScreenState extends ConsumerState<SettingsBody>
   );
 
   // ── Header ────────────────────────────────────────────────────────────────
-  Widget _buildHeader(double width) {
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.fromLTRB(
-        width * 0.04,
-        width * 0.04,
-        width * 0.04,
-        width * 0.04,
-      ),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Image.asset(
-            'assets/images/newslogo.webp',
-            height: width * 0.075,
-            fit: BoxFit.contain,
-            alignment: Alignment.centerLeft,
-            errorBuilder: (_, _, _) => Icon(
-              Icons.account_balance_rounded,
-              size: width * 0.065,
-              color: AppColors.primaryBlue,
-            ),
-          ),
-          SizedBox(height: width * 0.018),
-          Text(
-            'Settings',
-            style: TextStyle(
-              fontSize: width * 0.058,
-              fontWeight: FontWeight.w700,
-              color: AppColors.primaryBlue,
-              letterSpacing: -0.3,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   // ── Profile summary card ──────────────────────────────────────────────────
   Widget _buildProfileCard(
@@ -1334,7 +1287,12 @@ class _SettingScreenState extends ConsumerState<SettingsBody>
         if (_showSetPasswordTile)
           _buildTile(
             imagePath: 'assets/images/settings/password.webp',
-            iconBgColor: const Color(0xFF1877F2),
+            // Was Facebook's brand blue (0xFF1877F2). Only the AUDIENCE for
+            // this tile is Facebook-related — it is offered to an OAuth-only
+            // account — and the glyph it tints is a padlock, not Facebook's
+            // mark, so the brand colour was tinting the wrong thing and read
+            // as a third accent next to the app blue.
+            iconBgColor: AppColors.primaryBlue,
             title: _hasPasswordLogin ? 'Update Password' : 'Set Password',
             subtitle: _hasPasswordLogin
                 ? 'Change your email login password'
@@ -1395,7 +1353,7 @@ class _SettingScreenState extends ConsumerState<SettingsBody>
       children: [
         _buildTile(
           imagePath: 'assets/images/settings/contact.webp',
-          iconBgColor: AppColors.green,
+          iconBgColor: AppColors.primaryBlue,
           title: 'Contact Support',
           subtitle: 'Get help from the Aparri LGU',
           width: width,
@@ -1459,7 +1417,7 @@ class _SettingScreenState extends ConsumerState<SettingsBody>
         ),
         _buildTile(
           imagePath: 'assets/images/settings/location.webp',
-          iconBgColor: AppColors.green,
+          iconBgColor: AppColors.primaryBlue,
           title: 'Location',
           subtitle: 'Aparri, Cagayan',
           width: width,
@@ -1476,7 +1434,7 @@ class _SettingScreenState extends ConsumerState<SettingsBody>
         ),
         _buildTile(
           imagePath: 'assets/images/settings/app.webp',
-          iconBgColor: AppColors.green,
+          iconBgColor: AppColors.primaryBlue,
           title: 'App Version',
           width: width,
           showDivider: false,

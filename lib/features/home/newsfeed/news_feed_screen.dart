@@ -1353,17 +1353,20 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
         color: Colors.white,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: .04),
-            blurRadius: 6,
+            // Same shadow as CitizenPageHeader. This bar cannot use that
+            // widget — it is shared with the web arm and carries the filter
+            // control — so the values are matched by hand instead.
+            color: Colors.black.withValues(alpha: .05),
+            blurRadius: 8,
             offset: const Offset(0, 2),
           ),
         ],
       ),
       padding: EdgeInsets.fromLTRB(
         width * 0.04,
-        width * 0.025,
         width * 0.04,
-        width * 0.035,
+        width * 0.04,
+        width * 0.04,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1412,7 +1415,7 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
               color: const Color(0xFF9CA3AF),
             ),
           ),
-          SizedBox(height: width * 0.045),
+          SizedBox(height: width * 0.018),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -1428,9 +1431,10 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: width * 0.052,
-                    fontWeight: FontWeight.w800,
+                    fontSize: width * 0.058,
+                    fontWeight: FontWeight.w700,
                     color: AppColors.primaryBlue,
+                    letterSpacing: -0.3,
                   ),
                 ),
               ),

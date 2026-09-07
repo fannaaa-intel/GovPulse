@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../core/widgets/Home/citizen_page_header.dart';
 import '../../../core/widgets/Home/Account/account_web_kit.dart';
 import '../../../../core/widgets/app_snackbar.dart';
 
@@ -535,7 +536,11 @@ class _EmergencyScreenState extends State<EmergencyBody>
               constraints: const BoxConstraints(maxWidth: 480),
               child: Column(
                 children: [
-                  _topBar(w),
+                  CitizenPageHeader(
+                    title: 'Emergency',
+                    subtitle: 'Aparri, Cagayan — Official Hotlines',
+                    width: w,
+                  ),
                   Expanded(
                     child: SingleChildScrollView(
                       physics: const BouncingScrollPhysics(),
@@ -698,54 +703,6 @@ class _EmergencyScreenState extends State<EmergencyBody>
   }
 
   // ── Top bar — ORIGINAL sizes ──────────────────────────────────────────────
-  Widget _topBar(double w) {
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.fromLTRB(w * .05, w * .038, w * .05, w * .038),
-      decoration: BoxDecoration(
-        color: _C.surface,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: .05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Image.asset(
-            'assets/images/newslogo.webp',
-            height: w * .075,
-            fit: BoxFit.contain,
-            alignment: Alignment.centerLeft,
-            errorBuilder: (_, _, _) => Icon(
-              Icons.account_balance_rounded,
-              size: w * .065,
-              color: AppColors.primaryBlue,
-            ),
-          ),
-          SizedBox(height: w * .018),
-          Text(
-            'Emergency',
-            style: TextStyle(
-              fontSize: w * .058,
-              fontWeight: FontWeight.w900,
-              color: AppColors.primaryBlue,
-              letterSpacing: -.8,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            'Aparri, Cagayan — Official Hotlines',
-            style: TextStyle(fontSize: w * .030, color: _C.textHint),
-          ),
-        ],
-      ),
-    );
-  }
 
   /// The pulsing white 911 disc, drawn to fill a [box]-square.
   ///

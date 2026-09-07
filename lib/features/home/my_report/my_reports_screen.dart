@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/app_colors.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/router/legacy_nav.dart';
+import '../../../core/widgets/Home/citizen_page_header.dart';
 import '../../../core/widgets/Home/nav/responsive_nav_scaffold.dart';
 import '../../../../core/widgets/loading/loading_overlay.dart';
 import '../../../core/widgets/web/web_card_grid.dart';
@@ -407,7 +408,11 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
               constraints: const BoxConstraints(maxWidth: 480),
               child: Column(
                 children: [
-                  _buildTopBar(w),
+                  CitizenPageHeader(
+                    title: 'My Reports',
+                    subtitle: 'Track your submitted issues',
+                    width: w,
+                  ),
                   Expanded(
                     child: LoadingOverlay.bodyOrSkeleton(
                       isLoading: _isLoading,
@@ -485,7 +490,7 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      // ── Not _buildTopBar ───────────────────────────────
+                      // ── Not CitizenPageHeader ───────────────────────────────
                       //
                       // That one is the phone's: a full-bleed white slab with
                       // a drop shadow, carrying the GovPulse mark. On a phone
@@ -745,68 +750,6 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
   }
   // ── Top bar ────────────────────────────────────────────────────────────────
 
-  Widget _buildTopBar(double w) {
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.fromLTRB(w * .04, w * .04, w * .04, w * .04),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: .05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Image.asset(
-            'assets/images/newslogo.webp',
-            height: w * .075,
-            fit: BoxFit.contain,
-            alignment: Alignment.centerLeft,
-            errorBuilder: (_, _, _) => Icon(
-              Icons.account_balance_rounded,
-              size: w * .065,
-              color: AppColors.primaryBlue,
-            ),
-          ),
-          SizedBox(height: w * .018),
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'My Reports',
-                      style: TextStyle(
-                        fontSize: w * .058,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.primaryBlue,
-                        letterSpacing: -0.3,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Track your submitted issues',
-                      style: TextStyle(
-                        fontSize: w * .030,
-                        color: _T.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
 
   // ── KPI row ────────────────────────────────────────────────────────────────
 

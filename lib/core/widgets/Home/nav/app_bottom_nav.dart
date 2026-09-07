@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../../theme/mobile_metrics.dart';
+import 'bottom_nav_metrics.dart';
 import '../../../network/network_wrapper.dart';
 import '../../../router/legacy_nav.dart';
 import '../../modal/verification_required_dialog.dart';
@@ -103,8 +103,8 @@ class AppBottomNav extends StatelessWidget {
     // whole width, so the strip behind the system bar stays app-coloured
     // instead of showing the page scrolling past underneath.
     final viewPad = MediaQuery.viewPaddingOf(context);
-    final width = uiScaleWidth(context);
-    final iconSize = width * 0.065;
+    final iconSize = navIconSize(context);
+    final labelSize = navLabelSize(context);
     const activeColor = Color(0xFF60A5FA);
     const inactiveColor = Color(0xFF9CA3AF);
 
@@ -142,8 +142,8 @@ class AppBottomNav extends StatelessWidget {
           currentIndex: currentIndex,
           selectedItemColor: activeColor,
           unselectedItemColor: inactiveColor,
-          selectedFontSize: width * 0.028,
-          unselectedFontSize: width * 0.028,
+          selectedFontSize: labelSize,
+          unselectedFontSize: labelSize,
           onTap: (index) => _handleTap(context, index),
           items: [
             BottomNavigationBarItem(
@@ -155,7 +155,7 @@ class AppBottomNav extends StatelessWidget {
                 'assets/images/my_reports.webp',
                 currentIndex == 1,
               ),
-              label: 'My Reports',
+              label: 'Reports',
             ),
             BottomNavigationBarItem(
               icon: buildIcon(
