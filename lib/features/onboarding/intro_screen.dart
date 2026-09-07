@@ -121,6 +121,17 @@ class _IntroScreenState extends State<IntroScreen>
     final double btnLabelSz = isTablet ? 17.0 : 16.0;
     final double skipLabelSz = isTablet ? 17.0 : 16.0;
 
+    // Illustration cap.
+    //
+    // The frames are near-square (~1.05-1.12 aspect), so BoxFit.contain in a
+    // full-width slot goes WIDTH-limited on any phone from ~390px up: the art
+    // then spans the whole column, edge to edge inside the 20px page padding,
+    // and swallows ~37% of the viewport. Capping the width is what actually
+    // shrinks it; the height cap keeps tall, narrow phones from trading that
+    // back for a slot the art grows into.
+    final double illMaxWidth = (w * 0.56).clamp(140.0, isTablet ? 300.0 : 260.0);
+    final double illMaxHeight = (h * 0.24).clamp(120.0, 260.0);
+
     return Scaffold(
       backgroundColor: const Color(0xFFF4F7FB),
       body: SafeArea(
@@ -129,7 +140,12 @@ class _IntroScreenState extends State<IntroScreen>
             constraints: BoxConstraints(maxWidth: contentMax),
             child: LayoutBuilder(
               builder: (context, c) {
-                final double pageH = (c.maxHeight * 0.55).clamp(260.0, 480.0);
+                // 0.48, not 0.55: with the illustration capped the page no
+                // longer needs half the viewport, and the old reserve just
+                // left dead air between the art and the body copy. The 240
+                // floor still clears title + two lines of body on a short
+                // phone, which is what the overflow probe guards.
+                final double pageH = (c.maxHeight * 0.48).clamp(240.0, 430.0);
                 return SingleChildScrollView(
                   child: ConstrainedBox(
                     constraints: BoxConstraints(minHeight: c.maxHeight),
@@ -164,6 +180,8 @@ class _IntroScreenState extends State<IntroScreen>
                                 index,
                                 titleSize: titleSize,
                                 descSize: descSize,
+                                illMaxWidth: illMaxWidth,
+                                illMaxHeight: illMaxHeight,
                               ),
                             ),
                           ),
@@ -375,6 +393,8 @@ class _IntroScreenState extends State<IntroScreen>
     int index, {
     required double titleSize,
     required double descSize,
+    required double illMaxWidth,
+    required double illMaxHeight,
   }) {
     final data = pages[index];
 
@@ -402,31 +422,45 @@ class _IntroScreenState extends State<IntroScreen>
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
+                  // Expanded still absorbs the slack in the page (the body
+                  // text below sizes to its content), but the art no longer
+                  // grows to fill it: the ConstrainedBox caps it, and Center
+                  // keeps it centred in whatever is left over.
                   Expanded(
                     flex: 5,
-                    // No cacheWidth/cacheHeight here on purpose: the frames
-                    // are ~330-390px and the box is 650-1000 physical px, so
-                    // ResizeImage (allowUpscaling: false) would clamp any
-                    // target back to the intrinsic size and buy nothing.
-                    //
-                    // The frames are rebuilt from the original GIFs in
-                    // assets/images/origstoryboard (not shipped) by keying
-                    // their white background to alpha and re-encoding
-                    // LOSSLESS. That matters more than resolution here: this
-                    // is flat vector art, so it needs only ~100 colours, and
-                    // the lossy VP8 encode it replaced was smearing every
-                    // edge to fake ~7800. Same reason there is no upscale -
-                    // there is no higher-res master, and 2x would cost 9-14x
-                    // the bytes for detail that does not exist in the source.
-                    //
-                    // filterQuality stays high because the GPU still scales
-                    // these ~2x on a phone; that upscale is now the only
-                    // softness left in the path.
-                    child: Image.asset(
-                      data["image"]!,
-                      fit: BoxFit.contain,
-                      filterQuality: FilterQuality.high,
-                      gaplessPlayback: true,
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth: illMaxWidth,
+                          maxHeight: illMaxHeight,
+                        ),
+                        // No cacheWidth/cacheHeight here on purpose: the
+                        // frames are ~330-390px and the box is smaller than
+                        // that in logical px but still 2-3x it in physical
+                        // px, so ResizeImage (allowUpscaling: false) would
+                        // clamp any target back to the intrinsic size and buy
+                        // nothing.
+                        //
+                        // The frames are rebuilt from the original GIFs in
+                        // assets/images/origstoryboard (not shipped) by
+                        // keying their white background to alpha and
+                        // re-encoding LOSSLESS. That matters more than
+                        // resolution here: this is flat vector art, so it
+                        // needs only ~100 colours, and the lossy VP8 encode
+                        // it replaced was smearing every edge to fake ~7800.
+                        // Same reason there is no upscale - there is no
+                        // higher-res master, and 2x would cost 9-14x the
+                        // bytes for detail that does not exist in the source.
+                        //
+                        // filterQuality stays high because the GPU still
+                        // scales these on a phone.
+                        child: Image.asset(
+                          data["image"]!,
+                          fit: BoxFit.contain,
+                          filterQuality: FilterQuality.high,
+                          gaplessPlayback: true,
+                        ),
+                      ),
                     ),
                   ),
                   SizedBox(

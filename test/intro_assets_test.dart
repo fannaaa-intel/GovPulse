@@ -27,9 +27,16 @@ void main() {
       expect(codec.frameCount, greaterThan(1),
           reason: '$path decoded as a still image, not an animation');
 
+      // The frames are cropped to their artwork (commit 21f72fc), so they are
+      // no longer the old uniform 500x500 - each is its own size, ~330-390px
+      // on the long edge. Assert a sane band rather than an exact size: the
+      // point is to catch a frame that is missing, upscaled, or wildly off,
+      // not to re-pin a number every crop changes.
       final frame = await codec.getNextFrame();
-      expect(frame.image.width, 500, reason: '$path unexpected width');
-      expect(frame.image.height, 500, reason: '$path unexpected height');
+      expect(frame.image.width, inInclusiveRange(280, 420),
+          reason: '$path unexpected width');
+      expect(frame.image.height, inInclusiveRange(280, 420),
+          reason: '$path unexpected height');
     }
   });
 
