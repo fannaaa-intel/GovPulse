@@ -446,11 +446,16 @@ class _IntroScreenState extends State<IntroScreen>
                         // keying their white background to alpha and
                         // re-encoding LOSSLESS. That matters more than
                         // resolution here: this is flat vector art, so it
-                        // needs only ~100 colours, and the lossy VP8 encode
-                        // it replaced was smearing every edge to fake ~7800.
-                        // Same reason there is no upscale - there is no
-                        // higher-res master, and 2x would cost 9-14x the
-                        // bytes for detail that does not exist in the source.
+                        // needs only ~250 colours, and a lossy VP8 encode
+                        // smears every edge to fake thousands. Same reason
+                        // there is no upscale - there is no higher-res
+                        // master, and 2x would cost many times the bytes for
+                        // detail that does not exist in the source.
+                        //
+                        // The art is the SIMPLE-BACKGROUND cut: the set it
+                        // replaced framed every scene in grey room clutter
+                        // (windows, shelves, plants) that read as noise at
+                        // the ~250px this actually draws them at.
                         //
                         // filterQuality stays high because the GPU still
                         // scales these on a phone.

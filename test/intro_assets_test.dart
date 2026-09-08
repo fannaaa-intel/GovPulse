@@ -37,6 +37,19 @@ void main() {
           reason: '$path unexpected width');
       expect(frame.image.height, inInclusiveRange(280, 420),
           reason: '$path unexpected height');
+
+      // The frames are drawn straight onto the #F4F7FB intro page, so the
+      // background has to be REAL alpha, not baked-in white. A frame that
+      // ships opaque looks like a white card floating on the page - which is
+      // exactly the bug this guards, and it is invisible to `flutter
+      // analyze`. Sampling the corner is enough: the build crops to the
+      // artwork's bounding box, so the corner is always background.
+      final bytes = await frame.image.toByteData(
+        format: ui.ImageByteFormat.rawRgba,
+      );
+      expect(bytes, isNotNull, reason: '$path could not be read back');
+      expect(bytes!.getUint8(3), 0,
+          reason: '$path corner is opaque - the background was not keyed out');
     }
   });
 
