@@ -115,12 +115,30 @@ class _VerificationScreenState extends State<VerificationScreen>
         /// ❌ LOGO REMOVED
 
         /// ILLUSTRATION
-        Center(
-          child: Image.asset(
-            "assets/images/verification/getverified.webp",
-            height: 150,
-            fit: BoxFit.contain,
-          ),
+        //
+        // The asset is cropped to its own artwork, so this height is the
+        // artwork's height - it used to size a 500x500 canvas that was 36%
+        // transparent padding, which drew the figure at ~96px and read as an
+        // afterthought above the card.
+        //
+        // Sized off the width so it holds its share of the screen instead of
+        // eating a small phone's fold: ~44% of width, clamped so a 320px
+        // device still gets a readable figure and a tablet does not blow it
+        // up past the source's 329px of real detail.
+        LayoutBuilder(
+          builder: (context, c) {
+            final double h = (c.maxWidth * 0.44).clamp(150.0, 210.0);
+            return Center(
+              child: Image.asset(
+                "assets/images/verification/getverified.webp",
+                height: h,
+                fit: BoxFit.contain,
+                // Upscaling past the source's 329px is what makes a webp look
+                // soft. Filtering keeps the edges smooth rather than blocky.
+                filterQuality: FilterQuality.high,
+              ),
+            );
+          },
         ),
 
         const SizedBox(height: 24),
@@ -433,11 +451,16 @@ class _VerificationScreenState extends State<VerificationScreen>
                   Center(
                     child: Image.asset(
                       'assets/images/verification/getverified.webp',
-                      // The phone draws this at 150 inside a 480 column. The
-                      // web measure is 880, so it keeps roughly the same share
-                      // of the page instead of shrinking into the middle of it.
-                      height: stack ? 150 : 180,
+                      // These are artwork heights now, not canvas heights: the
+                      // asset is cropped to the figure, so the old 150/180 pair
+                      // was drawing it at ~96/115 and losing it in the measure.
+                      //
+                      // Held just under the source's 329px of real detail so
+                      // the desktop page - where a browser is usually at dpr 1
+                      // or 2 - never asks for pixels the artwork does not have.
+                      height: stack ? 190 : 240,
                       fit: BoxFit.contain,
+                      filterQuality: FilterQuality.high,
                     ),
                   ),
                   const SizedBox(height: kAccountSectionGap),
