@@ -93,7 +93,7 @@ class _WebArmState extends State<_WebArm> {
                     ),
                     const SizedBox(height: 2),
                     Align(
-                      alignment: Alignment.centerLeft,
+                      alignment: Alignment.centerRight,
                       child: _sortControl(),
                     ),
                   ],

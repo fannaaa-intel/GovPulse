@@ -105,21 +105,17 @@ const List<String> _moreFilters = [
 /// row, every section heading and the date chip all speak in event dates, so
 /// ordering by an invisible posting timestamp would look broken rather than
 /// sorted.
+///
+/// No per-value icon: with two orders the control TOGGLES rather than opening a
+/// picker, so there is no list of options for an icon to sit in, and a single
+/// direction arrow on the closed control was ambiguous — it read equally as the
+/// order in effect and the order a tap would switch to.
 enum EventSort {
-  soonest('Soonest first', Icons.arrow_upward_rounded),
-  newest('Newest to Oldest', Icons.arrow_downward_rounded);
+  soonest('Soonest first'),
+  newest('Newest to Oldest');
 
-  const EventSort(this.label, this.icon);
+  const EventSort(this.label);
   final String label;
-
-  /// Shown in the PICKER only — the sheet on mobile, the menu on web — where
-  /// both orders sit side by side and the arrows read as a comparison.
-  ///
-  /// Deliberately NOT on the closed control. There, one arrow beside one value
-  /// is ambiguous: it can be read as the order the list is in, or as the order
-  /// tapping would switch to. The closed control says `Sort <value>` instead
-  /// and lets the word do the work the icon could not.
-  final IconData icon;
 }
 
 /// Orders two events by [sort].
@@ -858,8 +854,11 @@ class _EventsScreenState extends State<EventsScreen>
           ),
         ),
         const SizedBox(height: 2),
+        // Right, matching the side-by-side head above and the mobile row: the
+        // chips answer "which events" from the left, the sort answers "in what
+        // order" from the right, on every arm.
         Align(
-          alignment: Alignment.centerLeft,
+          alignment: Alignment.centerRight,
           child: _SplitSortControl(
             sort: _sort,
             onChanged: (s) => setState(() => _sort = s),
@@ -1986,7 +1985,7 @@ class _EventsScreenState extends State<EventsScreen>
           Flexible(
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTap: () => _openSortSheet(w),
+              onTap: _toggleSort,
               child: Container(
                 padding: EdgeInsets.symmetric(
                   horizontal: w * 0.025,
@@ -2035,78 +2034,20 @@ class _EventsScreenState extends State<EventsScreen>
     );
   }
 
-  /// The sort picker, as a bottom sheet — the mobile app's own idiom for a
-  /// short list of choices, and reachable with a thumb unlike a dropdown
-  /// anchored at the top of the list.
-  Future<void> _openSortSheet(double w) async {
-    final selected = await showModalBottomSheet<EventSort>(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(w * 0.05)),
-      ),
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              margin: EdgeInsets.symmetric(vertical: w * 0.03),
-              width: w * 0.1,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppColors.stroke,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            Padding(
-              padding: EdgeInsets.fromLTRB(w * 0.05, 0, w * 0.05, w * 0.02),
-              child: Row(
-                children: [
-                  Text(
-                    'Sort events',
-                    style: TextStyle(
-                      fontSize: (w * 0.042).clamp(14.0, 18.0),
-                      fontWeight: FontWeight.w700,
-                      color: const Color(0xFF111827),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            for (final s in EventSort.values)
-              ListTile(
-                onTap: () => Navigator.pop(sheetContext, s),
-                leading: Icon(
-                  s.icon,
-                  size: (w * 0.05).clamp(16.0, 22.0),
-                  color: s == _sort
-                      ? AppColors.primaryBlue
-                      : const Color(0xFF6B7280),
-                ),
-                title: Text(
-                  s.label,
-                  style: TextStyle(
-                    fontSize: (w * 0.037).clamp(13.0, 16.0),
-                    fontWeight: s == _sort ? FontWeight.w700 : FontWeight.w500,
-                    color: s == _sort
-                        ? AppColors.primaryBlue
-                        : const Color(0xFF374151),
-                  ),
-                ),
-                trailing: s == _sort
-                    ? Icon(
-                        Icons.check_rounded,
-                        size: (w * 0.05).clamp(16.0, 22.0),
-                        color: AppColors.primaryBlue,
-                      )
-                    : null,
-              ),
-            SizedBox(height: w * 0.02),
-          ],
-        ),
-      ),
-    );
-    if (selected != null && mounted) setState(() => _sort = selected);
+  /// Switches to the other order.
+  ///
+  /// ── Why there is no sheet any more ──────────────────────────────────────
+  /// There are exactly TWO orders. A bottom sheet to choose between two things
+  /// costs a tap to open, a tap to pick, and covers the list it is about —
+  /// and one of its two rows is always the order already in effect. A tap on
+  /// the pill just switches to the other one, and the pill's label says which
+  /// is now on. If a third order is ever added this has to become a sheet
+  /// again.
+  void _toggleSort() {
+    final values = EventSort.values;
+    setState(() {
+      _sort = values[(values.indexOf(_sort) + 1) % values.length];
+    });
   }
 
   Widget _buildMoreFilterChips(double w) {
@@ -2808,17 +2749,14 @@ class _SplitFilterChipState extends State<_SplitFilterChip> {
   }
 }
 
-/// The panel's sort control: an arrow, the current order, and a chevron.
+/// The panel's sort control: the newsfeed's web filter control, borrowed.
 ///
-/// Deliberately NOT a funnel. A funnel is the newsfeed's filter idiom and it
-/// already means "narrow this list" everywhere else in the app — on a control
-/// that re-orders without removing anything it promises the wrong thing. The
-/// arrow points the way the list runs and flips with the order, so the icon
-/// says which direction is active before the label is read.
-///
-/// Reads as text, not as a fifth chip: the chip row beside it is the FILTER,
-/// and giving the sort the same pill would put two different questions in one
-/// visual voice.
+/// ── Why it toggles instead of opening a menu ────────────────────────────────
+/// There are exactly TWO orders. A menu to choose between two things costs a
+/// click to open, a click to pick, and covers the list it is about — and one of
+/// the two rows it shows is always the one already in effect. Clicking the
+/// control just switches to the other order, and the label says which one is
+/// now on. If a third order is ever added this has to become a menu again.
 class _SplitSortControl extends StatefulWidget {
   final EventSort sort;
   final ValueChanged<EventSort> onChanged;
@@ -2832,57 +2770,12 @@ class _SplitSortControl extends StatefulWidget {
 class _SplitSortControlState extends State<_SplitSortControl> {
   bool _hover = false;
 
-  Future<void> _open() async {
-    // Anchored to the control itself so the menu opens where the click was,
-    // rather than at the corner of the panel.
-    final box = context.findRenderObject() as RenderBox?;
-    final overlay =
-        Overlay.of(context).context.findRenderObject() as RenderBox?;
-    if (box == null || overlay == null) return;
-
-    final origin = box.localToGlobal(Offset.zero, ancestor: overlay);
-    final selected = await showMenu<EventSort>(
-      context: context,
-      position: RelativeRect.fromLTRB(
-        origin.dx,
-        origin.dy + box.size.height + 4,
-        overlay.size.width - origin.dx - box.size.width,
-        0,
-      ),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      items: [
-        for (final s in EventSort.values)
-          PopupMenuItem<EventSort>(
-            value: s,
-            height: 40,
-            child: Row(
-              children: [
-                Icon(
-                  s.icon,
-                  size: 16,
-                  color: s == widget.sort
-                      ? CitizenUi.accent
-                      : CitizenUi.textMuted,
-                ),
-                const SizedBox(width: 10),
-                Text(
-                  s.label,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: s == widget.sort
-                        ? FontWeight.w700
-                        : FontWeight.w500,
-                    color: s == widget.sort
-                        ? CitizenUi.accent
-                        : CitizenUi.textSecondary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-      ],
-    );
-    if (selected != null) widget.onChanged(selected);
+  /// Switches to the other order. See the class doc: with two values a menu
+  /// would spend two clicks and cover the list to offer one real choice.
+  void _toggle() {
+    final values = EventSort.values;
+    final next = values[(values.indexOf(widget.sort) + 1) % values.length];
+    widget.onChanged(next);
   }
 
   @override
@@ -2900,7 +2793,7 @@ class _SplitSortControlState extends State<_SplitSortControl> {
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
       child: GestureDetector(
-        onTap: _open,
+        onTap: _toggle,
         behavior: HitTestBehavior.opaque,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),

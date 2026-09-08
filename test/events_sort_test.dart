@@ -99,12 +99,11 @@ void main() {
       expect(EventSort.values.first, EventSort.soonest);
     });
 
-    test('the picker rows carry direction arrows', () {
-      // Inside the sheet/menu both orders are listed together, so an arrow per
-      // row reads as a comparison — which way each one runs. The CLOSED
-      // control is the newsfeed's funnel; these are only for the picker.
-      expect(EventSort.soonest.icon, Icons.arrow_upward_rounded);
-      expect(EventSort.newest.icon, Icons.arrow_downward_rounded);
+    test('there are exactly two orders, which is why it toggles', () {
+      // The control switches straight to the other value instead of opening a
+      // picker. That is only defensible while there are two: a third would
+      // make a tap ambiguous and the picker would have to come back.
+      expect(EventSort.values.length, 2);
     });
   });
 
@@ -154,18 +153,22 @@ void main() {
       expect(find.text('Soonest first'), findsOneWidget);
     });
 
-    testWidgets('picking Newest to Oldest updates the control', (tester) async {
+    testWidgets('one tap switches the order, with no menu', (tester) async {
       await pumpSplit(tester, const Size(1200, 900));
+
       await tester.tap(find.text('Soonest first'));
       await tester.pumpAndSettle();
 
-      // The menu is open: the label now appears in the menu as well.
-      expect(find.text('Newest to Oldest'), findsWidgets);
-      await tester.tap(find.text('Newest to Oldest').last);
-      await tester.pumpAndSettle();
-
+      // Straight to the other order — no popup in between, and the old label
+      // is gone rather than sitting behind an open menu.
       expect(find.text('Newest to Oldest'), findsOneWidget);
       expect(find.text('Soonest first'), findsNothing);
+      expect(find.byType(PopupMenuItem<EventSort>), findsNothing);
+
+      // And back again: the toggle is symmetric.
+      await tester.tap(find.text('Newest to Oldest'));
+      await tester.pumpAndSettle();
+      expect(find.text('Soonest first'), findsOneWidget);
     });
   });
 
