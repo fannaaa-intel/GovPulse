@@ -89,6 +89,59 @@ const List<String> _moreFilters = [
   'Others',
 ];
 
+// ─── Sort ─────────────────────────────────────────────────────────────────────
+
+/// How the browse list is ordered.
+///
+/// ── Why soonest-first is the default ────────────────────────────────────────
+/// The service fetches `event_date` ASCENDING and the body groups into Today /
+/// Upcoming / Recent, both of which assume "the next thing to happen is at the
+/// top". That is what an events list is FOR, so it stays the default and the
+/// sort is an opt-in on top of it — nobody's list re-orders itself because this
+/// control shipped.
+///
+/// [newest] is the requested "Newest to Oldest": latest event_date first. It is
+/// deliberately the event's OWN date and not `created_at` — every label on the
+/// row, every section heading and the date chip all speak in event dates, so
+/// ordering by an invisible posting timestamp would look broken rather than
+/// sorted.
+enum EventSort {
+  soonest('Soonest first', Icons.arrow_upward_rounded),
+  newest('Newest to Oldest', Icons.arrow_downward_rounded);
+
+  const EventSort(this.label, this.icon);
+  final String label;
+
+  /// Shown in the PICKER only — the sheet on mobile, the menu on web — where
+  /// both orders sit side by side and the arrows read as a comparison.
+  ///
+  /// Deliberately NOT on the closed control. There, one arrow beside one value
+  /// is ambiguous: it can be read as the order the list is in, or as the order
+  /// tapping would switch to. The closed control says `Sort <value>` instead
+  /// and lets the word do the work the icon could not.
+  final IconData icon;
+}
+
+/// Orders two events by [sort].
+///
+/// Top-level rather than a method on the state because the state cannot be
+/// reached under test: `EventsService` builds from `Supabase.instance.client`,
+/// which no widget test initialises, so the list is always empty there (see
+/// events_split_panel_test.dart). Sorting is the one part of this screen worth
+/// pinning exactly, so it lives where a test can call it.
+///
+/// Ties are broken by title so the order is TOTAL: without it two events on the
+/// same day sit in whatever order the fetch returned, and the list visibly
+/// reshuffles on every refresh while appearing to be sorted.
+int compareEvents(EventItem a, EventItem b, EventSort sort) {
+  final byDate = switch (sort) {
+    EventSort.soonest => a.eventDate.compareTo(b.eventDate),
+    EventSort.newest => b.eventDate.compareTo(a.eventDate),
+  };
+  if (byDate != 0) return byDate;
+  return a.title.toLowerCase().compareTo(b.title.toLowerCase());
+}
+
 /// Height of the split panel's stacked filter row.
 ///
 /// A horizontal [ListView] has no intrinsic height, so the row has to be told
@@ -170,6 +223,7 @@ class _EventsScreenState extends State<EventsScreen>
   bool _cardsAnimating = false;
 
   String _selectedFilter = 'All';
+  EventSort _sort = EventSort.soonest;
   bool _showMoreFilters = false;
   final TextEditingController _searchCtrl = TextEditingController();
   String _searchQuery = '';
@@ -294,7 +348,7 @@ class _EventsScreenState extends State<EventsScreen>
           e.category.toLowerCase().contains(_searchQuery);
 
       return matchesFilter && matchesSearch;
-    }).toList();
+    }).toList()..sort((a, b) => compareEvents(a, b, _sort));
   }
 
   List<EventItem> get _featuredEvents =>
@@ -428,6 +482,7 @@ class _EventsScreenState extends State<EventsScreen>
           _animated(1, _buildSearchBar(w)),
           _animated(2, _buildFilterChips(w)),
           if (_showMoreFilters) _animated(3, _buildMoreFilterChips(w)),
+          _animated(3, _buildSortRow(w)),
 
           if (_isLoading || _isRefreshing)
             const EventsSectionsSkeleton()
@@ -760,7 +815,20 @@ class _EventsScreenState extends State<EventsScreen>
     ];
 
     if (!stacked) {
-      return Wrap(spacing: 7, runSpacing: 7, children: chips);
+      // Side by side there is room to put the sort on the chips' own line,
+      // pushed to the right so the two questions — which events, in what order
+      // — read left to right without competing.
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(child: Wrap(spacing: 7, runSpacing: 7, children: chips)),
+          const SizedBox(width: 8),
+          _SplitSortControl(
+            sort: _sort,
+            onChanged: (s) => setState(() => _sort = s),
+          ),
+        ],
+      );
     }
 
     // A fixed height, because a horizontal [ListView] has no intrinsic one and
@@ -768,18 +836,36 @@ class _EventsScreenState extends State<EventsScreen>
     // 12px text on a 1.0 height (~16), plus 7 of padding a side, plus the 1px
     // border. `clipBehavior: none` would spill the row over the search box
     // above it, so the default clip stays.
-    return SizedBox(
-      height: _kSplitChipRowHeight,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        physics: const BouncingScrollPhysics(),
-        padding: EdgeInsets.zero,
-        itemCount: chips.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 7),
-        // Centred, so the chips do not stretch to the row's full height and
-        // come out as tall pills.
-        itemBuilder: (_, i) => Center(child: chips[i]),
-      ),
+    // Stacked, the chips SCROLL sideways, so the sort cannot live inside that
+    // row — it would scroll off the edge and be unreachable without first
+    // scrolling a filter row that has nothing to do with it. It gets its own
+    // line underneath, left-aligned under the chips it modifies.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          height: _kSplitChipRowHeight,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            padding: EdgeInsets.zero,
+            itemCount: chips.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 7),
+            // Centred, so the chips do not stretch to the row's full height and
+            // come out as tall pills.
+            itemBuilder: (_, i) => Center(child: chips[i]),
+          ),
+        ),
+        const SizedBox(height: 2),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: _SplitSortControl(
+            sort: _sort,
+            onChanged: (s) => setState(() => _sort = s),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1865,6 +1951,164 @@ class _EventsScreenState extends State<EventsScreen>
     );
   }
 
+  /// The mobile sort row.
+  ///
+  /// Its own line under the chips, for the same reason as the panel's stacked
+  /// arm: [_buildFilterChips] is a horizontal [ListView], so anything placed
+  /// inside it scrolls away from the list it controls.
+  ///
+  /// Right-aligned, which is where a sort sits above a list of sections — the
+  /// chips answer "which events" from the left, this answers "in what order"
+  /// from the right, and the section headings below start at the left edge
+  /// unobstructed.
+  ///
+  /// ── Why this looks like the newsfeed's filter ────────────────────────────
+  /// It IS the newsfeed's filter pill: the same soft blue fill, tune glyph and
+  /// value, gaining a border once the value is off its default. The newsfeed's
+  /// trailing chevron is dropped — the pill already reads as tappable, and on a
+  /// row that is right-aligned against the gutter the arrow only crowded it.
+  /// See the `webFilterStyle ? ... : Container(...)` arm of `_buildTopBar` in
+  /// news_feed_screen.dart. Events is the app's other browse surface, so it
+  /// borrows that control rather than inventing a second way to say "this list
+  /// is arranged". Mobile keeps the pill and web takes the lighter
+  /// icon-and-word form — the same split the newsfeed itself makes.
+  Widget _buildSortRow(double w) {
+    final active = _sort != EventSort.soonest;
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(w * 0.04, w * 0.02, w * 0.04, 0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          // Flexible so the pill clips its label rather than overflowing the
+          // row: the tappable Container sizes to its content, so without a
+          // bounded parent an inner Flexible has no ceiling to shrink against.
+          Flexible(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => _openSortSheet(w),
+              child: Container(
+                padding: EdgeInsets.symmetric(
+                  horizontal: w * 0.025,
+                  vertical: w * 0.012,
+                ),
+                decoration: BoxDecoration(
+                  color: active
+                      ? AppColors.primaryBlue.withValues(alpha: 0.15)
+                      : AppColors.primaryBlue.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(w * 0.04),
+                  border: active
+                      ? Border.all(
+                          color: AppColors.primaryBlue.withValues(alpha: 0.4),
+                          width: 1.2,
+                        )
+                      : null,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.tune_rounded,
+                      size: w * 0.044,
+                      color: AppColors.primaryBlue,
+                    ),
+                    SizedBox(width: w * 0.012),
+                    Flexible(
+                      child: Text(
+                        _sort.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: w * 0.034,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.primaryBlue,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The sort picker, as a bottom sheet — the mobile app's own idiom for a
+  /// short list of choices, and reachable with a thumb unlike a dropdown
+  /// anchored at the top of the list.
+  Future<void> _openSortSheet(double w) async {
+    final selected = await showModalBottomSheet<EventSort>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(w * 0.05)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              margin: EdgeInsets.symmetric(vertical: w * 0.03),
+              width: w * 0.1,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.stroke,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: EdgeInsets.fromLTRB(w * 0.05, 0, w * 0.05, w * 0.02),
+              child: Row(
+                children: [
+                  Text(
+                    'Sort events',
+                    style: TextStyle(
+                      fontSize: (w * 0.042).clamp(14.0, 18.0),
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF111827),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            for (final s in EventSort.values)
+              ListTile(
+                onTap: () => Navigator.pop(sheetContext, s),
+                leading: Icon(
+                  s.icon,
+                  size: (w * 0.05).clamp(16.0, 22.0),
+                  color: s == _sort
+                      ? AppColors.primaryBlue
+                      : const Color(0xFF6B7280),
+                ),
+                title: Text(
+                  s.label,
+                  style: TextStyle(
+                    fontSize: (w * 0.037).clamp(13.0, 16.0),
+                    fontWeight: s == _sort ? FontWeight.w700 : FontWeight.w500,
+                    color: s == _sort
+                        ? AppColors.primaryBlue
+                        : const Color(0xFF374151),
+                  ),
+                ),
+                trailing: s == _sort
+                    ? Icon(
+                        Icons.check_rounded,
+                        size: (w * 0.05).clamp(16.0, 22.0),
+                        color: AppColors.primaryBlue,
+                      )
+                    : null,
+              ),
+            SizedBox(height: w * 0.02),
+          ],
+        ),
+      ),
+    );
+    if (selected != null && mounted) setState(() => _sort = selected);
+  }
+
   Widget _buildMoreFilterChips(double w) {
     return Padding(
       padding: EdgeInsets.fromLTRB(w * 0.04, w * 0.015, w * 0.04, 0),
@@ -2557,6 +2801,129 @@ class _SplitFilterChipState extends State<_SplitFilterChip> {
               fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
               color: selected ? Colors.white : CitizenUi.textSecondary,
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The panel's sort control: an arrow, the current order, and a chevron.
+///
+/// Deliberately NOT a funnel. A funnel is the newsfeed's filter idiom and it
+/// already means "narrow this list" everywhere else in the app — on a control
+/// that re-orders without removing anything it promises the wrong thing. The
+/// arrow points the way the list runs and flips with the order, so the icon
+/// says which direction is active before the label is read.
+///
+/// Reads as text, not as a fifth chip: the chip row beside it is the FILTER,
+/// and giving the sort the same pill would put two different questions in one
+/// visual voice.
+class _SplitSortControl extends StatefulWidget {
+  final EventSort sort;
+  final ValueChanged<EventSort> onChanged;
+
+  const _SplitSortControl({required this.sort, required this.onChanged});
+
+  @override
+  State<_SplitSortControl> createState() => _SplitSortControlState();
+}
+
+class _SplitSortControlState extends State<_SplitSortControl> {
+  bool _hover = false;
+
+  Future<void> _open() async {
+    // Anchored to the control itself so the menu opens where the click was,
+    // rather than at the corner of the panel.
+    final box = context.findRenderObject() as RenderBox?;
+    final overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
+    if (box == null || overlay == null) return;
+
+    final origin = box.localToGlobal(Offset.zero, ancestor: overlay);
+    final selected = await showMenu<EventSort>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        origin.dx,
+        origin.dy + box.size.height + 4,
+        overlay.size.width - origin.dx - box.size.width,
+        0,
+      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      items: [
+        for (final s in EventSort.values)
+          PopupMenuItem<EventSort>(
+            value: s,
+            height: 40,
+            child: Row(
+              children: [
+                Icon(
+                  s.icon,
+                  size: 16,
+                  color: s == widget.sort
+                      ? CitizenUi.accent
+                      : CitizenUi.textMuted,
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  s.label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: s == widget.sort
+                        ? FontWeight.w700
+                        : FontWeight.w500,
+                    color: s == widget.sort
+                        ? CitizenUi.accent
+                        : CitizenUi.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+    if (selected != null) widget.onChanged(selected);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // The newsfeed's web filter control, exactly: an icon and a word, no fill
+    // and no border, accented once the value is off its default. Same shape,
+    // same sizes, same weights — see `_webFilterControl` in
+    // news_feed_screen.dart. Events borrows it so the two browse surfaces do
+    // not each invent their own way of saying "this list is arranged".
+    final active = widget.sort != EventSort.soonest;
+    final color = active || _hover ? CitizenUi.accent : CitizenUi.textMuted;
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: GestureDetector(
+        onTap: _open,
+        behavior: HitTestBehavior.opaque,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.filter_list_rounded, size: 16, color: color),
+              const SizedBox(width: 6),
+              // Flexible so a narrow panel clips the label rather than
+              // overflowing the head it shares with the wrapped chips.
+              Flexible(
+                child: Text(
+                  widget.sort.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: active ? FontWeight.w700 : FontWeight.w600,
+                    color: color,
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
