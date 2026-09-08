@@ -146,6 +146,48 @@ class EventsService {
     return (response as List).map((e) => EventModel.fromJson(e)).toList();
   }
 
+  /// The events the slide-in popup may choose from, newest first.
+  ///
+  /// Deliberately NOT a call to [fetchEvents]. That method orders by
+  /// `event_date` ASCENDING, which is right for a browsable list and wrong
+  /// here: the popup wants what was published most RECENTLY, not what happens
+  /// soonest. Ordering by `created_at` descending and taking a small page is
+  /// what makes a `limit` safe — the same trap [fetchEvents] documents.
+  ///
+  /// Bounded on both axes on purpose. An LGU accumulates events forever, and
+  /// this runs on every app open:
+  ///
+  ///   * `event_date >= today` — a finished event can never earn a card, so
+  ///     there is no reason to download it.
+  ///   * `limit` — the rules pick exactly one event, and ranking never looks
+  ///     past a handful. Twelve is generous cover for the daily cap plus a few
+  ///     already-shown rows the rules will filter out.
+  ///
+  /// The filtering itself lives in `event_popup_rules.dart`, not here: this
+  /// method's only job is to hand over a small, relevant page. RLS already
+  /// restricts citizens to approved events.
+  ///
+  /// Returns an empty list rather than throwing when the query fails, because
+  /// every caller's correct response to a failure is "no card" — see the
+  /// controller's fail-silent contract.
+  Future<List<EventModel>> fetchPopupCandidates({int limit = 12}) async {
+    // Same cold-load race as fetchEventById: a query issued before the session
+    // is restored is filtered by RLS and looks like "no events".
+    await awaitAuthReady();
+
+    final today = DateTime.now();
+    final floor = DateTime(today.year, today.month, today.day);
+
+    final response = await _client
+        .from('events')
+        .select()
+        .gte('event_date', floor.toIso8601String())
+        .order('created_at', ascending: false)
+        .limit(limit);
+
+    return (response as List).map((e) => EventModel.fromJson(e)).toList();
+  }
+
   /// Load one event by its id.
   ///
   /// The counterpart to [ReportItem.fetchById]: an event detail URL carries only

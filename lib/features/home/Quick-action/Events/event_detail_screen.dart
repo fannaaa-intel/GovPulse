@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import '../../../../core/widgets/responsive_page.dart';
 import 'package:flutter/services.dart';
@@ -12,15 +13,29 @@ import 'events_screen.dart';
 import '../../../../core/theme/citizen_ui.dart';
 import '../../../../core/theme/mobile_metrics.dart';
 import '../../../../core/widgets/app_back_chevron.dart';
+import '../../../../core/router/legacy_nav.dart';
 
 class EventDetailScreen extends StatefulWidget {
   final EventItem event;
   final String username;
 
+  /// Whether to offer the "View more events" link at the foot of the screen.
+  ///
+  /// True ONLY when the citizen arrived from the slide-in popup card. That
+  /// card is a shortcut into a single event with no list behind it, so the
+  /// link is the only way onward — without it the citizen's only move is Back,
+  /// to wherever they happened to be.
+  ///
+  /// Deliberately false everywhere else. A citizen who opened this event FROM
+  /// the events list already has the list one Back-press away, and offering a
+  /// link to the screen they just came from is noise.
+  final bool showMoreEventsLink;
+
   const EventDetailScreen({
     super.key,
     required this.event,
     required this.username,
+    this.showMoreEventsLink = false,
   });
 
   @override
@@ -245,28 +260,45 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   // category badge + time-status pill
+                                  // Both chips size to their own content, so
+                                  // a long category ("Environment") beside a
+                                  // long pill ("In 11 days") overflowed this
+                                  // row by ~34px on a 320-390dp handset — a
+                                  // real clip, just close enough to the edge
+                                  // to be easy to miss.
+                                  //
+                                  // The status pill is fixed-length and always
+                                  // legible, so the CATEGORY is the one that
+                                  // yields: Flexible lets it shrink and clip
+                                  // its own text rather than pushing the row
+                                  // past the column.
                                   Row(
                                     children: [
-                                      Container(
-                                        padding: EdgeInsets.symmetric(
-                                          horizontal: w * 0.028,
-                                          vertical: w * 0.010,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: event.categoryColor,
-                                          borderRadius: BorderRadius.circular(
-                                            w * 0.015,
+                                      Flexible(
+                                        child: Container(
+                                          padding: EdgeInsets.symmetric(
+                                            horizontal: w * 0.028,
+                                            vertical: w * 0.010,
                                           ),
-                                        ),
-                                        child: Text(
-                                          event.category,
-                                          style: TextStyle(
-                                            fontSize: w * 0.028,
-                                            fontWeight: FontWeight.w700,
-                                            color: Colors.white,
+                                          decoration: BoxDecoration(
+                                            color: event.categoryColor,
+                                            borderRadius: BorderRadius.circular(
+                                              w * 0.015,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            event.category,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontSize: w * 0.028,
+                                              fontWeight: FontWeight.w700,
+                                              color: Colors.white,
+                                            ),
                                           ),
                                         ),
                                       ),
+                                      SizedBox(width: w * 0.02),
                                       const Spacer(),
                                       EventStatusPill(
                                         eventDate: event.eventDate,
@@ -473,6 +505,56 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                     ),
                   ),
 
+                  // ── View more events ───────────────────────────────────
+                  //
+                  // MOBILE ONLY, and the guard is real rather than defensive:
+                  // this same widget is mounted by the web shell
+                  // (citizen_shell_router.dart), where events live at an
+                  // id-addressable URL and the shell already offers its own
+                  // navigation. A `/events` push there would open the legacy
+                  // mobile route over go_router's stack and desync it.
+                  //
+                  // A LINK rather than a second button: Share Event is this
+                  // screen's one solid control, and two outlined buttons would
+                  // give the screen two equal endings. Leaving the event is a
+                  // secondary action and should look like one — while still
+                  // being easy to hit, which is why the tap target spans the
+                  // full width even though the text does not.
+                  if (!kIsWeb && widget.showMoreEventsLink) ...[
+                    SizedBox(height: w * 0.035),
+                    Center(
+                      child: TextButton(
+                        onPressed: _openAllEvents,
+                        style: TextButton.styleFrom(
+                          minimumSize: Size(double.infinity, w * 0.115),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(w * 0.028),
+                          ),
+                          foregroundColor: AppColors.primaryBlue,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'View more events',
+                              style: TextStyle(
+                                fontSize: w * 0.036,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.primaryBlue,
+                              ),
+                            ),
+                            SizedBox(width: w * 0.012),
+                            Icon(
+                              Icons.arrow_forward_rounded,
+                              size: w * 0.042,
+                              color: AppColors.primaryBlue,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+
                   SizedBox(height: w * 0.06),
                 ],
               ),
@@ -480,6 +562,26 @@ class _EventDetailScreenState extends State<EventDetailScreen>
           ),
         );
       },
+    );
+  }
+
+  /// Opens the full Events list.
+  ///
+  /// `pushReplacementLegacy` rather than `pushLegacy`: the citizen arrived here
+  /// from either the events list or the slide-in card, and stacking the list on
+  /// top of a detail screen they opened *from* the list would make Back walk
+  /// through the same event twice. Replacing keeps the stack honest in both
+  /// entry paths.
+  void _openAllEvents() {
+    pushReplacementLegacy(
+      context,
+      '/events',
+      // isVerified is currently stored-but-unread by EventsScreen, so this
+      // value changes nothing today. It is passed as false rather than a
+      // convenient `true` because this screen genuinely does not know the
+      // citizen's verification state — and a hardcoded `true` would become a
+      // silent lie the moment that field gains behaviour.
+      arguments: {'username': widget.username, 'isVerified': false},
     );
   }
 

@@ -48,6 +48,7 @@ import '../../../core/providers/user_profile_provider.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../../../core/theme/citizen_ui.dart';
 import '../../../core/widgets/tutorial/quick_action_tutorial.dart';
+import '../../../core/widgets/events/event_slide_in.dart';
 
 class HomePage extends ConsumerStatefulWidget {
   final String username;
@@ -205,6 +206,25 @@ class _HomePageState extends ConsumerState<HomePage>
     if (_tourAttempted || !mounted) return;
     _tourAttempted = true;
 
+    // The tour and the event card are INDEPENDENT. Every reason to skip the
+    // tour below is a reason about the TOUR — a tablet layout, a landscape
+    // viewport, a card that was never laid out — and none of them says
+    // anything about whether an event has earned a slide-in.
+    //
+    // They used to share this method's early returns, which meant a skipped
+    // tour silently killed the event card for the whole session (`_tourAttempted`
+    // is already true, so nothing retries). The tour now runs in its own method
+    // and the card is offered afterwards either way.
+    await _runQuickActionTour();
+    await _maybeShowEventCard();
+  }
+
+  /// The first-run tour itself. Returns immediately when this surface cannot
+  /// host it; see [_maybeStartQuickActionTour] for why that is not the event
+  /// card's problem.
+  Future<void> _runQuickActionTour() async {
+    if (!mounted) return;
+
     // Phone only. The tablet/web bodies render HomeQuickActionsSectionWeb,
     // whose layout the anchor key is not attached to, and the float has no
     // meaning in a two-column dashboard.
@@ -242,6 +262,29 @@ class _HomePageState extends ConsumerState<HomePage>
       },
       onReveal: _revealQuickActions,
     );
+  }
+
+  /// Offers the event slide-in card, if an event has earned one.
+  ///
+  /// Home only STARTS this. The card itself lives in the root overlay and rides
+  /// across routes on its own, so nothing here owns it and nothing here has to
+  /// tear it down when the citizen navigates — see event_slide_in.dart.
+  ///
+  /// Every rule about which event, and whether any event at all, is inside
+  /// [EventSlideIn.maybeShow]. What is checked here is only what this widget
+  /// can see: that Home is still mounted, and that no blocking modal owns the
+  /// screen.
+  Future<void> _maybeShowEventCard() async {
+    if (!mounted) return;
+
+    // Never over a suspension or restriction notice: the guard owns the screen.
+    if (_guardModalOpen) return;
+
+    // The tour sets this false on its way out, but the frame it does so in is
+    // not guaranteed to be this one.
+    if (QuickActionTutorial.isRunning) return;
+
+    await EventSlideIn.maybeShow(context);
   }
 
   /// Scrolls the Quick Action card into view and reports where it landed.
@@ -328,6 +371,11 @@ class _HomePageState extends ConsumerState<HomePage>
     // disposed mid-tour never reaches it. Left stuck true, no tour could start
     // again for the life of the process.
     if (_tourActive) QuickActionTutorial.abandon();
+    // NOT abandoned here on purpose. The event card deliberately outlives Home
+    // — riding across routes is the whole point — so tearing it down in Home's
+    // dispose would reintroduce the "cancelled because they navigated" bug this
+    // design exists to fix. Its own exit path and the root overlay's teardown
+    // own its lifetime.
     _mobileScrollCtrl.dispose();
     _entryCtrl.dispose();
     super.dispose();

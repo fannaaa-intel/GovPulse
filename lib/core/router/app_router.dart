@@ -611,20 +611,29 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
       final args = settings.arguments as Map<String, dynamic>? ?? {};
       return PageRouteBuilder(
         settings: settings,
-        transitionDuration: const Duration(milliseconds: 420),
+        // ── In: instant. Out: fade. ────────────────────────────────────
+        //
+        // Matches '/event_detail', and for the same reason. EventsScreen
+        // already animates ITSELF: `_buildHeader` sits outside the animation
+        // and only the card sections fade-and-slide up, driven by its
+        // `_cardsCtrl`.
+        //
+        // This route used to slide the WHOLE PAGE up from Offset(0, 1) over
+        // 420ms — header included — which both contradicted that design and
+        // visibly fought the screen's own entrance. The header must never be
+        // part of the travel.
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: const Duration(milliseconds: 300),
         pageBuilder: (_, _, _) => NetworkWrapper(
           child: EventsScreen(
             username: args['username'] as String? ?? '',
             isVerified: args['isVerified'] as bool? ?? false,
           ),
         ),
-        transitionsBuilder: (_, anim, _, child) => SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(0, 1),
-            end: Offset.zero,
-          ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
-          child: child,
-        ),
+        // `anim` is pinned at 1 through the zero-duration entrance, so this is
+        // a no-op on the way in and a real fade on the way out.
+        transitionsBuilder: (_, anim, _, child) =>
+            FadeTransition(opacity: anim, child: child),
       );
 
     // ── Profile verification flow ─────────────────────────────────────────────
@@ -770,16 +779,37 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
       final args = settings.arguments as Map<String, dynamic>;
       return PageRouteBuilder(
         settings: settings,
+        // ── In: instant. Out: fade. ────────────────────────────────────
+        //
+        // ENTERING, the screen arrives with no route transition at all, and
+        // animates ITSELF: the header is painted immediately and stays put
+        // while only the content slides up (see EventDetailScreen._slideAnim).
+        // A route-level transition cannot express that — it moves the whole
+        // page, header included — and the FadeTransition that used to live
+        // here actively fought the screen's own animation, fading the header
+        // while the body was still sliding.
+        //
+        // LEAVING, a fade. `anim` is 0 on the way in (so the fade is a no-op
+        // for the entering screen, leaving the instant arrival intact) and
+        // runs 1→0 on the way out, which is exactly the asymmetry wanted.
         transitionDuration: Duration.zero,
         reverseTransitionDuration: const Duration(milliseconds: 300),
         pageBuilder: (_, _, _) => NetworkWrapper(
           child: EventDetailScreen(
             event: args['event'] as EventItem,
             username: args['username'] as String? ?? '',
+            // Only the slide-in popup passes this. See the field's own note.
+            showMoreEventsLink:
+                args['showMoreEventsLink'] as bool? ?? false,
           ),
         ),
-        transitionsBuilder: (_, anim, _, child) =>
-            FadeTransition(opacity: anim, child: child),
+        transitionsBuilder: (_, anim, _, child) => FadeTransition(
+          // Drives from the route's own animation, which is pinned at 1 for
+          // the whole of a zero-duration entrance and only moves during the
+          // 300ms reverse.
+          opacity: anim,
+          child: child,
+        ),
       );
 
     case '/change_password':
