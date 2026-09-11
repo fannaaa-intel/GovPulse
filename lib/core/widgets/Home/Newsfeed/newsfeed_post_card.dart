@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import '../../focus_activate.dart';
 
 import '../../../moderation/profanity_filter.dart';
 import '../../../theme/app_colors.dart';
@@ -425,26 +426,37 @@ class NewsfeedPostCard extends StatelessWidget {
                     if (commentCount > kPostCardPreviewComments)
                       Padding(
                         padding: EdgeInsets.only(top: cw * 0.015),
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () => onOpenComments(),
-                          child: Row(
-                            children: [
-                              Text(
-                                'View all $commentCount comments',
-                                style: TextStyle(
-                                  fontSize: cw * 0.034,
-                                  fontWeight: FontWeight.w700,
-                                  color: AppColors.primaryBlue,
+                        child: Semantics(
+                          container: true,
+                          button: true,
+                          label: 'View all $commentCount comments',
+                          child: ExcludeSemantics(
+                            child: FocusActivate(
+                              onActivate: onOpenComments,
+                              borderRadius: 6,
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: () => onOpenComments(),
+                                child: Row(
+                                  children: [
+                                    Text(
+                                      'View all $commentCount comments',
+                                      style: TextStyle(
+                                        fontSize: cw * 0.034,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.primaryBlue,
+                                      ),
+                                    ),
+                                    SizedBox(width: cw * 0.008),
+                                    Icon(
+                                      Icons.arrow_forward_ios_rounded,
+                                      size: cw * 0.030,
+                                      color: AppColors.primaryBlue,
+                                    ),
+                                  ],
                                 ),
                               ),
-                              SizedBox(width: cw * 0.008),
-                              Icon(
-                                Icons.arrow_forward_ios_rounded,
-                                size: cw * 0.030,
-                                color: AppColors.primaryBlue,
-                              ),
-                            ],
+                            ),
                           ),
                         ),
                       ),
@@ -603,15 +615,27 @@ class NewsfeedPostCard extends StatelessWidget {
               overflow: isExpanded ? TextOverflow.clip : TextOverflow.ellipsis,
             ),
             SizedBox(height: width * 0.008),
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: onToggleExpanded,
-              child: Text(
-                isExpanded ? 'See less' : 'See more',
-                style: TextStyle(
-                  fontSize: width * 0.034,
-                  color: AppColors.primaryBlue,
-                  fontWeight: FontWeight.w600,
+            Semantics(
+              container: true,
+              button: true,
+              expanded: isExpanded,
+              label: isExpanded ? 'See less' : 'See more',
+              child: ExcludeSemantics(
+                child: FocusActivate(
+                  onActivate: onToggleExpanded,
+                  borderRadius: 6,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: onToggleExpanded,
+                    child: Text(
+                      isExpanded ? 'See less' : 'See more',
+                      style: TextStyle(
+                        fontSize: width * 0.034,
+                        color: AppColors.primaryBlue,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -634,65 +658,97 @@ class NewsfeedPostCard extends StatelessWidget {
     final commentColor = commented ? commentActive : commentIdle;
     return Row(
       children: [
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onLikeTap,
-          child: Row(
-            children: [
-              // Use Material heart icons so the liked state is a genuinely
-              // filled heart — tinting the outline heart.webp red only ever
-              // produces a red outline (never a fill).
-              Icon(
-                liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                size: width * 0.046,
-                color: liked
-                    ? const Color(0xFFEF4444)
-                    : const Color(0xFF6B7280),
-              ),
-              SizedBox(width: width * 0.012),
-              Text(
-                likes,
-                style: TextStyle(
-                  fontSize: width * 0.034,
-                  fontWeight: FontWeight.w600,
-                  color: liked
-                      ? const Color(0xFFEF4444)
-                      : const Color(0xFF374151),
+        // A screen reader gets the ACTION and the STATE, because the icon
+        // carries both and neither survives on its own: "Like, 12 likes" with
+        // toggled=true is what lets somebody know they have already liked this
+        // without seeing that the heart is filled.
+        Semantics(
+          container: true,
+          button: true,
+          toggled: liked,
+          label: liked ? 'Unlike, $likes likes' : 'Like, $likes likes',
+          child: ExcludeSemantics(
+            child: FocusActivate(
+              onActivate: onLikeTap ?? () {},
+              enabled: onLikeTap != null,
+              borderRadius: 8,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: onLikeTap,
+                child: Row(
+                  children: [
+                    // Use Material heart icons so the liked state is a genuinely
+                    // filled heart — tinting the outline heart.webp red only ever
+                    // produces a red outline (never a fill).
+                    Icon(
+                      liked
+                          ? Icons.favorite_rounded
+                          : Icons.favorite_border_rounded,
+                      size: width * 0.046,
+                      color: liked
+                          ? const Color(0xFFEF4444)
+                          : const Color(0xFF6B7280),
+                    ),
+                    SizedBox(width: width * 0.012),
+                    Text(
+                      likes,
+                      style: TextStyle(
+                        fontSize: width * 0.034,
+                        fontWeight: FontWeight.w600,
+                        color: liked
+                            ? const Color(0xFFEF4444)
+                            : const Color(0xFF374151),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
+            ),
           ),
         ),
         SizedBox(width: width * 0.05),
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onCommentsTap,
-          child: Row(
-            children: [
-              Image.asset(
-                'assets/images/comment.webp',
-                width: width * 0.048,
-                height: width * 0.048,
-                color: commentColor,
-                colorBlendMode: BlendMode.srcIn,
-                errorBuilder: (_, _, _) => Icon(
-                  commented
-                      ? Icons.mode_comment_rounded
-                      : Icons.chat_bubble_outline_rounded,
-                  size: width * 0.048,
-                  color: commentColor,
+        Semantics(
+          container: true,
+          button: true,
+          label: 'Comment, $comments comments',
+          child: ExcludeSemantics(
+            child: FocusActivate(
+              onActivate: onCommentsTap,
+              borderRadius: 8,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: onCommentsTap,
+                child: Row(
+                  children: [
+                    Image.asset(
+                      'assets/images/comment.webp',
+                      width: width * 0.048,
+                      height: width * 0.048,
+                      color: commentColor,
+                      colorBlendMode: BlendMode.srcIn,
+                      errorBuilder: (_, _, _) => Icon(
+                        commented
+                            ? Icons.mode_comment_rounded
+                            : Icons.chat_bubble_outline_rounded,
+                        size: width * 0.048,
+                        color: commentColor,
+                      ),
+                    ),
+                    SizedBox(width: width * 0.012),
+                    Text(
+                      comments,
+                      style: TextStyle(
+                        fontSize: width * 0.034,
+                        fontWeight: FontWeight.w600,
+                        color: commented
+                            ? commentActive
+                            : const Color(0xFF374151),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              SizedBox(width: width * 0.012),
-              Text(
-                comments,
-                style: TextStyle(
-                  fontSize: width * 0.034,
-                  fontWeight: FontWeight.w600,
-                  color: commented ? commentActive : const Color(0xFF374151),
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ],

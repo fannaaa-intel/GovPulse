@@ -348,4 +348,85 @@ void main() {
       handle.dispose();
     });
   });
+
+  group('newsfeed interactions', () {
+    // The feed card itself needs Supabase-backed providers to build, so these
+    // pin the exact Semantics + ExcludeSemantics + FocusActivate shape its
+    // like / comment / see-more controls now use. That shape is the thing that
+    // can regress: the wrapper alone MERGES with the Text inside it and makes
+    // a screen reader say everything twice, which is invisible in the widget
+    // code and only shows up in the semantics tree.
+    Widget feedControl({
+      required String label,
+      bool toggled = false,
+      VoidCallback? onActivate,
+      Widget? child,
+    }) {
+      return Semantics(
+        container: true,
+        button: true,
+        toggled: toggled,
+        label: label,
+        child: ExcludeSemantics(
+          child: FocusActivate(
+            onActivate: onActivate ?? () {},
+            borderRadius: 8,
+            child: GestureDetector(
+              onTap: onActivate,
+              child: child ?? const Text('12'),
+            ),
+          ),
+        ),
+      );
+    }
+
+    testWidgets('Like announces once, carrying its count and state',
+        (tester) async {
+      final handle = tester.ensureSemantics();
+      await _pump(tester, feedControl(label: 'Unlike, 12 likes', toggled: true));
+
+      // Exactly one node, not "12 likes" duplicated by the Text beneath it.
+      expect(find.bySemanticsLabel('Unlike, 12 likes'), findsOneWidget);
+
+      final node = tester.getSemantics(
+        find.bySemanticsLabel('Unlike, 12 likes'),
+      );
+      expect(node.hasFlag(SemanticsFlag.isButton), isTrue);
+      // toggled is how a screen-reader user knows they ALREADY liked this,
+      // which the filled heart tells everybody else.
+      expect(node.hasFlag(SemanticsFlag.isToggled), isTrue);
+      handle.dispose();
+    });
+
+    testWidgets('an un-liked post offers Like rather than Unlike',
+        (tester) async {
+      final handle = tester.ensureSemantics();
+      await _pump(tester, feedControl(label: 'Like, 12 likes'));
+      final node = tester.getSemantics(find.bySemanticsLabel('Like, 12 likes'));
+      expect(node.hasFlag(SemanticsFlag.isToggled), isFalse);
+      handle.dispose();
+    });
+
+    testWidgets('a feed control activates from the keyboard', (tester) async {
+      var hits = 0;
+      await _pump(
+        tester,
+        feedControl(label: 'Comment, 5 comments', onActivate: () => hits++),
+      );
+
+      // Focus creates its node internally when none is passed, so `focusNode`
+      // on the widget is null — ask from BELOW it instead, where Focus.of
+      // resolves to the node it inserted.
+      final node = Focus.of(
+        tester.element(find.byType(GestureDetector).first),
+      );
+      node.requestFocus();
+      await tester.pump();
+      expect(node.hasFocus, isTrue);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      expect(hits, 1, reason: 'Enter must post a comment');
+    });
+  });
 }
