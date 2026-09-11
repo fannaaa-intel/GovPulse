@@ -96,4 +96,31 @@ class AppConfig {
     // for print. Keep any replacement PNG or JPEG.
     defaultValue: 'assets/images/aparri_seal.png',
   );
+
+  // ── Error reporting ─────────────────────────────────────────────────────
+  // See core/services/error_reporting.dart.
+
+  /// Sentry DSN. Empty disables reporting entirely.
+  ///
+  /// DELIBERATELY EMPTY BY DEFAULT, unlike [scanBaseUrl] above. A DSN is not a
+  /// secret — it is a write-only ingest key baked into every shipped client —
+  /// but a default would send a developer's local crashes, and every widget
+  /// test's deliberately-thrown exception, into the production issue feed. The
+  /// signal there is only worth anything if everything in it came from a real
+  /// deployment.
+  ///
+  ///   flutter build web --release --dart-define=SENTRY_DSN=https://…@…ingest.de.sentry.io/…
+  static const String sentryDsn = String.fromEnvironment('SENTRY_DSN');
+
+  /// Which deployment an event came from: `production`, `staging`, `dev`.
+  ///
+  /// Sentry filters and alerts on this, so a staging build sharing the
+  /// production DSN stays separable rather than polluting it.
+  static const String sentryEnvironment = String.fromEnvironment(
+    'SENTRY_ENVIRONMENT',
+    defaultValue: 'production',
+  );
+
+  /// Whether error reporting is configured at all.
+  static bool get errorReportingEnabled => sentryDsn.isNotEmpty;
 }

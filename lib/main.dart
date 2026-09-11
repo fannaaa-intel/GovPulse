@@ -21,6 +21,7 @@ import 'features/onboarding/splash_screen.dart';
 import 'features/home/shell/citizen_shell_router.dart' show GovPulseWebApp;
 import 'core/services/auth_ready.dart' show AuthRestoration;
 import 'core/network/timeout_http_client.dart';
+import 'core/services/error_reporting.dart';
 import 'core/services/session_cache.dart';
 import 'core/services/web_splash.dart';
 import 'features/scan/scan_page.dart';
@@ -53,11 +54,26 @@ bool _isBenignTooltipZOrderAssertion(FlutterErrorDetails details) {
       stack.contains('Tooltip');
 }
 
-void main() async {
+void main() => runWithErrorReporting(_startApp);
+
+/// The real startup, unchanged — it simply runs inside the guarded zone that
+/// [runWithErrorReporting] establishes.
+///
+/// It has to be a separate function rather than inline: `runZonedGuarded` only
+/// catches errors raised by code running INSIDE its callback, so every await
+/// below — Firebase, Supabase, the session prime — has to happen there. Calling
+/// `runApp` from the zone is also what makes the framework's own error path
+/// route through it.
+Future<void> _startApp() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Drop only the benign Tooltip assertion above; forward everything else to
   // Flutter's normal reporting so real errors are never hidden.
+  //
+  // Sentry installs its own FlutterError.onError during init, so by the time
+  // this runs `previousOnError` IS Sentry's handler — the suppression stays
+  // exactly as narrow as it was, and every other framework error reaches both
+  // the console and the issue feed without this file needing to know that.
   final previousOnError = FlutterError.onError;
   FlutterError.onError = (FlutterErrorDetails details) {
     if (_isBenignTooltipZOrderAssertion(details)) return;
@@ -250,6 +266,11 @@ Future<void> _initServices() async {
   /// once per account and a refresh is correctly a no-op.
   String? wiredUid;
 
+  // Scope crash reports to the account — the opaque id only, never an email or
+  // a name. Enough to tell "this broke for forty people" from "this broke once
+  // for me", which is the difference between a P1 and a shrug.
+  setErrorReportingUser(restored?.id);
+
   try {
     if (restored != null) {
       wiredUid = restored.id;
@@ -266,11 +287,14 @@ Future<void> _initServices() async {
     if (user != null) {
       if (user.id == wiredUid) return; // a token refresh, not a new account
       wiredUid = user.id;
+      setErrorReportingUser(user.id);
       ChatService.onUserAuthenticated(user.id);
       PushService.I.registerForUser(); // ← PUSH
       NotificationService.startRealtime(); // ← live bell badge
     } else if (data.event == AuthChangeEvent.signedOut) {
       wiredUid = null;
+      // Nothing after sign-out belongs to that account.
+      setErrorReportingUser(null);
       ChatService.onUserSignedOut();
       NotificationService.stopRealtime();
     }

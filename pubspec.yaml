@@ -61,6 +61,10 @@ dependencies:
   # screen dials `tel:` on web through a synthesised anchor click rather than
   # url_launcher's `window.open`, which Safari's popup blocker eats.
   web: ^1.1.0
+  # Crash and error reporting. Inert unless SENTRY_DSN is supplied at build
+  # time — see core/services/error_reporting.dart, which is the only file that
+  # imports this.
+  sentry_flutter: ^9.30.0
 
 dev_dependencies:
   flutter_test:
