@@ -1,22 +1,43 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <base href="$FLUTTER_BASE_HREF">
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+  <meta name="description" content="The official civic engagement platform of the Local Government Unit of Aparri, Cagayan. Report issues, track their status, and stay informed about your community.">
+
+  <!-- Social link previews.
+       A GovPulse link is most often shared in Messenger and Facebook, where a
+       page with no Open Graph tags renders as a bare URL. og:image must be an
+       ABSOLUTE url — crawlers do not resolve <base href>, so a relative path
+       here silently yields no thumbnail. Keep this origin in step with
+       AppConfig.scanBaseUrl (lib/core/config/app_config.dart). -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="GovPulse">
+  <meta property="og:title" content="GovPulse — Municipality of Aparri">
+  <meta property="og:description" content="Report issues, track their status, and stay informed about your community.">
+  <meta property="og:image" content="https://gov-pulse-rose.vercel.app/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="GovPulse — Municipality of Aparri">
+  <meta name="twitter:description" content="Report issues, track their status, and stay informed about your community.">
+  <meta name="twitter:image" content="https://gov-pulse-rose.vercel.app/og-image.png">
+
+  <!-- Browser UI chrome (address bar on Android, PWA title bar). -->
+  <meta name="theme-color" content="#0D47A1">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="govpulse">
+  <meta name="apple-mobile-web-app-title" content="GovPulse">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png">
 
-  <title>govpulse</title>
+  <title>GovPulse — Municipality of Aparri</title>
   <link rel="manifest" href="manifest.json">
 
   <style id="splash-screen-style">
@@ -28,19 +49,208 @@
       min-height: 100%;
       background-color: #ffffff;
     }
+
+    /* ── First-paint splash ───────────────────────────────────────────────
+       Flutter web downloads and boots its engine before it can paint a single
+       frame. Without something in the HTML itself, that whole window is a
+       blank white page — several seconds of it on mobile data, which is the
+       connection most citizens arrive on.
+
+       This is a CSS/HTML restatement of LogoutLoadingOverlay's _BrandSpinner
+       (lib/core/widgets/logout_confirm_dialog.dart): the GovPulse mark in a
+       white disc, centred in a slowly rotating brand blue→green gradient arc.
+       The app already uses that treatment for "we are working, hold on", so
+       boot and sign-out now look like the same product rather than two.
+
+       Two deliberate departures from that widget, both because the ground
+       differs. The overlay floats on a black54 frosted barrier, so its text is
+       white and its track is white-at-8%; this paints on the app's own white,
+       so the text takes the brand/hint inks and the track is #E3E6EF
+       (AppColors.stroke). Everything else — 84px ring, 4px stroke, ~70% arc,
+       1100ms rotation, the 0.69 logo-to-ring ratio — is carried over as-is.
+
+       Plain CSS on purpose: it paints on the browser's first pass, long before
+       any Dart runs. removeSplashFromWeb() below tears it down, and main.dart
+       calls that once the first frame is up. */
+    #splash {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-color: #ffffff;
+      z-index: 9999;
+      /* Faded out by .splash-hide before removal, so the handoff to the real
+         UI is a crossfade rather than a flash. */
+      opacity: 1;
+      transition: opacity 250ms ease-out;
+    }
+
+    #splash.splash-hide {
+      opacity: 0;
+    }
+
+    #splash-branding {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      /* 24px ring→title, then 6px title→subtitle: the overlay's own spacing. */
+      gap: 24px;
+      padding: 24px;
+      text-align: center;
+    }
+
+    /* ── The brand ring ──────────────────────────────────────────────────
+       _BrandSpinner paints a SweepGradient arc of ~1.4π and rotates the whole
+       canvas. `conic-gradient` in a mask is the CSS equivalent: the gradient
+       supplies the blue→green→blue sweep, and the mask punches out the ~30%
+       gap, so one rotating element reproduces both the colour and the moving
+       gap. The faint full track sits underneath as a plain border. */
+    #splash-ring {
+      position: relative;
+      width: 84px;
+      height: 84px;
+      display: grid;
+      place-items: center;
+    }
+
+    /* The track — AppColors.stroke, the overlay's white-at-8% re-read for a
+       white ground. */
+    #splash-ring::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      border: 4px solid #E3E6EF;
+    }
+
+    #splash-ring::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      background: conic-gradient(
+        #0D47A1 0deg,
+        #2ECC71 180deg,
+        #0D47A1 360deg
+      );
+      /* Ring of the same 4px stroke: keep the annulus, drop the middle. */
+      -webkit-mask:
+        radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 4px)),
+        conic-gradient(#000 0deg 252deg, transparent 252deg 360deg);
+      -webkit-mask-composite: source-in;
+      mask:
+        radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 4px)),
+        conic-gradient(#000 0deg 252deg, transparent 252deg 360deg);
+      mask-composite: intersect;
+      animation: splash-spin 1100ms linear infinite;
+    }
+
+    /* The white disc carrying the mark. 0.69 of the ring, as in _BrandSpinner,
+       with the logo inset 10% inside it. */
+    #splash-ring img {
+      position: relative;
+      width: 58px;   /* 84 * 0.69 */
+      height: 58px;
+      border-radius: 50%;
+      background: #ffffff;
+      /* _BrandSpinner insets its logo 10% inside the disc, but the asset it
+         uses is a bare mark. Icon-192.png already carries its own 6% margin,
+         so repeating the full inset here stacks two paddings and shrinks the
+         mark visibly inside the ring. 2px is what's left of the 10% once the
+         icon's own margin is counted. */
+      padding: 2px;
+      box-sizing: border-box;
+      object-fit: contain;
+      display: block;
+    }
+
+    @keyframes splash-spin {
+      to { transform: rotate(360deg); }
+    }
+
+    #splash-title {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        Helvetica, Arial, sans-serif;
+      font-size: 17.5px;
+      font-weight: 700;
+      color: #0D47A1;
+      margin: 0;
+    }
+
+    #splash-subtitle {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        Helvetica, Arial, sans-serif;
+      font-size: 13px;
+      line-height: 1.4;
+      font-weight: 400;
+      color: #8A8A8A;
+      /* Pulls the subtitle to the overlay's 6px gap under the title, against
+         the 24px flex gap the ring needs. */
+      margin: -18px 0 0;
+    }
+
+    /* Small screens: the overlay drops to a 72px ring under 340px shortest
+       side, and steps its type down with it. */
+    @media (max-width: 340px) {
+      #splash-ring { width: 72px; height: 72px; }
+      #splash-ring img { width: 50px; height: 50px; padding: 5px; }
+      #splash-branding { gap: 20px; }
+      #splash-title { font-size: 16px; }
+      #splash-subtitle { font-size: 12px; margin-top: -16px; }
+    }
+
+    /* Respect a reduced-motion preference: hold the ring still rather than
+       rotating it. The arc gap still reads as a spinner at rest. */
+    @media (prefers-reduced-motion: reduce) {
+      #splash { transition: none; }
+      #splash-ring::after { animation: none; }
+    }
   </style>
 
   <script id="splash-screen-script">
     function removeSplashFromWeb() {
-      document.getElementById("splash")?.remove();
-      document.getElementById("splash-branding")?.remove();
+      var splash = document.getElementById("splash");
       document.body.style.background = "transparent";
+      if (!splash) return;
+      // Fade, then remove. The branding node is a child of #splash, so it goes
+      // with it — no separate lookup needed.
+      splash.classList.add("splash-hide");
+      window.setTimeout(function () {
+        splash.remove();
+      }, 260);
     }
   </script>
 
-  <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport">
+  <noscript>
+    <style>
+      /* The splash would otherwise sit over this message forever: with no JS,
+         nothing ever calls removeSplashFromWeb(). */
+      #splash { display: none; }
+    </style>
+  </noscript>
 </head>
 <body>
+  <div id="splash">
+    <div id="splash-branding">
+      <div id="splash-ring" role="progressbar" aria-label="Loading GovPulse">
+        <img src="icons/Icon-192.png" alt="GovPulse">
+      </div>
+      <h1 id="splash-title">Getting things ready</h1>
+      <p id="splash-subtitle">Loading GovPulse</p>
+    </div>
+  </div>
+
+  <noscript>
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;max-width:520px;margin:80px auto;padding:0 24px;text-align:center;color:#111827;">
+      <h1 style="font-size:20px;font-weight:600;color:#0D47A1;">GovPulse</h1>
+      <p style="font-size:14px;line-height:1.6;color:#4B5563;">
+        GovPulse needs JavaScript to run. Please enable JavaScript in your
+        browser settings, then reload this page.
+      </p>
+    </div>
+  </noscript>
+
   <script src="flutter_bootstrap.js" async=""></script>
 </body>
 </html>

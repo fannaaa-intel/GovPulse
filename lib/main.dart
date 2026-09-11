@@ -1,3 +1,5 @@
+import 'dart:async' show Timer;
+
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/material.dart';
@@ -20,6 +22,7 @@ import 'features/home/shell/citizen_shell_router.dart' show GovPulseWebApp;
 import 'core/services/auth_ready.dart' show AuthRestoration;
 import 'core/network/timeout_http_client.dart';
 import 'core/services/session_cache.dart';
+import 'core/services/web_splash.dart';
 import 'features/scan/scan_page.dart';
 import 'core/widgets/Home/Chat-bubbles/home_chat_bubble.dart';
 import 'core/widgets/no_scrollbar_behavior.dart';
@@ -137,10 +140,89 @@ void main() async {
   // Start the app NOW — splash renders immediately, before any network work.
   runApp(const ProviderScope(child: GovPulseApp()));
 
+  // Hand off from the HTML splash to the real UI.
+  //
+  // WEB ONLY: on mobile `removeWebSplash` is a no-op stub, so this changes
+  // nothing about the Android/iOS startup path.
+  _dismissWebSplashWhenReady();
+
   // Everything network-dependent runs after, off the critical path,
   // so it can never block the splash from rendering.
   _initServices();
 }
+
+/// Takes the HTML first-paint splash down once there is something real behind
+/// it — not merely once Flutter has drawn its first frame.
+///
+/// WEB ONLY in effect: [removeWebSplash] is a no-op stub off web.
+///
+/// ── Why not just the first frame ──────────────────────────────────────────
+/// It was, and that was wrong in BOTH directions.
+///
+/// On web `GovPulseApp` skips the Flutter splash entirely and hands straight to
+/// go_router, whose guard deliberately returns null until [AuthRestoration]
+/// settles — so the first frame is `_StartingUp`, a bare 34px spinner on white.
+/// Lifting the branded splash to reveal a plain spinner replaces a good loading
+/// state with a worse one, and then a returning citizen gets a THIRD state when
+/// the shell finally builds. Three visual states for one cold load.
+///
+/// A measured cold load also showed the opposite failure: the login page was
+/// fully painted at ~1.0s while the splash stayed up until ~2.9s — nearly two
+/// seconds of the splash covering finished content, because "first frame" says
+/// nothing about whether that frame is worth showing.
+///
+/// So the wait is for [AuthRestoration.settled] — the same signal the router's
+/// own guard waits on. When it fires, the destination is decided and its first
+/// real frame is what gets uncovered.
+///
+/// ── Why the ceiling ───────────────────────────────────────────────────────
+/// `settled` is set by network work (Supabase restore, Firebase, a role query)
+/// and is deliberately allowed to hold. A splash that waits on it without a
+/// ceiling would become a permanent white page on a dead network — strictly
+/// worse than the blank page this whole feature exists to remove. After
+/// [_kSplashMaxHold] the splash lifts regardless and the app shows whatever
+/// loading state it has, which is the honest thing to show.
+void _dismissWebSplashWhenReady() {
+  if (!kIsWeb) return;
+
+  var done = false;
+  void finish() {
+    if (done) return;
+    done = true;
+    // One frame after the decision, so the uncovered frame is painted rather
+    // than merely scheduled.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      WidgetsBinding.instance.endOfFrame.then((_) => removeWebSplash());
+    });
+  }
+
+  final restoration = AuthRestoration.instance;
+
+  void onChange() {
+    if (restoration.settled) {
+      restoration.removeListener(onChange);
+      finish();
+    }
+  }
+
+  // Already settled from a warm cache: nothing to wait for.
+  if (restoration.settled) {
+    finish();
+  } else {
+    restoration.addListener(onChange);
+    Timer(_kSplashMaxHold, () {
+      restoration.removeListener(onChange);
+      finish();
+    });
+  }
+}
+
+/// The longest the HTML splash may stay up waiting on auth.
+///
+/// Sits above `AuthRestoration.begin`'s own 1s + 2s restore budgets so a normal
+/// cold load settles well inside it, and below the point where a visitor
+/// decides the page is broken.
+const Duration _kSplashMaxHold = Duration(seconds: 5);
 
 /// Network-dependent service initialization.
 /// Runs AFTER runApp so a slow/offline network never blocks first frame.
