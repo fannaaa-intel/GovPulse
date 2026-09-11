@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/widgets/focus_activate.dart';
 import '../../shell/citizen_shell_dialogs.dart'
     show FormDialogGuard, kSplitDialogFullscreenBelow;
 import '../../../../core/widgets/Home/Quick-action/Web/quick_action_split_panel.dart';
@@ -2594,47 +2595,67 @@ class _SuggestionScreenState extends State<SuggestionForm>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          GestureDetector(
-            onTap: _attachedFiles.length < _maxFiles ? _pickMedia : null,
-            child: Container(
-              width: double.infinity,
-              padding: EdgeInsets.symmetric(vertical: width * 0.065),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF0F9FF),
-                borderRadius: BorderRadius.circular(width * 0.03),
-                border: Border.all(
-                  color: AppColors.primaryBlue.withValues(alpha: 0.35),
-                  width: 1.5,
+          // Shared with the mobile app. FocusActivate only ADDS a focus node
+          // and key handling — no size, no padding, no gesture interception —
+          // so touch behaviour and every pixel are unchanged.
+          Semantics(
+            container: true,
+            button: true,
+            enabled: _attachedFiles.length < _maxFiles,
+            label: _attachedFiles.length < _maxFiles
+                ? 'Add a photo or video, ${_attachedFiles.length} of $_maxFiles attached'
+                : 'Attachment limit reached, $_maxFiles of $_maxFiles',
+            child: ExcludeSemantics(
+              child: FocusActivate(
+                enabled: _attachedFiles.length < _maxFiles,
+                onActivate: _attachedFiles.length < _maxFiles
+                    ? _pickMedia
+                    : () {},
+                borderRadius: 12,
+                child: GestureDetector(
+                  onTap: _attachedFiles.length < _maxFiles ? _pickMedia : null,
+                  child: Container(
+                    width: double.infinity,
+                    padding: EdgeInsets.symmetric(vertical: width * 0.065),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0F9FF),
+                      borderRadius: BorderRadius.circular(width * 0.03),
+                      border: Border.all(
+                        color: AppColors.primaryBlue.withValues(alpha: 0.35),
+                        width: 1.5,
+                      ),
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.add_a_photo_rounded,
+                          size: width * 0.095,
+                          color: AppColors.primaryBlue,
+                        ),
+                        SizedBox(height: width * 0.02),
+                        Text(
+                          'Tap to upload photo or video',
+                          style: TextStyle(
+                            fontSize: width * 0.034,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF374151),
+                          ),
+                        ),
+                        SizedBox(height: width * 0.008),
+                        Text(
+                          _attachedFiles.isEmpty
+                              ? 'You can upload up to $_maxFiles files'
+                              : '${_attachedFiles.length}/$_maxFiles uploaded',
+                          style: TextStyle(
+                            fontSize: width * 0.028,
+                            color: const Color(0xFF9CA3AF),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.add_a_photo_rounded,
-                    size: width * 0.095,
-                    color: AppColors.primaryBlue,
-                  ),
-                  SizedBox(height: width * 0.02),
-                  Text(
-                    'Tap to upload photo or video',
-                    style: TextStyle(
-                      fontSize: width * 0.034,
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFF374151),
-                    ),
-                  ),
-                  SizedBox(height: width * 0.008),
-                  Text(
-                    _attachedFiles.isEmpty
-                        ? 'You can upload up to $_maxFiles files'
-                        : '${_attachedFiles.length}/$_maxFiles uploaded',
-                    style: TextStyle(
-                      fontSize: width * 0.028,
-                      color: const Color(0xFF9CA3AF),
-                    ),
-                  ),
-                ],
               ),
             ),
           ),
@@ -2653,25 +2674,40 @@ class _SuggestionScreenState extends State<SuggestionForm>
               itemBuilder: (context, index) {
                 final isPlus = index == _attachedFiles.length;
                 if (isPlus) {
-                  return GestureDetector(
-                    onTap: _pickMedia,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF0F9FF),
-                        borderRadius: BorderRadius.circular(width * 0.025),
-                        border: Border.all(
-                          color: AppColors.primaryBlue.withValues(alpha: 0.4),
-                        ),
-                      ),
-                      child: Center(
-                        child: Image.asset(
-                          'assets/images/report/plus_sign.webp',
-                          width: width * 0.07,
-                          height: width * 0.07,
-                          errorBuilder: (_, _, _) => Icon(
-                            Icons.add_rounded,
-                            size: width * 0.07,
-                            color: AppColors.primaryBlue,
+                  return Semantics(
+                    container: true,
+                    button: true,
+                    label: 'Add a photo or video',
+                    child: ExcludeSemantics(
+                      child: FocusActivate(
+                        onActivate: _pickMedia,
+                        borderRadius: 10,
+                        child: GestureDetector(
+                          onTap: _pickMedia,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF0F9FF),
+                              borderRadius: BorderRadius.circular(
+                                width * 0.025,
+                              ),
+                              border: Border.all(
+                                color: AppColors.primaryBlue.withValues(
+                                  alpha: 0.4,
+                                ),
+                              ),
+                            ),
+                            child: Center(
+                              child: Image.asset(
+                                'assets/images/report/plus_sign.webp',
+                                width: width * 0.07,
+                                height: width * 0.07,
+                                errorBuilder: (_, _, _) => Icon(
+                                  Icons.add_rounded,
+                                  size: width * 0.07,
+                                  color: AppColors.primaryBlue,
+                                ),
+                              ),
+                            ),
                           ),
                         ),
                       ),
@@ -2742,19 +2778,32 @@ class _SuggestionScreenState extends State<SuggestionForm>
             Positioned(
               top: 5,
               right: 5,
-              child: GestureDetector(
-                onTap: () => setState(() => _attachedFiles.removeAt(index)),
-                child: Container(
-                  width: width * 0.055,
-                  height: width * 0.055,
-                  decoration: const BoxDecoration(
-                    color: Colors.red,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    Icons.close_rounded,
-                    color: Colors.white,
-                    size: width * 0.034,
+              child: Semantics(
+                container: true,
+                button: true,
+                label: 'Remove attachment ${index + 1}',
+                child: ExcludeSemantics(
+                  child: FocusActivate(
+                    onActivate: () =>
+                        setState(() => _attachedFiles.removeAt(index)),
+                    borderRadius: 20,
+                    child: GestureDetector(
+                      onTap: () =>
+                          setState(() => _attachedFiles.removeAt(index)),
+                      child: Container(
+                        width: width * 0.055,
+                        height: width * 0.055,
+                        decoration: const BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.close_rounded,
+                          color: Colors.white,
+                          size: width * 0.034,
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ),

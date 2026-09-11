@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/widgets/focus_activate.dart';
 import '../../shell/citizen_shell_dialogs.dart'
     show FormDialogGuard, kSplitDialogFullscreenBelow;
 import '../../../../core/widgets/responsive_page.dart';
@@ -2685,19 +2686,32 @@ class _ReportIssueScreenState extends State<ReportIssueForm>
             Positioned(
               top: 5,
               right: 5,
-              child: GestureDetector(
-                onTap: () => setState(() => _attachedFiles.removeAt(index)),
-                child: Container(
-                  width: width * 0.055,
-                  height: width * 0.055,
-                  decoration: const BoxDecoration(
-                    color: Colors.red,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    Icons.close_rounded,
-                    color: Colors.white,
-                    size: width * 0.034,
+              child: Semantics(
+                container: true,
+                button: true,
+                label: 'Remove attachment ${index + 1}',
+                child: ExcludeSemantics(
+                  child: FocusActivate(
+                    onActivate: () =>
+                        setState(() => _attachedFiles.removeAt(index)),
+                    borderRadius: 20,
+                    child: GestureDetector(
+                      onTap: () =>
+                          setState(() => _attachedFiles.removeAt(index)),
+                      child: Container(
+                        width: width * 0.055,
+                        height: width * 0.055,
+                        decoration: const BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.close_rounded,
+                          color: Colors.white,
+                          size: width * 0.034,
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -2991,47 +3005,66 @@ class _ReportIssueScreenState extends State<ReportIssueForm>
         ? _attachedFiles.length + 1
         : _maxFiles;
 
-    final dropzone = GestureDetector(
-      onTap: _attachedFiles.length < _maxFiles ? _pickMedia : null,
-      child: Container(
-        width: double.infinity,
-        padding: EdgeInsets.symmetric(vertical: width * 0.065),
-        decoration: BoxDecoration(
-          color: const Color(0xFFF0F9FF),
-          borderRadius: BorderRadius.circular(width * 0.03),
-          border: Border.all(
-            color: AppColors.primaryBlue.withValues(alpha: 0.35),
-            width: 1.5,
+    final bool canAttach = _attachedFiles.length < _maxFiles;
+    // Shared with the mobile app, and safe there: FocusActivate only ADDS a
+    // focus node and key handling. Touch behaviour, layout and every pixel
+    // are unchanged.
+    final dropzone = Semantics(
+      container: true,
+      button: true,
+      enabled: canAttach,
+      label: canAttach
+          ? 'Add a photo or video, ${_attachedFiles.length} of $_maxFiles attached'
+          : 'Attachment limit reached, $_maxFiles of $_maxFiles',
+      child: ExcludeSemantics(
+        child: FocusActivate(
+          onActivate: canAttach ? _pickMedia : () {},
+          enabled: canAttach,
+          borderRadius: 12,
+          child: GestureDetector(
+            onTap: canAttach ? _pickMedia : null,
+            child: Container(
+              width: double.infinity,
+              padding: EdgeInsets.symmetric(vertical: width * 0.065),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0F9FF),
+                borderRadius: BorderRadius.circular(width * 0.03),
+                border: Border.all(
+                  color: AppColors.primaryBlue.withValues(alpha: 0.35),
+                  width: 1.5,
+                ),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.add_a_photo_rounded,
+                    size: width * 0.095,
+                    color: AppColors.primaryBlue,
+                  ),
+                  SizedBox(height: width * 0.02),
+                  Text(
+                    'Tap to upload photo or video',
+                    style: TextStyle(
+                      fontSize: width * 0.034,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF374151),
+                    ),
+                  ),
+                  SizedBox(height: width * 0.008),
+                  Text(
+                    _attachedFiles.isEmpty
+                        ? 'You can upload up to $_maxFiles files'
+                        : '${_attachedFiles.length}/$_maxFiles uploaded',
+                    style: TextStyle(
+                      fontSize: width * 0.028,
+                      color: const Color(0xFF9CA3AF),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.add_a_photo_rounded,
-              size: width * 0.095,
-              color: AppColors.primaryBlue,
-            ),
-            SizedBox(height: width * 0.02),
-            Text(
-              'Tap to upload photo or video',
-              style: TextStyle(
-                fontSize: width * 0.034,
-                fontWeight: FontWeight.w600,
-                color: const Color(0xFF374151),
-              ),
-            ),
-            SizedBox(height: width * 0.008),
-            Text(
-              _attachedFiles.isEmpty
-                  ? 'You can upload up to $_maxFiles files'
-                  : '${_attachedFiles.length}/$_maxFiles uploaded',
-              style: TextStyle(
-                fontSize: width * 0.028,
-                color: const Color(0xFF9CA3AF),
-              ),
-            ),
-          ],
         ),
       ),
     );
@@ -3055,25 +3088,38 @@ class _ReportIssueScreenState extends State<ReportIssueForm>
             itemBuilder: (context, index) {
               final isPlus = index == _attachedFiles.length;
               if (isPlus) {
-                return GestureDetector(
-                  onTap: _pickMedia,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF0F9FF),
-                      borderRadius: BorderRadius.circular(width * 0.025),
-                      border: Border.all(
-                        color: AppColors.primaryBlue.withValues(alpha: 0.4),
-                      ),
-                    ),
-                    child: Center(
-                      child: Image.asset(
-                        'assets/images/report/plus_sign.webp',
-                        width: width * 0.07,
-                        height: width * 0.07,
-                        errorBuilder: (_, _, _) => Icon(
-                          Icons.add_rounded,
-                          size: width * 0.07,
-                          color: AppColors.primaryBlue,
+                return Semantics(
+                  container: true,
+                  button: true,
+                  label: 'Add a photo or video',
+                  child: ExcludeSemantics(
+                    child: FocusActivate(
+                      onActivate: _pickMedia,
+                      borderRadius: 10,
+                      child: GestureDetector(
+                        onTap: _pickMedia,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF0F9FF),
+                            borderRadius: BorderRadius.circular(width * 0.025),
+                            border: Border.all(
+                              color: AppColors.primaryBlue.withValues(
+                                alpha: 0.4,
+                              ),
+                            ),
+                          ),
+                          child: Center(
+                            child: Image.asset(
+                              'assets/images/report/plus_sign.webp',
+                              width: width * 0.07,
+                              height: width * 0.07,
+                              errorBuilder: (_, _, _) => Icon(
+                                Icons.add_rounded,
+                                size: width * 0.07,
+                                color: AppColors.primaryBlue,
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                     ),
@@ -3926,65 +3972,66 @@ class _ReportIssueScreenState extends State<ReportIssueForm>
                 child: ScrollConfiguration(
                   behavior: const NoScrollbarBehavior(),
                   child: SingleChildScrollView(
-                  padding:
-                      EdgeInsets.fromLTRB(24, compact ? 18 : 24, 24, 0),
-                  child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // The icon is decoration, and decoration is the first
-                    // thing to go when the card cannot hold its own controls.
-                    if (!compact) ...[
-                      Container(
-                        width: 56,
-                        height: 56,
-                        decoration: BoxDecoration(
-                          color: AppColors.primaryBlue.withValues(alpha: 0.10),
-                          shape: BoxShape.circle,
+                    padding: EdgeInsets.fromLTRB(24, compact ? 18 : 24, 24, 0),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // The icon is decoration, and decoration is the first
+                        // thing to go when the card cannot hold its own controls.
+                        if (!compact) ...[
+                          Container(
+                            width: 56,
+                            height: 56,
+                            decoration: BoxDecoration(
+                              color: AppColors.primaryBlue.withValues(
+                                alpha: 0.10,
+                              ),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              Icons.where_to_vote_outlined,
+                              color: AppColors.primaryBlue,
+                              size: 28,
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                        ],
+                        Text(
+                          nearby.length == 1
+                              ? 'Already reported here?'
+                              : 'Already reported nearby?',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF1F2937),
+                            height: 1.3,
+                          ),
                         ),
-                        child: Icon(
-                          Icons.where_to_vote_outlined,
-                          color: AppColors.primaryBlue,
-                          size: 28,
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                    ],
-                    Text(
-                      nearby.length == 1
-                          ? 'Already reported here?'
-                          : 'Already reported nearby?',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFF1F2937),
-                        height: 1.3,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    // Compact keeps the clause that answers "why am I being
-                    // asked this" and drops the one that only restates the
-                    // situation the cards below already show.
-                    Text(
-                      compact
-                          ? 'Confirming pushes it up the queue.'
-                          : nearby.length == 1
+                        const SizedBox(height: 8),
+                        // Compact keeps the clause that answers "why am I being
+                        // asked this" and drops the one that only restates the
+                        // situation the cards below already show.
+                        Text(
+                          compact
+                              ? 'Confirming pushes it up the queue.'
+                              : nearby.length == 1
                               ? 'Someone has already reported an issue at this '
                                     'spot. Confirming it pushes it up the '
                                     'queue.'
                               : 'These were reported near your pin. Confirming '
                                     'one pushes it up the queue.',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        color: Color(0xFF6B7280),
-                        height: 1.5,
-                      ),
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: Color(0xFF6B7280),
+                            height: 1.5,
+                          ),
+                        ),
+                        SizedBox(height: compact ? 12 : 16),
+                      ],
                     ),
-                    SizedBox(height: compact ? 12 : 16),
-                  ],
-                ),
-                ),
+                  ),
                 ),
               ),
               // ── The candidates ──────────────────────────────────────────
@@ -4041,15 +4088,18 @@ class _ReportIssueScreenState extends State<ReportIssueForm>
               // button (see _nearbyReportCard) and these two step down to
               // match what they are.
               Padding(
-                padding: EdgeInsets.fromLTRB(24, compact ? 10 : 16, 24,
-                    compact ? 12 : 18),
+                padding: EdgeInsets.fromLTRB(
+                  24,
+                  compact ? 10 : 16,
+                  24,
+                  compact ? 12 : 18,
+                ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     OutlinedButton(
-                      onPressed: () =>
-                          Navigator.pop(ctx, _kMineIsDifferent),
+                      onPressed: () => Navigator.pop(ctx, _kMineIsDifferent),
                       style: OutlinedButton.styleFrom(
                         side: const BorderSide(color: Color(0xFFD1D5DB)),
                         shape: RoundedRectangleBorder(
@@ -4210,15 +4260,15 @@ class _ReportIssueScreenState extends State<ReportIssueForm>
                       borderRadius: BorderRadius.circular(10),
                     ),
                   ),
-                  icon: const Icon(Icons.check_circle_outline_rounded, size: 16),
+                  icon: const Icon(
+                    Icons.check_circle_outline_rounded,
+                    size: 16,
+                  ),
                   label: const Text(
                     'Yes, this is my issue',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                    ),
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
                   ),
                 ),
               ),

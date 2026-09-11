@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import '../../../../core/widgets/focus_activate.dart';
 import 'package:flutter/material.dart';
 import '../../shell/citizen_shell_dialogs.dart'
     show FormDialogGuard, kSplitDialogFullscreenBelow;
@@ -2687,19 +2688,38 @@ class _FeedbackScreenState extends State<FeedbackForm>
           mainAxisAlignment: MainAxisAlignment.center,
           children: List.generate(5, (i) {
             final n = i + 1;
-            return GestureDetector(
-              onTap: () => setState(() => _starRating = n),
-              child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: width * 0.02),
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 200),
-                  child: Icon(
-                    n <= _starRating
-                        ? Icons.star_rounded
-                        : Icons.star_outline_rounded,
-                    key: ValueKey('star_${n}_${n <= _starRating}'),
-                    size: width * 0.10,
-                    color: n <= _starRating ? _kAmber : const Color(0xFFD1D5DB),
+            // Each star is its own control, announced with the rating it
+            // SETS and whether it is currently part of the selection — a
+            // screen-reader user otherwise has five identical unlabelled
+            // targets and no way to know what the current rating is.
+            return Semantics(
+              container: true,
+              button: true,
+              inMutuallyExclusiveGroup: true,
+              checked: n <= _starRating,
+              label: '$n star${n == 1 ? '' : 's'}',
+              child: ExcludeSemantics(
+                child: FocusActivate(
+                  onActivate: () => setState(() => _starRating = n),
+                  borderRadius: 20,
+                  child: GestureDetector(
+                    onTap: () => setState(() => _starRating = n),
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(horizontal: width * 0.02),
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 200),
+                        child: Icon(
+                          n <= _starRating
+                              ? Icons.star_rounded
+                              : Icons.star_outline_rounded,
+                          key: ValueKey('star_${n}_${n <= _starRating}'),
+                          size: width * 0.10,
+                          color: n <= _starRating
+                              ? _kAmber
+                              : const Color(0xFFD1D5DB),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -2990,23 +3010,34 @@ class _FeedbackScreenState extends State<FeedbackForm>
                 );
               }),
               if (_photos.length < 3)
-                GestureDetector(
-                  onTap: _pickPhoto,
-                  child: Container(
-                    width: width * 0.22,
-                    height: width * 0.22,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF0F9FF),
-                      borderRadius: BorderRadius.circular(width * 0.025),
-                      border: Border.all(
-                        color: AppColors.primaryBlue,
-                        width: 1.5,
+                Semantics(
+                  container: true,
+                  button: true,
+                  label: 'Add a photo, ${_photos.length} of 3 attached',
+                  child: ExcludeSemantics(
+                    child: FocusActivate(
+                      onActivate: _pickPhoto,
+                      borderRadius: 10,
+                      child: GestureDetector(
+                        onTap: _pickPhoto,
+                        child: Container(
+                          width: width * 0.22,
+                          height: width * 0.22,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF0F9FF),
+                            borderRadius: BorderRadius.circular(width * 0.025),
+                            border: Border.all(
+                              color: AppColors.primaryBlue,
+                              width: 1.5,
+                            ),
+                          ),
+                          child: Icon(
+                            Icons.add_rounded,
+                            size: width * 0.08,
+                            color: AppColors.primaryBlue,
+                          ),
+                        ),
                       ),
-                    ),
-                    child: Icon(
-                      Icons.add_rounded,
-                      size: width * 0.08,
-                      color: AppColors.primaryBlue,
                     ),
                   ),
                 ),
