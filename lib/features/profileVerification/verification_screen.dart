@@ -445,7 +445,16 @@ class _VerificationScreenState extends State<VerificationScreen>
                         'Confirm your identity to unlock the full range of '
                         'LGU services.',
                     onBack: () => Navigator.pop(context),
-                    backLabel: 'Back to Settings',
+                    // Plain 'Back', NOT 'Back to Settings'. This page is
+                    // reached from five places — the Home verify card, the
+                    // citizen shell's rail card, the notification popup, the
+                    // event slide-in and the verification-required dialog —
+                    // and Settings is only one of them. `onBack` is a plain
+                    // Navigator.pop, so it returns wherever the visitor came
+                    // from; naming one specific destination was wrong for the
+                    // other four and told a screen-reader user they were going
+                    // somewhere they were not.
+                    backLabel: 'Back',
                   ),
 
                   Center(
