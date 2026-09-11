@@ -12,9 +12,41 @@ Widget buildImageGrid(
   if (imageCount <= 0) return const SizedBox.shrink();
   final extraCount = imageCount - 4;
   final gap = width * 0.015;
+
+  // ── Decode budget ─────────────────────────────────────────────────────────
+  // Post photos upload at up to 1600px on the long edge (ImagePurpose.content,
+  // core/services/image_compressor.dart). Without a cap, EVERY image in the
+  // feed decodes at that full size no matter how small it is drawn — a
+  // half-width cell on a phone is ~180px, so the bitmap held in memory is
+  // roughly 60x the pixels actually painted, and a scrolled feed holds many
+  // at once.
+  //
+  // These are the drawn widths in LOGICAL pixels, scaled by devicePixelRatio at
+  // the call below so a 3x screen still gets a sharp image. `cover` crops
+  // rather than stretches, so a cap on width alone is enough.
+  final double heroLogicalWidth = width;
+  final double cellLogicalWidth = (width - gap) / 2;
   // Overridable so a full-bleed post slab can square the media off against the
   // screen edge; every other caller keeps the rounded default.
   final radius = cornerRadius ?? width * 0.025;
+
+  /// A feed image capped to the size it is actually drawn at.
+  ///
+  /// [logicalWidth] is the drawn width; the device pixel ratio is read from
+  /// the build context so the decode target is real device pixels. Falls back
+  /// to the uncapped image if the ratio is not yet available.
+  Widget feedImage(String url, double logicalWidth) => Builder(
+    builder: (context) {
+      final dpr = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1.0;
+      return CachedNetworkImage(
+        imageUrl: url,
+        fit: BoxFit.cover,
+        memCacheWidth: (logicalWidth * dpr).round().clamp(1, 1600),
+        placeholder: (context, url) => buildImagePlaceholder(width),
+        errorWidget: (context, url, error) => buildImagePlaceholder(width),
+      );
+    },
+  );
 
   Widget tappable(Widget child, int index) => GestureDetector(
     behavior: HitTestBehavior.opaque,
@@ -24,12 +56,7 @@ Widget buildImageGrid(
 
   Widget cell(int index, {bool overlay = false}) {
     final img = imageUrls.length > index
-        ? CachedNetworkImage(
-            imageUrl: imageUrls[index],
-            fit: BoxFit.cover,
-            placeholder: (context, url) => buildImagePlaceholder(width),
-            errorWidget: (context, url, error) => buildImagePlaceholder(width),
-          )
+        ? feedImage(imageUrls[index], cellLogicalWidth)
         : buildImagePlaceholder(width);
     return Expanded(
       child: AspectRatio(
@@ -65,12 +92,7 @@ Widget buildImageGrid(
 
   if (imageCount == 1) {
     final img = imageUrls.isNotEmpty
-        ? CachedNetworkImage(
-            imageUrl: imageUrls[0],
-            fit: BoxFit.cover,
-            placeholder: (context, url) => buildImagePlaceholder(width),
-            errorWidget: (context, url, error) => buildImagePlaceholder(width),
-          )
+        ? feedImage(imageUrls[0], heroLogicalWidth)
         : buildImagePlaceholder(width);
     return ClipRRect(
       borderRadius: BorderRadius.circular(radius),
@@ -95,14 +117,7 @@ Widget buildImageGrid(
             AspectRatio(
               aspectRatio: 16 / 9,
               child: imageUrls.isNotEmpty
-                  ? CachedNetworkImage(
-                      imageUrl: imageUrls[0],
-                      fit: BoxFit.cover,
-                      placeholder: (context, url) =>
-                          buildImagePlaceholder(width),
-                      errorWidget: (context, url, error) =>
-                          buildImagePlaceholder(width),
-                    )
+                  ? feedImage(imageUrls[0], heroLogicalWidth)
                   : buildImagePlaceholder(width),
             ),
             0,
