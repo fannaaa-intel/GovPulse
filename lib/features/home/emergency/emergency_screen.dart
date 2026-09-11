@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../core/widgets/Home/citizen_page_header.dart';
+import '../../../core/widgets/focus_activate.dart';
 import '../../../core/widgets/Home/Account/account_web_kit.dart';
 import '../../../../core/widgets/app_snackbar.dart';
 
@@ -1758,17 +1759,33 @@ class _CatCardState extends State<_CatCard>
     final cat = widget.cat;
     final box = widget.iconBoxSize; // uniform for all cards
 
-    return GestureDetector(
-      onTapDown: (_) {
-        HapticFeedback.selectionClick();
-        _c.forward();
-      },
-      onTapUp: (_) {
-        _c.reverse();
-        widget.onTap();
-      },
-      onTapCancel: () => _c.reverse(),
-      child: AnimatedBuilder(
+    // ── Reachable without a mouse ──────────────────────────────────────────
+    // This card opens a category of EMERGENCY hotlines, so "you can only
+    // press it by touching it" is the least acceptable place in the app for a
+    // control a keyboard or screen-reader user cannot operate.
+    //
+    // The GestureDetector stays: onTapDown/onTapUp drive the press-scale
+    // animation, and neither InkWell nor a Material button exposes that pair
+    // without changing how the card feels. Wrapping instead adds the two
+    // things the gesture detector alone does not provide — a FOCUS node, so
+    // Tab and Enter reach it, and a SEMANTICS node carrying the category name,
+    // so a screen reader announces "Police, button" rather than nothing.
+    return Semantics(
+      label: cat.label,
+      button: true,
+      child: FocusActivate(
+        onActivate: widget.onTap,
+        child: GestureDetector(
+          onTapDown: (_) {
+            HapticFeedback.selectionClick();
+            _c.forward();
+          },
+          onTapUp: (_) {
+            _c.reverse();
+            widget.onTap();
+          },
+          onTapCancel: () => _c.reverse(),
+          child: AnimatedBuilder(
         animation: _scale,
         builder: (_, child) =>
             Transform.scale(scale: _scale.value, child: child),
@@ -1854,6 +1871,8 @@ class _CatCardState extends State<_CatCard>
           ),
         ),
       ),
+        ),
+      ),
     );
   }
 }
@@ -1916,17 +1935,33 @@ class _CatCardWideState extends State<_CatCardWide>
     final cat = widget.cat;
     final box = widget.iconBoxSize;
 
-    return GestureDetector(
-      onTapDown: (_) {
-        HapticFeedback.selectionClick();
-        _c.forward();
-      },
-      onTapUp: (_) {
-        _c.reverse();
-        widget.onTap();
-      },
-      onTapCancel: () => _c.reverse(),
-      child: AnimatedBuilder(
+    // ── Reachable without a mouse ──────────────────────────────────────────
+    // This card opens a category of EMERGENCY hotlines, so "you can only
+    // press it by touching it" is the least acceptable place in the app for a
+    // control a keyboard or screen-reader user cannot operate.
+    //
+    // The GestureDetector stays: onTapDown/onTapUp drive the press-scale
+    // animation, and neither InkWell nor a Material button exposes that pair
+    // without changing how the card feels. Wrapping instead adds the two
+    // things the gesture detector alone does not provide — a FOCUS node, so
+    // Tab and Enter reach it, and a SEMANTICS node carrying the category name,
+    // so a screen reader announces "Police, button" rather than nothing.
+    return Semantics(
+      label: cat.label,
+      button: true,
+      child: FocusActivate(
+        onActivate: widget.onTap,
+        child: GestureDetector(
+          onTapDown: (_) {
+            HapticFeedback.selectionClick();
+            _c.forward();
+          },
+          onTapUp: (_) {
+            _c.reverse();
+            widget.onTap();
+          },
+          onTapCancel: () => _c.reverse(),
+          child: AnimatedBuilder(
         animation: _scale,
         builder: (_, child) =>
             Transform.scale(scale: _scale.value, child: child),
@@ -1991,6 +2026,8 @@ class _CatCardWideState extends State<_CatCardWide>
               ),
             ],
           ),
+        ),
+      ),
         ),
       ),
     );
