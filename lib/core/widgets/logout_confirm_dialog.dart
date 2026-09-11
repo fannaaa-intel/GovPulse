@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
@@ -7,6 +5,7 @@ import '../theme/app_colors.dart';
 import 'logout_control.dart';
 import 'app_dialog.dart';
 import '../../core/theme/citizen_ui.dart';
+import 'loading/brand_spinner.dart';
 
 /// A single, clean logout confirmation shared across the citizen app, admin
 /// console and staff console, so the experience is identical everywhere.
@@ -163,7 +162,7 @@ class LogoutLoadingOverlay extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _BrandSpinner(size: compact ? 72 : 84),
+                BrandSpinner(size: compact ? 72 : 84),
                 SizedBox(height: compact ? 20 : 24),
                 Text(
                   'Signing you out',
@@ -194,99 +193,4 @@ class LogoutLoadingOverlay extends StatelessWidget {
       ),
     );
   }
-}
-
-/// The GovPulse mark centred in a slowly rotating brand-gradient arc. The ring
-/// carries the "still working" signal; the logo carries the identity.
-class _BrandSpinner extends StatefulWidget {
-  final double size;
-  const _BrandSpinner({this.size = 84});
-
-  @override
-  State<_BrandSpinner> createState() => _BrandSpinnerState();
-}
-
-class _BrandSpinnerState extends State<_BrandSpinner>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _c = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1100),
-  )..repeat();
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final size = widget.size;
-    final logo = size * 0.69; // white disc sits inside the ring's track
-    return SizedBox(
-      width: size,
-      height: size,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          RepaintBoundary(
-            child: AnimatedBuilder(
-              animation: _c,
-              builder: (context, _) => CustomPaint(
-                size: Size(size, size),
-                painter: _RingPainter(_c.value * 2 * math.pi),
-              ),
-            ),
-          ),
-          ClipOval(
-            child: Container(
-              width: logo,
-              height: logo,
-              color: Colors.white,
-              padding: EdgeInsets.all(logo * 0.1),
-              child: Image.asset(
-                'assets/images/applogocrop.webp',
-                fit: BoxFit.contain,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// A rounded arc sweeping the brand blue→green gradient, rotated by [rotation].
-/// A faint full track underneath keeps the ring visible where the arc isn't.
-class _RingPainter extends CustomPainter {
-  final double rotation;
-  const _RingPainter(this.rotation);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    const stroke = 4.0;
-    final center = size.center(Offset.zero);
-    final radius = (size.shortestSide - stroke) / 2;
-    final rect = Rect.fromCircle(center: center, radius: radius);
-
-    final track = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = stroke
-      ..color = Colors.white.withValues(alpha: 0.08);
-    canvas.drawCircle(center, radius, track);
-
-    final arc = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = stroke
-      ..strokeCap = StrokeCap.round
-      ..shader = const SweepGradient(
-        colors: [AppColors.primaryBlue, AppColors.green, AppColors.primaryBlue],
-      ).createShader(rect);
-
-    // ~70% of the circle, rotating — a clear moving gap reads as progress.
-    canvas.drawArc(rect, rotation, math.pi * 1.4, false, arc);
-  }
-
-  @override
-  bool shouldRepaint(_RingPainter old) => old.rotation != rotation;
 }

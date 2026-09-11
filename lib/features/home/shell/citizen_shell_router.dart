@@ -13,6 +13,7 @@ import '../../../core/services/citizen_guard.dart';
 import '../../../core/services/events_service.dart';
 import '../../../core/theme/citizen_ui.dart';
 import '../../../core/widgets/citizen_guard_modals.dart';
+import '../../../core/widgets/loading/brand_spinner.dart';
 import '../../../core/widgets/no_scrollbar_behavior.dart';
 import '../../../core/widgets/resolve_by_id.dart';
 import '../../admin/screens/admin_dashboard_screen.dart';
@@ -1098,18 +1099,16 @@ class _StartingUp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The same ring the sign-out overlay uses, and the same one web/index.html
+    // restates in CSS for the pre-Flutter splash. A cold load hands off
+    // HTML splash → this → the shell, and a bare CircularProgressIndicator in
+    // the middle of that made one startup look like two different products.
+    //
+    // onDark: false — this sits on white, where the overlay's white-at-8%
+    // track is invisible.
     return const Scaffold(
       backgroundColor: Colors.white,
-      body: Center(
-        child: SizedBox(
-          width: 34,
-          height: 34,
-          child: CircularProgressIndicator(
-            strokeWidth: 2.6,
-            valueColor: AlwaysStoppedAnimation(Color(0xFF00448F)),
-          ),
-        ),
-      ),
+      body: Center(child: BrandSpinner(size: 72, onDark: false)),
     );
   }
 }
