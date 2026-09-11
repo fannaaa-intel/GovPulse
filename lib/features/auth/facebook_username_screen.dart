@@ -160,9 +160,20 @@ class _FacebookUsernameScreenState extends State<FacebookUsernameScreen>
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
 
-    if (!kIsWeb) return _mobileScaffold(context);
-    if (width >= kWebTwoPanelMinWidth) return _webScaffold(context);
-    return _webCompactScaffold(context);
+    final Widget content = !kIsWeb
+        ? _mobileScaffold(context)
+        : (width >= kWebTwoPanelMinWidth
+              ? _webScaffold(context)
+              : _webCompactScaffold(context));
+
+    // There is no password box here — Facebook holds that — but the username
+    // chosen on this screen IS what the citizen signs in with afterwards, so
+    // it is worth a manager recording. Commit on dispose, since the screen is
+    // torn down by a successful submit moving on.
+    return AutofillGroup(
+      onDisposeAction: AutofillContextAction.commit,
+      child: content,
+    );
   }
 
   // ── Mobile ────────────────────────────────────────────────────────────────
@@ -470,6 +481,10 @@ class _FacebookUsernameScreenState extends State<FacebookUsernameScreen>
           controller: _usernameController,
           isError: usernameErrorText != null,
           textInputAction: TextInputAction.done,
+          // Chosen once, on the way in from Facebook, and used to sign in
+          // afterwards — so it is worth recording even though there is no
+          // password box on this screen.
+          autofillHints: const [AutofillHints.username],
           onChanged: _onUsernameChanged,
           onSubmitted: (_) => _submit(),
           suffix: isCheckingUsername

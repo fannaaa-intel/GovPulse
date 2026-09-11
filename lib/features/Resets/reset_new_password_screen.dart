@@ -552,6 +552,10 @@ class _ResetNewPasswordScreenState extends State<ResetNewPasswordScreen>
             icon: Icons.lock_outline,
             keyboardType: TextInputType.visiblePassword,
             obscure: !showPassword,
+            // newPassword so a manager offers to generate one and then UPDATE
+            // the stored credential, rather than re-filling the old password
+            // the citizen is here to replace.
+            autofillHints: const [AutofillHints.newPassword],
             onChanged: (val) => validatePassword(val),
             controller: passwordController,
             suffix: GestureDetector(
@@ -576,6 +580,7 @@ class _ResetNewPasswordScreenState extends State<ResetNewPasswordScreen>
             keyboardType: TextInputType.visiblePassword,
             obscure: !showConfirm,
             isError: isPasswordMismatch,
+            autofillHints: const [AutofillHints.newPassword],
             onChanged: (_) => setState(() {}),
             controller: confirmController,
             suffix: GestureDetector(

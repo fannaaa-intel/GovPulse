@@ -29,6 +29,18 @@ class WebInputField extends StatefulWidget {
   final ValueChanged<String>? onSubmitted;
   final TextInputType keyboardType;
 
+  /// What a password manager should offer to fill here, e.g.
+  /// `[AutofillHints.username]` or `[AutofillHints.newPassword]`.
+  ///
+  /// Without this the field is opaque to 1Password, Chrome and Safari: they
+  /// cannot fill it, and — the half that is easier to miss — they never offer
+  /// to SAVE after a signup, so the account is created with a password nobody
+  /// recorded. That is a direct line to the password-reset queue.
+  ///
+  /// Null leaves autofill off, which is right for anything that is not a
+  /// credential (a search box, an OTP handled elsewhere, a free-text note).
+  final List<String>? autofillHints;
+
   const WebInputField({
     super.key,
     required this.hint,
@@ -44,6 +56,7 @@ class WebInputField extends StatefulWidget {
     this.textInputAction,
     this.onSubmitted,
     this.keyboardType = TextInputType.text,
+    this.autofillHints,
   });
 
   @override
@@ -125,6 +138,7 @@ class _WebInputFieldState extends State<WebInputField> {
               enabled: widget.enabled,
               obscureText: widget.obscure,
               keyboardType: widget.keyboardType, // ← now actually applied
+              autofillHints: widget.autofillHints,
               onChanged: widget.onChanged,
               textInputAction: widget.textInputAction,
               onSubmitted: widget.onSubmitted,

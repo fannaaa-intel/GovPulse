@@ -114,9 +114,24 @@ class _LoginScreenState extends State<LoginScreen>
               ? _webWideScaffold(context)
               : _webCompactScaffold(context));
 
+    // A password manager saves a CREDENTIAL — username and password together —
+    // so it has to know the two fields belong to one form. On web Flutter only
+    // emits the surrounding <form> for fields inside an AutofillGroup, and
+    // without it Chrome and Safari will offer to fill but often never offer to
+    // SAVE. Wrapping `content` covers the mobile layout too, where the same
+    // grouping is what lets iOS and Android fill both fields in one tap.
+    //
+    // Commit rather than cancel on dispose: this screen is torn down BY a
+    // successful login navigating away, and cancelling there would throw away
+    // the credential the manager was about to offer to save.
+    final Widget form = AutofillGroup(
+      onDisposeAction: AutofillContextAction.commit,
+      child: content,
+    );
+
     // While Facebook sign-in is in flight, cover the whole screen with a
     // blocking spinner so the login form never flashes back mid-process.
-    return Stack(children: [content, if (_fbBusy) const FacebookAuthOverlay()]);
+    return Stack(children: [form, if (_fbBusy) const FacebookAuthOverlay()]);
   }
 
   // ── Mobile layout — caps + centers on tablets, always scrolls ─────────────
@@ -352,6 +367,10 @@ class _LoginScreenState extends State<LoginScreen>
             icon: Icons.person_outline_rounded,
             keyboardType: TextInputType.text,
             textInputAction: TextInputAction.next,
+            // GovPulse signs in by USERNAME, not email — so `username` is the
+            // honest hint. Claiming `email` here would have managers offering
+            // an address that this form rejects.
+            autofillHints: const [AutofillHints.username],
             onChanged: (val) => username = val,
           ),
           const SizedBox(height: 14),
@@ -361,6 +380,7 @@ class _LoginScreenState extends State<LoginScreen>
             keyboardType: TextInputType.text,
             obscure: !showPassword,
             textInputAction: TextInputAction.done,
+            autofillHints: const [AutofillHints.password],
             onChanged: (val) => password = val,
             onSubmitted: (_) {
               if (!isLoading) _handleLogin();

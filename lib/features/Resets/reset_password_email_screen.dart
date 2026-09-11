@@ -476,6 +476,7 @@ class _ResetPasswordEmailScreenState extends State<ResetPasswordEmailScreen>
             icon: Icons.email_outlined,
             isError: showError,
             keyboardType: TextInputType.emailAddress,
+            autofillHints: const [AutofillHints.email],
             onChanged: (val) => setState(() {
               email = val;
               showError = false;

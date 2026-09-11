@@ -150,7 +150,31 @@ class WebAuthScaffold extends StatelessWidget {
             body: WebGlassSurface(child: SafeArea(child: cardArea)),
           );
 
-    return blockBack ? PopScope(canPop: false, child: scaffold) : scaffold;
+    // ── Autofill ───────────────────────────────────────────────────────────
+    // The autofillHints on the individual fields are only half of it. A
+    // password manager saves a CREDENTIAL — a username and a password
+    // together — so it needs to know which fields form one form, and on web
+    // Flutter only emits the surrounding <form> element for fields that sit
+    // inside an AutofillGroup. Without this, Chrome and Safari will offer to
+    // fill but frequently never offer to SAVE, which is the worse half to
+    // lose: it is how an account gets created with a password nobody recorded.
+    //
+    // One group at the scaffold covers every auth screen at once — login,
+    // signup, both reset steps and the Facebook username step all mount
+    // through here — and none of them shows two different credentials on one
+    // page, which is the only case that would need separate groups.
+    //
+    // `onDisposeAction` commits rather than cancels, so the manager is
+    // prompted when the screen is torn down by a successful submit navigating
+    // away. Cancelling there would discard the very credential just created.
+    final Widget autofillScope = AutofillGroup(
+      onDisposeAction: AutofillContextAction.commit,
+      child: scaffold,
+    );
+
+    return blockBack
+        ? PopScope(canPop: false, child: autofillScope)
+        : autofillScope;
   }
 }
 

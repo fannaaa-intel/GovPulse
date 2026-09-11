@@ -526,9 +526,23 @@ class _SignupScreenState extends State<SignupScreen>
               ? _webScaffold(context)
               : _webCompactScaffold(context));
 
+    // Groups the username and password boxes into one credential so a manager
+    // offers to save it — see the note in login_screen. It matters more here
+    // than anywhere else in the app: this is the screen that MINTS the
+    // password, and an account created with one nobody recorded is a password
+    // reset waiting to happen.
+    //
+    // Commit on dispose, because this screen is torn down by a successful
+    // signup navigating onward — exactly the moment the credential is worth
+    // keeping.
+    final Widget form = AutofillGroup(
+      onDisposeAction: AutofillContextAction.commit,
+      child: content,
+    );
+
     // While Facebook sign-up is in flight, cover the screen with a blocking
     // spinner so the sign-up form never flashes back mid-process.
-    return Stack(children: [content, if (_fbBusy) const FacebookAuthOverlay()]);
+    return Stack(children: [form, if (_fbBusy) const FacebookAuthOverlay()]);
   }
 
   // ── Mobile layout ─────────────────────────────────────────────────────────
@@ -1044,6 +1058,7 @@ class _SignupScreenState extends State<SignupScreen>
           enabled: !emailLocked,
           isError: emailErrorText != null,
           textInputAction: TextInputAction.next,
+          autofillHints: const [AutofillHints.email],
           onChanged: _onEmailChanged,
           suffix: isCheckingEmail
               ? const SizedBox(
@@ -1065,6 +1080,9 @@ class _SignupScreenState extends State<SignupScreen>
           controller: usernameController,
           isError: usernameErrorText != null,
           textInputAction: TextInputAction.next,
+          // The credential the citizen will actually sign in with, so this is
+          // the one a manager must record.
+          autofillHints: const [AutofillHints.username],
           onChanged: _onUsernameChanged,
           suffix: isCheckingUsername
               ? const SizedBox(
@@ -1087,6 +1105,10 @@ class _SignupScreenState extends State<SignupScreen>
           focusNode: passwordFocusNode,
           obscure: !showPassword,
           textInputAction: TextInputAction.next,
+          // newPassword, not password: this is what makes a manager OFFER TO
+          // GENERATE AND SAVE one rather than trying to fill an existing
+          // credential into a form that is creating a new account.
+          autofillHints: const [AutofillHints.newPassword],
           onChanged: _onPasswordChanged,
           suffix: GestureDetector(
             onTap: () => setState(() => showPassword = !showPassword),
@@ -1111,6 +1133,10 @@ class _SignupScreenState extends State<SignupScreen>
           obscure: !showConfirmPassword,
           isError: isPasswordMismatch,
           textInputAction: TextInputAction.done,
+          // Also newPassword, so the generated value is filled into BOTH boxes
+          // instead of the citizen being asked to retype a 20-character
+          // random string by hand.
+          autofillHints: const [AutofillHints.newPassword],
           onChanged: _onConfirmChanged,
           onSubmitted: (_) {
             if (canSubmit) _submitSignup(context);
