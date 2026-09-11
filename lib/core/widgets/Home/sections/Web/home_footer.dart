@@ -169,6 +169,18 @@ class _BrandColumn extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // The wordmark is the only part that grows with the text scale — the
+        // logo beside it is a fixed 28px — so in the narrowest brand column
+        // (an 820px window, where the footer is still in its WIDE three-column
+        // form and this Expanded(flex: 3) is about 300px) the pair ran 16px
+        // past its track at a 1.3 text scale. `mainAxisSize.min` does not help:
+        // it asks for the children's natural width, and the overflow is that
+        // the natural width no longer fits.
+        //
+        // Flexible rather than a smaller font or a fixed width: the lockup
+        // keeps its designed size everywhere it fits, and only the word gives
+        // way — and it gives way by ellipsing, so it can never become the
+        // reason a layout breaks.
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -183,12 +195,16 @@ class _BrandColumn extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            const Text(
-              'GovPulse',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-                color: Color(0xFF1A4DB8),
+            const Flexible(
+              child: Text(
+                'GovPulse',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF1A4DB8),
+                ),
               ),
             ),
           ],
