@@ -1,0 +1,7 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "flutter/bin/flutter build web --release --dart-define=SENTRY_DSN=https://bc512583628a5a21083a28de29ee9846@o4512068260069376.ingest.de.sentry.io/4512068265640016 --dart-define=SENTRY_ENVIRONMENT=production",
+  "outputDirectory": "build/web",
+  "installCommand": "git clone https://github.com/flutter/flutter.git --depth 1 -b 3.41.2 flutter && flutter/bin/flutter doctor",
+  "framework": null
+}
