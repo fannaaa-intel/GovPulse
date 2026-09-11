@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import '../../focus_activate.dart';
 import 'dart:async';
 import '../../../../core/theme/citizen_ui.dart';
 import '../../logout_control.dart';
@@ -431,15 +432,48 @@ class _NavLink extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => onEnter(),
-      onExit: (_) => onExit(),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+    // ── Reachable without a mouse ──────────────────────────────────────────
+    // These are the app's PRIMARY navigation — Home, My Reports, NewsFeed,
+    // Emergency — and as bare GestureDetectors they carried no focus node and
+    // no semantics node. A keyboard or screen-reader user could not move
+    // between the sections of the site at all, which is a more fundamental
+    // block than any single unreachable button: not one action denied, the
+    // whole app unnavigable.
+    //
+    // Wrapped rather than converted to a Material button. The link owns a
+    // hover animation driven by MouseRegion's onEnter/onExit and an animated
+    // active underline; an InkWell would bring its own ink and hover styling
+    // and change how the bar reads. FocusActivate adds only what was absent —
+    // a focus node, Enter/Space, and a ring drawn on a TRANSPARENT border so
+    // the bar's geometry is identical whether or not anything is focused.
+    //
+    // `selected` is what makes a screen reader announce "NewsFeed, selected"
+    // rather than leaving the user to guess which section they are in — the
+    // same thing the blue underline tells a sighted user.
+    // `container: true` is load-bearing, and its absence is audible. Without
+    // it this node MERGES with the Text below, and a screen reader announces
+    // every destination twice — "Home, Home". Containing the node makes this
+    // the one that speaks; the label still comes from [label], which is the
+    // same string the Text draws.
+    return Semantics(
+      container: true,
+      label: label,
+      button: true,
+      selected: isActive,
+      // Nothing inside should speak for itself now that this node does.
+      child: ExcludeSemantics(
+        child: FocusActivate(
+        onActivate: onTap,
+        borderRadius: 8,
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          onEnter: (_) => onEnter(),
+          onExit: (_) => onExit(),
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onTap,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
@@ -470,6 +504,9 @@ class _NavLink extends StatelessWidget {
             ],
           ),
         ),
+      ),
+        ),
+      ),
       ),
     );
   }

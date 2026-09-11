@@ -24,10 +24,12 @@
 //   2. LABELLED — carries a semantics node with a name, so a screen reader can
 //      announce it rather than reading "button" or nothing at all.
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:govpulse/core/widgets/Home/Quick-action/Web/quick_action_split_panel.dart';
+import 'package:govpulse/core/widgets/Home/nav/home_top_nav.dart';
 import 'package:govpulse/core/widgets/focus_activate.dart';
 import 'package:govpulse/core/widgets/web/web_input_field.dart';
 
@@ -244,6 +246,106 @@ void main() {
       );
       // Nothing to focus, so nothing to activate.
       expect(activated, 0);
+    });
+  });
+
+  group('moving around the site — the primary navigation', () {
+    testWidgets('every top-nav destination is a Tab stop and announces itself',
+        (tester) async {
+      // The whole reason this group exists: the nav links were bare
+      // GestureDetectors, so a keyboard user could not move between Home, My
+      // Reports, NewsFeed and Emergency at all. Not one action denied — the
+      // entire site unnavigable.
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      final handle = tester.ensureSemantics();
+
+      final tapped = <int>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: HomeTopNav(
+              currentIndex: 0,
+              onTap: tapped.add,
+              onNotificationTap: () {},
+              onLogoutTap: () {},
+              notificationCount: 0,
+              verifStatus: 'verified',
+              username: 'juan',
+              flatChrome: true,
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+
+      // Each destination reaches the semantics tree by name.
+      for (final item in HomeTopNav.defaultItems) {
+        expect(find.bySemanticsLabel(item.label), findsAtLeastNWidgets(1),
+            reason: 'the ${item.label} link must be announced');
+      }
+
+      // And each is focusable + activates from the keyboard.
+      final links = find.byType(FocusActivate);
+      expect(links, findsAtLeastNWidgets(HomeTopNav.defaultItems.length),
+          reason: 'every destination must be in the Tab order');
+
+      // The Focus node lives INSIDE FocusActivate, so ask for the Focus
+      // widget it builds rather than looking upward from the wrapper itself.
+      final focusFinder = find.descendant(
+        of: links.first,
+        matching: find.byType(Focus),
+      );
+      expect(focusFinder, findsAtLeastNWidgets(1));
+      final node = tester.widget<Focus>(focusFinder.first).focusNode ??
+          Focus.of(tester.element(
+            find.descendant(of: focusFinder.first, matching: find.byType(MouseRegion)).first,
+          ));
+      node.requestFocus();
+      await tester.pump();
+      expect(node.hasFocus, isTrue);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      expect(tapped, isNotEmpty,
+          reason: 'Enter on a focused nav link must navigate');
+      handle.dispose();
+    });
+
+    testWidgets('the active destination is announced as selected',
+        (tester) async {
+      // A sighted user sees the blue underline; a screen-reader user needs to
+      // be TOLD which section they are in, or they have no way to know.
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      final handle = tester.ensureSemantics();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: HomeTopNav(
+              currentIndex: 1, // My Reports
+              onTap: (_) {},
+              onNotificationTap: () {},
+              onLogoutTap: () {},
+              notificationCount: 0,
+              verifStatus: 'verified',
+              username: 'juan',
+              flatChrome: true,
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+
+      final node = tester.getSemantics(
+        find.bySemanticsLabel('My Reports').first,
+      );
+      expect(node.hasFlag(SemanticsFlag.isSelected), isTrue,
+          reason: 'the current section must announce as selected');
+      handle.dispose();
     });
   });
 }
