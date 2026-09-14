@@ -7,7 +7,6 @@ import '../../../core/widgets/report_work_log.dart';
 import '../../../core/widgets/report_progress_updates.dart';
 import '../widgets/endorsement_receipt_status.dart';
 import '../../../core/widgets/resolution_media.dart';
-import '../../staff/data/staff_departments.dart';
 import '../theme/admin_ui.dart';
 import '../providers/admin_reports_provider.dart';
 import '../utils/report_pdf.dart';
@@ -1982,13 +1981,17 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
     }
   }
 
-  /// Triage ACCEPT → route the report to an internal LGU office. Defaults to the
-  /// office the category maps to; the admin can override it if mis-categorized.
+  /// Triage ACCEPT → route the report to an internal LGU office. Defaults to
+  /// the AI's recommendation when classify-report has reached this row, else to
+  /// the office the category maps to; the admin can override either way.
   Future<void> _accept() async {
     final r = widget.report;
     final picked = await showAcceptAssignDialog(
       context,
-      recommendedOffice: StaffDepartments.forReportCategory(r.categoryKey),
+      recommendedOffice: r.suggestedDepartment,
+      isAiRecommendation: r.hasAiSuggestion,
+      aiReason: r.aiCategoryReason,
+      miscategorizedAs: r.aiCategoryLabel,
     );
     if (picked == null || !mounted) return;
     if (!_beginAction(_ReportAction.accept)) return;
@@ -2145,8 +2148,10 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
     return [
       (label: 'Reported on', value: adminLongDateTime(r.createdAt)),
       (
-        label: 'Suggested department',
-        value: StaffDepartments.forReportCategory(r.categoryKey),
+        // Reads the same [suggestedDepartment] the Accept dialog pre-selects,
+        // so the detail page and the dialog can never name different offices.
+        label: r.hasAiSuggestion ? 'Suggested department (AI)' : 'Suggested department',
+        value: r.suggestedDepartment,
       ),
     ];
   }

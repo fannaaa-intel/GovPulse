@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../staff/data/staff_departments.dart';
+
 // ── Report domain helpers (shared with the dashboard provider) ───────────────
 
 /// Same category-key → label mapping the citizen app uses, so the admin side
@@ -127,6 +129,27 @@ class AdminReport {
   /// DB trigger; see [reporterCount] for the number to actually show a human.
   final int confirmCount;
 
+  /// ── AI service-category routing (20260914000000 + classify-report) ────────
+  /// All four are null when the model hasn't reached this row, when AI usage is
+  /// exhausted, or when the migration hasn't been applied — every reader must
+  /// fall back to [StaffDepartments.forReportCategory]. ADVISORY ONLY: the
+  /// authoritative owner is [assignedToDepartment], written by the admin.
+
+  /// What the model believes the report actually is, on the same six-key
+  /// vocabulary the citizen picked from. Differs from [categoryKey] ⇒ mis-filed.
+  final String? aiCategory;
+
+  /// The internal LGU office the model recommends. Pre-selects in the Accept
+  /// dialog; the admin can always override.
+  final String? aiDepartment;
+
+  /// RESERVED — external agency suggestion, not surfaced anywhere yet.
+  final String? aiEndorseHint;
+
+  /// Short model justification, shown beside the recommendation so an override
+  /// is an informed decision rather than a coin-flip against an opaque label.
+  final String? aiCategoryReason;
+
   const AdminReport({
     required this.id,
     required this.shortId,
@@ -152,9 +175,39 @@ class AdminReport {
     this.rejectionNote,
     this.duplicateOf,
     this.confirmCount = 0,
+    this.aiCategory,
+    this.aiDepartment,
+    this.aiEndorseHint,
+    this.aiCategoryReason,
   });
 
   bool get isDismissed => dismissedAt != null;
+
+  /// The office to pre-select at triage: the model's recommendation when it has
+  /// one, else the deterministic category lookup. This is the ONLY place that
+  /// choice is made — every surface showing a suggested office reads it, so the
+  /// dialog and the detail page can never disagree.
+  String get suggestedDepartment =>
+      aiDepartment?.trim().isNotEmpty == true
+      ? aiDepartment!.trim()
+      : StaffDepartments.forReportCategory(categoryKey);
+
+  /// Whether [suggestedDepartment] came from the model — drives the "AI" badge.
+  /// Without this the admin cannot tell an AI recommendation from a table lookup,
+  /// and an override becomes a decision made against an unlabelled source.
+  bool get hasAiSuggestion => aiDepartment?.trim().isNotEmpty == true;
+
+  /// The model read the report as a different category than the citizen picked.
+  /// This is the mis-filed signal — invisible in the system before this feature.
+  bool get isMiscategorized =>
+      aiCategory != null &&
+      aiCategory!.trim().isNotEmpty &&
+      aiCategory!.trim() != categoryKey;
+
+  /// The model's category as a display label, for the mismatch note. Null when
+  /// there is no disagreement to describe.
+  String? get aiCategoryLabel =>
+      isMiscategorized ? reportCategoryLabel(aiCategory!.trim(), null) : null;
 
   /// This report confirms another — it belongs to that report's ticket, not its
   /// own row in the queue.
@@ -1136,11 +1189,18 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
         'assigned_to_department, assigned_at, assigned_by, rejection_note';
     const moderation = 'dismissed_at, dismissed_reason';
     const dedupe = 'duplicate_of, confirm_count';
+    const aiRouting =
+        'ai_category, ai_department, ai_endorse_hint, ai_category_reason';
     // Optional columns come from separate migrations (spam_moderation,
-    // staff_portal, report_triage_gate, report_duplicates). Try the fullest set
-    // first and degrade one migration at a time so the list never breaks if one
-    // hasn't been run.
+    // staff_portal, report_triage_gate, report_duplicates,
+    // ai_service_category_routing). Try the fullest set first and degrade one
+    // migration at a time so the list never breaks if one hasn't been run.
+    //
+    // AI routing is the OUTERMOST tier deliberately — it is the newest and the
+    // most expendable. Losing it costs a recommendation badge; every surface
+    // falls back to StaffDepartments.forReportCategory and triage still works.
     final attempts = [
+      '$core, $endorse, $triage, $moderation, $dedupe, $aiRouting',
       '$core, $endorse, $triage, $moderation, $dedupe',
       '$core, $endorse, $triage, $moderation',
       '$core, $endorse, $triage',
@@ -1229,6 +1289,12 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
         rejectionNote: _nullIfBlank(r['rejection_note']),
         duplicateOf: _nullIfBlank(r['duplicate_of']),
         confirmCount: (r['confirm_count'] as int?) ?? 0,
+        // Absent whenever the select degraded past the aiRouting tier, so these
+        // read off a map that simply has no such keys — null, not an error.
+        aiCategory: _nullIfBlank(r['ai_category']),
+        aiDepartment: _nullIfBlank(r['ai_department']),
+        aiEndorseHint: _nullIfBlank(r['ai_endorse_hint']),
+        aiCategoryReason: _nullIfBlank(r['ai_category_reason']),
       );
     }).toList();
   }

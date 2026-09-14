@@ -1,14 +1,38 @@
 // supabase/functions/classify-report/index.ts
 //
-// GovPulse — Citizen-report urgency triage (Groq / GPT-OSS)
+// GovPulse — Citizen-report triage: urgency + service-category routing (Groq)
 //
-// Classifies each citizen report into ai_urgency = "high" | "medium" | "low"
-// (with a short ai_urgency_reason) and writes it back to public.reports. The
-// admin dashboard's "Urgency triage" panel reads this column and shows a
-// "Hybrid AI" badge; any report the model hasn't reached (or that's produced
-// while AI usage is exhausted) falls back to the on-device keyword/category
-// rule in admin_dashboard_provider.dart. Purely additive — nothing breaks if it
-// never runs, and it resumes using AI automatically once usage resets.
+// Classifies each citizen report and writes the result back to public.reports:
+//   • ai_urgency / ai_urgency_reason  — "high" | "medium" | "low"
+//   • ai_category                     — what the report ACTUALLY is
+//   • ai_department                   — which internal LGU office should own it
+//   • ai_endorse_hint                 — external agency, RESERVED (see below)
+//   • ai_category_reason              — short justification shown to the admin
+//
+// WHY THE CATEGORY HALF EXISTS. The owning office is otherwise decided by a
+// fixed lookup on the category the CITIZEN tapped (report_department() in SQL,
+// StaffDepartments.forReportCategory in Dart). That table cannot read the
+// report: a collapsed bridge filed under "others" routes to the Mayor's Office
+// and nothing notices. This function already reads `remarks` for urgency, so
+// asking the same call "and which office should own this?" costs one prompt
+// change and ~100 output tokens.
+//
+// ADVISORY, NEVER AUTHORITATIVE. ai_department pre-selects in the admin's
+// Accept dialog; the admin can always override, and their choice is what lands
+// in assigned_to_department. RLS keeps routing on report_department(category) —
+// see the migration header for why access control must stay deterministic.
+//
+// ai_endorse_hint is populated but NOT yet surfaced anywhere in the app. The
+// column exists so enabling it later needs no migration. Writing it now also
+// means the evaluation dataset starts accumulating from day one.
+//
+// Purely additive — nothing breaks if this never runs. Rows the model hasn't
+// reached fall back to the deterministic rule everywhere.
+//
+// ⚠ MIGRATION FIRST, FUNCTION SECOND. Deploying this before
+// 20260914000000_ai_service_category_routing is applied makes every update fail
+// on the missing columns; the report saves fine and the failure reads as flaky
+// network. The write below is split in two specifically to bound that damage.
 //
 // Deploy:   supabase functions deploy classify-report
 // Secret:   GROQ_API_KEY (already set for chat-agent — shared across functions)
@@ -35,6 +59,98 @@ const corsHeaders = {
 
 const URGENCIES = new Set(["high", "medium", "low"]);
 
+// ── Closed vocabularies ─────────────────────────────────────────────────────
+// These MUST stay identical to three other places, or classification silently
+// half-works (the model answers, the CHECK rejects the write, the row is logged
+// as a failure while the report itself saves fine):
+//   CATEGORIES  ↔ report_issue_screen.dart  _categories[].key
+//   DEPARTMENTS ↔ staff_departments.dart    StaffDepartments.internal
+//   AGENCIES    ↔ staff_departments.dart    StaffDepartments.external
+//   all three   ↔ the CHECK constraints in 20260914000000
+const CATEGORIES = [
+  "road",
+  "waste",
+  "drainage",
+  "streetlight",
+  "environment",
+  "others",
+] as const;
+const CATEGORY_SET = new Set<string>(CATEGORIES);
+
+const DEPARTMENTS = [
+  "Engineering Office",
+  "Sanitation Office",
+  "Environment Office",
+  "Mayor's Office",
+] as const;
+const DEPARTMENT_SET = new Set<string>(DEPARTMENTS);
+
+const AGENCIES = ["DPWH", "DENR", "DOH", "BFP", "PNP"] as const;
+const AGENCY_SET = new Set<string>(AGENCIES);
+
+// The deterministic rule the AI is refining. Mirrors report_department() in SQL
+// and StaffDepartments.forReportCategory in Dart. Used as the fallback whenever
+// the model's department is unusable, so ai_department is never null while
+// ai_category is set — the admin UI can then treat the pair as one answer.
+function departmentForCategory(category: string): string {
+  switch (category) {
+    case "road":
+    case "drainage":
+    case "streetlight":
+      return "Engineering Office";
+    case "waste":
+      return "Sanitation Office";
+    case "environment":
+      return "Environment Office";
+    default:
+      return "Mayor's Office";
+  }
+}
+
+// Coerce model output onto the taxonomy — the same containment strategy as
+// classify-feedback's normalizeTheme(). Returns null rather than guessing when
+// nothing matches: a wrong category is worse than no category, because the
+// admin sees a confident "Recommended" star either way.
+function normalizeCategory(raw: string): string | null {
+  const t = raw.toLowerCase().trim();
+  if (CATEGORY_SET.has(t)) return t;
+  // Common model paraphrases of the six keys.
+  if (/road|street|pothole|bridge|infrastructure|sidewalk/.test(t)) return "road";
+  if (/waste|garbage|trash|rubbish|litter|dump/.test(t)) return "waste";
+  if (/drain|flood|canal|sewer|water/.test(t)) return "drainage";
+  if (/light|lamp|lamppost|illumination/.test(t)) return "streetlight";
+  if (/environment|pollut|smoke|noise|tree|air|river/.test(t)) return "environment";
+  if (/other|misc|unknown|general/.test(t)) return "others";
+  return null;
+}
+
+function normalizeDepartment(raw: string): string | null {
+  const t = raw.trim();
+  if (DEPARTMENT_SET.has(t)) return t;
+  const lower = t.toLowerCase();
+  for (const known of DEPARTMENTS) {
+    if (lower === known.toLowerCase()) return known;
+  }
+  // Bare-word answers ("engineering", "sanitation") are the common miss.
+  if (/engineer/.test(lower)) return "Engineering Office";
+  if (/sanitation|waste|garbage/.test(lower)) return "Sanitation Office";
+  if (/environment/.test(lower)) return "Environment Office";
+  if (/mayor|executive|general/.test(lower)) return "Mayor's Office";
+  return null;
+}
+
+// Null is the COMMON case here and must not be coerced into a guess: most
+// reports are in-scope LGU work and deserve no external hint at all.
+function normalizeAgency(raw: string): string | null {
+  const t = raw.trim().toUpperCase();
+  if (!t || t === "NONE" || t === "NULL" || t === "N/A") return null;
+  if (AGENCY_SET.has(t)) return t;
+  for (const known of AGENCIES) {
+    if (t.includes(known)) return known;
+  }
+  return null;
+}
+
 interface ReportRow {
   id: string;
   category: string | null;
@@ -46,6 +162,10 @@ interface ReportRow {
 interface Triage {
   urgency: string;
   reason: string;
+  category: string | null;
+  department: string | null;
+  endorseHint: string | null;
+  categoryReason: string | null;
 }
 
 const SYSTEM_PROMPT = `
@@ -55,25 +175,58 @@ Taglish, or Ilocano — understand all of them.
 
 Return ONLY a JSON object with exactly these keys:
 {
-  "urgency": "high" | "medium" | "low",
-  "reason":  "<short phrase, e.g. 'flooding — safety risk', 'routine garbage'>"
+  "urgency":    "high" | "medium" | "low",
+  "reason":     "<short phrase, e.g. 'flooding — safety risk', 'routine garbage'>",
+  "category":   "road" | "waste" | "drainage" | "streetlight" | "environment" | "others",
+  "department": "Engineering Office" | "Sanitation Office" | "Environment Office" | "Mayor's Office",
+  "endorse_to": "DPWH" | "DENR" | "DOH" | "BFP" | "PNP" | null,
+  "category_reason": "<short phrase justifying the category and office>"
 }
 
-Guidance:
+URGENCY:
 - high   = a safety risk or time-critical hazard (flooding, fire, accident,
            exposed wiring, collapse, blocked road, anything endangering people).
 - medium = a real problem that needs action but isn't dangerous (potholes,
            broken streetlight, drainage that isn't flooding, persistent garbage).
 - low    = minor, cosmetic, or informational.
-Judge from the described situation, not just the category. Do not add any text
-outside the JSON.
+
+CATEGORY — judge from what the citizen DESCRIBES, not from the category they
+picked. The category shown to you is their own guess and is often wrong; people
+reach for "others" when unsure. Classify what the report actually is:
+- road        = roads, potholes, bridges, sidewalks, road infrastructure
+- waste       = garbage, uncollected trash, illegal dumping
+- drainage    = drainage, canals, flooding, sewerage
+- streetlight = street lighting outages or damage
+- environment = pollution, air/water/noise, trees, environmental damage
+- others      = genuinely none of the above
+Use "others" ONLY when nothing above fits — not as a shortcut when unsure.
+
+DEPARTMENT — the LGU office that should own it. Normally this follows the
+category (road/drainage/streetlight → Engineering Office; waste → Sanitation
+Office; environment → Environment Office; others → Mayor's Office). Depart from
+that only when the description makes a different office clearly correct.
+
+ENDORSE_TO — set this ONLY when the concern is plainly OUTSIDE municipal
+authority and belongs to a national agency: DPWH (national highways/bridges),
+DENR (protected areas, large-scale environmental violations), DOH (public health
+emergencies), BFP (fire), PNP (crime/peace and order). For ordinary municipal
+work — which is most reports — return null. Do not guess.
+
+CATEGORY_REASON — one short phrase an LGU admin can read at a glance, e.g.
+"describes a collapsed bridge, not a general concern". Say WHY, not what.
+
+Judge from the described situation. Do not add any text outside the JSON.
 `.trim();
 
 function userPrompt(r: ReportRow): string {
-  const category = r.category_other?.trim() || r.category || "unspecified";
+  // The citizen's own pick is given as a HINT, labelled as such. Presenting it
+  // as "Category:" invited the model to simply echo it back, which defeats the
+  // point — the whole value here is catching the cases where it is wrong.
+  const picked = r.category_other?.trim() || r.category || "unspecified";
   const where = r.barangay?.trim() ? ` (Barangay ${r.barangay.trim()})` : "";
   const remarks = (r.remarks ?? "").trim() || "(no details provided)";
-  return `Category: ${category}${where}\nReport: "${remarks}"`;
+  return `Citizen's own category guess (may be wrong): ${picked}${where}\n` +
+    `Report: "${remarks}"`;
 }
 
 function parseTriage(raw: string): Triage | null {
@@ -88,8 +241,33 @@ function parseTriage(raw: string): Triage | null {
     const obj = JSON.parse(text);
     const urgency = String(obj.urgency ?? "").toLowerCase().trim();
     const reason = String(obj.reason ?? "").trim().slice(0, 80);
+    // Urgency stays the ONLY hard requirement. The category half is newer and
+    // additive: a model reply that nails urgency but garbles the category must
+    // still deliver the urgency rather than dropping the whole row into the
+    // retry queue, which would regress a feature that works today.
     if (!URGENCIES.has(urgency)) return null;
-    return { urgency, reason: reason || urgency };
+
+    const category = normalizeCategory(String(obj.category ?? ""));
+    // Never leave a category without an office — the admin UI treats the pair
+    // as one answer. An unusable department falls back to the deterministic
+    // rule applied to the AI's own category, which is still an improvement on
+    // the rule applied to the citizen's (possibly wrong) pick.
+    let department = normalizeDepartment(String(obj.department ?? ""));
+    if (category && !department) department = departmentForCategory(category);
+    // A department without a category is not actionable — the mismatch chip and
+    // the evaluation both key off the category — so drop it rather than store a
+    // recommendation nothing can explain.
+    if (!category) department = null;
+
+    return {
+      urgency,
+      reason: reason || urgency,
+      category,
+      department,
+      endorseHint: normalizeAgency(String(obj.endorse_to ?? "")),
+      categoryReason: String(obj.category_reason ?? "").trim().slice(0, 120) ||
+        null,
+    };
   } catch {
     return null;
   }
@@ -103,9 +281,11 @@ async function classifyOne(apiKey: string, r: ReportRow): Promise<Triage | null>
       { role: "user", content: userPrompt(r) },
     ],
     temperature: 0,
-    max_tokens: 100,
+    // Raised from 100: the reply now carries six fields, two of them short free
+    // text. Truncation here produces invalid JSON and loses the urgency too.
+    max_tokens: 250,
     // GPT-OSS reasons before answering. Left at the default it spends reasoning
-    // tokens — latency and cost — deliberating over a three-way label.
+    // tokens — latency and cost — deliberating over a handful of fixed labels.
     reasoning_effort: "low",
     response_format: { type: "json_object" },
   });
@@ -181,6 +361,7 @@ serve(async (req: Request) => {
   }
 
   let classified = 0;
+  let routed = 0;
   const failures: string[] = [];
 
   for (const row of rows) {
@@ -189,24 +370,59 @@ serve(async (req: Request) => {
       failures.push(row.id);
       continue;
     }
-    const { error } = await supabase
+
+    const urgencyCols = {
+      ai_urgency: result.urgency,
+      ai_urgency_reason: result.reason,
+      ai_classified_at: new Date().toISOString(),
+    };
+    const routingCols = {
+      ai_category: result.category,
+      ai_department: result.department,
+      ai_endorse_hint: result.endorseHint,
+      ai_category_reason: result.categoryReason,
+    };
+
+    // Try the full write first. If 20260914000000 has NOT been applied, the
+    // routing columns don't exist and PostgREST rejects the whole statement —
+    // which would take the urgency label down with it and silently regress a
+    // working feature. So: retry with urgency alone and report the degrade.
+    // Same "degrade one migration at a time" contract the admin client uses on
+    // its select. Once the migration is applied this second path never runs.
+    let error = (await supabase
       .from("reports")
-      .update({
-        ai_urgency: result.urgency,
-        ai_urgency_reason: result.reason,
-        ai_classified_at: new Date().toISOString(),
-      })
-      .eq("id", row.id);
+      .update({ ...urgencyCols, ...routingCols })
+      .eq("id", row.id)).error;
+
+    let didRoute = result.category !== null;
+    if (error) {
+      const degraded = await supabase
+        .from("reports")
+        .update(urgencyCols)
+        .eq("id", row.id);
+      if (!degraded.error) {
+        console.warn(
+          "routing columns unavailable (is 20260914000000 applied?) — wrote urgency only:",
+          error.message,
+        );
+        error = null;
+        didRoute = false;
+      }
+    }
+
     if (error) {
       console.error("update failed for", row.id, error);
       failures.push(row.id);
     } else {
       classified++;
+      if (didRoute) routed++;
     }
   }
 
+  // `routed` < `classified` means the model reached the rows but produced no
+  // usable category — a prompt/coercion problem, distinct from a failure.
   return new Response(
-    JSON.stringify({ requested: rows.length, classified, failures }),
+    JSON.stringify({ requested: rows.length, classified, routed, failures }),
     { headers: { "Content-Type": "application/json", ...corsHeaders } },
   );
 });

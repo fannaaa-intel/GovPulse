@@ -7,6 +7,14 @@
 --  reachable the report gets a model urgency label; if AI usage is exhausted the
 --  report simply stays unlabelled and the dashboard uses the on-device rule —
 --  then the next run (backfill or a later insert) re-uses AI once it resets.
+--
+--  ⚠ THE SERVICE-CATEGORY COLUMNS ARE NOT HERE. classify-report also writes
+--  ai_category / ai_department / ai_endorse_hint / ai_category_reason, added by
+--  supabase/migrations/20260914000000_ai_service_category_routing.sql. They live
+--  in a migration rather than this file because they carry CHECK constraints and
+--  a partial index that belong in the versioned ledger. Apply that migration
+--  BEFORE deploying the current function: the trigger below is unaffected, but
+--  the function's write degrades to urgency-only until the columns exist.
 -- ════════════════════════════════════════════════════════════════════════════
 
 -- 1. AI columns on reports.

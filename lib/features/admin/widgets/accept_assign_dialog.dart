@@ -64,21 +64,47 @@ const List<_OfficeCardData> _offices = [
 ];
 
 /// Shows the Accept & Assign dialog and resolves to the chosen office name, or
-/// `null` if the admin cancels / dismisses. [recommendedOffice] is the office
-/// the report's category maps to — it starts selected and is badged as such.
+/// `null` if the admin cancels / dismisses.
+///
+/// [recommendedOffice] starts selected and is badged as such. It comes from
+/// `AdminReport.suggestedDepartment`, which prefers the model's recommendation
+/// and falls back to the category lookup — callers should not re-derive it, or
+/// two surfaces end up naming different offices for the same report.
+///
+/// [isAiRecommendation] says which of those two produced it, so the badge can
+/// be honest about its source. [aiReason] is the model's short justification and
+/// [miscategorizedAs] the category it read the report as when that disagrees
+/// with the citizen's pick; both are null when there is nothing to say.
 Future<String?> showAcceptAssignDialog(
   BuildContext context, {
   required String recommendedOffice,
+  bool isAiRecommendation = false,
+  String? aiReason,
+  String? miscategorizedAs,
 }) {
   return showAppDialog<String>(
     context: context,
-    builder: (_) => _AcceptAssignDialog(recommendedOffice: recommendedOffice),
+    builder: (_) => _AcceptAssignDialog(
+      recommendedOffice: recommendedOffice,
+      isAiRecommendation: isAiRecommendation,
+      aiReason: aiReason,
+      miscategorizedAs: miscategorizedAs,
+    ),
   );
 }
 
 class _AcceptAssignDialog extends StatefulWidget {
   final String recommendedOffice;
-  const _AcceptAssignDialog({required this.recommendedOffice});
+  final bool isAiRecommendation;
+  final String? aiReason;
+  final String? miscategorizedAs;
+
+  const _AcceptAssignDialog({
+    required this.recommendedOffice,
+    this.isAiRecommendation = false,
+    this.aiReason,
+    this.miscategorizedAs,
+  });
 
   @override
   State<_AcceptAssignDialog> createState() => _AcceptAssignDialogState();
@@ -88,6 +114,14 @@ class _AcceptAssignDialogState extends State<_AcceptAssignDialog> {
   late String _selected = widget.recommendedOffice;
 
   bool get _onRecommendation => _selected == widget.recommendedOffice;
+
+  /// The model disagreed with the citizen's category AND said something about
+  /// why. Both halves are needed: a mismatch with no explanation is an
+  /// unfalsifiable claim, and an explanation with no mismatch is noise on a
+  /// report that was filed correctly.
+  bool get _hasMismatchNotice =>
+      widget.isAiRecommendation &&
+      (widget.miscategorizedAs?.trim().isNotEmpty ?? false);
 
   @override
   Widget build(BuildContext context) {
@@ -236,21 +270,27 @@ class _AcceptAssignDialogState extends State<_AcceptAssignDialog> {
           ),
         ),
         const SizedBox(height: 4),
-        // The line the request asks for: reassuring on the recommended pick,
-        // guiding once the admin steps off it.
+        // Reassuring on the recommended pick, guiding once the admin steps off
+        // it. The recommended-state wording distinguishes the two sources: a
+        // model that read the report can claim to have read it, a lookup table
+        // cannot, and an admin deciding whether to override deserves to know
+        // which one is talking.
         AnimatedSwitcher(
           duration: const Duration(milliseconds: 180),
           child: _onRecommendation
               ? Row(
                   key: const ValueKey('rec'),
-                  children: const [
-                    Icon(Icons.auto_awesome_rounded,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.auto_awesome_rounded,
                         size: 15, color: _confirmGreen),
-                    SizedBox(width: 6),
+                    const SizedBox(width: 6),
                     Flexible(
                       child: Text(
-                        'This is the best recommendation for this report.',
-                        style: TextStyle(
+                        widget.isAiRecommendation
+                            ? 'Recommended from the details of this report.'
+                            : 'This is the best recommendation for this report.',
+                        style: const TextStyle(
                           fontSize: 12.5,
                           color: _confirmGreen,
                           fontWeight: FontWeight.w600,
@@ -265,6 +305,10 @@ class _AcceptAssignDialogState extends State<_AcceptAssignDialog> {
                   style: TextStyle(fontSize: 12.5, color: AdminUi.textMuted),
                 ),
         ),
+        if (_hasMismatchNotice) ...[
+          const SizedBox(height: 12),
+          _mismatchNotice(narrow),
+        ],
         const SizedBox(height: 16),
         LayoutBuilder(
           builder: (context, c) {
@@ -286,6 +330,81 @@ class _AcceptAssignDialogState extends State<_AcceptAssignDialog> {
           },
         ),
       ],
+    );
+  }
+
+  /// The mis-filed notice: the model read this report as a different category
+  /// than the citizen picked. Before this existed a mis-categorised report was
+  /// invisible — it routed to whatever office the wrong category mapped to and
+  /// nothing anywhere said so.
+  ///
+  /// Amber, not red: this is information for the admin, not an error, and the
+  /// citizen did nothing wrong. It sits above the office grid because it is the
+  /// reason the pre-selected card may not be the one the category implies.
+  ///
+  /// Responsive: the icon stays top-aligned so a reason wrapping to three lines
+  /// on a phone doesn't leave it floating mid-paragraph, and the text is free to
+  /// wrap rather than being laid out on a fixed row.
+  Widget _mismatchNotice(bool narrow) {
+    final reason = widget.aiReason?.trim();
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.symmetric(horizontal: narrow ? 12 : 14, vertical: 11),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFFDE68A)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(top: 1),
+            child: Icon(Icons.info_outline_rounded,
+                size: 16, color: Color(0xFFB45309)),
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text.rich(
+                  TextSpan(
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      height: 1.35,
+                      color: Color(0xFF92400E),
+                    ),
+                    children: [
+                      const TextSpan(text: 'This may be filed under the wrong '
+                          'category — it reads as '),
+                      TextSpan(
+                        text: widget.miscategorizedAs!.trim(),
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      const TextSpan(text: '.'),
+                    ],
+                  ),
+                ),
+                // The model's own words. Quoted and dimmed so it reads as
+                // evidence the admin can weigh, not as a second instruction.
+                if (reason != null && reason.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    '"$reason"',
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      height: 1.35,
+                      fontStyle: FontStyle.italic,
+                      color: Color(0xFFB45309),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -329,7 +448,15 @@ class _AcceptAssignDialogState extends State<_AcceptAssignDialog> {
       borderRadius: BorderRadius.circular(14),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 140),
-        padding: const EdgeInsets.fromLTRB(14, 20, 14, 16),
+        // Extra headroom on the badged card. The badge is positioned at
+        // top: -6 and overhangs INTO the card, so at the original flat 20 the
+        // "AI Recommended" pill — wider and set in a heavier row than the old
+        // "Recommended" — landed on the office illustration. Verified in the
+        // browser, not inferred: the overflow probe passes either way, because
+        // a Positioned child overlapping its Stack sibling is a legal layout,
+        // just an ugly one. IntrinsicHeight equalises the row afterwards, so
+        // the unbadged cards grow to match rather than sitting short.
+        padding: EdgeInsets.fromLTRB(14, recommended ? 26 : 20, 14, 16),
         decoration: BoxDecoration(
           color: selected ? const Color(0xFFF3F7FF) : AdminUi.surface,
           borderRadius: BorderRadius.circular(14),
@@ -388,7 +515,11 @@ class _AcceptAssignDialogState extends State<_AcceptAssignDialog> {
                       size: 16, color: Colors.white),
                 ),
               ),
-            // Green "Recommended" star — top-left — marks the suggested office.
+            // Green badge — top-left — marks the suggested office. Names its
+            // source: an admin overriding a recommendation should know whether
+            // they are overriding a model that read the report or a fixed
+            // category lookup. The sparkle is the same mark the app uses for AI
+            // elsewhere; the star stays for the deterministic rule.
             if (recommended)
               Positioned(
                 top: -6,
@@ -400,14 +531,22 @@ class _AcceptAssignDialogState extends State<_AcceptAssignDialog> {
                     color: _confirmGreen,
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  child: const Row(
+                  child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.star_rounded, size: 12, color: Colors.white),
-                      SizedBox(width: 3),
+                      Icon(
+                        widget.isAiRecommendation
+                            ? Icons.auto_awesome_rounded
+                            : Icons.star_rounded,
+                        size: 12,
+                        color: Colors.white,
+                      ),
+                      const SizedBox(width: 3),
                       Text(
-                        'Recommended',
-                        style: TextStyle(
+                        widget.isAiRecommendation
+                            ? 'AI Recommended'
+                            : 'Recommended',
+                        style: const TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.w700,
                           color: Colors.white,
