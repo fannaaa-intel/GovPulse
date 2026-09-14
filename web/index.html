@@ -5,6 +5,21 @@
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+
+  <!-- Without this, a phone browser renders the page into a ~980px virtual
+       window and then scales the whole thing down to fit the screen. The HTML
+       splash below is sized in CSS pixels, so it painted into that 980px
+       canvas and arrived on screen at roughly a third of its intended size —
+       a tiny ring on a huge white page. Flutter's own engine then sets the
+       viewport itself as it boots, the virtual window collapses to the real
+       device width, and the ring jumps to full size. That jump is the
+       "small spinner suddenly becomes big" on mobile web; it is purely the
+       scale factor changing under a splash that never moved.
+
+       Declaring it here means the first paint and every frame after it share
+       one coordinate space, so the handoff is seamless. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+
   <meta name="description" content="The official civic engagement platform of the Local Government Unit of Aparri, Cagayan. Report issues, track their status, and stay informed about your community.">
 
   <!-- Social link previews.

@@ -319,6 +319,21 @@ class _OverflowMenu extends StatelessWidget {
   final VoidCallback onHowItWorks;
   final VoidCallback onFaq;
 
+  /// Width of a menu row's content.
+  ///
+  /// Measured from the longest label ("How it Works" at 14.5/w600 ~ 96px)
+  /// plus the 30px icon chip and its 12px gap, with slack for a fallback font
+  /// or a longer translation.
+  ///
+  /// This sizes the ROW, which is not quite the same as sizing the panel:
+  /// Material applies its own minimum width to a PopupMenuItem, and where that
+  /// minimum is the larger of the two it wins. Screenshotting the built page
+  /// at 412px shows the panel settling around 220px — comfortably clear of the
+  /// screen edge, which was the actual complaint — rather than the 164 below.
+  /// Left here because it still bounds the row's own content and keeps the
+  /// labels from stretching; it is deliberately NOT the panel's width.
+  static const double _kRowWidth = 164;
+
   const _OverflowMenu({
     required this.onFeatures,
     required this.onHowItWorks,
@@ -349,9 +364,40 @@ class _OverflowMenu extends StatelessWidget {
         minimumSize: const Size(44, 44),
         tapTargetSize: MaterialTapTargetSize.padded,
       ),
+      // ── The panel ─────────────────────────────────────────────────────────
+      // The default PopupMenuButton panel is a square-ish grey slab of bare
+      // label text: no icons, hairline dividers edge-to-edge, and Material's
+      // stock 8px radius. Against a landing page built entirely from soft
+      // 16px cards on white it read as a piece of raw framework furniture
+      // rather than part of the product.
+      //
+      // These four properties restate the page's own card language — white
+      // ground, [LandingUi.cardRadius], a hairline border and the same wide,
+      // faint [LandingUi.cardShadow] every marketing card carries. elevation 0
+      // because the shadow is supplied by the shape, not by Material's tint.
+      color: LandingUi.surface,
+      elevation: 0,
+      shadowColor: Colors.transparent,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(LandingUi.controlRadius),
+        borderRadius: BorderRadius.circular(LandingUi.cardRadius),
+        side: const BorderSide(color: Color(0xFFE2E8F0)),
       ),
+      // Breathing room at the panel's top and bottom, so the first and last
+      // rows are not jammed against the rounded corners.
+      menuPadding: const EdgeInsets.symmetric(vertical: 8),
+      // Clear of the bar, and pulled LEFT off the screen edge.
+      //
+      // Material anchors the panel to the button, which sits on the page
+      // gutter — so the panel's right edge landed flush against the screen
+      // with no gutter of its own, and its rounded corners had nothing to
+      // breathe into. -8 restores a visible margin on the right.
+      //
+      // NOTE: the panel's width is NOT set here. `constraints` on a
+      // PopupMenuButton sizes the BUTTON's tap target (see the 44x44 above),
+      // not the menu — setting it for the panel silently shrinks the
+      // hamburger's touch target back under the WCAG minimum. The rows size
+      // the panel themselves, and _kRowWidth below holds that width down.
+      offset: const Offset(-8, 52),
       onSelected: (value) {
         switch (value) {
           case 0:
@@ -364,13 +410,89 @@ class _OverflowMenu extends StatelessWidget {
             context.go('/login');
         }
       },
-      itemBuilder: (_) => const <PopupMenuEntry<int>>[
-        PopupMenuItem<int>(value: 0, child: Text('Features')),
-        PopupMenuItem<int>(value: 1, child: Text('How it Works')),
-        PopupMenuItem<int>(value: 2, child: Text('FAQ')),
-        PopupMenuDivider(),
-        PopupMenuItem<int>(value: 3, child: Text('Sign in')),
+      itemBuilder: (_) => <PopupMenuEntry<int>>[
+        // The three section anchors: same weight as each other, because they
+        // are peers. An icon each because a four-row list of bare words gives
+        // the eye nothing to land on — the glyph is what makes the menu
+        // scannable at a glance rather than readable only word by word.
+        _item(value: 0, icon: Icons.grid_view_rounded, label: 'Features'),
+        _item(value: 1, icon: Icons.route_rounded, label: 'How it Works'),
+        _item(value: 2, icon: Icons.help_outline_rounded, label: 'FAQ'),
+
+        // Inset so the rule stops short of the panel's rounded corners; a
+        // full-bleed divider inside a 16px radius clips visibly at both ends.
+        const PopupMenuDivider(height: 9, indent: 12, endIndent: 12),
+
+        // Sign in is NOT a peer of the three above — it is the one row that
+        // leaves the page, and the only reason a returning citizen opens this
+        // menu at all. It takes the brand blue and a filled icon chip so it
+        // reads as the menu's action, matching the bar's own CTA treatment.
+        _item(
+          value: 3,
+          icon: Icons.login_rounded,
+          label: 'Sign in',
+          accent: true,
+        ),
       ],
+    );
+  }
+
+  /// One menu row.
+  ///
+  /// Height 48 rather than Material's default 48-with-tight-padding: the rows
+  /// are a phone's primary navigation here, so they take a full touch target
+  /// and the horizontal padding the panel's radius needs.
+  static PopupMenuItem<int> _item({
+    required int value,
+    required IconData icon,
+    required String label,
+    bool accent = false,
+  }) {
+    final Color fg = accent ? LandingUi.accent : LandingUi.textPrimary;
+    return PopupMenuItem<int>(
+      value: value,
+      height: 48,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      child: SizedBox(
+        // Bounds the row's own content so the labels do not stretch. See
+        // [_kRowWidth] — this is not the same thing as the panel's width,
+        // which Material's PopupMenuItem minimum also has a say in.
+        width: _kRowWidth,
+        child: Row(
+          children: <Widget>[
+            // A tinted chip behind the glyph on the accent row, so Sign in
+            // carries weight without needing a second type size.
+            Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                color: accent
+                    ? LandingUi.accent.withValues(alpha: 0.10)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              alignment: Alignment.center,
+              child: Icon(
+                icon,
+                size: 19,
+                color: accent ? LandingUi.accent : LandingUi.textMuted,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 14.5,
+                  fontWeight: accent ? FontWeight.w700 : FontWeight.w600,
+                  color: fg,
+                  height: 1.2,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
