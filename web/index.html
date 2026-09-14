@@ -37,7 +37,17 @@
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png">
 
-  <title>GovPulse — Municipality of Aparri</title>
+  <!-- The TAB title, which is a different job from the social-card title
+       above. A tab is ~20 characters wide before the browser truncates it, so
+       everything after the product name is invisible anyway — "GovPulse |
+       Munic…" spends the whole tab on punctuation and a word nobody needed.
+       The pipe was an em dash, which rendered as a stray "—" hanging off the
+       favicon.
+
+       og:title keeps the fuller form: a Messenger or Facebook card has room
+       for it, and there the municipality is exactly the context a reader
+       needs. -->
+  <title>GovPulse</title>
   <link rel="manifest" href="manifest.json">
 
   <style id="splash-screen-style">
