@@ -18,6 +18,7 @@ import '../../../core/widgets/no_scrollbar_behavior.dart';
 import '../../../core/widgets/resolve_by_id.dart';
 import '../../admin/screens/admin_dashboard_screen.dart';
 import '../../guest/screen/guest.dart';
+import '../../landing/landing_page.dart';
 import '../../scan/scan_page.dart';
 import '../../staff/screens/staff_console_screen.dart';
 import '../Quick-action/Events/event_detail_screen.dart';
@@ -74,6 +75,26 @@ import 'citizen_shell.dart';
 const String _kLoginPath = '/login';
 const String _kSignupPath = '/signup';
 const String _kGuestPath = '/guest';
+
+/// The PUBLIC landing page — the marketing front door at the bare origin.
+///
+/// ── Why '/' stopped being a placeholder ────────────────────────────────────
+/// It used to be "not a destination": the guard resolved it to somebody's home
+/// the moment auth was known, and the only thing mounted there was
+/// [_StartingUp], a spinner covering the gap. That is exactly right for an app
+/// whose every visitor already has an account, and exactly wrong for a civic
+/// platform that has to introduce itself to a municipality that has never heard
+/// of it. A stranger typing the origin got a login form demanding credentials
+/// for a product nothing had yet explained.
+///
+/// So '/' is now a real, public route. It is reachable in every auth state —
+/// signed out, guest, citizen, admin, staff — because a landing page that
+/// logged-in staff cannot open is a landing page nobody on the LGU side can
+/// ever link to or check.
+///
+/// The redirects below no longer sweep it. What they DO keep is the automatic
+/// first-arrival routing: see [_kPostAuthLanding].
+const String _kLandingPath = '/';
 
 /// The GUEST feed. Deliberately not a shell destination: a guest gets the bare,
 /// self-chroming [NewsFeedScreen], never the citizen shell.
@@ -244,6 +265,46 @@ String shellSubmissionsPath({
 /// Quick actions and other full-bleed flows open over the WHOLE shell rather
 /// than inside a column, so they are pushed onto the root navigator.
 final GlobalKey<NavigatorState> _rootNavigatorKey = GlobalKey<NavigatorState>();
+
+// ── First arrival vs. a deliberate visit ────────────────────────────────────
+//
+// THE subtlety of making '/' public, and the one thing that cannot be expressed
+// by the redirect rules alone.
+//
+// `initialLocation: '/'` means EVERY cold load begins at '/' — including a
+// returning citizen who refreshed their feed, and an admin reopening a pinned
+// console tab. Those visitors did not ask for a landing page; the router simply
+// has nowhere else to start before auth is known. If '/' merely stopped
+// redirecting, all of them would be dropped onto marketing copy and would have
+// to click their way back into the app they were already using.
+//
+// But the OPPOSITE rule is just as wrong. Once someone is inside the app and
+// clicks a logo, a footer link, or types the bare origin, they are asking for
+// the landing page on purpose — and a guard that always sweeps signed-in users
+// to /home makes the page permanently unreachable for exactly the people who
+// most need to review it.
+//
+// The two are indistinguishable from the location alone: both are '/'. What
+// separates them is WHEN. A boot-time arrival is the router's own starting
+// point, evaluated before anything has navigated; a deliberate visit is every
+// evaluation after that. So this latch records whether the first redirect pass
+// has happened yet, and only that first pass performs the post-auth handoff.
+//
+// Deliberately a plain mutable bool rather than anything derived from
+// [GoRouterState]. `state.matchedLocation` is identical in both cases, and
+// go_router exposes no "is this the initial resolution" signal — the sequence
+// is the only thing that distinguishes them.
+bool _landingHandoffDone = false;
+
+/// Where a signed-in visitor is sent when the app BOOTS at '/', by role.
+///
+/// Null means "stay on the landing page" — a signed-out visitor or a guest, for
+/// whom the landing page is the correct destination rather than a detour.
+String? _kPostAuthLanding(int? roleId) => switch (roleId) {
+  1 => _kAdminPath,
+  2 => _kStaffPath,
+  _ => CitizenTab.home.path,
+};
 
 /// Detail route for one report, pushed inside the My Reports branch so it
 /// stacks over that pane and leaves the other tabs untouched.
@@ -463,6 +524,48 @@ String? _authRedirect(BuildContext context, GoRouterState state) {
   // neither a citizen nor a guest opening it should be swept anywhere else.
   if (loc.startsWith(kScanRoutePrefix)) return null;
 
+  // ── The landing page ─────────────────────────────────────────────────────
+  // Public in all directions like the scan page, with ONE exception: the very
+  // first evaluation after boot, which hands a returning visitor back to
+  // whatever they were using. See [_landingHandoffDone] for why that boot-time
+  // pass is the only one that may redirect, and why the location alone cannot
+  // tell the two cases apart.
+  if (loc == _kLandingPath) {
+    // Already handed off, so this is a deliberate visit — somebody clicked a
+    // logo or typed the origin. Serve the page, whoever they are.
+    if (_landingHandoffDone) return null;
+
+    // Still booting. Hold WITHOUT latching: the guard re-runs when
+    // AuthRestoration notifies, and consuming the one-shot handoff here would
+    // spend it on a pass that does not yet know who is asking. The landing page
+    // builds behind this hold, which is exactly what should be on screen while
+    // a stranger's session is being ruled out.
+    final restoration = AuthRestoration.instance;
+    if (!restoration.settled) return null;
+
+    // Settled, so this pass decides. Spend the latch either way: a signed-out
+    // visitor stays here, and must not be redirected if they navigate away and
+    // come back.
+    _landingHandoffDone = true;
+
+    // A Supabase session means a real account — but the role decides WHICH
+    // console, so keep holding until it lands rather than sending an admin to
+    // the citizen feed.
+    if (Supabase.instance.client.auth.currentSession != null) {
+      if (!restoration.roleKnown) {
+        // Un-spend the latch: this pass could not decide after all.
+        _landingHandoffDone = false;
+        return null;
+      }
+      return _kPostAuthLanding(restoration.roleId);
+    }
+
+    // No session: a signed-out visitor or a guest. Both belong here — the
+    // landing page is where a guest decides whether to make an account, and
+    // sweeping them to /guest would take that choice away.
+    return null;
+  }
+
   // A screen is mid-way through driving auth state on purpose — hold.
   //
   // The reset-password screen has to setSession() before it can read the
@@ -555,7 +658,6 @@ String? _consoleRedirect(String loc, String consoleHome) {
 String? _citizenRedirect(String loc) {
   // None of these is a destination for someone already signed in:
   //
-  //   /          the router's placeholder, never a real location
   //   /login     nothing left to do there
   //   /signup    likewise
   //   /guest     a citizen has no use for the guest landing page, and letting
@@ -580,8 +682,12 @@ String? _citizenRedirect(String loc) {
   // is known — see [_consoleOrHold]. The two are complementary: this one turns
   // a citizen away once we know they are one, that one declines to render
   // while we still do not.
-  if (loc == '/' ||
-      loc == _kLoginPath ||
+  //
+  // '/' is deliberately ABSENT from this list, where it used to sit first. It
+  // is a public page now and [_authRedirect] resolves it before any role branch
+  // is reached — the same way it already returned early for the scan page. A
+  // citizen who clicks through to the landing page gets the landing page.
+  if (loc == _kLoginPath ||
       loc == _kSignupPath ||
       loc == _kGuestPath ||
       loc == _kNewsFeedPath ||
@@ -599,10 +705,10 @@ String? _citizenRedirect(String loc) {
 /// beneath them fall through without being enumerated — which also means a new
 /// shell route cannot quietly become guest-reachable later.
 String? _guestRedirect(String loc) {
-  // The router's placeholder is not a location, and a guest already holds an
-  // anonymous session — letting this fall through to /login would eject them
-  // from guest mode for no reason. Mirrors the citizen '/' → /home sweep.
-  if (loc == '/') return _kGuestPath;
+  // '/' is not handled here any more — [_authRedirect] resolves the landing
+  // page before this is reached. A guest who opens it stays on it: that page is
+  // where they decide whether to make a real account, and the old sweep to
+  // /guest took that decision away from them.
 
   // /newsfeed is the permission this whole three-state split exists for: it is
   // what lets a guest hold a real, reloadable URL for the feed instead of a
@@ -618,7 +724,10 @@ String? _guestRedirect(String loc) {
 
 /// Where a visitor with no identity at all belongs.
 ///
-/// Unchanged from the two-state guard, deliberately.
+/// '/' never reaches here — [_authRedirect] serves the landing page before any
+/// of the three identity branches is consulted. A stranger who asks for a
+/// PROTECTED page still gets /login, which is right: the landing page is the
+/// front door, not a substitute for signing in.
 String? _signedOutRedirect(String loc) {
   // /newsfeed is absent on purpose. The bare feed is for visitors who CHOSE to
   // browse as a guest — a pasted link does not make that choice for them, and
@@ -708,9 +817,24 @@ final GoRouter citizenRouter = GoRouter(
     error: state.error?.toString(),
   ),
   routes: <RouteBase>[
-    // '/' still needs something to build: until restoration settles the guard
-    // deliberately returns null, and a location with no route is an error page.
-    GoRoute(path: '/', builder: (_, _) => const _StartingUp()),
+    // ── The public landing page ─────────────────────────────────────────────
+    // '/' builds the real marketing page now, not [_StartingUp].
+    //
+    // That placeholder was correct while '/' was a location nobody was meant to
+    // see: the guard resolved it the instant auth was known, so the only thing
+    // it ever had to cover was the restoration gap. Now that the landing page
+    // is a destination in its own right, painting a spinner there would hide
+    // the page from the one visitor it exists for.
+    //
+    // NOTHING is lost by dropping the spinner. The HTML boot splash in
+    // web/index.html stays up until AuthRestoration settles — the SAME signal
+    // the guard's landing branch waits on — so a returning citizen never sees
+    // this page flash before being handed to their feed. The splash is covering
+    // that whole window; see removeWebSplash's note in main.dart.
+    //
+    // No NetworkWrapper, matching the scan page and for the same reason: that
+    // wrapper is built for signed-in users, and this page has no session.
+    GoRoute(path: _kLandingPath, builder: (_, _) => const LandingPage()),
 
     // ── Auth ────────────────────────────────────────────────────────────────
     // The screens themselves come from app_router.dart, so there is ONE

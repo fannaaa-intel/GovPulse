@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  GovPulse sitemap.
+
+  ONE entry, and that is not an oversight. This is a hash-routed Flutter web app
+  (see AppConfig.scanUrl for why): every in-app destination lives behind a `#`,
+  and a fragment is never sent to the server, so no crawler can fetch any of them
+  as a distinct page. Listing /#/login here would claim a URL that, to Googlebot,
+  is byte-for-byte identical to this one.
+
+  The landing page is therefore the only genuinely indexable URL the site has,
+  and it is also the only one worth indexing — everything else requires a session.
+
+  If clean paths are ever turned on (usePathUrlStrategy + a host rewrite), this
+  is where the additional public routes would be enumerated.
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://gov-pulse-rose.vercel.app/</loc>
+    <changefreq>monthly</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>

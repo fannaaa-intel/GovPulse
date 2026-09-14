@@ -96,6 +96,18 @@ flutter:
     - assets/images/idcards/
     - assets/images/verification/
     - assets/images/storyboard/
+    # Landing page artwork — the GENERATED WebP set (1.4 MB), not the masters.
+    #
+    # The PNG masters are 23 MB of 3464px exports and live OUTSIDE this tree, in
+    # `assets/landing_src/`, so they are never bundled.
+    #
+    # ⚠ They must stay outside `assets/images/`. They were briefly at
+    # `assets/images/Landing/` — which on Windows and macOS is THE SAME
+    # DIRECTORY as `assets/images/landing/`, because the filesystem ignores
+    # case. The generated WebP files landed beside the PNGs they replace, this
+    # one line bundled all 23 MB, and nothing in analyze, the tests, or the
+    # build output said so. See tool/build_landing_assets.py.
+    - assets/images/landing/
     - assets/images/
 
 flutter_icons:

@@ -220,6 +220,31 @@
         splash.remove();
       }, 260);
     }
+
+    // ── The failsafe ─────────────────────────────────────────────────────────
+    // Every route that takes this splash down runs in DART:
+    // _dismissWebSplashWhenReady() waits on AuthRestoration and carries its own
+    // 5s ceiling. That ceiling only protects against slow AUTH — it assumes
+    // Dart is running at all.
+    //
+    // It sometimes is not. If the main bundle 404s, fails to fetch on a flaky
+    // connection, or throws before main() reaches the dismiss call, nothing
+    // ever invokes removeSplashFromWeb() and the visitor is left looking at
+    // "Getting things ready" forever. That is the reported stuck splash, and
+    // no amount of tuning inside Dart can fix it — the fix has to live
+    // somewhere that does not depend on Dart having started.
+    //
+    // So: a plain browser timer, armed the moment this script parses. It is
+    // deliberately LONGER than Dart's own 5s ceiling, so on every healthy load
+    // Dart still wins the race and this never fires. It exists only for the
+    // loads where Dart never answers at all.
+    //
+    // Showing the app's own loading state — or even an empty page the visitor
+    // can reload — beats a branded splash that never lifts.
+    window.setTimeout(function () {
+      var splash = document.getElementById("splash");
+      if (splash) removeSplashFromWeb();
+    }, 12000);
   </script>
 
   <noscript>

@@ -1,0 +1,23 @@
+# GovPulse — Municipality of Aparri, Cagayan
+#
+# The landing page at / is the only URL meant to be indexed. Everything past it
+# is either a signed-in surface (which a crawler sees as an empty shell anyway,
+# because the app renders into a canvas) or genuinely private.
+#
+# The endorsement scan pages are the one case worth spelling out: /#/scan/<token>
+# is a PUBLIC page by design — an agency officer scans a printed QR and needs it
+# to open with no session — but each URL carries a single-use token for one
+# specific endorsement. Those must never be crawled, cached or surfaced in a
+# search result. Crawlers do not send the fragment to the server, so nothing here
+# can enforce that on its own; the Disallow below covers the clean-path form in
+# case usePathUrlStrategy() is ever turned on, and the page itself is what
+# validates the token.
+
+User-agent: *
+Allow: /$
+Disallow: /scan/
+Disallow: /admin
+Disallow: /staff
+Disallow: /settings
+
+Sitemap: https://gov-pulse-rose.vercel.app/sitemap.xml
