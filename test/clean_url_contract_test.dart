@@ -46,7 +46,16 @@ void main() {
       // `-_` (see the report_endorsements migration). The dashes and
       // underscores must not be mangled, and — because vercel.json rewrites by
       // looking for a file extension — a token must never contain a dot.
-      const token = 'aB3-dE6_gH9-jK2_mN5-pQ8_rS1-tU4_vW7';
+      //
+      // ── Why this literal reads as obviously fake ──────────────────────────
+      // The first version of this test used a realistic-looking random string,
+      // and GitGuardian flagged the commit as a "Generic High Entropy Secret".
+      // It was a false positive — the value was invented here and matches
+      // nothing — but a scanner that cries wolf is one whose next alert gets
+      // ignored, and THAT is the real cost. This keeps the exact shape the test
+      // cares about (mixed case, dash, underscore, no dot) while saying in the
+      // value itself that it is not a credential.
+      const token = 'EXAMPLE-not_a_real-token_FOR-tests_only';
       final url = AppConfig.scanUrl(token);
 
       expect(url, endsWith('/scan/$token'));
