@@ -1430,11 +1430,27 @@ class _StartingUp extends StatelessWidget {
     // HTML splash → this → the shell, and a bare CircularProgressIndicator in
     // the middle of that made one startup look like two different products.
     //
+    // ── 84, matching the HTML splash exactly ────────────────────────────────
+    // This was 72 while `#splash-ring` in web/index.html is 84, so the handoff
+    // from the HTML splash to this one visibly SHRANK the ring mid-boot and
+    // then restored it on the next screen. The comment above already claimed
+    // the two were "the same ring"; the numbers did not agree with it.
+    //
+    // There is a separate, already-fixed bug with the same symptom — a phone
+    // browser rendering into a ~980px virtual window, so the splash painted
+    // small and jumped when Flutter set the real viewport. That one is covered
+    // by the viewport meta tag; see the note above it in web/index.html. This
+    // is the other half: two rings genuinely drawn at two sizes.
+    //
+    // 84 is the source of truth, because it is [BrandSpinner]'s own default and
+    // what the sign-out overlay uses. Changing the CSS instead would have left
+    // three places to keep in step rather than two.
+    //
     // onDark: false — this sits on white, where the overlay's white-at-8%
     // track is invisible.
     return const Scaffold(
       backgroundColor: Colors.white,
-      body: Center(child: BrandSpinner(size: 72, onDark: false)),
+      body: Center(child: BrandSpinner(size: 84, onDark: false)),
     );
   }
 }
