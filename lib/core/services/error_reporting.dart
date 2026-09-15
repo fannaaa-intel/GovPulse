@@ -167,14 +167,75 @@ void setErrorReportingUser(String? userId) {
 
 // ── Scrubbing ───────────────────────────────────────────────────────────────
 
-/// Strips everything from a URL except scheme, host and path.
+/// Stands in for a path segment that carried a value rather than a route name.
 ///
-/// The dropped parts are exactly the ones that carry data: a Supabase signed
-/// media URL puts a bearer token in its QUERY — sent whole, a crash report
-/// would hand a third party a working link to a citizen's ID photograph — a
-/// search URL puts the citizen's own words there, and this app is hash-routed,
-/// so its FRAGMENT holds route arguments like a scan token. The path is kept
-/// because it is what makes two crashes groupable.
+/// Matches the `[redacted]` the query string is already replaced with, so one
+/// reader of a Sentry issue sees one convention.
+const String _kRedactedSegment = '[redacted]';
+
+/// Whether a path segment looks like an IDENTIFIER rather than a route name.
+///
+/// The distinction this function draws is the whole point of [sanitizeUrlForReport]:
+/// `/my-reports/detail/88` should reach Sentry as `/my-reports/detail/[redacted]`
+/// — the SHAPE kept so two crashes on that screen still group together, the
+/// value dropped because it is somebody's data.
+///
+/// Conservative in the direction that matters. Redacting a route name costs a
+/// little grouping quality; leaking an endorsement token costs a citizen's
+/// privacy, so anything ambiguous is treated as an identifier.
+///
+/// A segment is a NAME (kept) when it is short, made only of lowercase letters,
+/// digits and dashes, and contains at least one letter and no digit run longer
+/// than two. That keeps every real route and Supabase path intact —
+/// `my-reports`, `detail`, `rest`, `v1`, `object`, `chat-agent`, `report-media`
+/// — while catching:
+///
+///   * uuids and long opaque tokens (`SECRET-TOKEN-123`, `a1b2c3d4-…`)
+///   * bare numeric ids (`88`, `4213`)
+///   * file names (`abc123.jpg`), which carry a storage key
+///   * anything mixed-case, which no route here uses
+bool _looksLikeIdentifier(String segment) {
+  if (segment.isEmpty) return false;
+  // A long segment is an id or a token; no route name here approaches this.
+  if (segment.length > 24) return true;
+  // Route names are lowercase-and-dashes. A dot means a filename, and an
+  // underscore or uppercase letter means it is not one of this app's routes.
+  if (!RegExp(r'^[a-z0-9-]+$').hasMatch(segment)) return true;
+  // Purely numeric is always an id.
+  if (!RegExp(r'[a-z]').hasMatch(segment)) return true;
+  // `v1` and `v2` are real API segments; a longer digit run is an id.
+  if (RegExp(r'\d{3,}').hasMatch(segment)) return true;
+  return false;
+}
+
+/// Strips everything from a URL except scheme, host and a REDACTED path.
+///
+/// The dropped parts are the ones that carry data: a Supabase signed media URL
+/// puts a bearer token in its QUERY — sent whole, a crash report would hand a
+/// third party a working link to a citizen's ID photograph — a search URL puts
+/// the citizen's own words there, and a FRAGMENT holds route arguments while
+/// the app is hash-routed.
+///
+/// ── Why the path is no longer kept verbatim ────────────────────────────────
+/// It used to be, and the reason was sound: the path is what makes two crashes
+/// groupable. That rested on the app being hash-routed, which put every route
+/// argument in the fragment where this function already dropped it.
+///
+/// The moment clean URLs are turned on (`usePathUrlStrategy()`), that stops
+/// being true and the same arguments move INTO the path: `/#/scan/<token>`
+/// becomes `/scan/<token>`, and an endorsement token — which opens a public
+/// page describing a specific citizen's report — would be sent to a third-party
+/// error service on every crash that carried a URL.
+///
+/// So the path is now kept STRUCTURALLY rather than literally: route names
+/// survive, identifier-shaped segments are replaced. Grouping is preserved —
+/// every crash on the scan page still reports `/scan/[redacted]` — without the
+/// value travelling. See [_looksLikeIdentifier].
+///
+/// This is deliberately done BEFORE the URL change rather than with it: the
+/// redaction is harmless while arguments still live in the fragment, and doing
+/// it first means the guarantee is already live and proven when the URLs flip,
+/// instead of racing the leak.
 ///
 /// Public and named for testability: this is the single function standing
 /// between citizen data and a third-party service, and a privacy guarantee
@@ -187,12 +248,27 @@ String sanitizeUrlForReport(String raw) {
   // otherwise accepts as a bare path.
   if (uri == null || !uri.hasScheme || uri.host.isEmpty) return '[redacted]';
 
-  final safe = Uri(
+  // Rebuilt from segments rather than string-replaced, so a value that happens
+  // to contain a slash cannot smuggle itself through as two segments.
+  //
+  // The placeholder is appended to the built string rather than passed through
+  // `Uri(path: …)`, which percent-encodes the brackets and turns every redacted
+  // segment into `%5Bredacted%5D` — correct as a URI, and unreadable in the one
+  // place these strings are ever looked at. The segments themselves still go
+  // through Uri so a genuine path keeps its normal encoding.
+  final redactedPath = uri.pathSegments
+      .map((s) => _looksLikeIdentifier(s) ? _kRedactedSegment : s)
+      .join('/');
+
+  final origin = Uri(
     scheme: uri.scheme,
     host: uri.host,
     port: uri.hasPort ? uri.port : null,
-    path: uri.path,
   ).toString();
+
+  // `Uri.pathSegments` drops the leading slash, and an empty path must stay
+  // empty rather than become '/'.
+  final safe = redactedPath.isEmpty ? origin : '$origin/$redactedPath';
 
   // Keep the fact that something was dropped visible, so a reader of the issue
   // knows the URL is abridged rather than genuinely bare.
