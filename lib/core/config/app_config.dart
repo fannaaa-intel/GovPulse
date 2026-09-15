@@ -32,19 +32,18 @@ class AppConfig {
 
   /// Full URL encoded into the QR for [token].
   ///
-  /// HASH-ROUTED ON PURPOSE. Flutter web's default URL strategy is hash-based,
-  /// and a hash URL is served correctly by any static host with no
-  /// configuration at all — the whole path is `/`, so a deep link cannot 404 and
-  /// a refresh on the scan page cannot break.
+  /// CLEAN-PATH, as of the URL cutover. Both halves that form needs are now in
+  /// place: `usePathUrlStrategy()` runs in main.dart, and vercel.json rewrites
+  /// every extension-less path to /index.html, so a reload of this URL reaches
+  /// the app rather than the host's own 404.
   ///
-  /// The clean-path alternative (`/scan/<token>`) needs BOTH `usePathUrlStrategy()`
-  /// at startup AND a server rewrite sending every unmatched path to
-  /// /index.html. `firebase.json` currently has no `hosting` block at all, so
-  /// today that form would 404 the instant anyone reloaded. If you add hosting
-  /// with a `"rewrites": [{"source": "**", "destination": "/index.html"}]` rule
-  /// and call usePathUrlStrategy(), drop the `/#` below and nothing else here
-  /// changes.
-  static String scanUrl(String token) => '$scanBaseUrl/#/scan/$token';
+  /// ── Codes printed before the cutover ──────────────────────────────────────
+  /// Letters already in circulation carry the old `/#/scan/<token>` form, and
+  /// those DO stop resolving: PathUrlStrategy reads the pathname and discards
+  /// the fragment, so the app sees `/` and opens the landing page rather than
+  /// the scan screen. Reprint any letter that still matters. This was a
+  /// deliberate, accepted trade — the codes in circulation were test prints.
+  static String scanUrl(String token) => '$scanBaseUrl/scan/$token';
 
   // ── Endorsement letter ────────────────────────────────────────────────────
   // Printed on an official document over the Mayor's signature line, so these

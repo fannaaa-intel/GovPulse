@@ -760,11 +760,27 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
   /// `Uri.base` is the browser's current address, so resolving the route
   /// against it produces the real origin — localhost in development, the
   /// deployed host in production — instead of a bare path nobody can paste.
-  /// The route is hash-based (see the router's `#/` URLs), which is why the
-  /// fragment is set rather than the path.
+  ///
+  /// The PATH is set, not the fragment. This used to write the route into the
+  /// fragment because the app was hash-routed; after the clean-URL cutover
+  /// (`usePathUrlStrategy()` in main.dart) that would have produced
+  /// `host/#/home/event/42`, which now resolves to the landing page — so the
+  /// one feature whose entire job is handing somebody a working link would
+  /// have been quietly copying a broken one.
+  ///
+  /// Built from the ORIGIN rather than by replacing parts of `Uri.base`.
+  /// `Uri.replace` keeps every component not passed and renders an empty one
+  /// it IS passed, which measured out as two defects in one line: omitting
+  /// `fragment` carried the current page's fragment into the copied link, and
+  /// passing `fragment: ''` produced a stray trailing `#`. The query string
+  /// rode along either way — `Uri.base` on the feed carries `?post=…`, so a
+  /// shared event link arrived with an unrelated deep-link parameter attached.
+  ///
+  /// Taking `origin` and appending the route sidesteps all three: no fragment,
+  /// no inherited query, no trailing punctuation.
   Future<void> _shareEventLink(EventItem event) async {
     final path = shellEventDetailPath(event.id);
-    final link = Uri.base.replace(fragment: path).toString();
+    final link = '${Uri.base.origin}$path';
 
     await Clipboard.setData(ClipboardData(text: link));
     if (!mounted) return;

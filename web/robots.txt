@@ -4,14 +4,21 @@
 # is either a signed-in surface (which a crawler sees as an empty shell anyway,
 # because the app renders into a canvas) or genuinely private.
 #
-# The endorsement scan pages are the one case worth spelling out: /#/scan/<token>
+# The endorsement scan pages are the one case worth spelling out: /scan/<token>
 # is a PUBLIC page by design — an agency officer scans a printed QR and needs it
 # to open with no session — but each URL carries a single-use token for one
 # specific endorsement. Those must never be crawled, cached or surfaced in a
-# search result. Crawlers do not send the fragment to the server, so nothing here
-# can enforce that on its own; the Disallow below covers the clean-path form in
-# case usePathUrlStrategy() is ever turned on, and the page itself is what
-# validates the token.
+# search result.
+#
+# These rules now BITE. They were written while the app was hash-routed, when a
+# crawler never saw anything past `/` and the Disallow lines were precautionary —
+# the file said as much, and covered the clean-path form "in case
+# usePathUrlStrategy() is ever turned on". It is on: every route below is a real,
+# fetchable URL, and this file is what keeps them out of an index.
+#
+# The scan page validates its own token regardless, so a leaked URL is not an
+# open door — but a tokenised URL sitting in a search result is a privacy
+# failure on its own terms.
 
 User-agent: *
 Allow: /$
@@ -19,5 +26,15 @@ Disallow: /scan/
 Disallow: /admin
 Disallow: /staff
 Disallow: /settings
+# Real URLs since the clean-URL cutover. Nothing to index — the app renders into
+# a canvas, so a crawler sees an empty shell — and a search result landing a
+# stranger on a sign-in form is worse than no result.
+Disallow: /login
+Disallow: /signup
+Disallow: /home
+Disallow: /my-reports
+Disallow: /emergency
+Disallow: /newsfeed
+Disallow: /guest
 
 Sitemap: https://gov-pulse-rose.vercel.app/sitemap.xml

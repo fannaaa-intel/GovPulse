@@ -3,6 +3,9 @@ import 'dart:async' show Timer;
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/material.dart';
+// Clean web URLs. Safe to import unconditionally — the package is part of the
+// Flutter SDK and stubs cleanly off web; the CALL is what is guarded by kIsWeb.
+import 'package:flutter_web_plugins/url_strategy.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -67,6 +70,29 @@ void main() => runWithErrorReporting(_startApp);
 /// route through it.
 Future<void> _startApp() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // ── Clean URLs on web ─────────────────────────────────────────────────────
+  // `/login` rather than `/#/login`. Flutter web defaults to hash routing
+  // because a hash URL needs no server configuration — the whole path is `/`,
+  // so a static host cannot 404 a deep link. The price is that every address
+  // the citizen sees, shares or types carries a `#`, which reads as a
+  // half-finished site on a government service.
+  //
+  // This needs BOTH halves to work, and the other one is the rewrite in
+  // vercel.json sending every unmatched path to /index.html. Without it a
+  // reload of /login asks the host for a FILE called login, and Vercel answers
+  // with its own 404 before the app is ever loaded.
+  //
+  // `<base href>` in web/index.html is the third requirement —
+  // PathUrlStrategy asserts on it — and it is already there.
+  //
+  // WEB ONLY, and mobile is not merely skipped but absent: [kIsWeb] is a
+  // compile-time constant, so this whole block is tree-shaken out of the
+  // Android and iOS binaries. There is no address bar on a phone for a URL
+  // strategy to configure.
+  if (kIsWeb) {
+    usePathUrlStrategy();
+  }
 
   // Drop only the benign Tooltip assertion above; forward everything else to
   // Flutter's normal reporting so real errors are never hidden.

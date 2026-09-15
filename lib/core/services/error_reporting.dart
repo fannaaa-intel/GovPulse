@@ -213,19 +213,19 @@ bool _looksLikeIdentifier(String segment) {
 /// The dropped parts are the ones that carry data: a Supabase signed media URL
 /// puts a bearer token in its QUERY — sent whole, a crash report would hand a
 /// third party a working link to a citizen's ID photograph — a search URL puts
-/// the citizen's own words there, and a FRAGMENT holds route arguments while
-/// the app is hash-routed.
+/// the citizen's own words there, and a FRAGMENT held route arguments back when
+/// the app was hash-routed.
 ///
 /// ── Why the path is no longer kept verbatim ────────────────────────────────
 /// It used to be, and the reason was sound: the path is what makes two crashes
 /// groupable. That rested on the app being hash-routed, which put every route
 /// argument in the fragment where this function already dropped it.
 ///
-/// The moment clean URLs are turned on (`usePathUrlStrategy()`), that stops
-/// being true and the same arguments move INTO the path: `/#/scan/<token>`
-/// becomes `/scan/<token>`, and an endorsement token — which opens a public
-/// page describing a specific citizen's report — would be sent to a third-party
-/// error service on every crash that carried a URL.
+/// Clean URLs (`usePathUrlStrategy()`, now on) ended that: the same arguments
+/// moved INTO the path, so `/#/scan/<token>` became `/scan/<token>` — and an
+/// endorsement token, which opens a public page describing one citizen's
+/// report, would otherwise be sent to a third-party error service on every
+/// crash that carried a URL.
 ///
 /// So the path is now kept STRUCTURALLY rather than literally: route names
 /// survive, identifier-shaped segments are replaced. Grouping is preserved —

@@ -56,14 +56,27 @@ void main() {
     }
   });
 
-  test('no PNG master has leaked into the bundled directory', () {
+  /// Formats allowed in the bundled directory, beyond the converted .webp set.
+  ///
+  /// `.gif` is here for the 404 illustration, which is ANIMATED — the one thing
+  /// WebP conversion would cost rather than save here, since the pipeline in
+  /// tool/build_landing_assets.py is built for still masters. It is admitted by
+  /// extension rather than by filename so a second animation does not need this
+  /// list edited, and the weight ceiling below is what actually holds the line.
+  const allowedExtensions = <String>{'.webp', '.gif'};
+
+  test('no unconverted master has leaked into the bundled directory', () {
     final dir = Directory('assets/images/landing');
     expect(dir.existsSync(), isTrue, reason: 'the converted set is missing');
 
     final strays = dir
         .listSync(recursive: true)
         .whereType<File>()
-        .where((f) => !f.path.toLowerCase().endsWith('.webp'))
+        .where(
+          (f) => !allowedExtensions.any(
+            (ext) => f.path.toLowerCase().endsWith(ext),
+          ),
+        )
         .map((f) => f.path)
         .toList();
 
@@ -71,10 +84,40 @@ void main() {
       strays,
       isEmpty,
       reason:
-          'Only converted .webp files belong in assets/images/landing/. '
-          'A master PNG here means the case-collision described at the top of '
-          'this file has come back, and the bundle is carrying ~23 MB it does '
-          'not need. Masters belong in assets/landing_src/.',
+          'Only converted .webp files and animated .gif belong in '
+          'assets/images/landing/. A master PNG here means the case-collision '
+          'described at the top of this file has come back, and the bundle is '
+          'carrying ~23 MB it does not need. Masters belong in '
+          'assets/landing_src/.',
+    );
+  });
+
+  test('an untracked working file has not been left in the bundle', () {
+    // The extension allowlist above is necessary but not sufficient: it would
+    // happily bundle a SECOND copy of the same artwork. That is exactly what
+    // happened during the 404 work — the source `404error.gif` and the
+    // transparent `404_error.gif` sat side by side, and pubspec bundles the
+    // whole directory, so the untouched source would have shipped as 613 KB of
+    // payload nothing loads.
+    //
+    // Named files rather than a pattern, because the thing being guarded
+    // against is a human leaving a scratch copy behind, and the failure should
+    // say so in as many words.
+    final dir = Directory('assets/images/landing');
+    final names = dir
+        .listSync(recursive: true)
+        .whereType<File>()
+        .map((f) => f.uri.pathSegments.last)
+        .toList();
+
+    expect(
+      names,
+      isNot(contains('404error.gif')),
+      reason:
+          'assets/images/landing/404error.gif is the ORIGINAL, opaque-white '
+          'artwork. The page loads 404_error.gif — the transparent, '
+          'frame-halved version. Keeping both bundles 613 KB nothing reads. '
+          'The original belongs outside the bundled tree.',
     );
   });
 
@@ -86,16 +129,22 @@ void main() {
         .fold<int>(0, (sum, f) => sum + f.lengthSync());
 
     final megabytes = bytes / 1024 / 1024;
-    // Measured at 1.43 MB. The ceiling is deliberately close to that rather
-    // than a round "under 10 MB": a budget with that much headroom would not
-    // have caught the 23 MB regression this file exists for.
+    // Measured at 1.43 MB when written; 2.13 MB since the 404 illustration
+    // (644 KB, animated, so it stays a GIF) joined the set. The ceiling is
+    // deliberately close to that rather than a round "under 10 MB": a budget
+    // with that much headroom would not have caught the 23 MB regression this
+    // file exists for.
+    //
+    // Under 900 KB of headroom is left on purpose. The next thing that pushes
+    // this over should have to justify itself.
     expect(
       megabytes,
       lessThan(3),
       reason:
           'The landing artwork is ${megabytes.toStringAsFixed(1)} MB. It was '
-          '1.4 MB when written. Re-run tool/build_landing_assets.py, and check '
-          'that no master PNG has been added to the bundled directory.',
+          '2.1 MB when this ceiling was last set. Re-run '
+          'tool/build_landing_assets.py, and check that no master PNG — or an '
+          'un-converted working copy — has been added to the bundled directory.',
     );
   });
 }

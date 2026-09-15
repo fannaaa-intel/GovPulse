@@ -2,17 +2,23 @@
 <!--
   GovPulse sitemap.
 
-  ONE entry, and that is not an oversight. This is a hash-routed Flutter web app
-  (see AppConfig.scanUrl for why): every in-app destination lives behind a `#`,
-  and a fragment is never sent to the server, so no crawler can fetch any of them
-  as a distinct page. Listing /#/login here would claim a URL that, to Googlebot,
-  is byte-for-byte identical to this one.
+  ONE entry, and that is still not an oversight — though the reason changed.
 
-  The landing page is therefore the only genuinely indexable URL the site has,
-  and it is also the only one worth indexing — everything else requires a session.
+  It USED to be a technical impossibility: the app was hash-routed, every
+  destination lived behind a `#`, and a fragment is never sent to the server, so
+  no crawler could fetch any of them as a distinct page. Clean URLs
+  (usePathUrlStrategy + the rewrite in vercel.json) removed that constraint —
+  /login and /guest are now real, fetchable URLs.
 
-  If clean paths are ever turned on (usePathUrlStrategy + a host rewrite), this
-  is where the additional public routes would be enumerated.
+  They are still not listed, and now that is an editorial choice. Everything
+  past the landing page is either a sign-in form or a signed-in surface, and a
+  crawler sees both as an empty shell because the app renders into a canvas.
+  Listing them would spend crawl budget on pages with nothing to index and
+  invite a search result that drops a stranger onto a login form.
+
+  /scan/<token> is the one route that MUST never appear here: each URL carries a
+  single-use token for one specific endorsement. robots.txt disallows the prefix
+  outright.
 -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
