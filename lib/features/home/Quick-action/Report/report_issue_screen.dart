@@ -1421,14 +1421,35 @@ class _ReportIssueScreenState extends State<ReportIssueForm>
         ),
         if (_selectedCategory == 'others') ...[
           const SizedBox(height: 16),
-          const QaFieldLabel('Specify the category'),
+          const QaFieldLabel('What kind of issue is it?'),
           TextField(
             controller: _othersCtrl,
             maxLength: 50,
             style: const TextStyle(fontSize: 13.5),
             onChanged: (_) => setState(() => _clearStepError('category')),
+            // ── Asks for a NAME, not a sentence ──────────────────────────
+            // The label said "Specify the category" and the hint said
+            // "Describe it in a few words…", which read as an invitation to
+            // describe the problem — so citizens wrote one. That text is
+            // stored in `category_other` and is what My Reports renders as the
+            // report's title, so a detail header came out reading
+            // "The bridge on the national highway has collapsed".
+            //
+            // The describing already has its own field: Details, two steps on.
+            // This one only needs the kind of issue, so it asks for that and
+            // shows examples of the SHAPE of answer it wants.
             decoration: _splitInputDecoration(
-              hint: 'Describe it in a few words…',
+              hint: 'e.g. Stray animals, Noise complaint',
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'A short name for the type of issue. '
+            'You can describe what happened in the next step.',
+            style: TextStyle(
+              fontSize: 11.5,
+              height: 1.35,
+              color: CitizenUi.textMuted,
             ),
           ),
         ],

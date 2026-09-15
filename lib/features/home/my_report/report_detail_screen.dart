@@ -3,6 +3,9 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
+// The one Dart copy of the category → office rules, mirroring
+// report_department() in SQL. See _departmentFromCategoryKey.
+import '../../staff/data/staff_departments.dart';
 import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/widgets/report_progress_updates.dart';
 import '../../../../core/widgets/resolution_media.dart';
@@ -123,22 +126,27 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
       ? _report.endorsedToDepartment!.trim()
       : 'External entity';
 
-  String _departmentFromCategory(String category) {
-    switch (category.toLowerCase()) {
-      case 'road & infrastructure':
-        return 'Engineering Office';
-      case 'waste & garbage':
-        return 'Sanitation Office';
-      case 'drainage & flooding':
-        return 'Engineering Office';
-      case 'streetlight outage':
-        return 'Engineering Office';
-      case 'environment & pollution':
-        return 'Environment Office';
-      default:
-        return "Mayor's Office";
-    }
-  }
+  /// Which office owns this report, for the chat agent's opening context.
+  ///
+  /// ── Keyed on the KEY, not the label ────────────────────────────────────
+  /// This used to switch on the display label ('road & infrastructure' → …),
+  /// a hand-maintained second copy of [StaffDepartments.forReportCategory].
+  /// That worked only while label and key were interchangeable — and they
+  /// stopped being so the moment an "Others" report started being LABELLED by
+  /// what the AI recognised it as.
+  ///
+  /// A collapsed bridge filed under Others now reads "Road & Infrastructure"
+  /// in the header, which is the point. But it is still stored as `others`,
+  /// so `report_department()` in SQL routes it to the Mayor's Office. Matching
+  /// on the label would have told the citizen "Engineering Office" while the
+  /// database sent it somewhere else — a quieter bug than the one being fixed,
+  /// and a worse one, because it is the app confidently stating something
+  /// untrue about their report.
+  ///
+  /// Delegating also removes the duplicate: the rules now live in exactly one
+  /// place in Dart, mirroring report_department() in SQL.
+  String _departmentFromCategoryKey(String categoryKey) =>
+      StaffDepartments.forReportCategory(categoryKey);
 
   Color get _statusColor {
     switch (_report.status) {
@@ -608,29 +616,58 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
           ),
         ),
       ),
+      // The reference chip is the only action, and its width is driven by the
+      // type scale. `SliverAppBar` lays actions out at their natural size, so
+      // at 2.0x text the chip pushed the bar 10px past the screen. A ceiling of
+      // 45% of the width leaves the title its half and is far more room than
+      // the eight-character reference needs at any normal scale — the cap only
+      // engages where the alternative is an overflow stripe.
+      actionsPadding: EdgeInsets.zero,
       actions: [
-        GestureDetector(
-          onTap: _copyReportId,
-          child: Container(
-            margin: const EdgeInsets.all(8),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.copy_rounded, color: Colors.white, size: 14),
-                const SizedBox(width: 5),
-                Text(
-                  'RPT-${_report.id}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
+        ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: w * 0.45),
+          child: GestureDetector(
+            onTap: _copyReportId,
+            child: Container(
+              margin: const EdgeInsets.all(8),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 6,
+              ),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              // ── The reference chip, bounded ────────────────────────────
+              // `mainAxisSize.min` makes this Row report its natural width,
+              // so at Android's larger font settings the reference outgrew
+              // the app bar's action slot. The id is fixed-length (eight hex
+              // characters), so this is purely the type scale.
+              //
+              // `fade` rather than an ellipsis: a truncated reference is worse
+              // than a clipped one, since its whole purpose is to be read out
+              // or quoted in a follow-up, and the copy button beside it still
+              // yields the whole value.
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.copy_rounded, color: Colors.white, size: 14),
+                  const SizedBox(width: 5),
+                  Flexible(
+                    child: Text(
+                      'RPT-${_report.id}',
+                      maxLines: 1,
+                      softWrap: false,
+                      overflow: TextOverflow.fade,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -2325,41 +2362,58 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
                 ),
               ),
               SizedBox(width: w * .03),
-              ElevatedButton.icon(
-                onPressed: _openingChat ? null : _goToChat,
-                icon: _openingChat
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
+              // ── The button yields before the row breaks ──────────────────
+              // `ElevatedButton.icon` sizes to its label, and the label had no
+              // ceiling — so at Android's larger font settings "Chat with
+              // agent" grew past the space left by the copy column and the row
+              // overflowed: 38px at 1.3x, 100px at 1.6x, 182px at 2.0x, in the
+              // one bar whose whole job is to be tappable.
+              //
+              // Flexible rather than Expanded: at normal text the button keeps
+              // its natural width and the layout is unchanged, and only a
+              // squeeze makes it give ground.
+              Flexible(
+                child: ElevatedButton.icon(
+                  onPressed: _openingChat ? null : _goToChat,
+                  icon: _openingChat
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(
+                          Icons.chat_bubble_outline_rounded,
                           color: Colors.white,
+                          size: 16,
                         ),
-                      )
-                    : const Icon(
-                        Icons.chat_bubble_outline_rounded,
-                        color: Colors.white,
-                        size: 16,
-                      ),
-                label: Text(
-                  _openingChat ? 'Opening…' : 'Chat with agent',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
+                  label: Text(
+                    _openingChat ? 'Opening…' : 'Chat with agent',
+                    // One line, ellipsised. A wrapped label would grow the
+                    // bar's height instead of its width and push the content
+                    // above it off-screen.
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primaryBlue,
-                  disabledBackgroundColor: AppColors.primaryBlue.withValues(
-                    alpha: 0.6,
-                  ),
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  padding: EdgeInsets.symmetric(
-                    horizontal: w * .04,
-                    vertical: w * .030,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primaryBlue,
+                    disabledBackgroundColor: AppColors.primaryBlue.withValues(
+                      alpha: 0.6,
+                    ),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: EdgeInsets.symmetric(
+                      horizontal: w * .04,
+                      vertical: w * .030,
+                    ),
                   ),
                 ),
               ),
@@ -2402,7 +2456,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
         reportCategory: _report.category,
         reportStatus: _statusLabel,
         reportId: _report.fullId,
-        reportDepartment: _departmentFromCategory(_report.category),
+        reportDepartment: _departmentFromCategoryKey(_report.categoryKey),
       );
       if (!mounted) return;
       await Navigator.push(

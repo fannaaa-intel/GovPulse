@@ -87,9 +87,50 @@ class ReportItem {
       }
     }
 
-    final categoryKey = m['category'] as String? ?? 'others';
+    final pickedKey = m['category'] as String? ?? 'others';
     final categoryOther = m['category_other'] as String?;
-    final categoryLabel = _categoryLabel(categoryKey, categoryOther);
+
+    // ── "Others", once the AI has recognised what it actually is ────────────
+    // A citizen who taps Others is asked to "specify the category", and the
+    // field's own hint invites a SENTENCE — so what lands in `category_other`
+    // is a description: "The bridge on the national highway has collapsed".
+    // Rendered as the label it became the report's title, which is why the
+    // detail header read like a paragraph.
+    //
+    // classify-report already answers this. It reads the report and writes
+    // `ai_category` — "what the report ACTUALLY is" — from the SAME closed
+    // vocabulary the picker offers, so a collapsed bridge comes back as
+    // `road`. The admin console has been reading it since it shipped; the
+    // citizen side never did, and `select('*')` means the column was in the
+    // row all along.
+    //
+    // Preferred ONLY when it resolves to something more specific than the
+    // citizen's own choice. Two guards matter:
+    //   * `others` is ignored — the AI agreeing it is miscellaneous tells us
+    //     nothing the citizen did not already say;
+    //   * a key outside the vocabulary is ignored, so a model that invents a
+    //     value cannot put an unknown string in the header.
+    //
+    // The citizen's own pick is never overwritten. This only fills in for
+    // `others`, which is the one case where the stored value is prose.
+    final aiKey = (m['ai_category'] as String?)?.trim();
+    final usableAiKey =
+        pickedKey == 'others' &&
+            aiKey != null &&
+            aiKey != 'others' &&
+            _kCategoryKeys.contains(aiKey)
+        ? aiKey
+        : null;
+
+    // The KEY stays the citizen's answer — it is what RLS and
+    // report_department() route on, and what the icon is chosen from — while
+    // the LABEL is what the AI recognised. Diverging the two deliberately:
+    // changing the key here would silently re-route a report in the UI while
+    // the database still says otherwise.
+    final categoryKey = pickedKey;
+    final categoryLabel = usableAiKey != null
+        ? _categoryLabel(usableAiKey, null)
+        : _categoryLabel(pickedKey, categoryOther);
 
     return ReportItem(
       id: (m['id'] as String).substring(0, 8).toUpperCase(),
@@ -143,6 +184,22 @@ class ReportItem {
     if (row == null) return null;
     return ReportItem.fromMap(row);
   }
+
+  /// The closed category vocabulary, as the picker offers it.
+  ///
+  /// MUST stay identical to four other places or classification silently
+  /// half-works — `report_issue_screen.dart _categories[].key`, the CATEGORIES
+  /// list in `supabase/functions/classify-report/index.ts`, and the CHECK
+  /// constraints in migration 20260914000000. Used here to reject an
+  /// `ai_category` outside the set rather than trusting it into the UI.
+  static const Set<String> _kCategoryKeys = {
+    'road',
+    'waste',
+    'drainage',
+    'streetlight',
+    'environment',
+    'others',
+  };
 
   static String _categoryLabel(String key, String? other) {
     switch (key) {
