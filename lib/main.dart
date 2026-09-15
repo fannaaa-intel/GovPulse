@@ -21,6 +21,7 @@ import 'features/onboarding/splash_screen.dart';
 import 'features/home/shell/citizen_shell_router.dart' show GovPulseWebApp;
 import 'core/services/auth_ready.dart' show AuthRestoration;
 import 'core/network/timeout_http_client.dart';
+import 'core/network/web_reachability.dart';
 import 'core/services/error_reporting.dart';
 import 'core/services/session_cache.dart';
 import 'core/services/web_splash.dart';
@@ -99,9 +100,14 @@ Future<void> _startApp() async {
     firebaseMessagingBackgroundHandler,
   ); // ← PUSH
 
+  // Named once and shared with WebReachability below, so the reachability
+  // probe can never drift onto a different project than the app itself.
+  const supabaseUrl = 'https://vxvflhjbafqwehuxnmeq.supabase.co';
+  const supabaseAnonKey = 'sb_publishable_ZBDaQPQdFyC5kOHGbce9Ig_zdtIi6Mo';
+
   await Supabase.initialize(
-    url: 'https://vxvflhjbafqwehuxnmeq.supabase.co',
-    anonKey: 'sb_publishable_ZBDaQPQdFyC5kOHGbce9Ig_zdtIi6Mo',
+    url: supabaseUrl,
+    anonKey: supabaseAnonKey,
     // Without this every query inherits Dart's default: a connection timeout,
     // but no ceiling on how long an ESTABLISHED connection may stay silent. On
     // a weak-but-live network the socket connects — so the reachability probe
@@ -109,6 +115,15 @@ Future<void> _startApp() async {
     // left login, the citizen home and both consoles on a spinner or skeleton
     // that never resolved. See [TimeoutHttpClient].
     httpClient: TimeoutHttpClient(),
+  );
+
+  // Lets the web offline toast tell "wifi is on" apart from "the backend is
+  // actually reachable" — the captive-portal / dead-uplink case navigator.onLine
+  // reports as online while nothing loads. Reads the same url and key as above.
+  // No-ops off web. See [WebReachability].
+  WebReachability.instance.configure(
+    supabaseUrl: supabaseUrl,
+    anonKey: supabaseAnonKey,
   );
 
   await Hive.initFlutter();

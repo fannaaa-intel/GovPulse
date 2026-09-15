@@ -19,6 +19,7 @@ import '../../../core/widgets/resolve_by_id.dart';
 import '../../admin/screens/admin_dashboard_screen.dart';
 import '../../guest/screen/guest.dart';
 import '../../landing/landing_page.dart';
+import '../../landing/not_found_page.dart';
 import '../../scan/scan_page.dart';
 import '../../staff/screens/staff_console_screen.dart';
 import '../Quick-action/Events/event_detail_screen.dart';
@@ -516,8 +517,104 @@ class _ChangePasswordBody extends ConsumerWidget {
 // both systems are consulted. Collapsing that into a boolean is what made the
 // old guard unable to route guests: it could only say "in" or "out", and a
 // guest is neither.
+/// Whether [loc] is a location this router actually serves.
+///
+/// ── Why the guard needs this ────────────────────────────────────────────────
+/// GoRouter runs `redirect` BEFORE it decides a location is an error, and every
+/// branch of [_authRedirect] is closed-by-default — an allowlist, with anything
+/// unrecognised swept to login, the feed, or a console. That is the right shape
+/// for SECURITY (a new protected route cannot quietly become public), but it
+/// also means a MISTYPED url is treated as a protected page: `/my-reprots` is
+/// not on any allowlist, so a signed-out visitor was sent to /login and the
+/// error builder never ran.
+///
+/// The effect was that the 404 page could be built, wired and tested and still
+/// be unreachable — a visitor following a rotted link just landed on login with
+/// no explanation of what happened to the link they clicked.
+///
+/// So the guard now asks this first: is this a real location that the visitor
+/// is not allowed to see, or a location that does not exist at all? Only the
+/// first is swept. The second falls through to `errorBuilder`.
+///
+/// Prefix-matched for the nested routes (`/my-reports/detail/<id>`,
+/// `/settings/<page>`, `/home/event/<id>`), because those are real locations
+/// whose tails are ids — and sweeping a signed-out visitor off a real report
+/// link to /login is correct.
+bool _isKnownLocation(String loc) {
+  const exact = <String>[
+    _kLandingPath,
+    _kLoginPath,
+    _kSignupPath,
+    _kGuestPath,
+    _kNewsFeedPath,
+    _kAdminPath,
+    _kStaffPath,
+  ];
+  if (exact.contains(loc)) return true;
+
+  // The public scan page returns earlier than this, but keep it listed so the
+  // predicate is true on its own terms rather than by relying on call order.
+  if (loc.startsWith(kScanRoutePrefix)) return true;
+
+  // The shell's four tabs and everything nested beneath them.
+  for (final tab in CitizenTab.values) {
+    if (loc == tab.path || loc.startsWith('${tab.path}/')) return true;
+  }
+
+  // The consoles' nested routes.
+  if (loc.startsWith('$_kAdminPath/') || loc.startsWith('$_kStaffPath/')) {
+    return true;
+  }
+
+  return false;
+}
+
+/// The identity [debugRedirectFor] should answer as.
+@visibleForTesting
+enum RouterIdentity { signedOut, guest, citizen, admin, staff }
+
+/// Runs the router's redirect decision for [loc] without a pumped app.
+///
+/// [_authRedirect] reads `Supabase.instance`, `FirebaseAuth.instance` and
+/// `AuthRestoration` — none of which exist in a unit test, and all of which
+/// assert rather than return null when uninitialised. This mirrors the same
+/// decision over an explicit identity so the routing CONTRACT can be pinned,
+/// which is what `not_found_reachable_test.dart` asserts on.
+///
+/// Returns null for "serve the requested location" — which, for a location
+/// [_isKnownLocation] rejects, means the error builder runs and the visitor
+/// gets the 404.
+@visibleForTesting
+String? debugRedirectFor(String loc, {required RouterIdentity identity}) {
+  if (loc.startsWith(kScanRoutePrefix)) return null;
+  if (loc == _kLandingPath) return null;
+  if (!_isKnownLocation(loc)) return null;
+
+  switch (identity) {
+    case RouterIdentity.admin:
+      return _adminRedirect(loc);
+    case RouterIdentity.staff:
+      return _staffRedirect(loc);
+    case RouterIdentity.citizen:
+      return _citizenRedirect(loc);
+    case RouterIdentity.guest:
+      return _guestRedirect(loc);
+    case RouterIdentity.signedOut:
+      return _signedOutRedirect(loc);
+  }
+}
+
 String? _authRedirect(BuildContext context, GoRouterState state) {
   final loc = state.matchedLocation;
+
+  // A location this router does not serve is a 404, not a permission problem.
+  // Returning null hands it to `errorBuilder`; sweeping it would make the 404
+  // unreachable for everyone. See [_isKnownLocation].
+  //
+  // Placed above every identity branch because the answer does not depend on
+  // who is asking: a page that does not exist does not exist for an admin
+  // either.
+  if (!_isKnownLocation(loc)) return null;
 
   // The printed-QR endorsement page is public in ALL directions: an agency
   // officer scanning it has no session and must not be sent to login, and
@@ -810,12 +907,17 @@ final GoRouter citizenRouter = GoRouter(
   redirect: _authRedirect,
   // A routing failure must never be a blank page. Without this, an unmatched
   // location or a builder that throws leaves nothing on screen — and on a cold
-  // load that is indistinguishable from the app being broken. This puts a
-  // readable message and a way back on screen instead.
-  errorBuilder: (context, state) => _ShellRouteError(
-    location: state.uri.toString(),
-    error: state.error?.toString(),
-  ),
+  // load that is indistinguishable from the app being broken.
+  //
+  // `state.error` is deliberately NOT passed on. The previous screen printed it
+  // — a raw framework string — at whoever hit the bad link, which is internal
+  // diagnostic text a stranger who mistyped a URL should never be shown.
+  //
+  // The location is passed because it is the natural thing to hand a 404 and a
+  // variant may want it; [NotFoundPage] does not currently render it, since the
+  // address bar already shows the visitor what they typed.
+  errorBuilder: (context, state) =>
+      NotFoundPage(location: state.uri.toString()),
   routes: <RouteBase>[
     // ── The public landing page ─────────────────────────────────────────────
     // '/' builds the real marketing page now, not [_StartingUp].
@@ -1144,77 +1246,6 @@ class _RestrictedFeedNotice extends StatelessWidget {
   }
 }
 
-/// Shown instead of a blank page when a location cannot be resolved.
-class _ShellRouteError extends StatelessWidget {
-  final String location;
-  final String? error;
-  const _ShellRouteError({required this.location, this.error});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: CitizenUi.pageBg,
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 460),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(
-                  Icons.link_off_rounded,
-                  size: 44,
-                  color: CitizenUi.accent,
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  "This page couldn't be opened",
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w800,
-                    color: CitizenUi.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                SelectableText(
-                  location,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    color: CitizenUi.textMuted,
-                  ),
-                ),
-                if (error != null) ...[
-                  const SizedBox(height: 10),
-                  SelectableText(
-                    error!,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 11.5,
-                      color: CitizenUi.textFaint,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 20),
-                FilledButton.icon(
-                  onPressed: () => context.go(CitizenTab.home.path),
-                  icon: const Icon(Icons.home_rounded, size: 18),
-                  label: const Text('Back to Home'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: CitizenUi.accent,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 /// Shown at '/' for the moment between first paint and knowing whether there is
 /// a session. Deliberately quiet — it is on screen for a few hundred
 /// milliseconds on a warm load, and never at all once the guard resolves.
@@ -1286,6 +1317,27 @@ class GovPulseWebApp extends StatelessWidget {
       // Only the painted bar goes — wheel, trackpad, drag and keyboard
       // scrolling are untouched. See NoScrollbarBehavior.
       scrollBehavior: const NoScrollbarBehavior(),
+      // ── The offline toast, mounted ONCE for the whole site ──────────────────
+      // [NetworkWrapper] used to be applied route by route, and the routes that
+      // were missed were the ones that mattered: the entire StatefulShellRoute —
+      // home, my reports, settings, every account page — plus the landing page
+      // and the router's own error screen. A signed-in citizen therefore spent
+      // ~all of their time on the one surface with NO offline indicator, where
+      // losing the connection reads as a feed that never loads and a submit
+      // button that does nothing.
+      //
+      // `builder:` sits ABOVE the Navigator and below the MaterialApp, so this
+      // one wrapper covers every route, every dialog route the shell raises, and
+      // the errorBuilder — and no route added later can forget it.
+      //
+      // Per-route NetworkWrappers are left in place. On web the wrapper's whole
+      // body is the toast Stack (see its kIsWeb branch), so a nested one adds an
+      // inert second listener and a second — identically positioned — pill that
+      // only ever paints when this one already is. They are kept because those
+      // same routes are pushed by the LEGACY mobile router, where the wrapper is
+      // the full-screen takeover and removing it would strip mobile's offline
+      // screen. Web-only dedup would mean forking every one of those builders.
+      builder: (_, child) => NetworkWrapper(child: child ?? const SizedBox()),
       routerConfig: citizenRouter,
     );
   }

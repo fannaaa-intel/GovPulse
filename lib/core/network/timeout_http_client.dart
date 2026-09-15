@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:http/http.dart' as http;
 
+import 'web_reachability.dart';
+
 /// The default ceiling on a single Supabase request.
 ///
 /// Long enough that a genuinely slow-but-working connection still succeeds —
@@ -107,7 +109,24 @@ class TimeoutHttpClient extends http.BaseClient {
               request.url,
             );
           },
-        );
+        )
+        // ── Feed the web offline toast ────────────────────────────────────
+        // This catch is a TAP, not a handler: it reports and rethrows, so every
+        // existing error path downstream behaves exactly as before.
+        //
+        // Only failures that got no HTTP response at all reach here — a
+        // timeout above, or a connection error from the inner client. An error
+        // STATUS is not a failure at this layer: it returns normally, so a 500
+        // or an RLS denial never lands here. That distinction is the whole
+        // guard against telling a citizen with perfect wifi that they are
+        // offline because one query was rejected. See [WebReachability].
+        //
+        // No-op off web, where the wrapper's own dart:io ping already covers
+        // this and the full-screen offline screen is the surface.
+        .catchError((Object e) {
+          WebReachability.instance.reportTransportFailure();
+          throw e;
+        }, test: (e) => e is http.ClientException || e is TimeoutException);
   }
 
   @override

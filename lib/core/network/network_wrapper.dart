@@ -9,6 +9,7 @@ import '../../features/staff/providers/staff_providers.dart';
 import '../providers/user_profile_provider.dart';
 import '../services/connectivity_service.dart';
 import 'no_internet_screen.dart';
+import 'web_reachability.dart';
 
 bool? cachedInternetStatus;
 
@@ -18,6 +19,30 @@ class NetworkWrapper extends ConsumerStatefulWidget {
 
   @override
   ConsumerState<NetworkWrapper> createState() => _NetworkWrapperState();
+}
+
+/// Marks that a [NetworkWrapper] is already painting the toast further up the
+/// tree, so a nested one renders its child and nothing else.
+///
+/// On web the wrapper is mounted once at the app root (see
+/// `GovPulseWebApp.builder`), but the per-route wrappers below it are still
+/// needed by the LEGACY MOBILE router, which shares those same route builders
+/// and relies on the wrapper for its full-screen offline screen. Without this
+/// marker every such route on web would stack a second toast at the identical
+/// top-centre position — both wrappers go offline on the same event, so the
+/// two pills would land exactly on top of each other and read as one
+/// double-shadowed, over-dark pill.
+///
+/// Only the toast is suppressed. The nested wrapper still listens and still
+/// runs [_NetworkWrapperState._refreshAfterReconnect], which is idempotent.
+class _ToastMountedAbove extends InheritedWidget {
+  const _ToastMountedAbove({required super.child});
+
+  static bool of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_ToastMountedAbove>() != null;
+
+  @override
+  bool updateShouldNotify(_ToastMountedAbove oldWidget) => false;
 }
 
 class _NetworkWrapperState extends ConsumerState<NetworkWrapper> {
@@ -34,6 +59,38 @@ class _NetworkWrapperState extends ConsumerState<NetworkWrapper> {
   bool _webOffline = false;
   bool _showReconnected = false;
   Timer? _reconnectedTimer;
+  StreamSubscription<bool>? _reachabilitySub;
+
+  /// Single entry point for every web offline/online transition, so the
+  /// browser signal and the confirmed-reachability signal can never disagree
+  /// about what the toast is showing.
+  ///
+  /// Idempotent: re-reporting the state already on screen does nothing, which
+  /// matters because both sources fire on the same real-world event and the
+  /// probe retries on a timer.
+  void _setWebOffline(bool offline) {
+    if (!mounted || offline == _webOffline) return;
+
+    if (offline) {
+      _reconnectedTimer?.cancel();
+      setState(() {
+        _webOffline = true;
+        _showReconnected = false;
+      });
+      return;
+    }
+
+    setState(() {
+      _webOffline = false;
+      _showReconnected = true;
+    });
+    _refreshAfterReconnect();
+    // Auto-dismiss the "Reconnected" pill after a moment.
+    _reconnectedTimer?.cancel();
+    _reconnectedTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _showReconnected = false);
+    });
+  }
 
   @override
   void initState() {
@@ -54,24 +111,24 @@ class _NetworkWrapperState extends ConsumerState<NetworkWrapper> {
 
       _subscription = Connectivity().onConnectivityChanged.listen((results) {
         final online = !results.every((r) => r == ConnectivityResult.none);
-        if (!online && !_webOffline) {
-          _reconnectedTimer?.cancel();
-          setState(() {
-            _webOffline = true;
-            _showReconnected = false;
-          });
-        } else if (online && _webOffline) {
-          setState(() {
-            _webOffline = false;
-            _showReconnected = true;
-          });
-          _refreshAfterReconnect();
-          // Auto-dismiss the "Reconnected" pill after a moment.
-          _reconnectedTimer?.cancel();
-          _reconnectedTimer = Timer(const Duration(seconds: 3), () {
-            if (mounted) setState(() => _showReconnected = false);
-          });
+        // `online` here is navigator.onLine — it only says an interface EXISTS.
+        // The negative direction is trustworthy and applied immediately; the
+        // positive direction is only a candidate, and [WebReachability]
+        // confirms it against the backend before the toast is taken down.
+        if (!online) {
+          _setWebOffline(true);
         }
+        WebReachability.instance.reportBrowserSignal(online: online);
+      });
+
+      // ── The signal navigator.onLine cannot give ─────────────────────────
+      // Captive portals, a dead uplink, and a connection so weak that requests
+      // connect and never answer all read as ONLINE to the browser. This
+      // stream carries the CONFIRMED answer — probed against the backend, and
+      // triggered by real request failures rather than by polling.
+      _reachabilitySub = WebReachability.instance.onChanged.listen((reachable) {
+        if (!mounted) return;
+        _setWebOffline(!reachable);
       });
       return;
     }
@@ -171,28 +228,35 @@ class _NetworkWrapperState extends ConsumerState<NetworkWrapper> {
     _onlineDebounce?.cancel();
     _reconnectedTimer?.cancel();
     _subscription?.cancel();
+    _reachabilitySub?.cancel();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     // Web: keep the page fully usable; just float a reconnect / reconnected
-    // toast at the bottom. No full-screen takeover.
+    // toast at the top. No full-screen takeover.
     if (kIsWeb) {
-      return Stack(
-        children: [
-          widget.child,
-          Positioned.fill(
-            child: SafeArea(
-              child: IgnorePointer(
-                child: _ConnectivityToast(
-                  offline: _webOffline,
-                  showReconnected: _showReconnected,
+      // Already covered from above — render the child only. See
+      // [_ToastMountedAbove] for why the nested wrapper still exists at all.
+      if (_ToastMountedAbove.of(context)) return widget.child;
+
+      return _ToastMountedAbove(
+        child: Stack(
+          children: [
+            widget.child,
+            Positioned.fill(
+              child: SafeArea(
+                child: IgnorePointer(
+                  child: _ConnectivityToast(
+                    offline: _webOffline,
+                    showReconnected: _showReconnected,
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       );
     }
 
@@ -273,18 +337,44 @@ class _ConnectivityToast extends StatelessWidget {
       );
     }
 
+    // ── Placement ─────────────────────────────────────────────────────────
+    // TOP centre, not bottom. The bottom edge is the busiest part of a phone
+    // browser — Safari's tab bar and Chrome Android's URL bar both live there,
+    // and the citizen shell puts its own navigation there too — so a pill
+    // anchored to it competed with chrome the app does not control. The top
+    // edge is quiet on every surface this wrapper covers.
+    //
+    // ── Responsive ────────────────────────────────────────────────────────
+    // The pill used to sit at a flat offset with no side padding and no width
+    // limit, which on a phone meant it could run edge to edge, and on a
+    // desktop monitor that it could stretch.
+    //
+    // A phone gets more clearance because that is where the browser's own
+    // top chrome sits. `MediaQuery.sizeOf` rebuilds only on a size change,
+    // not on every MediaQuery field.
+    final width = MediaQuery.sizeOf(context).width;
+    final isPhone = width < 600;
+
     return Align(
-      alignment: Alignment.bottomCenter,
+      alignment: Alignment.topCenter,
       child: Padding(
-        padding: const EdgeInsets.only(bottom: 24),
+        padding: EdgeInsets.only(
+          top: isPhone ? 20 : 24,
+          left: 16,
+          right: 16,
+        ),
         child: AnimatedSwitcher(
           duration: const Duration(milliseconds: 300),
           reverseDuration: const Duration(milliseconds: 250),
           transitionBuilder: (child, animation) => FadeTransition(
             opacity: animation,
             child: SlideTransition(
+              // Drops DOWN into place from above. The offset is negative to
+              // match the move to the top edge: the old +0.4 slid the pill up
+              // from below, which against a top anchor would have read as the
+              // pill rising out of the page rather than descending into it.
               position: Tween<Offset>(
-                begin: const Offset(0, 0.4),
+                begin: const Offset(0, -0.4),
                 end: Offset.zero,
               ).animate(
                 CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
@@ -307,33 +397,48 @@ class _ConnectivityToast extends StatelessWidget {
     return Material(
       key: key,
       color: Colors.transparent,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(30),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.20),
-              blurRadius: 16,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            leading,
-            const SizedBox(width: 10),
-            Text(
-              label,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 13.5,
-                fontWeight: FontWeight.w600,
+      child: ConstrainedBox(
+        // A ceiling so the pill never stretches across a desktop monitor, and
+        // — with the gutters applied by the caller — never reaches the edge of
+        // a phone. The Row below is still mainAxisSize.min, so a short label
+        // stays a small pill; this only caps the maximum.
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(30),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.20),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
               ),
-            ),
-          ],
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              leading,
+              const SizedBox(width: 10),
+              // Flexible, not a bare Text: at the 420 ceiling — or inside the
+              // gutters on a very narrow phone — an unbounded Text would
+              // overflow the Row and stripe the pill. Ellipsis is the right
+              // failure here; the label is a status, not content to read.
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
