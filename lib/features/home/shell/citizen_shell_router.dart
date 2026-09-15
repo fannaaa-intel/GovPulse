@@ -17,6 +17,8 @@ import '../../../core/widgets/loading/brand_spinner.dart';
 import '../../../core/widgets/no_scrollbar_behavior.dart';
 import '../../../core/widgets/resolve_by_id.dart';
 import '../../admin/screens/admin_dashboard_screen.dart';
+import '../../../core/providers/community_posts_provider.dart';
+import '../../auth/facebook_username_screen.dart';
 import '../../guest/screen/guest.dart';
 import '../../landing/landing_page.dart';
 import '../../landing/not_found_page.dart';
@@ -76,6 +78,26 @@ import 'citizen_shell.dart';
 const String _kLoginPath = '/login';
 const String _kSignupPath = '/signup';
 const String _kGuestPath = '/guest';
+
+/// Where a Facebook account that has no username yet is held.
+///
+/// ── Why web needs a ROUTE for this and mobile does not ──────────────────────
+/// On mobile the Facebook round trip happens in an external browser and hands
+/// control back to the STILL-RUNNING app, so login_screen and signup_screen can
+/// simply `await` the sign-in and push the picker themselves.
+///
+/// On web there is no running app to come back to: `signInWithOAuth` navigates
+/// the whole page away, and the redirect back is a COLD START. Every await in
+/// that flow is gone, so the code after it never runs — a first-time Facebook
+/// user arrived signed in with `profiles.username` blank and nothing to prompt
+/// them, which is why the citizen shell rendered an empty name.
+///
+/// The splash screen used to catch exactly this, and documents it in as many
+/// words. That protection was lost when web stopped building the splash
+/// (see main.dart) and nothing replaced it — the shell just fell back to
+/// `profile?.username ?? ''`. This route is the replacement, and the guard
+/// below is what routes into it.
+const String _kFacebookUsernamePath = '/choose-username';
 
 /// The PUBLIC landing page — the marketing front door at the bare origin.
 ///
@@ -549,6 +571,7 @@ bool _isKnownLocation(String loc) {
     _kNewsFeedPath,
     _kAdminPath,
     _kStaffPath,
+    _kFacebookUsernamePath,
   ];
   if (exact.contains(loc)) return true;
 
@@ -705,6 +728,26 @@ String? _authRedirect(BuildContext context, GoRouterState state) {
       case 2:
         return _staffRedirect(loc);
       default:
+        // ── A Facebook account that never chose a username ────────────────
+        // Held here before any other citizen routing, because an account with
+        // a blank username has nothing for the shell to render: it showed an
+        // empty name beside the avatar and an "unverified" card addressed to
+        // nobody.
+        //
+        // Citizens only. An admin or staff member is created by an
+        // administrator with a username already set and never arrives through
+        // Facebook, so the lookup is not worth running for them.
+        // Unknown answer HOLDS rather than guessing, the same way the role
+        // does: routing them onward on an un-resolved lookup is what let the
+        // shell paint a blank name in the first place.
+        final restoration = AuthRestoration.instance;
+        if (!restoration.usernameKnown) return null;
+        if (restoration.usernameMissing) {
+          return loc == _kFacebookUsernamePath ? null : _kFacebookUsernamePath;
+        }
+        // Nobody else belongs on the picker — a citizen who already has a
+        // handle and types the URL is sent home.
+        if (loc == _kFacebookUsernamePath) return CitizenTab.home.path;
         return _citizenRedirect(loc);
     }
   }
@@ -936,7 +979,7 @@ final GoRouter citizenRouter = GoRouter(
     //
     // No NetworkWrapper, matching the scan page and for the same reason: that
     // wrapper is built for signed-in users, and this page has no session.
-    GoRoute(path: _kLandingPath, builder: (_, _) => const LandingPage()),
+    GoRoute(path: _kLandingPath, builder: (_, _) => const _LandingOrHandoff()),
 
     // ── Auth ────────────────────────────────────────────────────────────────
     // The screens themselves come from app_router.dart, so there is ONE
@@ -955,6 +998,17 @@ final GoRouter citizenRouter = GoRouter(
     GoRoute(
       path: _kGuestPath,
       builder: (_, _) => const NetworkWrapper(child: GuestScreen()),
+    ),
+
+    // ── Choose a username, for a Facebook account that has none ─────────────
+    // Reached only by [_authRedirect]'s hold; nothing links here. The screen is
+    // the SAME [FacebookUsernameScreen] the mobile flow pushes, so the two
+    // platforms ask the identical question with the identical rules — and it
+    // already carries its own web two-panel and web compact layouts, so there
+    // is no new UI here to keep in sync.
+    GoRoute(
+      path: _kFacebookUsernamePath,
+      builder: (_, _) => const NetworkWrapper(child: _ChooseUsernamePage()),
     ),
 
     // ── Public endorsement scan ─────────────────────────────────────────────
@@ -1249,6 +1303,123 @@ class _RestrictedFeedNotice extends StatelessWidget {
 /// Shown at '/' for the moment between first paint and knowing whether there is
 /// a session. Deliberately quiet — it is on screen for a few hundred
 /// milliseconds on a warm load, and never at all once the guard resolves.
+/// The landing page, or the startup spinner while a session is being handed off.
+///
+/// ── The flicker this fixes ──────────────────────────────────────────────────
+/// Facebook's OAuth round trip returns the browser to `Uri.base.origin` — the
+/// bare origin, which is this route. The guard cannot decide anything until
+/// [AuthRestoration] settles, and while it holds, the location stays `/` and
+/// this builder runs. So a citizen completing a Facebook sign-in watched the
+/// marketing page paint — hero, headline, artwork — and then get replaced by
+/// their feed a moment later.
+///
+/// That did not happen before the landing page existed: `/` built
+/// [_StartingUp], a quiet spinner, and the handoff was invisible. The page
+/// becoming a real destination is what made the hold visible.
+///
+/// The fix is not to go back to always holding — a genuine visitor must still
+/// get the landing page instantly, which is the whole reason it is mounted
+/// here. It is to tell the two cases apart: a SESSION EXISTS and the guard is
+/// about to move us, versus nobody is signed in and this page IS the
+/// destination. Only the first gets the spinner.
+///
+/// Reads `currentSession` directly rather than a provider: it is a synchronous
+/// in-memory value on an already-restored client, and this has to decide on the
+/// FIRST frame — anything async would paint the landing page once before
+/// resolving, which is the bug.
+class _LandingOrHandoff extends StatelessWidget {
+  const _LandingOrHandoff();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      // The same notifier the router uses as its refreshListenable, so this
+      // rebuilds on the very pass that resolves the handoff.
+      listenable: AuthRestoration.instance,
+      builder: (_, _) {
+        // The whole decision, and it is one question: is somebody signed in?
+        //
+        // YES — the guard is going to move them (to their feed, a console, or
+        // the username picker), so this route is a waypoint and the spinner is
+        // what should be on screen. Whether restoration has settled only
+        // changes HOW SOON that happens, not whether it does, so it is not part
+        // of the test.
+        //
+        // NO — nobody is being handed anywhere and this page is the
+        // destination. That covers the stranger the landing page exists for,
+        // the guest deciding whether to make an account, and the signed-out
+        // citizen who clicked the logo. All get it on the first frame.
+        //
+        // `_landingHandoffDone` is deliberately not consulted: a signed-in
+        // citizen who clicks the logo AFTER the handoff is spent stays here,
+        // and the guard returns null for them — so the session test alone
+        // would wrongly spin. Guarded by that latch instead.
+        final signedIn = Supabase.instance.client.auth.currentSession != null;
+        if (!signedIn || _landingHandoffDone) return const LandingPage();
+        return const _StartingUp();
+      },
+    );
+  }
+}
+
+/// Hosts [FacebookUsernameScreen] on web and does what the mobile callers do
+/// around it: write the handle, then move on.
+///
+/// A ConsumerWidget because the profile provider has to be invalidated after
+/// the write — the shell reads the username from it, and without the refresh
+/// the citizen would land on a home page still showing the blank name this
+/// whole flow exists to fix.
+class _ChooseUsernamePage extends ConsumerWidget {
+  const _ChooseUsernamePage();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final user = Supabase.instance.client.auth.currentUser;
+
+    // The guard only routes a signed-in citizen here, but a stale tab left open
+    // across a sign-out could still build this. Send them somewhere real rather
+    // than crash on a null id.
+    if (user == null) return const _StartingUp();
+
+    final fbName =
+        (user.userMetadata?['full_name'] ?? user.userMetadata?['name'] ?? '')
+            as String;
+
+    return FacebookUsernameScreen(
+      facebookName: fbName,
+      onComplete: (picked) async {
+        await Supabase.instance.client
+            .from('profiles')
+            .update({'username': picked})
+            .eq('id', user.id);
+
+        // Release the guard's hold BEFORE navigating. The guard re-runs on the
+        // navigation, and while `usernameMissing` is still true it would send
+        // them straight back here — a loop that looks like the button doing
+        // nothing.
+        AuthRestoration.instance.markUsernameChosen();
+
+        // The shell renders the name from this provider, so it has to re-read.
+        ref.invalidate(userProfileProvider);
+
+        // Same call the feed makes elsewhere after an auth change, so a guest
+        // session's cached posts are not shown to the new account.
+        CommunityPostsProvider.instance.resetForAuthenticatedUser();
+
+        if (!context.mounted) return;
+        context.go(CitizenTab.home.path);
+      },
+      onCancel: () async {
+        // Backing out means abandoning the half-made account rather than
+        // entering with no handle, which matches what the mobile flow does.
+        await Supabase.instance.client.auth.signOut();
+        if (!context.mounted) return;
+        context.go(_kLoginPath);
+      },
+    );
+  }
+}
+
 class _StartingUp extends StatelessWidget {
   const _StartingUp();
 

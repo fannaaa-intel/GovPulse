@@ -192,6 +192,53 @@ class AuthRestoration extends ChangeNotifier {
   /// location until this is true rather than guessing a role.
   bool get roleKnown => _roleKnown;
 
+  // ── The missing-username hold ───────────────────────────────────────────
+  //
+  // A Facebook account arrives with no `profiles.username`: the provider gives
+  // us an email and a display name, never a handle. On MOBILE the sign-in is
+  // awaited inside a still-running app, so login_screen and signup_screen push
+  // the picker themselves. On WEB `signInWithOAuth` navigates the page away and
+  // the redirect back is a cold start, so every await in that flow is gone and
+  // nothing asks.
+  //
+  // The result was an account signed in with a blank handle: the shell rendered
+  // an empty name beside the avatar, and "My Submissions" and "Contact Support"
+  // were handed '' as the username.
+  //
+  // Cached HERE rather than read in the guard because the guard is synchronous
+  // and a `profiles` lookup is not. Same shape as the role: an unknown answer
+  // holds, and [notifyListeners] re-runs the guard once it lands.
+  bool _usernameKnown = false;
+  bool _usernameMissing = false;
+
+  /// Whether [usernameMissing] can be trusted yet.
+  bool get usernameKnown => _usernameKnown;
+
+  /// True when the signed-in citizen has no `profiles.username` and must be
+  /// held on the picker before any other citizen surface will make sense.
+  bool get usernameMissing => _usernameMissing;
+
+  /// Records the answer and re-runs the guard.
+  ///
+  /// Called by [_refreshRole], which already performs one authenticated lookup
+  /// per sign-in, so this costs no extra round trip for an account that has a
+  /// username — which is every account except a first-time Facebook sign-up.
+  void _setUsernameState({required bool missing}) {
+    if (_usernameKnown && _usernameMissing == missing) return;
+    _usernameKnown = true;
+    _usernameMissing = missing;
+    notifyListeners();
+  }
+
+  /// Clears the hold once the citizen has picked a handle, so the guard stops
+  /// returning them to the picker.
+  ///
+  /// Public because the picker's own `onComplete` is what knows the write
+  /// succeeded; nothing else may call it.
+  void markUsernameChosen() {
+    _setUsernameState(missing: false);
+  }
+
   // ── Auth-flow hold ──────────────────────────────────────────────────────
   //
   // Set while a screen is DELIBERATELY driving auth state as part of its own
@@ -453,6 +500,61 @@ class AuthRestoration extends ChangeNotifier {
     }
 
     notifyListeners();
+
+    // Awaited after the role has been published, not before: the role is what
+    // routing hangs on, and making it wait behind a second query would hold
+    // every console user's location for no reason.
+    await _refreshUsernameState(
+      userId: user.id,
+      provider: user.appMetadata['provider'] as String?,
+    );
+  }
+
+  /// Answers "does this citizen still need to choose a username?".
+  ///
+  /// ── Scope, and why it is this narrow ──────────────────────────────────────
+  /// WEB ONLY, CITIZENS ONLY, FACEBOOK ONLY. Each cut removes a query that
+  /// could never change the answer:
+  ///
+  ///   * mobile awaits the sign-in inside a running app and pushes the picker
+  ///     itself, so the hold this feeds would never be read;
+  ///   * an admin or staff account is created by an administrator with a
+  ///     username already set, and never arrives through Facebook;
+  ///   * an email sign-up cannot complete without choosing a username, so for
+  ///     every other provider the answer is "no" without asking.
+  ///
+  /// The result: exactly one extra `profiles` read, on a web Facebook session,
+  /// and none at all for anybody else.
+  ///
+  /// A failed lookup resolves to "not missing". The hold exists to catch a
+  /// blank handle, and answering "missing" on a network blip would trap a
+  /// citizen who already has one on the picker — a worse failure than the one
+  /// being prevented, and the same fail-safe direction the role lookup uses.
+  // Takes the two values it needs rather than the user object: firebase_auth
+  // and gotrue both export a `User`, and this file imports both unprefixed.
+  Future<void> _refreshUsernameState({
+    required String userId,
+    required String? provider,
+  }) async {
+    if (!kIsWeb) return;
+    if (_roleId != null) return; // admin or staff
+
+    if (provider != 'facebook') {
+      _setUsernameState(missing: false);
+      return;
+    }
+
+    try {
+      final row = await Supabase.instance.client
+          .from('profiles')
+          .select('username')
+          .eq('id', userId)
+          .maybeSingle();
+      final handle = (row?['username'] as String?)?.trim();
+      _setUsernameState(missing: handle == null || handle.isEmpty);
+    } catch (_) {
+      _setUsernameState(missing: false);
+    }
   }
 
   /// Adopt a role that an authoritative lookup has ALREADY resolved, so the
