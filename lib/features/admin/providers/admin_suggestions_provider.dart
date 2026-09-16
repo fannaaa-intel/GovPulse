@@ -103,6 +103,10 @@ class AdminSuggestion {
     required this.createdAt,
     this.dismissedAt,
     this.dismissedReason,
+    this.aiCategoryKey,
+    this.aiCategoryReason,
+    this.aiTheme,
+    this.aiClassifiedAt,
   });
 
   /// Soft-moderation: non-null when an admin dismissed this row as spam/nonsense.
@@ -110,8 +114,49 @@ class AdminSuggestion {
   final DateTime? dismissedAt;
   final String? dismissedReason;
 
+  /// ── AI classification (20260917000000 + classify-suggestion) ─────────────
+  /// ADVISORY ONLY. The model re-reads `details` and says what category it
+  /// believes the suggestion really is, plus a coarse theme for grouping.
+  /// `categoryKey` above — the citizen's own choice — remains authoritative:
+  /// nothing here changes where the suggestion is stored, who can see it, or
+  /// what the citizen is shown. All four are null until the classifier reaches
+  /// the row (or if migration 20260917000000 hasn't been applied).
+  final String? aiCategoryKey;
+  final String? aiCategoryReason;
+  final String? aiTheme;
+  final DateTime? aiClassifiedAt;
+
   bool get hasLocation => latitude != null && longitude != null;
   bool get isDismissed => dismissedAt != null;
+
+  /// True when the model read this row and disagreed with the citizen's pick.
+  /// Drives the "mis-filed" chip — the whole point of ai_category, since a
+  /// citizen unsure of the category tends to reach for "Others".
+  bool get isMiscategorized =>
+      aiCategoryKey != null && aiCategoryKey != categoryKey;
+
+  /// The AI's category as a display label, for the mis-filed chip.
+  String? get aiCategoryLabel => aiCategoryKey == null
+      ? null
+      // categoryOther is deliberately NOT passed: it is the citizen's typed
+      // text for THEIR "others" pick and would mislabel the model's opinion.
+      : suggestionCategoryLabel(aiCategoryKey, null);
+
+  /// Theme as a short Title-Case label for the grouping chip.
+  ///
+  /// Null for the taxonomy's 'other' bucket as well as for an unclassified row:
+  /// "Other" tells an admin nothing they can act on, and callers use this
+  /// being null to decide whether to reserve any space at all. Keeping the
+  /// 'other' check here rather than only in the chip means a row themed 'other'
+  /// cannot leave an empty gap where a chip would have been.
+  String? get aiThemeLabel {
+    final t = aiTheme?.trim();
+    if (t == null || t.isEmpty || t.toLowerCase() == 'other') return null;
+    return t
+        .split(' ')
+        .map((w) => w.isEmpty ? w : '${w[0].toUpperCase()}${w.substring(1)}')
+        .join(' ');
+  }
 }
 
 /// A single media item attached to a suggestion, resolved to a public URL for
@@ -494,26 +539,34 @@ class AdminSuggestionsNotifier extends AsyncNotifier<List<AdminSuggestion>> {
         'id, category, category_other, barangay, address, '
         'latitude, longitude, details, is_anonymous, status, admin_note, '
         'admin_response, reviewed_at, created_at, suggestion_media(id)';
-    // Try WITH the moderation columns; retry without them if the spam_moderation
-    // migration hasn't been applied yet (feature simply stays off).
-    List<Map<String, dynamic>> list;
-    try {
-      list = List<Map<String, dynamic>>.from(
-        await _db
-            .from('suggestions')
-            .select('$baseCols, dismissed_at, dismissed_reason')
-            .order('created_at', ascending: false)
-            .limit(200),
-      );
-    } catch (_) {
-      list = List<Map<String, dynamic>>.from(
-        await _db
-            .from('suggestions')
-            .select(baseCols)
-            .order('created_at', ascending: false)
-            .limit(200), // barangay scale; range-based paging is the scale path.
-      );
+    // Degrade outward-in: each tier drops the NEWEST (most expendable) optional
+    // migration first, so an unapplied migration costs a badge rather than the
+    // whole page. Mirrors the tiering in admin_reports_provider.
+    //   1. + AI classification (20260917000000) — newest, loses only chips
+    //   2. + moderation columns (spam_moderation) — loses dismiss/restore
+    //   3. base                                  — always works
+    const aiCols = 'ai_category, ai_category_reason, ai_theme, ai_classified_at';
+    final attempts = <String>[
+      '$baseCols, dismissed_at, dismissed_reason, $aiCols',
+      '$baseCols, dismissed_at, dismissed_reason',
+      baseCols,
+    ];
+    List<Map<String, dynamic>>? list;
+    for (final cols in attempts) {
+      try {
+        list = List<Map<String, dynamic>>.from(
+          await _db
+              .from('suggestions')
+              .select(cols)
+              .order('created_at', ascending: false)
+              .limit(200), // barangay scale; range paging is the scale path.
+        );
+        break;
+      } catch (_) {
+        // try the next (smaller) column set
+      }
     }
+    list ??= const [];
     if (list.isEmpty) return const [];
 
     // Resolve user_ids for NAMED rows only, in a separate query, so an anonymous
@@ -564,6 +617,11 @@ class AdminSuggestionsNotifier extends AsyncNotifier<List<AdminSuggestion>> {
         createdAt: _parseTs(r['created_at']),
         dismissedAt: _parseTs(r['dismissed_at']),
         dismissedReason: r['dismissed_reason'] as String?,
+        // Absent keys (an older select tier) read as null, not an error.
+        aiCategoryKey: r['ai_category'] as String?,
+        aiCategoryReason: r['ai_category_reason'] as String?,
+        aiTheme: r['ai_theme'] as String?,
+        aiClassifiedAt: _parseTs(r['ai_classified_at']),
       );
     }).toList();
   }

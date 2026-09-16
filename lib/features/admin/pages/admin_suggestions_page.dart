@@ -107,6 +107,92 @@ class _CategoryIconBox extends StatelessWidget {
   }
 }
 
+// ── AI classification chips ──────────────────────────────────────────────────
+//  Both read columns written by the classify-suggestion Edge Function and are
+//  ADVISORY: they never change what the suggestion IS, only what the admin
+//  notices about it. Each returns a zero-size widget when its column is null,
+//  so an unclassified row (or an unapplied migration) renders exactly as before.
+
+/// "Looks like: Infrastructure" — shown only when the model disagrees with the
+/// citizen's own category pick. Amber rather than red: a disagreement is a
+/// prompt to look, not an error, and the citizen may well be right.
+class _MisfiledChip extends StatelessWidget {
+  final AdminSuggestion suggestion;
+
+  /// Compact drops the leading word on the desktop table row, where the
+  /// category column is a fixed flex and has no room for a sentence.
+  final bool compact;
+  const _MisfiledChip(this.suggestion, {this.compact = false});
+
+  @override
+  Widget build(BuildContext context) {
+    if (!suggestion.isMiscategorized) return const SizedBox.shrink();
+    final label = suggestion.aiCategoryLabel;
+    if (label == null) return const SizedBox.shrink();
+    const c = AppColors.orange;
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: StatusPill.horizontalPadding,
+        vertical: StatusPill.verticalPadding,
+      ),
+      decoration: BoxDecoration(
+        color: c.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      // A Row of (icon, text) inside a Wrap/flex parent must not assume it has
+      // room: mainAxisSize.min lets it shrink to content, and the Flexible text
+      // ellipsizes instead of overflowing when the column is narrow.
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.auto_awesome_rounded, size: 11, color: c),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              compact ? label : 'Looks like: $label',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: StatusPill.textStyle.copyWith(color: c),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The AI theme ("Repair Or Upkeep"), for grouping suggestions by the KIND of
+/// action proposed. Neutral-toned — it is a label, not a warning.
+class _ThemeChip extends StatelessWidget {
+  final AdminSuggestion suggestion;
+  const _ThemeChip(this.suggestion);
+
+  @override
+  Widget build(BuildContext context) {
+    // Null covers both unclassified rows and the 'other' bucket — see
+    // AdminSuggestion.aiThemeLabel for why 'other' is filtered at the source.
+    final label = suggestion.aiThemeLabel;
+    if (label == null) return const SizedBox.shrink();
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: StatusPill.horizontalPadding,
+        vertical: StatusPill.verticalPadding,
+      ),
+      decoration: BoxDecoration(
+        color: AdminUi.subtle,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AdminUi.border),
+      ),
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: StatusPill.textStyle.copyWith(color: AdminUi.textSecondary),
+      ),
+    );
+  }
+}
+
 // ═════════════════════════════════════════════════════════════════════════════
 //  Page
 // ═════════════════════════════════════════════════════════════════════════════
@@ -574,9 +660,29 @@ class _TableRow extends StatelessWidget {
                             color: AdminUi.textPrimary,
                           ),
                         ),
-                        Text(s.shortId,
-                            style: const TextStyle(
-                                fontSize: 11, color: AdminUi.textMuted)),
+                        // The chip shares the SECOND line with the short id
+                        // rather than taking a third. Stacking it between the
+                        // category and the id grew this cell past the other
+                        // columns' content, and because they are centered and
+                        // this one is not, the whole row's text stopped lining
+                        // up — visible in the browser, invisible to the
+                        // overflow probe. Two lines here, two lines always.
+                        Row(
+                          children: [
+                            Text(s.shortId,
+                                style: const TextStyle(
+                                    fontSize: 11, color: AdminUi.textMuted)),
+                            if (s.isMiscategorized) ...[
+                              const SizedBox(width: 6),
+                              // Flexible, not a bare chip: the id is fixed-width
+                              // but the chip's label is not, and this cell is a
+                              // fixed flex: 4 shared with a 30px icon.
+                              Flexible(
+                                child: _MisfiledChip(s, compact: true),
+                              ),
+                            ],
+                          ],
+                        ),
                       ],
                     ),
                   ),
@@ -711,6 +817,20 @@ class _Card extends StatelessWidget {
                 height: 1.35,
                 color: AdminUi.textSecondary,
               ),
+            ),
+          ],
+          // AI chips. A Wrap, not a Row: on a narrow phone the mis-filed chip
+          // and the theme chip together exceed the card width, and a Row would
+          // overflow rather than reflow. Both children self-hide when their
+          // column is null, so this whole block collapses for an unclassified
+          // row — but the `if` still guards the SizedBox above it, or an
+          // unclassified card would gain 6px of dead space.
+          if (s.isMiscategorized || s.aiThemeLabel != null) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [_MisfiledChip(s), _ThemeChip(s)],
             ),
           ],
           const SizedBox(height: 8),
@@ -961,13 +1081,47 @@ class _SuggestionDetailDialogState
           _IconSection(
             icon: _categoryIcon(s.categoryKey),
             title: 'Category',
-            child: Text(
-              s.category,
-              style: const TextStyle(
-                fontSize: 13,
-                height: 1.4,
-                color: AdminUi.textSecondary,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  s.category,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    height: 1.4,
+                    color: AdminUi.textSecondary,
+                  ),
+                ),
+                // The full AI opinion lives here rather than on the card: the
+                // detail view is the one place with room for the model's
+                // reason, and the reason is what makes the chip actionable
+                // ("why does it think that?") instead of just surprising.
+                if (s.isMiscategorized) ...[
+                  const SizedBox(height: 8),
+                  _MisfiledChip(s),
+                  if (s.aiCategoryReason?.trim().isNotEmpty == true) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      s.aiCategoryReason!.trim(),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        height: 1.4,
+                        fontStyle: FontStyle.italic,
+                        color: AdminUi.textMuted,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 6),
+                  const Text(
+                    'AI suggestion only — the citizen\'s category is unchanged.',
+                    style: TextStyle(fontSize: 11, color: AdminUi.textMuted),
+                  ),
+                ],
+                if (s.aiThemeLabel != null) ...[
+                  const SizedBox(height: 8),
+                  _ThemeChip(s),
+                ],
+              ],
             ),
           ),
           _IconSection(
@@ -1854,4 +2008,39 @@ class _NetworkVideoDialogState extends State<_NetworkVideoDialog> {
       ),
     );
   }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  Preview-only accessors
+//
+//  The list widgets are private, which is correct — nothing outside this file
+//  should build them. But the AI chips cannot be verified from a screenshot of
+//  the page without a live admin session, and a preview that RE-IMPLEMENTS the
+//  row layout would verify the copy, not the code that ships.
+//
+//  These two wrappers are the narrowest possible seam: they expose the real
+//  _TableRow and _Card to tool/preview_suggestion_ai_chips.dart and to widget
+//  tests, and nothing else. Not used by the console itself.
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// The desktop table row, for previews/tests. See the note above.
+@visibleForTesting
+class SuggestionTableRowPreview extends StatelessWidget {
+  final AdminSuggestion suggestion;
+  const SuggestionTableRowPreview(this.suggestion, {super.key});
+
+  @override
+  Widget build(BuildContext context) =>
+      _TableRow(suggestion: suggestion, onOpen: () {});
+}
+
+/// The phone card, for previews/tests. See the note above.
+@visibleForTesting
+class SuggestionCardPreview extends StatelessWidget {
+  final AdminSuggestion suggestion;
+  const SuggestionCardPreview(this.suggestion, {super.key});
+
+  @override
+  Widget build(BuildContext context) =>
+      _Card(suggestion: suggestion, onOpen: () {});
 }

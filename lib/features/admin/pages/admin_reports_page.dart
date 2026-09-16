@@ -1910,6 +1910,11 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
     final picked = await showEndorseEntityDialog(
       context,
       currentEndorsement: widget.report.endorsedToDepartment,
+      // ai_endorse_hint has been written on every classified report since
+      // 20260914000000 but was surfaced nowhere — this is the first place it
+      // reaches an admin. Badge only; it never pre-selects. Null (the common
+      // case) renders the dialog exactly as before.
+      aiSuggestedAgency: widget.report.aiEndorseHint,
     );
     if (picked == null || !mounted) return;
 

@@ -143,7 +143,14 @@ class AdminReport {
   /// dialog; the admin can always override.
   final String? aiDepartment;
 
-  /// RESERVED — external agency suggestion, not surfaced anywhere yet.
+  /// The external agency (PNP/BFP/DPWH/DENR/DOH) the model believes owns this
+  /// issue, or null — and null is the EXPECTED case, since most reports are the
+  /// LGU's own work. Badges the matching card in the Endorse dialog.
+  ///
+  /// Deliberately does NOT pre-select there, unlike [aiDepartment] in the
+  /// Accept dialog: endorsing hands ownership out of the LGU and mints a letter
+  /// carrying a one-time PIN, so it stays a deliberate choice rather than a
+  /// default to confirm past.
   final String? aiEndorseHint;
 
   /// Short model justification, shown beside the recommendation so an override

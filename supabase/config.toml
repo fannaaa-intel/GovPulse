@@ -522,6 +522,15 @@ enabled = true
 verify_jwt = true
 entrypoint = "./functions/classify-report/index.ts"
 
+[functions.classify-suggestion]
+enabled = true
+# true. Same pattern as the two above: trg_classify_suggestion and the
+# catchup-classify-suggestion cron both send a service-role Bearer read from
+# vault (see classify-suggestion/AUTO_CLASSIFY.sql). No client caller — nothing
+# in lib/ invokes it.
+verify_jwt = true
+entrypoint = "./functions/classify-suggestion/index.ts"
+
 [functions.moderate-content]
 enabled = true
 # true. Server-only: comment-insert trigger sends a service-role Bearer from

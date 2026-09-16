@@ -129,20 +129,34 @@ const List<_AgencyData> _agencies = [
 /// endorsed) starts selected so "Change endorsement" opens on the current pick
 /// and enables the clear affordance. See the contract in the file header for
 /// the resolved value.
+/// [aiSuggestedAgency] is `reports.ai_endorse_hint` — the external agency the
+/// classifier believes owns this issue, one of the five names above or null
+/// (null is the EXPECTED case; most reports are the LGU's own work). It only
+/// badges a card, exactly like the Accept dialog's "AI Recommended" pill: it
+/// does NOT pre-select, because endorsing hands ownership out of the LGU and
+/// mints a letter with a one-time PIN. That is the admin's call to make
+/// deliberately, not to confirm past a pre-filled default.
 Future<EndorseChoice?> showEndorseEntityDialog(
   BuildContext context, {
   String? currentEndorsement,
+  String? aiSuggestedAgency,
 }) {
   return showAppDialog<EndorseChoice>(
     context: context,
-    builder: (_) =>
-        _EndorseEntityDialog(currentEndorsement: currentEndorsement),
+    builder: (_) => _EndorseEntityDialog(
+      currentEndorsement: currentEndorsement,
+      aiSuggestedAgency: aiSuggestedAgency,
+    ),
   );
 }
 
 class _EndorseEntityDialog extends StatefulWidget {
   final String? currentEndorsement;
-  const _EndorseEntityDialog({this.currentEndorsement});
+  final String? aiSuggestedAgency;
+  const _EndorseEntityDialog({
+    this.currentEndorsement,
+    this.aiSuggestedAgency,
+  });
 
   @override
   State<_EndorseEntityDialog> createState() => _EndorseEntityDialogState();
@@ -386,6 +400,33 @@ class _EndorseEntityDialogState extends State<_EndorseEntityDialog> {
           'Choose the agency or department that best handles this report.',
           style: TextStyle(fontSize: 12.5, color: AdminUi.textMuted),
         ),
+        // Names the badge, so an admin who sees "AI" on a card knows where it
+        // came from and that it carries no authority. Only shown when a card is
+        // actually badged — an unexplained pill is worse than none, and a line
+        // about AI on a dialog with no AI mark is just noise.
+        if (widget.aiSuggestedAgency != null) ...[
+          const SizedBox(height: 6),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.auto_awesome_rounded,
+                  size: 13, color: _selectBlue),
+              const SizedBox(width: 5),
+              Expanded(
+                child: Text(
+                  'AI read this report as ${widget.aiSuggestedAgency}\'s '
+                  'responsibility. It\'s a suggestion — nothing is selected '
+                  'until you choose.',
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    height: 1.35,
+                    color: AdminUi.textMuted,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
       ],
     );
 
@@ -559,8 +600,37 @@ class _EndorseEntityDialogState extends State<_EndorseEntityDialog> {
     return Column(children: rows);
   }
 
+  /// The "AI" pill marking the agency the classifier pointed at. Kept small and
+  /// wordless-but-labelled: it has to sit inside a phone-width card next to a
+  /// selection check without crowding either.
+  static Widget _aiPill() => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+        decoration: BoxDecoration(
+          color: _selectBlue,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.auto_awesome_rounded, size: 10, color: Colors.white),
+            SizedBox(width: 3),
+            Text(
+              'AI',
+              style: TextStyle(
+                fontSize: 9.5,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+                letterSpacing: 0.3,
+              ),
+            ),
+          ],
+        ),
+      );
+
   Widget _agencyCard(_AgencyData a, {bool compact = false}) {
     final selected = _selected == a.name;
+    final aiPick = widget.aiSuggestedAgency != null &&
+        widget.aiSuggestedAgency == a.name;
 
     final logo = SizedBox(
       width: 52,
@@ -649,7 +719,23 @@ class _EndorseEntityDialogState extends State<_EndorseEntityDialog> {
                     ),
                   ),
                   const SizedBox(height: 10),
-                  tag,
+                  // The AI pill sits INLINE beside the tag on the compact card,
+                  // not in a top corner: this layout centres a 52px logo at the
+                  // very top, so a Positioned badge up there would land on the
+                  // artwork — the same collision the Accept dialog hit and had
+                  // to fix with extra headroom. A Wrap keeps the pair on one
+                  // line when it fits and stacks them when the card is narrow,
+                  // instead of overflowing.
+                  if (aiPick)
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      alignment: WrapAlignment.center,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [tag, _aiPill()],
+                    )
+                  else
+                    tag,
                 ],
               ),
               if (selected)
@@ -696,7 +782,19 @@ class _EndorseEntityDialogState extends State<_EndorseEntityDialog> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  tag,
+                  // Roomy card: logo is on the LEFT, so the row beside the tag
+                  // is free. Wrap rather than Row — at the 2-column breakpoint
+                  // a card can still be ~300px wide, and "Environment &
+                  // Sustainability" plus the pill exceeds that.
+                  if (aiPick)
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [tag, _aiPill()],
+                    )
+                  else
+                    tag,
                 ],
               ),
             ),

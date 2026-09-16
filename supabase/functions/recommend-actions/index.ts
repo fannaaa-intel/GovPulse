@@ -63,6 +63,12 @@ Rules:
 - \`suggestion_categories\` is what citizens ASKED FOR (not complaints). When present,
   include the most-requested category as a focus item: citizens have already told you
   what they want, so recommend reviewing and replying to it.
+- \`suggestion_samples\` is the TEXT of recent suggestions (most recent first, each with
+  its category, long ones truncated with "…"). Use it to make the suggestion focus item
+  specific: say what citizens actually proposed, not just how many. Prefer a concrete
+  request that recurs across samples, and keep \`metric\` the count from
+  \`suggestion_categories\`. A proposal is not a complaint — never rate a suggestion-based
+  item "high" severity on the strength of the request alone.
 - Respect sample size. A dimension backed by 1 response is weak evidence — never call
   it high severity on its own, and prefer signals with more responses behind them.
 - \`negative_theme_trend\` compares negative-feedback themes in the last 30 days vs the
@@ -205,12 +211,35 @@ function buildAggregate(
   }
 
   // What citizens ASKED FOR, as opposed to what they rated or reported.
+  //
+  // The counts alone can only ever produce "5 infrastructure suggestions" — the
+  // model could name the category but never what anyone actually proposed, so
+  // its advice on this input was generic by construction. The samples below are
+  // the substance. Unlike `comment` / `remarks` (a sentence or two), `details`
+  // is a long-form field, so each one is truncated: 12 samples × 240 chars caps
+  // this block at ~3KB of the prompt, in line with urgent_report_samples (12)
+  // and top_negative_comments (20), which are naturally short and uncapped.
+  const SUGGESTION_SAMPLE_LIMIT = 12;
+  const SUGGESTION_DETAIL_CHARS = 240;
   const suggestionCategories: Record<string, number> = {};
+  const suggestionSamples: Array<{ category: string; details: string }> = [];
   for (const s of suggestions) {
     const raw = String(s["category"] ?? "").trim();
     const other = String(s["category_other"] ?? "").trim();
     const cat = raw === "others" && other ? other : (raw || "other");
     suggestionCategories[cat] = (suggestionCategories[cat] ?? 0) + 1;
+
+    // `suggestions` is already ordered created_at desc, so the first N samples
+    // are the most recent — the ones an admin would act on now.
+    if (suggestionSamples.length >= SUGGESTION_SAMPLE_LIMIT) continue;
+    const details = String(s["details"] ?? "").trim();
+    if (!details) continue;
+    suggestionSamples.push({
+      category: cat,
+      details: details.length > SUGGESTION_DETAIL_CHARS
+        ? details.slice(0, SUGGESTION_DETAIL_CHARS) + "…"
+        : details,
+    });
   }
 
   // ── Trends: last 30 days vs the 30 before ──────────────────────────────────
@@ -277,6 +306,7 @@ function buildAggregate(
     report_categories: reportCategories,
     urgent_report_samples: urgentReportSamples,
     suggestion_categories: suggestionCategories,
+    suggestion_samples: suggestionSamples,
     negative_theme_trend: negativeThemeTrend,
     high_urgency_reports: {
       ...highUrgency,
@@ -332,7 +362,7 @@ serve(async (req: Request) => {
         .limit(300),
       supabase
         .from("suggestions")
-        .select("category, category_other, created_at")
+        .select("category, category_other, details, created_at")
         .order("created_at", { ascending: false })
         .limit(300),
     ]);

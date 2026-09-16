@@ -38,6 +38,11 @@ class _Report {
   final String id;
   final String category;
   final String? categoryOther;
+
+  /// What classify-report read the report as. See [displayLabel] — this screen
+  /// has its OWN report model, so the 788e731 header fix on ReportItem did not
+  /// reach these cards.
+  final String? aiCategory;
   final String? barangay;
   final String? remarks;
   final String status;
@@ -49,6 +54,7 @@ class _Report {
     required this.id,
     required this.category,
     this.categoryOther,
+    this.aiCategory,
     this.barangay,
     this.remarks,
     required this.status,
@@ -61,6 +67,9 @@ class _Report {
     id: j['id'] as String,
     category: j['category'] as String,
     categoryOther: j['category_other'] as String?,
+    // Reports are fetched with select('*'), so this column is already in the
+    // row; it reads as null when 20260914000000 hasn't been applied.
+    aiCategory: j['ai_category'] as String?,
     barangay: j['barangay'] as String?,
     remarks: j['remarks'] as String?,
     status: (j['status'] as String?) ?? 'pending',
@@ -68,12 +77,55 @@ class _Report {
     mediaCount: (j['report_media'] as List<dynamic>?)?.length ?? 0,
     isAnonymous: (j['is_anonymous'] as bool?) ?? false,
   );
+
+  /// The report category vocabulary, as its picker offers it. A DIFFERENT set
+  /// from the suggestion keys in [_Suggestion._kCategoryKeys] — only
+  /// 'environment' and 'others' overlap. Must match
+  /// `report_issue_screen.dart _categories[].key`, the CATEGORIES list in
+  /// `classify-report/index.ts`, and the CHECK in 20260914000000.
+  static const Set<String> _kCategoryKeys = {
+    'road',
+    'waste',
+    'drainage',
+    'streetlight',
+    'environment',
+    'others',
+  };
+
+  /// Same contract as [_Suggestion.displayLabel]: an "Others" report whose
+  /// `category_other` holds a sentence gets the AI's recognised category as its
+  /// title instead of a paragraph. Only for `others`, never overriding a
+  /// category the citizen picked, and never trusting a key outside the
+  /// vocabulary. The stored key is untouched.
+  String displayLabel(
+    String catLabel,
+    String Function(String key) labelFor,
+  ) {
+    final ai = aiCategory?.trim();
+    if (category == 'others' &&
+        ai != null &&
+        ai.isNotEmpty &&
+        ai != 'others' &&
+        _kCategoryKeys.contains(ai)) {
+      return labelFor(ai);
+    }
+    final other = categoryOther?.trim();
+    if (category == 'others' && other != null && other.isNotEmpty) {
+      return other;
+    }
+    return catLabel;
+  }
 }
 
 class _Suggestion {
   final String id;
   final String category;
   final String? categoryOther;
+
+  /// What classify-suggestion read the suggestion as, from the same closed
+  /// vocabulary the picker offers. Null until the classifier reaches the row,
+  /// or if 20260917000000 isn't applied. See [displayLabel].
+  final String? aiCategory;
   final String? details;
   final String? barangay;
   final String? address;
@@ -93,6 +145,7 @@ class _Suggestion {
     required this.id,
     required this.category,
     this.categoryOther,
+    this.aiCategory,
     this.details,
     this.barangay,
     this.address,
@@ -115,10 +168,79 @@ class _Suggestion {
   /// awaiting a reply.
   bool get isClosed => dismissedAt != null && !hasReply;
 
+  /// The closed category vocabulary, as the suggestion picker offers it.
+  ///
+  /// MUST stay identical to `suggestion_screen.dart _categories[].key`, the
+  /// CATEGORIES list in `supabase/functions/classify-suggestion/index.ts`, and
+  /// the CHECK in migration 20260917000000. Used here to reject an
+  /// `ai_category` outside the set rather than trusting it into the header.
+  ///
+  /// NOTE these are the SUGGESTION keys — a different set from the report keys
+  /// in report_card.dart. Only 'environment' and 'others' overlap.
+  static const Set<String> _kCategoryKeys = {
+    'public_service',
+    'community_program',
+    'health_safety',
+    'infrastructure',
+    'environment',
+    'others',
+  };
+
+  /// The key whose LABEL belongs in the hero title, which is not always the key
+  /// this suggestion is stored under.
+  ///
+  /// ── The bug this fixes ──────────────────────────────────────────────────
+  /// A citizen who taps "Others" is asked to specify the category, and what
+  /// lands in `category_other` is usually a SENTENCE describing the problem.
+  /// Rendered as the label it became the suggestion's title, so the detail
+  /// header read like a paragraph where a category belongs — exactly the bug
+  /// fixed for reports in 788e731, in the same screen, from the same cause.
+  ///
+  /// classify-suggestion already answers the question: `ai_category` is "what
+  /// this suggestion ACTUALLY is", from the same closed vocabulary the picker
+  /// offers. Preferred ONLY when it beats the citizen's own answer:
+  ///   * only for `others` — a category they picked themselves is never
+  ///     overridden;
+  ///   * `others` from the model is ignored, since the AI agreeing it is
+  ///     miscellaneous says nothing the citizen did not;
+  ///   * a key outside the vocabulary is ignored, so a model that invents a
+  ///     value cannot put an unknown string in the header.
+  ///
+  /// The KEY stays the citizen's answer — it is what the icon and colour are
+  /// chosen from, and what the admin console routes on — while only the LABEL
+  /// changes. Diverging the two is deliberate.
+  String? get _aiLabelKey {
+    final ai = aiCategory?.trim();
+    if (category != 'others') return null;
+    if (ai == null || ai.isEmpty || ai == 'others') return null;
+    return _kCategoryKeys.contains(ai) ? ai : null;
+  }
+
+  /// The hero title / card label. [catLabel] is the display label for this
+  /// suggestion's own stored key, which the caller already has from its
+  /// category config; [labelFor] resolves the AI's key when one applies.
+  ///
+  /// Both the mobile card and the web card read THIS, so the two can never
+  /// disagree about what a suggestion is called.
+  String displayLabel(
+    String catLabel,
+    String Function(String key) labelFor,
+  ) {
+    final aiKey = _aiLabelKey;
+    if (aiKey != null) return labelFor(aiKey);
+    final other = categoryOther?.trim();
+    if (category == 'others' && other != null && other.isNotEmpty) {
+      return other;
+    }
+    return catLabel;
+  }
+
   factory _Suggestion.fromJson(Map<String, dynamic> j) => _Suggestion(
     id: j['id'] as String,
     category: j['category'] as String,
     categoryOther: j['category_other'] as String?,
+    // Absent on the fallback select tier, which reads as null — not an error.
+    aiCategory: j['ai_category'] as String?,
     details: j['details'] as String?,
     barangay: j['barangay'] as String?,
     address: j['address'] as String?,
@@ -602,8 +724,14 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
       return await run(cols);
     } on PostgrestException catch (e) {
       final m = e.message.toLowerCase();
+      // Each name here is an OPTIONAL migration's column. Miss one out and an
+      // unapplied migration stops being a missing badge and becomes a blank
+      // submissions page — the select 400s, this rethrows, and the citizen
+      // loses every report, suggestion and feedback they ever filed.
       if (fallbackCols != null &&
-          (m.contains('dismissed') || m.contains('responder_photo_url'))) {
+          (m.contains('dismissed') ||
+              m.contains('responder_photo_url') ||
+              m.contains('ai_category'))) {
         return run(fallbackCols);
       }
       rethrow;
@@ -706,9 +834,15 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
         _selectRows(
           supabase,
           'suggestions',
-          'id, category, category_other, details, barangay, address, '
-              'latitude, longitude, created_at, is_anonymous, admin_response, '
-              'reviewed_at, dismissed_at, responder_photo_url',
+          // ai_category (20260917000000) is what rescues an "Others" hero
+          // title from being the citizen's own sentence — see the note in
+          // _Suggestion.fromJson. Reports get it free via select('*'); this
+          // list is explicit, so it has to be named. Newest column, so it sits
+          // in the OUTERMOST tier: if that migration isn't applied the select
+          // 400s and the fallback below still loads the page.
+          'id, category, category_other, ai_category, details, barangay, '
+              'address, latitude, longitude, created_at, is_anonymous, '
+              'admin_response, reviewed_at, dismissed_at, responder_photo_url',
           'created_at',
           userId,
           fallbackCols:
@@ -1054,13 +1188,23 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
             ),
           ),
           SizedBox(width: w * 0.035),
-          Text(
-            'My Submissions',
-            style: TextStyle(
-              fontSize: w * 0.052,
-              fontWeight: FontWeight.w700,
-              color: kScreenTitleColor,
-              letterSpacing: -0.3,
+          // Expanded + ellipsis: the title is sized off the VIEWPORT
+          // (w * 0.052) but grows with the user's font scale, so at Android's
+          // larger settings it overflowed this Row by 55px at 1.3x and more at
+          // 1.6x — in the bar holding the back button. An unconstrained Text
+          // in a Row has nothing to give up; this lets it shrink instead.
+          // Pre-existing, found by the responsive sweep for the card titles.
+          Expanded(
+            child: Text(
+              'My Submissions',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: w * 0.052,
+                fontWeight: FontWeight.w700,
+                color: kScreenTitleColor,
+                letterSpacing: -0.3,
+              ),
             ),
           ),
         ],
@@ -1420,9 +1564,11 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
 
   Widget _buildReportCard(double w, _Report r) {
     final cat = _reportCats[r.category] ?? _reportCats['others']!;
-    final label = r.category == 'others' && r.categoryOther != null
-        ? r.categoryOther!
-        : cat.label;
+    // Resolved on the model so the mobile and web cards can never disagree.
+    final label = r.displayLabel(
+      cat.label,
+      (k) => (_reportCats[k] ?? _reportCats['others']!).label,
+    );
     final status = _statusCfg(r.status);
 
     return GestureDetector(
@@ -1549,9 +1695,11 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
 
   Widget _buildSuggestionCard(double w, _Suggestion s) {
     final cat = _suggestionCats[s.category] ?? _suggestionCats['others']!;
-    final label = s.category == 'others' && s.categoryOther != null
-        ? s.categoryOther!
-        : cat.label;
+    // Resolved on the model so the mobile and web cards can never disagree.
+    final label = s.displayLabel(
+      cat.label,
+      (k) => (_suggestionCats[k] ?? _suggestionCats['others']!).label,
+    );
     final key = highlightKey(s.id);
     final highlighted = isHighlighted(s.id);
 
@@ -2432,9 +2580,11 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
 
   Widget _buildWebReportCard(_Report r, bool stack) {
     final cat = _reportCats[r.category] ?? _reportCats['others']!;
-    final label = r.category == 'others' && r.categoryOther != null
-        ? r.categoryOther!
-        : cat.label;
+    // Resolved on the model so the mobile and web cards can never disagree.
+    final label = r.displayLabel(
+      cat.label,
+      (k) => (_reportCats[k] ?? _reportCats['others']!).label,
+    );
     final status = _statusCfg(r.status);
 
     return _buildWebCard(
@@ -2468,9 +2618,11 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
 
   Widget _buildWebSuggestionCard(_Suggestion s, bool stack) {
     final cat = _suggestionCats[s.category] ?? _suggestionCats['others']!;
-    final label = s.category == 'others' && s.categoryOther != null
-        ? s.categoryOther!
-        : cat.label;
+    // Resolved on the model so the mobile and web cards can never disagree.
+    final label = s.displayLabel(
+      cat.label,
+      (k) => (_suggestionCats[k] ?? _suggestionCats['others']!).label,
+    );
 
     return _buildWebCard(
       cardKey: highlightKey(s.id),
