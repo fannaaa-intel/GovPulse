@@ -667,7 +667,12 @@ class _LoginScreenState extends State<LoginScreen>
                   borderRadius: BorderRadius.circular(16),
                 ),
               ),
-              onPressed: widget.onGuestClick ?? () {},
+              // Null rather than `?? () {}`: an empty callback renders a
+              // button that looks live and does nothing, which is exactly how
+              // a broken guest mint presented. Passing null through disables
+              // it, so a call site that forgets the param is visible instead
+              // of silently inert.
+              onPressed: widget.onGuestClick,
               icon: const Icon(
                 Icons.person_outline_rounded,
                 size: 20,

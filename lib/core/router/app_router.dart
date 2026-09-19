@@ -154,6 +154,32 @@ String? scanTokenFrom(String? name) {
 // thing to /home. Both consoles therefore go through their own routes on web
 // now, and keep the push on mobile.
 
+/// What to tell a visitor whose "Continue as guest" mint failed.
+///
+/// Plain language, not `e.code`: the visitor is not the one who can act on
+/// `admin-restricted-operation`, and a raw code in a toast reads as a crash.
+/// The codes that DO have a user-side remedy — no signal, too many tries —
+/// say so; everything else falls back to a line that is honest about the app
+/// being at fault without pretending the visitor can fix it.
+String _guestSignInMessage(Object error) {
+  if (error is FirebaseAuthException) {
+    switch (error.code) {
+      case 'network-request-failed':
+        return 'No connection. Check your internet and try again.';
+      case 'too-many-requests':
+        return 'Too many attempts. Please wait a moment and try again.';
+      case 'operation-not-allowed':
+      case 'admin-restricted-operation':
+        // Guest access switched off server-side. Nothing the visitor can do,
+        // so point them at the path that still works rather than at a retry
+        // that cannot succeed.
+        return 'Guest browsing is unavailable right now. Please sign in or '
+            'create an account.';
+    }
+  }
+  return 'Could not continue as guest. Please try again.';
+}
+
 Widget buildLoginScreen(BuildContext ctx) => LoginScreen(
   onLoginClick: (username, password) async {
     // Captured BEFORE the first await, while [ctx] is certainly mounted. The
@@ -260,8 +286,29 @@ Widget buildLoginScreen(BuildContext ctx) => LoginScreen(
     }
   },
   onSignUpClick: () => goToSignup(ctx),
+  // ── Why the mint is guarded ────────────────────────────────────────────────
+  // `signInAnonymously` is a live network call, and an uncaught throw here
+  // propagated out of the async callback: `goToGuest` never ran, nothing was
+  // shown, and the button read as DEAD. That was live on mobile — anonymous
+  // sign-in disabled in the Firebase console throws `admin-restricted-
+  // operation`, and a visitor with no signal throws `network-request-failed`;
+  // both looked identical to a broken button.
+  //
+  // The catch names the failure instead of swallowing it. A refusal the
+  // visitor cannot see is indistinguishable from a bug, so every arm of this
+  // either navigates or says why it did not.
   onGuestClick: () async {
-    await FirebaseAuth.instance.signInAnonymously();
+    try {
+      await FirebaseAuth.instance.signInAnonymously();
+    } catch (e) {
+      if (!ctx.mounted) return;
+      showAppSnackBar(
+        ctx,
+        _guestSignInMessage(e),
+        type: AppSnackType.error,
+      );
+      return;
+    }
     if (!ctx.mounted) return;
     goToGuest(ctx);
   },
@@ -295,8 +342,19 @@ Widget buildSignupScreen(BuildContext ctx) => SignupScreen(
   // DEAD as wired today: signup_screen.dart never reads `onGuestClick`, it
   // calls its own _goToGuest(). Converted anyway so the two guest callbacks
   // cannot drift — if this one is ever wired up it will already be correct.
+  // Guarded the same way for the same reason; see the login builder above.
   onGuestClick: () async {
-    await FirebaseAuth.instance.signInAnonymously();
+    try {
+      await FirebaseAuth.instance.signInAnonymously();
+    } catch (e) {
+      if (!ctx.mounted) return;
+      showAppSnackBar(
+        ctx,
+        _guestSignInMessage(e),
+        type: AppSnackType.error,
+      );
+      return;
+    }
     if (!ctx.mounted) return;
     goToGuest(ctx);
   },
