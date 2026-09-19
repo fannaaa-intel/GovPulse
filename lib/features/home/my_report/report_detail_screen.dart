@@ -630,10 +630,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
             onTap: _copyReportId,
             child: Container(
               margin: const EdgeInsets.all(8),
-              padding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 6,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
                 color: Colors.white.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(10),
@@ -2314,12 +2311,17 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
 
     return Container(
       padding: EdgeInsets.fromLTRB(
-        w * .04,
-        w * .025,
-        w * .04,
+        // ── The gutter has to be the CONTENT's, not `w * .04` ──────────────
+        // `w` is [uiScaleWidth], which clamps at 480 on web, so `w * .04` was
+        // a flat 19px at every viewport while the report card above uses
+        // [_gutter] — 32px. The bar's copy therefore started 13px left of the
+        // card's edge and nothing lined up, at any window size.
+        _gutter(w),
+        kIsWeb ? 16 : w * .025,
+        _gutter(w),
         // If system nav is visible (bottomPadding > 0), use it;
         // otherwise fall back to a comfortable fixed padding
-        bottomPadding > 0 ? bottomPadding + w * .01 : w * .04,
+        kIsWeb ? 16 : (bottomPadding > 0 ? bottomPadding + w * .01 : w * .04),
       ),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -2334,90 +2336,102 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
       ),
       child: Center(
         heightFactor: 1,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: _kBand),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Need help with this report?',
-                      style: TextStyle(
-                        fontSize: w * .030,
-                        fontWeight: FontWeight.w600,
-                        color: const Color(0xFF1F2937),
-                      ),
-                    ),
-                    Text(
-                      'Chat with an agent for follow-up.',
-                      style: TextStyle(
-                        fontSize: w * .026,
-                        color: const Color(0xFF9CA3AF),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              SizedBox(width: w * .03),
-              // ── The button yields before the row breaks ──────────────────
-              // `ElevatedButton.icon` sizes to its label, and the label had no
-              // ceiling — so at Android's larger font settings "Chat with
-              // agent" grew past the space left by the copy column and the row
-              // overflowed: 38px at 1.3x, 100px at 1.6x, 182px at 2.0x, in the
-              // one bar whose whole job is to be tappable.
-              //
-              // Flexible rather than Expanded: at normal text the button keeps
-              // its natural width and the layout is unchanged, and only a
-              // squeeze makes it give ground.
-              Flexible(
-                child: ElevatedButton.icon(
-                  onPressed: _openingChat ? null : _goToChat,
-                  icon: _openingChat
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Icon(
-                          Icons.chat_bubble_outline_rounded,
-                          color: Colors.white,
-                          size: 16,
+        child: Padding(
+          padding: EdgeInsets.zero,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: _kBand),
+            child: Row(
+              // ── Push the two apart ──────────────────────────────────────
+              // The copy column and the button are the two ends of this bar,
+              // and everything between them is deliberate space. Without this
+              // the Expanded copy column ate the whole row and the button was
+              // left wherever the text stopped.
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Flexible(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Need help with this report?',
+                        style: TextStyle(
+                          fontSize: w * .030,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF1F2937),
                         ),
-                  label: Text(
-                    _openingChat ? 'Opening…' : 'Chat with agent',
-                    // One line, ellipsised. A wrapped label would grow the
-                    // bar's height instead of its width and push the content
-                    // above it off-screen.
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                    ),
+                      ),
+                      Text(
+                        'Chat with an agent for follow-up.',
+                        style: TextStyle(
+                          fontSize: w * .026,
+                          color: const Color(0xFF9CA3AF),
+                        ),
+                      ),
+                    ],
                   ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primaryBlue,
-                    disabledBackgroundColor: AppColors.primaryBlue.withValues(
-                      alpha: 0.6,
+                ),
+                // Minimum gap. spaceBetween supplies the rest when the row has
+                // room; this is what keeps the copy and the button apart once
+                // it does not.
+                SizedBox(width: kIsWeb ? 24 : w * .03),
+                // ── The button yields before the row breaks ──────────────────
+                // `ElevatedButton.icon` sizes to its label, and the label had no
+                // ceiling — so at Android's larger font settings "Chat with
+                // agent" grew past the space left by the copy column and the row
+                // overflowed: 38px at 1.3x, 100px at 1.6x, 182px at 2.0x, in the
+                // one bar whose whole job is to be tappable.
+                //
+                // Flexible rather than Expanded: at normal text the button keeps
+                // its natural width and the layout is unchanged, and only a
+                // squeeze makes it give ground.
+                Flexible(
+                  child: ElevatedButton.icon(
+                    onPressed: _openingChat ? null : _goToChat,
+                    icon: _openingChat
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(
+                            Icons.chat_bubble_outline_rounded,
+                            color: Colors.white,
+                            size: 16,
+                          ),
+                    label: Text(
+                      _openingChat ? 'Opening…' : 'Chat with agent',
+                      // One line, ellipsised. A wrapped label would grow the
+                      // bar's height instead of its width and push the content
+                      // above it off-screen.
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    padding: EdgeInsets.symmetric(
-                      horizontal: w * .04,
-                      vertical: w * .030,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primaryBlue,
+                      disabledBackgroundColor: AppColors.primaryBlue.withValues(
+                        alpha: 0.6,
+                      ),
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: w * .04,
+                        vertical: w * .030,
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
