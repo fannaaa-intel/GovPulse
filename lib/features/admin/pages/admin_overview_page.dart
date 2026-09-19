@@ -23,7 +23,8 @@ import '../../../core/widgets/app_dialog.dart';
 /// for reduced motion (`prefers-reduced-motion` on web, "Remove animations" on
 /// iOS/Android). Everything here animates a colour or an opacity, so removing
 /// the tween just makes the change instant — nothing is lost but the movement.
-Duration _motion(BuildContext context) => MediaQuery.disableAnimationsOf(context)
+Duration _motion(BuildContext context) =>
+    MediaQuery.disableAnimationsOf(context)
     ? Duration.zero
     : const Duration(milliseconds: 150);
 
@@ -696,7 +697,8 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
         child: _EmptyPanel(
           icon: Icons.star_border_rounded,
           title: 'Citizen satisfaction',
-          message: "No citizen ratings yet — they'll appear here once submitted.",
+          message:
+              "No citizen ratings yet — they'll appear here once submitted.",
         ),
       );
     }
@@ -888,10 +890,7 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
     final open = widget.onNavigate == null ? null : _openInsightItem;
 
     if (loading || nlp == null) {
-      return [
-        const _AiHeaderCard(null),
-        _Card(child: const _NlpLoading()),
-      ];
+      return [const _AiHeaderCard(null), _Card(child: const _NlpLoading())];
     }
 
     return [
@@ -1101,10 +1100,8 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
   /// and stays inert rather than navigating somewhere arbitrary.
   VoidCallback? _activityTap(ActivityItem a) {
     if (widget.onNavigate == null || a.id.isEmpty) return null;
-    return () => widget.onNavigate!(
-      activityTabFor(a.source),
-      highlightId: a.id,
-    );
+    return () =>
+        widget.onNavigate!(activityTabFor(a.source), highlightId: a.id);
   }
 
   // ── small helpers ──────────────────────────────────────────────────────────
@@ -1809,8 +1806,8 @@ class _AiHeaderCard extends StatelessWidget {
     final label = fullyAi
         ? 'AI'
         : usesAi
-            ? 'Hybrid AI'
-            : 'On-device NLP';
+        ? 'Hybrid AI'
+        : 'On-device NLP';
     return _Card(
       padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
       child: Row(
@@ -2503,6 +2500,7 @@ void _showBreakdownSheet(
     accent: accent,
     urgencyMode: urgencyMode,
     items: items,
+    narrow: narrow,
     // Dismiss the sheet before jumping, or the destination opens underneath it.
     onOpenItem: onOpenItem == null
         ? null
@@ -2520,20 +2518,29 @@ void _showBreakdownSheet(
       // SafeArea(bottom) makes it sit above the phone's system navigation —
       // whether the device uses 3-button or gesture navigation.
       showDragHandle: true,
-      constraints: BoxConstraints(maxHeight: mq.size.height * 0.85),
+      // Tall enough to be worth opening: a short list still shrink-wraps, but a
+      // long one gets most of the screen rather than a cramped half.
+      constraints: BoxConstraints(maxHeight: mq.size.height * 0.9),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (_) => content,
     );
   } else {
+    // Size to the viewport instead of a fixed box: on a laptop the old
+    // 520x600 dialog floated small and cramped while the screen sat empty
+    // around it, and on a short window it had no room to breathe at all.
+    final maxW = (mq.size.width - 96).clamp(360.0, 680.0);
+    final maxH = (mq.size.height - 120).clamp(320.0, 720.0);
     showAppDialog(
       context: context,
       builder: (_) => Dialog(
         backgroundColor: AdminUi.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        clipBehavior: Clip.antiAlias,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 520, maxHeight: 600),
+          constraints: BoxConstraints(maxWidth: maxW, maxHeight: maxH),
           child: content,
         ),
       ),
@@ -2546,11 +2553,17 @@ class _BreakdownSheet extends StatelessWidget {
   final Color accent;
   final bool urgencyMode;
   final List<FeedbackInsightItem> items;
+
+  /// Phone layout (bottom sheet). Drives the side gutters and the hint line —
+  /// "select" is wrong wording on a touch device, and a hover affordance is
+  /// moot there.
+  final bool narrow;
   const _BreakdownSheet({
     required this.title,
     required this.accent,
     required this.urgencyMode,
     required this.items,
+    required this.narrow,
     this.onOpenItem,
   });
 
@@ -2558,13 +2571,18 @@ class _BreakdownSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final gutter = narrow ? 16.0 : 20.0;
+    final tappable = onOpenItem != null;
     return SafeArea(
       top: false,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // ── Header ───────────────────────────────────────────────────────
+          // The count moves into a pill beside the title: as loose grey text it
+          // read like part of the heading ("All reports 9") rather than a total.
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 8, 10),
+            padding: EdgeInsets.fromLTRB(gutter, narrow ? 4 : 18, 8, 12),
             child: Row(
               children: [
                 Container(
@@ -2576,44 +2594,130 @@ class _BreakdownSheet extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 10),
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: AdminUi.textPrimary,
+                Flexible(
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: narrow ? 16 : 17,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.2,
+                      color: AdminUi.textPrimary,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
-                Text(
-                  '${items.length}',
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: AdminUi.textMuted,
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    '${items.length}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: accent == AdminUi.textMuted
+                          ? AdminUi.textSecondary
+                          : accent,
+                    ),
                   ),
                 ),
                 const Spacer(),
-                IconButton(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close_rounded),
-                  color: AdminUi.textMuted,
+                // A 40px target. The old bare IconButton was the only way out
+                // of the desktop dialog and sat flush against the corner.
+                Tooltip(
+                  message: 'Close',
+                  child: SizedBox(
+                    width: 40,
+                    height: 40,
+                    child: IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close_rounded, size: 20),
+                      color: AdminUi.textMuted,
+                      padding: EdgeInsets.zero,
+                      splashRadius: 20,
+                      style: IconButton.styleFrom(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
               ],
             ),
           ),
+          // Say that the rows go somewhere. Without this the list reads as a
+          // static dump and the jump-to-console behaviour is never discovered.
+          if (tappable)
+            Padding(
+              padding: EdgeInsets.fromLTRB(gutter, 0, gutter, 12),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.touch_app_outlined,
+                    size: 13,
+                    color: AdminUi.textMuted,
+                  ),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      narrow
+                          ? 'Tap an item to open it'
+                          : 'Select an item to open it on its console',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        color: AdminUi.textMuted,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           const Divider(height: 1, color: AdminUi.border),
           Flexible(
-            child: ListView.separated(
-              shrinkWrap: true,
-              padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
-              itemCount: items.length,
-              separatorBuilder: (_, _) =>
-                  const Divider(height: 1, color: AdminUi.subtle),
-              itemBuilder: (_, i) => _BreakdownRow(
-                item: items[i],
-                urgencyMode: urgencyMode,
-                onOpen: onOpenItem == null ? null : () => onOpenItem!(items[i]),
+            // A fade at the bottom edge. Without it the list ends flush against
+            // the sheet, slicing whichever row lands on the boundary in half —
+            // which reads as a clipping bug rather than "there is more below".
+            child: ShaderMask(
+              shaderCallback: (rect) => const LinearGradient(
+                begin: Alignment.bottomCenter,
+                end: Alignment.topCenter,
+                colors: [Colors.transparent, Colors.white],
+                stops: [0.0, 0.055],
+              ).createShader(rect),
+              blendMode: BlendMode.dstIn,
+              child: Scrollbar(
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  padding: EdgeInsets.fromLTRB(
+                    gutter - 8,
+                    8,
+                    gutter - 8,
+                    narrow ? 16 : 12,
+                  ),
+                  itemCount: items.length,
+                  // Rows carry their own hover/press background, so a hard rule
+                  // between them fights that highlight; spacing separates them.
+                  separatorBuilder: (_, _) => const SizedBox(height: 2),
+                  itemBuilder: (_, i) => _BreakdownRow(
+                    item: items[i],
+                    urgencyMode: urgencyMode,
+                    expanded: true,
+                    narrow: narrow,
+                    onOpen: onOpenItem == null
+                        ? null
+                        : () => onOpenItem!(items[i]),
+                  ),
+                ),
               ),
             ),
           ),
@@ -2623,105 +2727,182 @@ class _BreakdownSheet extends StatelessWidget {
   }
 }
 
-class _BreakdownRow extends StatelessWidget {
+class _BreakdownRow extends StatefulWidget {
   final FeedbackInsightItem item;
   final bool urgencyMode;
 
+  /// True inside the "view all" sheet/dialog, where there is room to read.
+  /// The compact card preview keeps one tight line per field; expanded rows get
+  /// real padding, a two-line description and a visible urgency badge — opening
+  /// the full list should reveal more than the card already showed.
+  final bool expanded;
+
+  /// Phone sheet. Drops the chevron and narrows the trailing column: there is
+  /// no hover on touch, the whole row is already tappable, and at 360px those
+  /// ~30px are the difference between a readable description and a clipped one.
+  final bool narrow;
+
   /// Opens this item on its own console (Feedback / Reports), flashed. Null
-  /// when the shell didn't wire navigation → the row stays inert.
+  /// when the shell did not wire navigation → the row stays inert.
   final VoidCallback? onOpen;
   const _BreakdownRow({
     required this.item,
     required this.urgencyMode,
+    this.expanded = false,
+    this.narrow = false,
     this.onOpen,
   });
 
   @override
+  State<_BreakdownRow> createState() => _BreakdownRowState();
+}
+
+class _BreakdownRowState extends State<_BreakdownRow> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
+    final item = widget.item;
+    final urgencyMode = widget.urgencyMode;
+    final expanded = widget.expanded;
+    final narrow = widget.narrow;
+    final interactive = widget.onOpen != null;
     final color = urgencyMode
         ? _urgencyColor(item.urgency)
         : _sentimentColor(item.sentiment);
     // Urgency: two same-category, same-barangay reports used to render
-    // identically (only the barangay was shown). Compose location + the
-    // citizen's own description so each report reads distinctly.
+    // identically (only the barangay was shown). Show location and the
+    // citizen's own description so each report reads distinctly — and in the
+    // expanded list, split them onto their own lines instead of joining them
+    // with a "·" that then truncated the description away entirely.
+    final String loc = urgencyMode ? item.service.trim() : '';
+    final String desc = urgencyMode
+        ? (item.comment?.trim() ?? '')
+        : (item.comment?.trim() ?? '').isNotEmpty
+        ? item.comment!.trim()
+        : item.service.trim();
     final String? subtitle;
-    if (urgencyMode) {
-      final loc = item.service.trim();
-      final desc = item.comment?.trim() ?? '';
+    if (expanded) {
+      subtitle = desc.isEmpty ? null : desc;
+    } else if (urgencyMode) {
       final parts = [loc, desc].where((s) => s.isNotEmpty).toList();
       subtitle = parts.isEmpty ? null : parts.join(' · ');
     } else {
-      final desc = item.comment?.trim() ?? '';
-      final svc = item.service.trim();
-      subtitle = desc.isNotEmpty ? desc : (svc.isNotEmpty ? svc : null);
+      subtitle = desc.isEmpty ? null : desc;
     }
     final time = _relTimeShort(item.createdAt);
 
-    final row = Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 7,
-            height: 7,
-            margin: const EdgeInsets.only(top: 4, right: 8),
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-          ),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  item.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AdminUi.textPrimary,
-                  ),
+    final content = Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 7,
+          height: 7,
+          margin: EdgeInsets.only(top: expanded ? 6 : 4, right: 8),
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                item.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: expanded ? 13.5 : 12,
+                  fontWeight: FontWeight.w600,
+                  height: 1.25,
+                  color: AdminUi.textPrimary,
                 ),
-                if (subtitle != null)
-                  Text(
-                    subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 11,
+              ),
+              // Expanded: the barangay is a place, so give it its own line with
+              // a pin rather than burying it in front of the description.
+              if (expanded && loc.isNotEmpty) ...[
+                const SizedBox(height: 3),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.place_outlined,
+                      size: 12,
                       color: AdminUi.textMuted,
                     ),
-                  ),
-                // Cluster escalation: the urgency shown is above the report's
-                // own label, so say why or the bump reads as a mislabel.
-                if (item.escalationNote != null)
-                  Text(
-                    '↑ Escalated — ${item.escalationNote}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 10.5,
-                      fontStyle: FontStyle.italic,
-                      color: AppColors.orange,
+                    const SizedBox(width: 3),
+                    Flexible(
+                      child: Text(
+                        loc,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w500,
+                          color: AdminUi.textSecondary,
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
+                ),
               ],
-            ),
+              if (subtitle != null) ...[
+                SizedBox(height: expanded ? 3 : 0),
+                Text(
+                  subtitle,
+                  // The whole point of "view all" is to read the reports; one
+                  // clipped line repeated what the card already showed.
+                  maxLines: expanded ? 2 : 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: expanded ? 12.5 : 11,
+                    height: expanded ? 1.35 : 1.2,
+                    color: expanded ? AdminUi.textSecondary : AdminUi.textMuted,
+                  ),
+                ),
+              ],
+              // Cluster escalation: the urgency shown is above the report's
+              // own label, so say why or the bump reads as a mislabel.
+              if (item.escalationNote != null) ...[
+                SizedBox(height: expanded ? 5 : 0),
+                _EscalationNote(note: item.escalationNote!, expanded: expanded),
+              ],
+            ],
           ),
-          const SizedBox(width: 8),
-          // Trailing: urgency word (reports) or star rating (feedback), with a
-          // compact "time ago" beneath so rows are never ambiguous.
-          Column(
+        ),
+        SizedBox(width: expanded ? 12 : 8),
+        // Trailing: urgency badge (reports) or star rating (feedback), with a
+        // compact "time ago" beneath so rows are never ambiguous.
+        //
+        // Expanded rows pin this column to a fixed width. Left to size itself
+        // it only claimed what the badge needed, so the description above ran
+        // right up under the badge and the badges themselves sat on a ragged
+        // edge — "High" and "Medium" starting at different x.
+        SizedBox(
+          width: expanded ? (narrow ? 58 : 68) : null,
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             mainAxisSize: MainAxisSize.min,
             children: [
               if (urgencyMode)
-                Text(
-                  item.urgency,
-                  style: TextStyle(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w700,
-                    color: color,
+                // A filled badge, not bare coloured text: at 10.5px the old label
+                // read as decoration next to the dot instead of a priority.
+                Container(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: expanded ? 8 : 0,
+                    vertical: expanded ? 3 : 0,
+                  ),
+                  decoration: expanded
+                      ? BoxDecoration(
+                          color: color.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(999),
+                        )
+                      : null,
+                  child: Text(
+                    expanded ? _cap(item.urgency) : item.urgency,
+                    style: TextStyle(
+                      fontSize: expanded ? 11 : 10.5,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: expanded ? 0.1 : 0,
+                      color: color,
+                    ),
                   ),
                 )
               else if (item.rating > 0)
@@ -2736,7 +2917,7 @@ class _BreakdownRow extends StatelessWidget {
                   ),
                 ),
               if (time.isNotEmpty) ...[
-                const SizedBox(height: 2),
+                SizedBox(height: expanded ? 5 : 2),
                 Text(
                   time,
                   style: const TextStyle(fontSize: 10, color: AppColors.grey),
@@ -2744,20 +2925,133 @@ class _BreakdownRow extends StatelessWidget {
               ],
             ],
           ),
+        ),
+        // A chevron is the one cue that says "this opens something". Reserved
+        // only in the expanded list, where there is width to spare.
+        if (expanded && interactive && !narrow) ...[
+          const SizedBox(width: 4),
+          AnimatedOpacity(
+            duration: _motion(context),
+            opacity: _hovered ? 1 : 0.35,
+            child: const Icon(
+              Icons.chevron_right_rounded,
+              size: 18,
+              color: AdminUi.textMuted,
+            ),
+          ),
         ],
-      ),
+      ],
     );
 
-    if (onOpen == null) return row;
-    // An insight is a claim about specific submissions; make it traceable back
-    // to them. Hover feedback matters here — this is a desktop console, and the
-    // row is otherwise indistinguishable from static text.
+    if (!expanded) {
+      final row = Padding(
+        padding: const EdgeInsets.symmetric(vertical: 5),
+        child: content,
+      );
+      if (!interactive) return row;
+      // An insight is a claim about specific submissions; make it traceable
+      // back to them. Hover feedback matters here — this is a desktop console,
+      // and the row is otherwise indistinguishable from static text.
+      return MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          onTap: widget.onOpen,
+          behavior: HitTestBehavior.opaque,
+          child: row,
+        ),
+      );
+    }
+
+    // Expanded rows are list items in their own right: a comfortable hit target
+    // (≥56px, so it clears the 48px touch minimum on the phone sheet) with a
+    // real hover/press surface.
+    final padded = Padding(
+      padding: const EdgeInsets.fromLTRB(10, 11, 10, 11),
+      child: content,
+    );
+    if (!interactive) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2),
+        child: padded,
+      );
+    }
     return MouseRegion(
       cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        onTap: onOpen,
-        behavior: HitTestBehavior.opaque,
-        child: row,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: widget.onOpen,
+          borderRadius: BorderRadius.circular(10),
+          hoverColor: AdminUi.subtle,
+          child: Ink(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: _hovered ? AdminUi.border : Colors.transparent,
+              ),
+            ),
+            child: padded,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// "Escalated" caption under a breakdown row. In the expanded list it becomes a
+/// tinted chip that wraps to two lines — as one clipped italic line the reason
+/// (the whole point of the note) was usually the part cut off.
+class _EscalationNote extends StatelessWidget {
+  final String note;
+  final bool expanded;
+  const _EscalationNote({required this.note, required this.expanded});
+
+  @override
+  Widget build(BuildContext context) {
+    if (!expanded) {
+      return Text(
+        '↑ Escalated — $note',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          fontSize: 10.5,
+          fontStyle: FontStyle.italic,
+          color: AppColors.orange,
+        ),
+      );
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.orange.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Icons.arrow_upward_rounded,
+            size: 11,
+            color: AppColors.orange,
+          ),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              'Escalated — $note',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 11,
+                height: 1.3,
+                fontWeight: FontWeight.w500,
+                color: AppColors.orange,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
