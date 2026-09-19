@@ -308,8 +308,9 @@ class _TabbedPageState extends State<_TabbedPage> {
   @override
   void didUpdateWidget(_TabbedPage old) {
     super.didUpdateWidget(old);
-    if (old.initialTab != widget.initialTab)
+    if (old.initialTab != widget.initialTab) {
       select(widget.initialTab.clamp(0, 2));
+    }
   }
 
   @override
