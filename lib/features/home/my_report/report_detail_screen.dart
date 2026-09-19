@@ -1111,6 +1111,35 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
     }
 
     if (_mediaItems.length == 1) {
+      // ── Why web does not use `w * .50` ────────────────────────────────────
+      // [uiScaleWidth] clamps to kUiScaleMaxWidth (480) and, on web, measures
+      // the VIEWPORT — not this column. On a desktop viewport that pinned the
+      // box to 240px tall while `width: double.infinity` stretched it to the
+      // ~810px content column: a 3.4:1 letterbox holding a 3:2 photo, with
+      // BoxFit.cover shaving the sides off. The height was derived from a
+      // width that had nothing to do with the box being filled.
+      //
+      // A 4:3 frame with the image CONTAINED inside keeps the whole photo
+      // visible at any column width, and scales with the column instead of
+      // against a clamped constant. Mobile keeps its proportional band —
+      // there `w` IS the screen width, so `w * .50` was always correct.
+      if (kIsWeb) {
+        return GestureDetector(
+          onTap: () => _openMediaViewer(0),
+          child: AspectRatio(
+            aspectRatio: 4 / 3,
+            child: _mediaThumb(
+              w,
+              _mediaItems[0].url,
+              _mediaItems[0].path,
+              0,
+              height: double.infinity,
+              fit: BoxFit.contain,
+              background: const Color(0xFFF3F4F6),
+            ),
+          ),
+        );
+      }
       return GestureDetector(
         onTap: () => _openMediaViewer(0),
         child: _mediaThumb(
@@ -1195,6 +1224,12 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
     String cacheKey,
     int index, {
     required double height,
+    // Defaults preserve every existing call site: grid tiles and the mobile
+    // single-image band still crop to fill. Only the web single-image frame
+    // passes [BoxFit.contain], where the whole photo must stay visible and
+    // [background] fills the letterbox the contain leaves behind.
+    BoxFit fit = BoxFit.cover,
+    Color? background,
   }) {
     final isVideo = _isVideoUrl(url);
 
@@ -1255,13 +1290,19 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
     }
 
     // Image
-    return CachedNetworkImage(
+    //
+    // A contained image is letterboxed by definition, so it needs a surface
+    // behind it — without one the gap shows the card, and a portrait photo
+    // reads as two stray bands rather than one framed picture.
+    final image = CachedNetworkImage(
       imageUrl: url,
       cacheKey: cacheKey,
-      memCacheWidth: 400,
-      height: height == double.infinity ? w * .45 : height,
+      // Contained web frames render far wider than a 400px grid tile, so the
+      // decode budget has to follow: 400 here was visibly soft full-width.
+      memCacheWidth: fit == BoxFit.contain ? 1200 : 400,
+      height: height == double.infinity ? null : height,
       width: double.infinity,
-      fit: BoxFit.cover,
+      fit: fit,
       placeholder: (context, url) => _shimmerBox(
         w,
         double.infinity,
@@ -1277,6 +1318,14 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
           ),
         ),
       ),
+    );
+
+    if (background == null) return image;
+    return Container(
+      color: background,
+      width: double.infinity,
+      height: height == double.infinity ? null : height,
+      child: image,
     );
   }
 
