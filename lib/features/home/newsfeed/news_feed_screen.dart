@@ -488,71 +488,144 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
     );
   }
 
+  // ══════════════════════════════════════════════════════════════════════════
+  //  The guest sign-up nudge — the ONLY pop-up a guest ever sees.
+  //
+  //  ── Two presentations on web, one on the phone ─────────────────────────
+  //  This was a bare `showModalBottomSheet` on every platform, which on a
+  //  desktop browser drew a squat white slab pinned to the bottom of the
+  //  window — hundreds of pixels from the heart the visitor just clicked,
+  //  spanning the full width to hold 400px of content, and behind a flat black
+  //  scrim rather than the frosted backdrop every other pop-up in the app uses.
+  //
+  //  The fix is not a new convention: [_openFilterSheet] directly below makes
+  //  exactly this choice already, against the same [kCommentsDialogBreakpoint],
+  //  and the control it belongs to sits inches away in the same header. Two
+  //  popovers in one feed disagreeing about where a panel comes from would be
+  //  worse than either answer alone, so this now mirrors it — dialog above the
+  //  breakpoint via [showAppDialog] (which brings the blur with it), sheet
+  //  below and on the phone.
+  //
+  //  ── The body is shared, the dismissal is not ───────────────────────────
+  //  [_guestNudgeBody] takes the `onCreate` callback rather than closing over
+  //  one, because the two arms must pop DIFFERENT navigators: the sheet is
+  //  opened with `useRootNavigator: true` and the dialog through
+  //  [showAppDialog]. Popping the State's context — which is what this did
+  //  before — reaches neither reliably. Each arm now passes the builder's own
+  //  context, which is the one that can actually dismiss it.
+  // ══════════════════════════════════════════════════════════════════════════
+
   void _showGuestSignupNudge() {
+    final bool wide =
+        kIsWeb && MediaQuery.of(context).size.width >= kCommentsDialogBreakpoint;
+
+    if (wide) {
+      showAppDialog(
+        context: context,
+        builder: (ctx) => Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 24,
+            vertical: 28,
+          ),
+          child: ConstrainedBox(
+            // Matches the filter dialog beside it, so the two panels the guest
+            // feed can raise are the same object at the same size.
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Material(
+              color: Colors.white,
+              clipBehavior: Clip.antiAlias,
+              borderRadius: BorderRadius.circular(CitizenUi.cardRadius + 2),
+              child: _guestNudgeBody(
+                // Dismiss the DIALOG, then navigate. `ctx` is the dialog's, so
+                // the pop lands on the route showAppDialog pushed.
+                onCreate: () {
+                  Navigator.of(ctx).pop();
+                  goToSignup(context);
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+      return;
+    }
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.white,
-      isScrollControlled: true, // ← add this
-      useRootNavigator: true, // ← add this
+      isScrollControlled: true,
+      useRootNavigator: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => SafeArea(
-        // ← wrap with SafeArea
-        top: false, // ← only pad bottom
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(
-                Icons.lock_outline_rounded,
-                size: 40,
-                color: AppColors.primaryBlue,
+      builder: (ctx) => SafeArea(
+        // Only the bottom: the sheet rises from that edge and the top is the
+        // rounded lip, which must not be pushed down by a status bar inset.
+        top: false,
+        child: _guestNudgeBody(
+          // `rootNavigator: true` to match how the sheet was pushed. Without
+          // it this pops the nearest Navigator, which is not the one holding
+          // the sheet.
+          onCreate: () {
+            Navigator.of(ctx, rootNavigator: true).pop();
+            goToSignup(context);
+          },
+        ),
+      ),
+    );
+  }
+
+  /// The nudge's content, identical in the sheet and the dialog.
+  ///
+  /// [onCreate] is injected rather than closed over because each arm has to
+  /// dismiss a different navigator before it navigates — see the block comment
+  /// on [_showGuestSignupNudge].
+  Widget _guestNudgeBody({required VoidCallback onCreate}) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.lock_outline_rounded,
+            size: 40,
+            color: AppColors.primaryBlue,
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'Create an account',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Sign up to like, comment, and report issues.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Color(0xFF6B7280)),
+          ),
+          const SizedBox(height: 18),
+          SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primaryBlue,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                elevation: 0,
               ),
-              const SizedBox(height: 12),
-              const Text(
-                'Create an account',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Sign up to like, comment, and report issues.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Color(0xFF6B7280)),
-              ),
-              const SizedBox(height: 18),
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primaryBlue,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    elevation: 0,
-                  ),
-                  onPressed: () {
-                    // The pop stays FIRST and stays unguarded: it closes this
-                    // nudge sheet, and it must happen before the navigation on
-                    // both platforms. `context` is the State's, not the sheet
-                    // builder's, so it is still valid afterwards.
-                    Navigator.pop(context);
-                    goToSignup(context);
-                  },
-                  child: const Text(
-                    'Create Account',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+              onPressed: onCreate,
+              child: const Text(
+                'Create Account',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
-            ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -934,7 +1007,27 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
     // Embedded, the shell hands this body a column narrower than the viewport,
     // so the viewport-based `wide` test would be wrong in both directions. In
     // the shell the web layout is always the right one.
-    final bool wide = widget.embedded || (kIsWeb && rawWidth >= 900);
+    //
+    // ── Why the threshold is 680 and not 900 ─────────────────────────────────
+    // The gate used to read `rawWidth >= 900`, which left a DEAD BAND from 481
+    // to 899: a guest on a tablet, a split window or a small laptop fell into
+    // the mobile arm, whose column is hard-capped at 480 — a phone-width strip
+    // with the phone logo bar on top, marooned in grey, with ~110px of empty
+    // page either side at 700px. A signed-in citizen at that same width got the
+    // proper web body, because the shell passes `embedded: true` and never
+    // consults the viewport at all. Only the guest, who reaches this route
+    // standalone, ever saw it.
+    //
+    // [kPostCardFullBleedBelow] (= [kFeedColumnMax], 680) is the right number
+    // rather than a new one: it is already the width at which this feed stops
+    // being a phone column and starts being a measure, which is exactly the
+    // question this gate asks. Below it the mobile arm is genuinely correct —
+    // its 480 cap and full-bleed slabs are what a phone browser wants. Above
+    // it the web body handles itself: [FeedRailLayout] drops the rail until
+    // there is room for it ([kFeedRailBelow], 1012), so 680..1011 gets a
+    // centred 680px measure with no rail, and nothing overflows on the way.
+    final bool wide =
+        widget.embedded || (kIsWeb && rawWidth >= kPostCardFullBleedBelow);
     final double width = feedMetrics(context);
     // Facebook's mobile treatment: the post slab spans the viewport instead of
     // floating as a card with a side margin. Only worth doing when the feed
@@ -1060,7 +1153,7 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
             gutter(_buildErrorState(w, provider))
           else if (visiblePosts.isEmpty)
             gutter(_animated(1, _buildWebEmptyState()))
-          else
+          else ...[
             for (int i = 0; i < visiblePosts.length; i++) ...[
               KeyedSubtree(
                 key: highlightKey(visiblePosts[i]['id'] as String),
@@ -1077,6 +1170,25 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
               if (i < visiblePosts.length - 1)
                 SizedBox(height: fullBleed ? 8 : 16),
             ],
+            // A guest who only ever SCROLLS was never invited to sign up: the
+            // nudge is reactive, so it fires only for someone who tried to like
+            // or comment. Someone who read the whole feed is showing the
+            // interest worth capturing, and the page simply ended on them.
+            //
+            // In the feed column rather than only in the rail because the rail
+            // does not exist below a 1012px content box — see [_buildGuestRail].
+            // This is the copy that reaches every width.
+            //
+            // Guarded on posts being present: [_buildWebEmptyState] already
+            // owns the empty case, and stacking an ask under "no posts yet"
+            // would be two pitches for one scroll.
+            if (widget.isGuest) ...[
+              SizedBox(height: fullBleed ? 8 : 16),
+              gutter(
+                _animated(visiblePosts.length + 1, _buildGuestSignupCard()),
+              ),
+            ],
+          ],
         ],
       );
     }
@@ -1137,7 +1249,28 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
     );
   }
 
+  /// The info rail beside the feed.
+  ///
+  /// ── A guest's rail told them things that were not true ───────────────────
+  /// Every card here was written for a signed-in citizen and rendered verbatim
+  /// to guests, who have no account for any of it to be about:
+  ///
+  ///   • "…and your barangay" / "updates for your barangay" — a guest has no
+  ///     barangay, and [_filteredPosts] SKIPS barangay filtering entirely for
+  ///     them (`if (!widget.isGuest)`), so they are seeing every post in
+  ///     Aparri. The copy described the opposite of the code.
+  ///   • the title fell back to "Your Area", which reads as a barangay the
+  ///     visitor has and cannot see rather than one they do not have.
+  ///   • "Stay Informed" explained posting etiquette to someone who cannot
+  ///     post, comment or like.
+  ///
+  /// So the guest gets its own three cards: the same first card minus the
+  /// barangay claim, a second that states what they are actually seeing, and a
+  /// third that makes the offer the etiquette card was wasting. The citizen
+  /// rail below is unchanged.
   Widget _buildNewsFeedRail() {
+    if (widget.isGuest) return _buildGuestRail();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1170,6 +1303,132 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
               'respectful and relevant to the Aparri community.',
         ),
       ],
+    );
+  }
+
+  /// The guest's three rail cards — see [_buildNewsFeedRail] for why they
+  /// differ from the citizen's.
+  ///
+  /// Desktop only, by nature: [FeedRailLayout] drops the rail below
+  /// [kFeedRailBelow] (1012px of content box), so on every narrower window this
+  /// never builds. That is exactly why the sign-up ask is ALSO an end-of-feed
+  /// card ([_buildGuestSignupCard]) — the rail cannot be the only place it
+  /// lives, or most of the widths this change fixes would never show it.
+  Widget _buildGuestRail() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _railCard(
+          icon: Icons.campaign_rounded,
+          color: AppColors.primaryBlue,
+          title: 'Community Updates',
+          body:
+              'Official posts and announcements from LGU Aparri and its '
+              'barangays. Use the filter to narrow updates by time.',
+        ),
+        const SizedBox(height: 16),
+        _railCard(
+          icon: Icons.public_rounded,
+          color: const Color(0xFF059669),
+          title: 'All of Aparri',
+          body:
+              "You're browsing every public update across the municipality. "
+              'Sign up to follow your own barangay first.',
+        ),
+        const SizedBox(height: 16),
+        _buildGuestSignupCard(),
+      ],
+    );
+  }
+
+  /// The one place a guest is asked to make an account without having tripped a
+  /// gate first.
+  ///
+  /// Used twice — as the guest rail's third card, and at the end of the feed
+  /// column — because those two reach different widths and neither covers the
+  /// whole range on its own. It is a static card at the end of a scroll, not an
+  /// interstitial, so there is no dismissal and no state to persist.
+  Widget _buildGuestSignupCard() {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: CitizenUi.sharedBorder),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: .03),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: AppColors.primaryBlue.withValues(alpha: .12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.how_to_reg_rounded,
+                  size: 20,
+                  color: AppColors.primaryBlue,
+                ),
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'Join GovPulse',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF111827),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'Create an account to report issues, like and comment on posts, '
+            'and get updates for your barangay.',
+            style: TextStyle(
+              fontSize: 12.5,
+              height: 1.45,
+              color: Color(0xFF6B7280),
+            ),
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            height: 42,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primaryBlue,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                elevation: 0,
+              ),
+              onPressed: () => goToSignup(context),
+              child: const Text(
+                'Create Account',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1263,6 +1522,17 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
   /// phone browser, so the type steps down rather than the two colliding.
   static const double _kFeedHeaderTightBelow = 520;
 
+  /// Scaling base for the guest header's [AppBackChevron].
+  ///
+  /// [AppBackChevron] sizes itself `width * 0.09` square with a `width * 0.046`
+  /// glyph, which on a phone comes off [uiScaleWidth] — the clamped screen
+  /// width. The web header has no such basis: its own box is a feed column
+  /// whose width is the measure, so scaling the chip off it would grow the back
+  /// control on a wide monitor for no reason, and the viewport would be worse
+  /// still. 340 puts the chip at ~31px with a ~16px glyph, which matches the
+  /// 13.5px label beside it and the rest of this header's fixed type.
+  static const double kGuestBackChevronWidth = 340;
+
   Widget _buildWebFeedHeader() {
     return LayoutBuilder(
       builder: (context, c) {
@@ -1283,33 +1553,49 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
               // The guest feed is a top-level route with no rail and no shell
               // chrome, so this is its only way back out. It lived in the slab
               // that just went away.
+              //
+              // ── The app's one back chevron, not a fourth variant ────────
+              // This was an inline blue `arrow_back_ios_new_rounded` + blue
+              // "Back" label, while the mobile arm in [_buildTopBar] drew the
+              // same pair with a grey glyph — one control, two treatments, and
+              // NEITHER was the chip the app standardised on.
+              //
+              // [AppBackChevron] exists precisely because this screen's kind of
+              // drift had produced a bare AppBar arrow, a blue circle, a white
+              // IconButton and filled chips at two sizes. Its doc is explicit:
+              // "Change the look HERE, not at a call site. A call site that
+              // needs something different is the drift this widget was written
+              // to end." So both guest arms now use it, and the accent label
+              // goes with it — back is chrome, it recedes, and blue stays
+              // reserved for controls that do something.
+              //
+              // [kGuestBackChevronWidth] rather than `uiScaleWidth`: the chip
+              // is `w * 0.09` square, and on web `w` would be the clamped
+              // viewport, which has nothing to do with this header's box. A
+              // fixed base keeps the chip the same size at every window width,
+              // which is what the rest of the web header does too.
               if (widget.isGuest)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 10),
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () {
-                      if (mounted) leaveGuestFeed(context);
-                    },
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.arrow_back_ios_new_rounded,
-                          size: 15,
-                          color: CitizenUi.accent,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      AppBackChevron(
+                        width: kGuestBackChevronWidth,
+                        onTap: () {
+                          if (mounted) leaveGuestFeed(context);
+                        },
+                      ),
+                      const SizedBox(width: 10),
+                      const Text(
+                        'Back',
+                        style: TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w600,
+                          color: kScreenTitleColor,
                         ),
-                        SizedBox(width: 7),
-                        Text(
-                          'Back',
-                          style: TextStyle(
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w600,
-                            color: CitizenUi.accent,
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               Row(
@@ -1371,37 +1657,43 @@ class _NewsFeedScreenState extends ConsumerState<NewsFeedBody>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // The same [AppBackChevron] the web arm above now draws, so the guest
+          // feed shows ONE back control whichever arm builds it. This was
+          // already the chevron's glyph and colour at its exact `width * 0.046`
+          // size — it was only ever missing the chip's outline box, which is
+          // what made it a fourth variant rather than the shared control.
+          //
+          // The label loses its blue for the same reason it does on web: back
+          // is chrome. See the note in [_buildWebFeedHeader].
           if (widget.isGuest)
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () {
-                // Leaving the feed, not dismissing anything — so it needs the
-                // same web/mobile split as the PopScope above. On web the feed
-                // is a top-level route with nothing beneath it, and popping
-                // throws "popped the last page off the stack".
-                if (mounted) leaveGuestFeed(context);
-              },
-              child: Padding(
-                padding: EdgeInsets.only(bottom: width * 0.02),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                Icons.arrow_back_ios_new_rounded,
-                size: width * 0.046,
-                color: kBackChevronGlyph,
-              ),
-                    SizedBox(width: width * 0.015),
-                    Text(
-                      'Back',
-                      style: TextStyle(
-                        fontSize: width * 0.038,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.primaryBlue,
-                      ),
+            Padding(
+              padding: EdgeInsets.only(bottom: width * 0.02),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AppBackChevron(
+                    width: width,
+                    onTap: () {
+                      // Leaving the feed, not dismissing anything — so it needs
+                      // the same web/mobile split as the PopScope above. On web
+                      // the feed is a top-level route with nothing beneath it,
+                      // and popping throws "popped the last page off the stack".
+                      //
+                      // Passed explicitly rather than left to the chevron's
+                      // `Navigator.maybePop` default, which would be that bug.
+                      if (mounted) leaveGuestFeed(context);
+                    },
+                  ),
+                  SizedBox(width: width * 0.03),
+                  Text(
+                    'Back',
+                    style: TextStyle(
+                      fontSize: width * 0.038,
+                      fontWeight: FontWeight.w600,
+                      color: kScreenTitleColor,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           Image.asset(
