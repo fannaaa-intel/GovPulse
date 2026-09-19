@@ -7,6 +7,7 @@ import '../../features/home/settings/my-submission/my_submissions_screen.dart'
     show MySubmissionsArgs;
 import '../../features/home/shell/citizen_shell_router.dart';
 import '../network/network_wrapper.dart';
+import '../services/guest_session.dart';
 import 'app_router.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -286,10 +287,42 @@ Future<void> goToGuest(BuildContext context) {
 /// On mobile there is no such route: the feed is still the standalone
 /// [NewsFeedScreen] resolved through the legacy table, and it needs the
 /// arguments to know it is in guest mode. Unchanged from before.
-Future<void> goToGuestFeed(BuildContext context) {
+///
+/// ── Why web AWAITS the anonymous user ──────────────────────────────────────
+/// The guard classifies a guest by `FirebaseAuth.currentUser.isAnonymous`, so
+/// navigating before that user exists is read as SIGNED OUT and swept to
+/// /login — the visitor taps "Continue as Guest" and lands on the login screen.
+///
+/// That was live, and it was not a rare race. Only the LOGIN screen's guest
+/// button minted the user (it awaits `signInAnonymously` before navigating);
+/// the sign-up screen, the landing hero and the 404 page all just
+/// `go('/guest')`. For everyone arriving by those three, the only mint was the
+/// unawaited one in [GuestScreen.initState], so the whole round trip had to
+/// beat the visitor's next tap. Tapping through at an ordinary pace lost that
+/// race reproducibly; the second attempt then "worked", because by then the
+/// first mint had landed.
+///
+/// Fixing it HERE rather than at each entry point is deliberate. Four call
+/// sites had to remember to mint and three did not — adding a fifth that also
+/// has to remember is the same bug waiting to happen. This is the one door
+/// into the feed, so it is the one place that has to be right, and
+/// [ensureGuestAnonSession] is idempotent and de-duplicates an in-flight mint,
+/// so awaiting it here costs nothing when the user already exists.
+///
+/// Mobile is untouched: `ensureGuestAnonSession` returns immediately off web
+/// (`kIsWeb` is a compile-time false), and the mobile branch below never sees
+/// the guard at all — it carries `isGuest` as a route argument instead.
+Future<void> goToGuestFeed(BuildContext context) async {
   if (kIsWeb) {
+    // The common case — the visitor has been on the guest screen long enough
+    // for initState's mint to land — skips the await entirely.
+    if (!hasGuestAnonSession) {
+      await ensureGuestAnonSession();
+      // The await crossed an async gap, so the element may be gone.
+      if (!context.mounted) return;
+    }
     context.go(_kNewsFeedPath);
-    return Future<void>.value();
+    return;
   }
   return pushLegacy<void>(
     context,

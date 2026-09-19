@@ -60,6 +60,30 @@ class _GuestScreenState extends State<GuestScreen>
   late final Animation<Offset> _slideAnim;
   late final AnimationController _bgController;
 
+  /// True while [goToGuestFeed] is waiting on the anonymous user to be minted.
+  ///
+  /// That await is normally instant — [initState] starts the mint on mount, so
+  /// by the time anyone reads the card it has landed and [goToGuestFeed] skips
+  /// the wait entirely. It is only reachable by tapping within a moment of
+  /// arriving, which is exactly what a returning visitor does. Without this the
+  /// button looks dead for the length of a round trip and invites a second tap.
+  bool _enteringFeed = false;
+
+  Future<void> _continueAsGuest() async {
+    // A busy flag that only reaches the widget tree is not a re-entrancy
+    // guard — the second tap is dispatched from the same gesture arena before
+    // any rebuild. This returns on the FLAG, not on the disabled button.
+    if (_enteringFeed) return;
+    setState(() => _enteringFeed = true);
+    try {
+      await goToGuestFeed(context);
+    } finally {
+      // The screen is usually gone by now (the navigation replaced it), so
+      // guard the setState rather than assuming it is still mounted.
+      if (mounted) setState(() => _enteringFeed = false);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -146,7 +170,8 @@ class _GuestScreenState extends State<GuestScreen>
           const SizedBox(height: 28),
           WebPrimaryButton(
             label: "Continue as Guest",
-            onPressed: () => goToGuestFeed(context),
+            loading: _enteringFeed,
+            onPressed: _continueAsGuest,
           ),
           const SizedBox(height: 12),
           _webCreateAccountButton(context),
@@ -360,7 +385,12 @@ class _GuestScreenState extends State<GuestScreen>
                                 ),
                                 elevation: 0,
                               ),
-                              onPressed: () => goToGuestFeed(context),
+                              // Same entry point as the web arm. The busy flag
+                              // is inert on mobile — goToGuestFeed awaits no
+                              // mint there and pushes straight away — but both
+                              // arms going through one method is what stops
+                              // them drifting apart again.
+                              onPressed: _continueAsGuest,
                               child: const Text(
                                 "Continue as Guest",
                                 style: TextStyle(

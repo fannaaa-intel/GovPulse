@@ -1,3 +1,5 @@
+import 'dart:async' show unawaited;
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
@@ -32,15 +34,53 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 /// current user OUT when `signInAnonymously` is called while a non-anonymous
 /// user is signed in. Minting on mount would otherwise evict a real account
 /// just because someone opened `/#/guest`.
-Future<void> ensureGuestAnonSession() async {
-  if (!kIsWeb) return;
-  if (FirebaseAuth.instance.currentUser != null) return;
+/// The mint currently in flight, so concurrent callers share one round trip.
+///
+/// [GuestScreen.initState] starts a mint the moment the screen mounts, and
+/// [goToGuestFeed] awaits one just before the guard runs. Without this the
+/// second call would see `currentUser == null` — the first has not landed yet —
+/// and fire a SECOND `signInAnonymously`, which mints a second anonymous
+/// account and makes the round trip the button waits on longer than it needs to
+/// be. Sharing the future means the button waits on the mint already running.
+///
+/// Cleared when it completes so a later call (a visitor who signed out, say)
+/// starts a fresh one rather than reusing a stale result.
+Future<void>? _inFlight;
 
-  try {
-    await FirebaseAuth.instance.signInAnonymously();
-  } catch (_) {
-    // Non-fatal. The guest screen renders and browses fine without it; the
-    // only cost is that the coming guard reads this visitor as signed-out.
-    // Failing the mint must never block the page from appearing.
-  }
+/// Whether a guest anonymous user exists RIGHT NOW.
+///
+/// The guard's question, asked without starting anything. [goToGuestFeed] uses
+/// it to skip the await entirely in the common case — a visitor who sat on the
+/// guest screen for more than a moment already has one, and making them wait on
+/// a resolved future would add a frame for nothing.
+bool get hasGuestAnonSession =>
+    kIsWeb && FirebaseAuth.instance.currentUser != null;
+
+Future<void> ensureGuestAnonSession() {
+  if (!kIsWeb) return Future<void>.value();
+  if (FirebaseAuth.instance.currentUser != null) return Future<void>.value();
+
+  // Somebody else is already minting — wait on theirs rather than starting a
+  // second one. See [_inFlight].
+  final running = _inFlight;
+  if (running != null) return running;
+
+  final future = () async {
+    try {
+      await FirebaseAuth.instance.signInAnonymously();
+    } catch (_) {
+      // Non-fatal. The guest screen renders and browses fine without it; the
+      // only cost is that the guard reads this visitor as signed-out — which
+      // is why [goToGuestFeed] awaits this before navigating, so a failure
+      // shows up as "stayed put" rather than as a bounce to /login.
+    }
+  }();
+
+  _inFlight = future;
+  // Detached on purpose: this clears the slot without making callers wait on
+  // the cleanup, and `future` already swallows its own errors.
+  unawaited(future.whenComplete(() {
+    if (identical(_inFlight, future)) _inFlight = null;
+  }));
+  return future;
 }
