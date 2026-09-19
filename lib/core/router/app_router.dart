@@ -297,16 +297,36 @@ Widget buildLoginScreen(BuildContext ctx) => LoginScreen(
   // The catch names the failure instead of swallowing it. A refusal the
   // visitor cannot see is indistinguishable from a bug, so every arm of this
   // either navigates or says why it did not.
+  //
+  // ── Mobile does not wait for the mint at all ───────────────────────────────
+  // The catch was not enough on the phone. `signInAnonymously` is a live
+  // network round trip with NO timeout, so on a device that cannot reach
+  // Firebase it neither returns nor throws — it hangs. `goToGuest` was never
+  // reached, nothing threw, so the catch never fired: a tap that did nothing,
+  // indefinitely, with no error. That is the dead button.
+  //
+  // The sign-up screen's guest button navigates SYNCHRONOUSLY and has always
+  // worked. Same difference, seen from the other side.
+  //
+  // The mint exists only to satisfy the WEB auth guard, which classifies a
+  // guest by `FirebaseAuth.currentUser.isAnonymous`. Mobile has no such guard
+  // — [ensureGuestAnonSession]'s body is compiled out off web for exactly this
+  // reason — so the phone has nothing to wait on.
   onGuestClick: () async {
+    if (!kIsWeb) {
+      goToGuest(ctx);
+      return;
+    }
     try {
-      await FirebaseAuth.instance.signInAnonymously();
+      // Bounded: the same call hung forever on mobile. On web the guard needs
+      // the user, so a failure must be reported rather than skipped — but it
+      // must still end. A timeout surfaces as a caught error below.
+      await FirebaseAuth.instance.signInAnonymously().timeout(
+        const Duration(seconds: 10),
+      );
     } catch (e) {
       if (!ctx.mounted) return;
-      showAppSnackBar(
-        ctx,
-        _guestSignInMessage(e),
-        type: AppSnackType.error,
-      );
+      showAppSnackBar(ctx, _guestSignInMessage(e), type: AppSnackType.error);
       return;
     }
     if (!ctx.mounted) return;
@@ -342,17 +362,23 @@ Widget buildSignupScreen(BuildContext ctx) => SignupScreen(
   // DEAD as wired today: signup_screen.dart never reads `onGuestClick`, it
   // calls its own _goToGuest(). Converted anyway so the two guest callbacks
   // cannot drift — if this one is ever wired up it will already be correct.
-  // Guarded the same way for the same reason; see the login builder above.
+  // Guarded the same way for the same reason, and mobile skips the mint here
+  // too; see the login builder above.
   onGuestClick: () async {
+    if (!kIsWeb) {
+      goToGuest(ctx);
+      return;
+    }
     try {
-      await FirebaseAuth.instance.signInAnonymously();
+      // Bounded: the same call hung forever on mobile. On web the guard needs
+      // the user, so a failure must be reported rather than skipped — but it
+      // must still end. A timeout surfaces as a caught error below.
+      await FirebaseAuth.instance.signInAnonymously().timeout(
+        const Duration(seconds: 10),
+      );
     } catch (e) {
       if (!ctx.mounted) return;
-      showAppSnackBar(
-        ctx,
-        _guestSignInMessage(e),
-        type: AppSnackType.error,
-      );
+      showAppSnackBar(ctx, _guestSignInMessage(e), type: AppSnackType.error);
       return;
     }
     if (!ctx.mounted) return;
@@ -867,8 +893,7 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
             event: args['event'] as EventItem,
             username: args['username'] as String? ?? '',
             // Only the slide-in popup passes this. See the field's own note.
-            showMoreEventsLink:
-                args['showMoreEventsLink'] as bool? ?? false,
+            showMoreEventsLink: args['showMoreEventsLink'] as bool? ?? false,
           ),
         ),
         transitionsBuilder: (_, anim, _, child) => FadeTransition(
