@@ -558,8 +558,18 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
     // ─────────────────────────────────────────────────────────────────────────
 
     case '/my_reports':
-      final username = settings.arguments as String? ?? '';
-      return _instant(MyReportsScreen(username: username));
+      // A bare String is the contract for every ordinary entry point (Home,
+      // both navs). An arrival straight from filing a report carries a map as
+      // well, so the list can wait for that row instead of rendering a list
+      // without it — see [MyReportsBody.justSubmittedId].
+      final a = settings.arguments;
+      final username = (a is Map ? a['username'] : a) as String? ?? '';
+      return _instant(
+        MyReportsScreen(
+          username: username,
+          justSubmittedId: a is Map ? a['newId'] as String? : null,
+        ),
+      );
 
     case '/report_detail':
       final args = settings.arguments as Map<String, dynamic>;

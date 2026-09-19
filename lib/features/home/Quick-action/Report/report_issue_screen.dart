@@ -3832,7 +3832,17 @@ class _ReportIssueScreenState extends State<ReportIssueForm>
         // filed is. A duplicate CONFIRMATION goes there too: it still inserts a
         // report owned by this citizen (with duplicate_of set), so their list
         // is where it shows up either way.
-        goToSubmissionList(context, tab: 0, username: widget.username);
+        //
+        // `reportId` goes with it so the list waits for THAT row. On web this
+        // matters most: My Reports is a shell branch that stays mounted, so a
+        // citizen who had opened it earlier would otherwise arrive at a list
+        // that already finished loading without their new report in it.
+        goToSubmissionList(
+          context,
+          tab: 0,
+          username: widget.username,
+          newId: reportId,
+        );
       }
     } on StorageException catch (e) {
       if (mounted) {

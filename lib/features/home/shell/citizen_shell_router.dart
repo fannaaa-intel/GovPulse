@@ -264,6 +264,26 @@ const String _kSubmissionsHighlightParam = 'highlight';
 /// See [MySubmissionsScreen.justSubmitted].
 const String _kSubmissionsJustSubmittedParam = 'new';
 
+/// The id of a report filed seconds ago, so the My Reports branch can wait for
+/// that row instead of showing a list without it. Same job as
+/// [_kSubmissionsJustSubmittedParam] + [_kSubmissionsHighlightParam] on the
+/// submissions page, in one parameter because the id is the whole signal.
+const String _kMyReportsNewParam = 'new';
+
+/// Location for the My Reports tab, optionally waiting for a just-filed
+/// [newId].
+///
+/// The branch is a [StatefulShellRoute.indexedStack] child, so it stays mounted
+/// for the whole session: a citizen who opened My Reports earlier and then
+/// filed a report arrives back at a State whose `initState` does not run again.
+/// Carrying the id on the URL is what lets it notice.
+String shellMyReportsPath({String? newId}) => newId == null
+    ? CitizenTab.myReports.path
+    : Uri(
+        path: CitizenTab.myReports.path,
+        queryParameters: {_kMyReportsNewParam: newId},
+      ).toString();
+
 /// Deep link into My Submissions on [tab] (0 Reports · 1 Suggestions ·
 /// 2 Feedback), optionally flashing [highlightId].
 ///
@@ -450,6 +470,7 @@ Widget _bodyFor(BuildContext context, CitizenTab tab, GoRouterState state) {
       );
     case CitizenTab.myReports:
       return MyReportsBody(
+        justSubmittedId: state.uri.queryParameters[_kMyReportsNewParam],
         // Both are passed: the id makes the URL real and reload-proof, the
         // object makes this navigation instant. Only the id is load-bearing.
         //

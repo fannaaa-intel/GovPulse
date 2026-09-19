@@ -429,13 +429,21 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
   late final Animation<double> _fadeAnim;
   late final AnimationController _shimmerCtrl;
 
-  /// How many times [_settleAfterSubmission] re-fetches before accepting the
-  /// empty state, and how long it waits between tries. Four tries at 600ms
-  /// covers roughly two and a half seconds — long enough for a row that is
-  /// merely late, short enough that a genuinely empty tab is not held behind a
-  /// stale list.
-  static const int _kSettleTries = 4;
-  static const Duration _kSettleGap = Duration(milliseconds: 600);
+  /// How many times [_settleAfterSubmission] re-fetches before it stops looking
+  /// for a just-filed row, and the base gap between tries.
+  ///
+  /// Six tries with the gap stepping 400ms, 800ms, 1.2s … covers about eight
+  /// seconds in total. That is deliberately longer than the old four-at-600ms
+  /// (~2.5s): for `suggestions` and `feedbacks` this retry is the ONLY recovery
+  /// there is, because neither table is in the `supabase_realtime` publication
+  /// — so no INSERT ever arrives on the socket for them and the subscription in
+  /// this screen, though harmless, can never deliver the new row.
+  ///
+  /// The first try stays quick, so the ordinary case (the row is merely a beat
+  /// late) still resolves almost immediately; the widening gap is what buys the
+  /// tail without turning into a busy poll.
+  static const int _kSettleTries = 6;
+  static const Duration _kSettleGap = Duration(milliseconds: 400);
 
   // ── Tab & filter state ─────────────────────────────────────────────────────
   int _tab = 0; // 0 = Reports, 1 = Suggestions, 2 = Feedback
@@ -961,12 +969,49 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
   bool _settleArmed = false;
   Timer? _settleTimer;
 
-  /// Whether the tab the citizen was sent to has anything on it.
-  bool get _arrivalTabHasRows => switch (widget.initialTab.clamp(0, 2)) {
-    1 => _suggestions.isNotEmpty,
-    2 => _feedbacks.isNotEmpty,
-    _ => _reports.isNotEmpty,
-  };
+  /// Whether the row this arrival is waiting for is on the tab yet.
+  ///
+  /// ── Why this is not "does the tab have rows" ──────────────────────────────
+  /// It was, and that only worked for a citizen with an empty tab. Anyone who
+  /// had ever filed before arrived at a tab that was non-empty the moment it
+  /// loaded — their OLDER rows — so the wait was satisfied instantly, the retry
+  /// never armed, and the item they had just sent was missing until they
+  /// refreshed by hand. The more someone used the app, the more reliably it
+  /// failed them.
+  ///
+  /// With [MySubmissionsScreen.highlightId] the question becomes the right one:
+  /// is THAT row here. Without one (a caller that does not have the id) it
+  /// falls back to the old emptiness test, which is still correct for a first
+  /// submission and no worse than before for any other.
+  bool get _arrivalRowArrived {
+    final id = widget.highlightId;
+    if (id == null) {
+      return switch (widget.initialTab.clamp(0, 2)) {
+        1 => _suggestions.isNotEmpty,
+        2 => _feedbacks.isNotEmpty,
+        _ => _reports.isNotEmpty,
+      };
+    }
+    return switch (widget.initialTab.clamp(0, 2)) {
+      1 => _suggestions.any((x) => _idMatches(x.id, id)),
+      2 => _feedbacks.any((x) => _idMatches(x.id, id)),
+      _ => _reports.any((x) => _idMatches(x.id, id)),
+    };
+  }
+
+  /// A row id and a deep-link id name the same row.
+  ///
+  /// Ids reach this screen from two places that do not agree on shape: the
+  /// insert hands back a full uuid, while a notification deep link may carry
+  /// the short display form. Comparing them raw would leave the wait hanging on
+  /// a row that is already on screen, so this accepts either being a prefix of
+  /// the other — which is what the short id is.
+  static bool _idMatches(String rowId, String wanted) {
+    if (rowId == wanted) return true;
+    final a = rowId.toLowerCase();
+    final b = wanted.toLowerCase();
+    return a.startsWith(b) || b.startsWith(a);
+  }
 
   /// Re-fetches, briefly, when a citizen sent here by their own submission
   /// lands on an empty tab.
@@ -987,7 +1032,7 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
   /// skeleton behind a citizen who is already looking at it.
   void _settleAfterSubmission() {
     if (!widget.justSubmitted) return;
-    if (_arrivalTabHasRows) return;
+    if (_arrivalRowArrived) return;
 
     // First miss arms the budget; later misses spend it. Once spent it stays
     // spent — see the field's note.
@@ -998,8 +1043,12 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
     if (_settleTries <= 0) return;
     _settleTries--;
 
+    // Linear backoff: attempt 1 waits one gap, attempt 2 two, and so on. A
+    // fixed gap either polls too hard or gives up too early; this starts fast
+    // and stretches, which is the shape of the thing being waited for.
+    final attempt = _kSettleTries - _settleTries;
     _settleTimer?.cancel();
-    _settleTimer = Timer(_kSettleGap, () {
+    _settleTimer = Timer(_kSettleGap * attempt, () {
       if (mounted) _fetchAll(showSpinner: false);
     });
   }

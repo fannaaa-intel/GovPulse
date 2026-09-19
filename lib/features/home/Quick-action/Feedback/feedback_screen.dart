@@ -814,8 +814,17 @@ class _FeedbackScreenState extends State<FeedbackForm>
         type: AppSnackType.success,
       );
       // Dismiss the form and land on My Submissions, Feedback tab, where the
-      // row that was just filed is.
-      goToSubmissionList(context, tab: 2, username: widget.username);
+      // row that was just filed is. Its id goes too: the list waits for THAT
+      // row rather than for the tab to be non-empty, which a returning
+      // citizen's older feedback would satisfy on its own. Feedback is the
+      // most exposed of the three — its INSERT fires an AFTER trigger that
+      // makes an outbound HTTP call.
+      goToSubmissionList(
+        context,
+        tab: 2,
+        username: widget.username,
+        newId: feedbackId as String?,
+      );
     } on StorageException catch (e) {
       if (!mounted) return;
       showFriendlyErrorDialog(context, 'File upload failed: ${e.message}');

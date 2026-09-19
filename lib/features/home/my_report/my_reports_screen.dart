@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -37,7 +38,15 @@ enum StatusFilter { all, pending, resolved, rejected }
 /// routes open. Owns the nav chrome; the content is [MyReportsBody].
 class MyReportsScreen extends StatelessWidget {
   final String username;
-  const MyReportsScreen({super.key, required this.username});
+
+  /// Id of a report filed seconds ago. See [MyReportsBody.justSubmittedId].
+  final String? justSubmittedId;
+
+  const MyReportsScreen({
+    super.key,
+    required this.username,
+    this.justSubmittedId,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -46,7 +55,7 @@ class MyReportsScreen extends StatelessWidget {
       username: username,
       isVerified: true,
       backgroundColor: const Color(0xFFF3F4F6),
-      body: const SafeArea(child: MyReportsBody()),
+      body: SafeArea(child: MyReportsBody(justSubmittedId: justSubmittedId)),
     );
   }
 }
@@ -67,7 +76,24 @@ class MyReportsBody extends ConsumerStatefulWidget {
   /// stops the body from having to know which router it is running under.
   final void Function(ReportItem report)? onOpenReport;
 
-  const MyReportsBody({super.key, this.onOpenReport});
+  /// Id of a report this citizen filed seconds ago, when they were sent here by
+  /// their own submission. The list then waits briefly for THAT row.
+  ///
+  /// ── Why waiting is necessary at all ───────────────────────────────────────
+  /// A read issued this close to the write is not guaranteed to see it, and
+  /// neither entry point recovers on its own:
+  ///
+  ///   * on web this body is a shell branch, so it stays mounted for the whole
+  ///     session and `initState`'s fetch does not run again on arrival;
+  ///   * the realtime subscription is best-effort — it closes the gap only when
+  ///     the socket is up and the INSERT actually arrives.
+  ///
+  /// So the list could settle on a set of rows that does not include the report
+  /// the citizen just filed, and stay there looking finished. Everything
+  /// worked; the report was simply not on the screen.
+  final String? justSubmittedId;
+
+  const MyReportsBody({super.key, this.onOpenReport, this.justSubmittedId});
 
   @override
   ConsumerState<MyReportsBody> createState() => _MyReportsBodyState();
@@ -221,6 +247,57 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
 
   RealtimeChannel? _channel;
 
+  // ── Waiting for a just-filed report ────────────────────────────────────────
+  // See [MyReportsBody.justSubmittedId]. Six tries with the gap stepping
+  // 400ms, 800ms, 1.2s … covers roughly eight seconds — long enough for a row
+  // that is merely late, and it stops the instant the row appears, so the
+  // ordinary case schedules nothing at all.
+  static const int _kSettleTries = 6;
+  static const Duration _kSettleGap = Duration(milliseconds: 400);
+  int _settleLeft = 0;
+  bool _settleArmed = false;
+  Timer? _settleTimer;
+
+  /// Whether the report this arrival is waiting for is in the list yet.
+  /// Null id (every entry point but a fresh submission) means nothing to wait
+  /// for, so this is trivially satisfied and no retry is ever armed.
+  bool get _awaitedReportArrived {
+    final id = widget.justSubmittedId;
+    if (id == null) return true;
+    final wanted = id.toLowerCase();
+    return _allReports.any((r) {
+      final full = r.fullId.toLowerCase();
+      final short = r.id.toLowerCase();
+      return full == wanted ||
+          short == wanted ||
+          full.startsWith(wanted) ||
+          wanted.startsWith(short);
+    });
+  }
+
+  /// Re-fetches, briefly, while a just-filed report is still missing.
+  ///
+  /// Budget handed out once and never re-armed: with only a counter, "0" means
+  /// both "not started" and "spent", so the run that exhausts it would be
+  /// followed by one that refills it — a poll with no end.
+  void _settleAfterSubmission() {
+    if (widget.justSubmittedId == null) return;
+    if (_awaitedReportArrived) return;
+
+    if (!_settleArmed) {
+      _settleArmed = true;
+      _settleLeft = _kSettleTries;
+    }
+    if (_settleLeft <= 0) return;
+    _settleLeft--;
+
+    final attempt = _kSettleTries - _settleLeft;
+    _settleTimer?.cancel();
+    _settleTimer = Timer(_kSettleGap * attempt, () {
+      if (mounted) _silentRefresh();
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -236,9 +313,24 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
 
   @override
   void dispose() {
+    _settleTimer?.cancel();
     if (_channel != null) Supabase.instance.client.removeChannel(_channel!);
     _entryCtrl.dispose();
     super.dispose();
+  }
+
+  /// On web this body is a shell branch that stays mounted, so arriving here
+  /// from a submission rebuilds this State rather than creating one and
+  /// `initState` never runs again. A new id is the signal to go looking.
+  @override
+  void didUpdateWidget(MyReportsBody old) {
+    super.didUpdateWidget(old);
+    if (old.justSubmittedId != widget.justSubmittedId &&
+        widget.justSubmittedId != null) {
+      _settleArmed = false;
+      _settleLeft = 0;
+      _silentRefresh();
+    }
   }
 
   /// Live-refresh the list when any of my reports changes.
@@ -290,6 +382,7 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
             .map((e) => ReportItem.fromMap(e as Map<String, dynamic>))
             .toList();
       });
+      _settleAfterSubmission();
     } catch (_) {
       // Non-fatal — the next event or a manual pull-to-refresh will refresh.
     }
@@ -327,6 +420,7 @@ class _MyReportsBodyState extends ConsumerState<MyReportsBody>
 
       // Run entry animation after data loads
       _entryCtrl.forward(from: 0);
+      _settleAfterSubmission();
     } on PostgrestException catch (e) {
       if (mounted) {
         setState(() {

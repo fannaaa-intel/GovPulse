@@ -3392,8 +3392,15 @@ class _SuggestionScreenState extends State<SuggestionForm>
           type: AppSnackType.success,
         );
         // Dismiss the form and land on My Submissions, Suggestions tab, where
-        // the row that was just filed is.
-        goToSubmissionList(context, tab: 1, username: widget.username);
+        // the row that was just filed is. Its id goes too: the list waits for
+        // THAT row rather than for the tab to be non-empty, which a returning
+        // citizen's older suggestions would satisfy on their own.
+        goToSubmissionList(
+          context,
+          tab: 1,
+          username: widget.username,
+          newId: suggestionId,
+        );
       }
     } on StorageException catch (e) {
       if (mounted) {

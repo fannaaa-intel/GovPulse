@@ -43,6 +43,55 @@ void main() {
       expect(shellSubmissionsPath(tab: 2).endsWith('tab=2'), isTrue);
     });
 
+    // ── Carrying WHICH row was just filed ──────────────────────────────────
+    //
+    // Landing on the right list is only half the job. The row is written
+    // moments earlier and the read can still miss it, so the destination has
+    // to know which row to wait for. Waiting for the tab to merely be
+    // non-empty was the bug: a returning citizen's older rows satisfied that
+    // instantly and the new one stayed missing until a manual refresh.
+
+    test('a suggestion carries its id so the list waits for THAT row', () {
+      final uri = Uri.parse(
+        shellSubmissionsPath(tab: 1, justSubmitted: true, highlightId: 'sug-1'),
+      );
+      expect(uri.queryParameters['tab'], '1');
+      expect(uri.queryParameters['new'], '1');
+      expect(
+        uri.queryParameters['highlight'],
+        'sug-1',
+        reason:
+            'without the id the screen can only ask "is the tab empty", '
+            'which is false the moment a returning citizen loads it',
+      );
+    });
+
+    test('feedback carries its id too', () {
+      final uri = Uri.parse(
+        shellSubmissionsPath(tab: 2, justSubmitted: true, highlightId: 'fb-9'),
+      );
+      expect(uri.queryParameters['tab'], '2');
+      expect(uri.queryParameters['new'], '1');
+      expect(uri.queryParameters['highlight'], 'fb-9');
+    });
+
+    test('a report carries its id on the My Reports branch', () {
+      // My Reports is a shell branch that stays mounted for the session, so
+      // initState does not run again on arrival. The id on the URL is what
+      // lets the already-built State notice it should go looking.
+      final uri = Uri.parse(shellMyReportsPath(newId: 'rep-7'));
+      expect(uri.path, '/my-reports');
+      expect(uri.queryParameters['new'], 'rep-7');
+    });
+
+    test('My Reports without an id stays the bare path', () {
+      // Every ordinary entry point (Home, both navs) must not start emitting a
+      // query string — `isCitizenAccountLocation` and the branch matching both
+      // key off the plain location.
+      expect(shellMyReportsPath(), '/my-reports');
+      expect(shellMyReportsPath(newId: null), '/my-reports');
+    });
+
     test('a submissions location still reads as an account page', () {
       // The shell stands its right sidebar down for account locations, matching
       // on `uri.path` so the query string must not defeat it. The post-submit
@@ -259,7 +308,8 @@ class _TabbedPageState extends State<_TabbedPage> {
   @override
   void didUpdateWidget(_TabbedPage old) {
     super.didUpdateWidget(old);
-    if (old.initialTab != widget.initialTab) select(widget.initialTab.clamp(0, 2));
+    if (old.initialTab != widget.initialTab)
+      select(widget.initialTab.clamp(0, 2));
   }
 
   @override

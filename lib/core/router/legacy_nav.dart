@@ -431,10 +431,17 @@ void goToCitizenHome(
 ///
 /// [username] is only read on mobile, where the legacy routes still take a name
 /// rather than resolving identity from the profile provider.
+///
+/// [newId] is the id of the row that was just written, when the caller has it.
+/// The destination waits for THAT row rather than for the tab to be non-empty:
+/// a returning citizen always has older rows, so "the list has something on it"
+/// is true the moment it loads and says nothing about whether the new item made
+/// it. See [MySubmissionsScreen.justSubmitted].
 void goToSubmissionList(
   BuildContext context, {
   required int tab,
   required String username,
+  String? newId,
 }) {
   assert(tab >= 0 && tab <= 2, 'tab must be 0 (Reports), 1 or 2.');
 
@@ -446,11 +453,17 @@ void goToSubmissionList(
     // shell's page when the form is somewhere with no dialog around it.
     final route = ModalRoute.of(context);
     final location = tab == 0
-        ? CitizenTab.myReports.path
+        ? shellMyReportsPath(newId: newId)
         // `justSubmitted` rides the URL so the screen knows the row it is
         // looking for was written seconds ago and may not be readable yet.
-        // See [MySubmissionsScreen.justSubmitted].
-        : shellSubmissionsPath(tab: tab, justSubmitted: true);
+        // See [MySubmissionsScreen.justSubmitted]. `highlight` carries WHICH
+        // row, so the wait ends on that row arriving rather than on the tab
+        // merely being non-empty.
+        : shellSubmissionsPath(
+            tab: tab,
+            justSubmitted: true,
+            highlightId: newId,
+          );
 
     // ── Dismissed BY IDENTITY, not by popping the top ─────────────────────
     // `Navigator.pop` removes whatever is on top of the navigator, which is
@@ -491,13 +504,19 @@ void goToSubmissionList(
   final Object arguments;
   if (tab == 0) {
     name = '/my_reports';
-    arguments = username;
+    // A bare String stays the contract for every other entry point into this
+    // route (Home, both navs). Only an arrival from a submission carries more,
+    // so the route unpacks a map when it gets one and a String otherwise.
+    arguments = newId == null
+        ? username
+        : {'username': username, 'newId': newId};
   } else {
     name = '/my_submissions';
     arguments = MySubmissionsArgs(
       username: username,
       initialTab: tab,
       justSubmitted: true,
+      highlightId: newId,
     );
   }
 
