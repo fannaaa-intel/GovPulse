@@ -124,7 +124,7 @@ comment on column public.reports.ai_category is
 comment on column public.reports.ai_department is
   'AI-recommended internal LGU office (classify-report). ADVISORY — pre-selects in the admin Accept dialog; the authoritative owner is assigned_to_department, written by the admin. Never used for access control: report_department(category) remains the deterministic RLS input.';
 comment on column public.reports.ai_endorse_hint is
-  'RESERVED — AI-suggested external agency when the concern is outside LGU scope. Column exists so enabling the hint needs no migration; no reader as of 20260914000000.';
+  'AI-suggested external agency when the concern is outside LGU scope. ADVISORY — badges the matching card in the admin Endorse dialog; it never pre-selects, because endorsing hands ownership out of the LGU and mints a one-time PIN. Never used for access control.';
 comment on column public.reports.ai_category_reason is
   'Short model justification for ai_category / ai_department, shown to the admin at triage.';
 

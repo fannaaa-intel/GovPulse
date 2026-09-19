@@ -6,7 +6,7 @@
 //   • ai_urgency / ai_urgency_reason  — "high" | "medium" | "low"
 //   • ai_category                     — what the report ACTUALLY is
 //   • ai_department                   — which internal LGU office should own it
-//   • ai_endorse_hint                 — external agency, RESERVED (see below)
+//   • ai_endorse_hint                 — external agency to endorse to (see below)
 //   • ai_category_reason              — short justification shown to the admin
 //
 // WHY THE CATEGORY HALF EXISTS. The owning office is otherwise decided by a
@@ -22,9 +22,11 @@
 // in assigned_to_department. RLS keeps routing on report_department(category) —
 // see the migration header for why access control must stay deterministic.
 //
-// ai_endorse_hint is populated but NOT yet surfaced anywhere in the app. The
-// column exists so enabling it later needs no migration. Writing it now also
-// means the evaluation dataset starts accumulating from day one.
+// ai_endorse_hint badges the matching card in the admin's Endorse dialog
+// (endorse_entity_dialog.dart) — it never pre-selects, because endorsing hands
+// ownership out of the LGU and mints a letter with a one-time PIN, which is the
+// admin's call to make deliberately. Null is the EXPECTED case: most reports are
+// the LGU's own work.
 //
 // Purely additive — nothing breaks if this never runs. Rows the model hasn't
 // reached fall back to the deterministic rule everywhere.

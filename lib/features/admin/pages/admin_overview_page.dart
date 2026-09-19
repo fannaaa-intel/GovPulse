@@ -84,7 +84,7 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
   // toggle is instant and needs no refetch.
   int _rangeDays = 30;
 
-  // True while a CSV export is being built/saved, so the button can't be
+  // True while the PDF export is being built/saved, so the button can't be
   // double-triggered and shows a spinner.
   bool _exporting = false;
 
