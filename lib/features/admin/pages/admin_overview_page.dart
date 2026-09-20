@@ -2712,16 +2712,21 @@ class _BreakdownSheet extends StatelessWidget {
               child: Scrollbar(
                 child: ListView.separated(
                   shrinkWrap: true,
+                  // Cards sit a little inside the header's gutter on a phone:
+                  // the card's own 12px padding is an extra 24px off the text
+                  // width, which on a 360px screen is the difference between a
+                  // readable description and one clipped mid-word. On desktop
+                  // there is width to spare, so they line up with the title.
                   padding: EdgeInsets.fromLTRB(
-                    gutter - 8,
-                    8,
-                    gutter - 8,
+                    narrow ? gutter - 6 : gutter,
+                    12,
+                    narrow ? gutter - 6 : gutter,
                     narrow ? 16 : 12,
                   ),
                   itemCount: items.length,
-                  // Rows carry their own hover/press background, so a hard rule
-                  // between them fights that highlight; spacing separates them.
-                  separatorBuilder: (_, _) => const SizedBox(height: 2),
+                  // Each row is a bordered card, so a separator rule would be a
+                  // second edge on top of the one the card already draws.
+                  separatorBuilder: (_, _) => const SizedBox(height: 8),
                   itemBuilder: (_, i) => _BreakdownRow(
                     item: items[i],
                     urgencyMode: urgencyMode,
@@ -2979,13 +2984,24 @@ class _BreakdownRowState extends State<_BreakdownRow> {
     // Expanded rows are list items in their own right: a comfortable hit target
     // (≥56px, so it clears the 48px touch minimum on the phone sheet) with a
     // real hover/press surface.
+    //
+    // Carded like the Recent activity feed — same radius, same border token,
+    // same 12px inset. The border used to be transparent until hover, which
+    // left the list reading as an undifferentiated dump of text with nothing
+    // marking where one report ended and the next began; on touch, where there
+    // is no hover at all, the card edge never appeared.
+    const radius = 12.0;
     final padded = Padding(
-      padding: const EdgeInsets.fromLTRB(10, 11, 10, 11),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       child: content,
     );
     if (!interactive) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 2),
+      return Container(
+        decoration: BoxDecoration(
+          color: AdminUi.surface,
+          borderRadius: BorderRadius.circular(radius),
+          border: Border.all(color: AdminUi.border),
+        ),
         child: padded,
       );
     }
@@ -2994,16 +3010,19 @@ class _BreakdownRowState extends State<_BreakdownRow> {
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: Material(
-        color: Colors.transparent,
+        color: AdminUi.surface,
+        borderRadius: BorderRadius.circular(radius),
         child: InkWell(
           onTap: widget.onOpen,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(radius),
           hoverColor: AdminUi.subtle,
           child: Ink(
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(radius),
+              // Hover darkens the edge rather than summoning one, so the row
+              // does not change size or gain structure under the pointer.
               border: Border.all(
-                color: _hovered ? AdminUi.border : Colors.transparent,
+                color: _hovered ? AdminUi.textMuted : AdminUi.border,
               ),
             ),
             child: padded,
