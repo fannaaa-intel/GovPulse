@@ -25,6 +25,8 @@
 //    watch the last two rows, which carry both.
 //  * Rows echo their tap to the banner, so the deep link is verifiable.
 
+import 'dart:js_interop';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -290,10 +292,24 @@ class _PreviewApp extends StatefulWidget {
   State<_PreviewApp> createState() => _PreviewAppState();
 }
 
+@JS('previewWidth')
+external JSAny? get _previewWidth;
+
+/// Reads the capture harness's requested width, defaulting to the laptop case.
+double _seedWidth() {
+  final v = _previewWidth;
+  if (v == null) return 1280;
+  return (v as JSNumber).toDartDouble;
+}
+
 class _PreviewAppState extends State<_PreviewApp> {
   // 639/641 straddle the bottom-sheet cutoff; 360 is the tightest phone worth
   // supporting, and 1280 is the laptop where the old dialog floated small.
-  double _width = 1280;
+  // Seeded from a `window.previewWidth` global so a headless capture can pick
+  // the width without having to land a synthetic click on a canvas-rendered
+  // chip. Not a query parameter: Flutter's default hash URL strategy rewrites
+  // the location on boot and strips `?w=` before any Dart code can read it.
+  double _width = _seedWidth();
   String _lastNav = 'no navigation yet';
 
   @override

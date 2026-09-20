@@ -2579,11 +2579,30 @@ class _BreakdownSheet extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           // ── Header ───────────────────────────────────────────────────────
-          // The count moves into a pill beside the title: as loose grey text it
-          // read like part of the heading ("All reports 9") rather than a total.
+          // Laid out like the Recent activity dialog: title on the left, close
+          // on the right, both centred on the same line. The count moves into a
+          // pill beside the title — as loose grey text it read like part of the
+          // heading ("All reports 9") rather than a total.
+          //
+          // The right inset is `gutter - 6`, not the full gutter: an IconButton
+          // carries its own padding, so matching the left gutter numerically
+          // pushed the glyph visually inward. Subtracting that padding is what
+          // makes the X sit the same distance from the edge as the title does.
           Padding(
-            padding: EdgeInsets.fromLTRB(gutter, narrow ? 4 : 18, 8, 12),
+            padding: EdgeInsets.fromLTRB(
+              gutter,
+              narrow ? 4 : 14,
+              gutter - 6,
+              // The hint line below carries its own bottom spacing, so the
+              // header only needs enough to separate the two — 12 on both sides
+              // of the gap left the title stranded from its own subtitle.
+              tappable ? 2 : 12,
+            ),
             child: Row(
+              // The close control is taller than the text; centring the row
+              // keeps the X on the title's optical line instead of floating
+              // toward the top edge of the card.
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Container(
                   width: 10,
@@ -2594,6 +2613,10 @@ class _BreakdownSheet extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 10),
+                // Flexible, not Expanded: the title takes only what it needs so
+                // the count pill stays tucked against it, and it still yields
+                // on a 360px phone where a long category name would otherwise
+                // shove the pill off screen.
                 Flexible(
                   child: Text(
                     title,
@@ -2629,27 +2652,18 @@ class _BreakdownSheet extends StatelessWidget {
                   ),
                 ),
                 const Spacer(),
-                // A 40px target. The old bare IconButton was the only way out
-                // of the desktop dialog and sat flush against the corner.
-                Tooltip(
-                  message: 'Close',
-                  child: SizedBox(
-                    width: 40,
-                    height: 40,
-                    child: IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.close_rounded, size: 20),
-                      color: AdminUi.textMuted,
-                      padding: EdgeInsets.zero,
-                      splashRadius: 20,
-                      style: IconButton.styleFrom(
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                    ),
+                // Same control as the Recent activity modal. The phone sheet
+                // has a drag handle and a back gesture, so the X is desktop
+                // only — on a 360px screen it was competing with the title for
+                // the little width there is.
+                if (!narrow)
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close_rounded, size: 20),
+                    color: AdminUi.textMuted,
+                    tooltip: 'Close',
+                    visualDensity: VisualDensity.compact,
                   ),
-                ),
               ],
             ),
           ),
