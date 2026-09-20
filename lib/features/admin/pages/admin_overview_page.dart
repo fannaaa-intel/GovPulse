@@ -2714,6 +2714,15 @@ class _BreakdownSheetState extends State<_BreakdownSheet>
           );
 
     final unbarred = Column(
+      // Stretch, not the default centre. A Column centres its children at their
+      // own intrinsic width, so the header Row sized itself to [title + pill +
+      // X] and floated in the middle of the card - which put the close button
+      // ~220px inside the right edge instead of in the corner.
+      //
+      // Recent activity never showed this because its filter-chip bar is a
+      // full-width scroll view that forces the column open; this sheet has no
+      // such child, so the stretch has to be explicit.
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _header(gutter, narrow),
         if (tappable) _hint(gutter, narrow),
@@ -2777,41 +2786,55 @@ class _BreakdownSheetState extends State<_BreakdownSheet>
             ),
           ),
           const SizedBox(width: 10),
-          // Flexible, not Expanded: the title takes only what it needs so the
-          // count pill stays tucked against it, and it still yields on a 360px
-          // phone where a long filter name would shove the pill off screen.
-          Flexible(
-            child: Text(
-              widget.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: narrow ? 17 : 19,
-                fontWeight: FontWeight.w700,
-                color: AdminUi.textPrimary,
-                letterSpacing: -0.3,
-              ),
+          // The title and its count pill are ONE flex child, and there is no
+          // Spacer after them.
+          //
+          // The previous shape was `Flexible(title) ... pill, Spacer()`. A
+          // loose Flexible still carries flex: 1, so it and the Spacer split
+          // the free space between them: the title kept half of it and the
+          // close button ended up ~220px inside the card's right edge,
+          // floating in the middle of the header instead of sitting in the
+          // corner. Exactly one flex child may own the slack.
+          Expanded(
+            child: Row(
+              children: [
+                Flexible(
+                  child: Text(
+                    widget.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: narrow ? 17 : 19,
+                      fontWeight: FontWeight.w700,
+                      color: AdminUi.textPrimary,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: widget.accent.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    '${widget.items.length}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: widget.accent == AdminUi.textMuted
+                          ? AdminUi.textSecondary
+                          : widget.accent,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-              color: widget.accent.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: Text(
-              '${widget.items.length}',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: widget.accent == AdminUi.textMuted
-                    ? AdminUi.textSecondary
-                    : widget.accent,
-              ),
-            ),
-          ),
-          const Spacer(),
           if (widget.inModal)
             IconButton(
               onPressed: () => Navigator.pop(context),
