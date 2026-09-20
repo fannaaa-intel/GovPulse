@@ -1,8 +1,11 @@
 import 'package:fl_chart/fl_chart.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/no_scrollbar_behavior.dart';
+import '../widgets/admin_dialog_back.dart';
 import '../providers/admin_dashboard_provider.dart';
 import '../providers/admin_feedback_provider.dart'
     show AdminFeedback, adminFeedbackProvider;
@@ -2483,8 +2486,16 @@ class _SeeAllRow extends StatelessWidget {
   }
 }
 
-/// Opens the full (filtered) breakdown list — a bottom sheet on phones, a
-/// centered dialog on wider screens.
+/// Opens the full (filtered) breakdown list.
+///
+/// Mirrors the Recent activity sheet one-for-one, because they are the same
+/// gesture from the same dashboard: a pushed full screen on the mobile app and
+/// on a narrow browser window, a centred modal card on a real desktop window.
+///
+/// The breakpoint is [kRecentActivityModalMinWidth], shared with that sheet
+/// rather than re-picked here — two "view all" controls a few hundred pixels
+/// apart on the same dashboard must not disagree about what counts as wide, or
+/// one opens a dialog while the other opens a screen at the same window size.
 void _showBreakdownSheet(
   BuildContext context, {
   required String title,
@@ -2493,254 +2504,376 @@ void _showBreakdownSheet(
   required List<FeedbackInsightItem> items,
   void Function(FeedbackInsightItem)? onOpenItem,
 }) {
-  final mq = MediaQuery.of(context);
-  final narrow = mq.size.width < 640;
-  final content = _BreakdownSheet(
-    title: title,
-    accent: accent,
-    urgencyMode: urgencyMode,
-    items: items,
-    narrow: narrow,
-    // Dismiss the sheet before jumping, or the destination opens underneath it.
-    onOpenItem: onOpenItem == null
-        ? null
-        : (item) {
-            Navigator.of(context).pop();
-            onOpenItem(item);
-          },
-  );
-  if (narrow) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AdminUi.surface,
-      isScrollControlled: true,
-      // A drag handle + capped height keep the sheet usable, and the inner
-      // SafeArea(bottom) makes it sit above the phone's system navigation —
-      // whether the device uses 3-button or gesture navigation.
-      showDragHandle: true,
-      // Tall enough to be worth opening: a short list still shrink-wraps, but a
-      // long one gets most of the screen rather than a cramped half.
-      constraints: BoxConstraints(maxHeight: mq.size.height * 0.9),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+  // Decided once, at the tap: an already-open sheet keeps its own layout, and a
+  // resize past the breakpoint is not worth tearing the route down for. The
+  // mobile app always pushes — a tablet clears the width breakpoint, but a
+  // dialog is the wrong idiom for a touch shell.
+  final asModal =
+      kIsWeb &&
+      MediaQuery.of(context).size.width >= kRecentActivityModalMinWidth;
+
+  // Dismiss this sheet before jumping, or the destination opens underneath it.
+  void Function(FeedbackInsightItem)? handoff(BuildContext sheetContext) =>
+      onOpenItem == null
+      ? null
+      : (item) {
+          Navigator.of(sheetContext).pop();
+          onOpenItem(item);
+        };
+
+  if (!asModal) {
+    Navigator.of(context).push(
+      PageRouteBuilder<void>(
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: const Duration(milliseconds: 220),
+        pageBuilder: (ctx, _, _) => _BreakdownSheet(
+          title: title,
+          accent: accent,
+          urgencyMode: urgencyMode,
+          items: items,
+          onOpenItem: handoff(ctx),
+        ),
+        transitionsBuilder: (_, anim, _, child) =>
+            FadeTransition(opacity: anim, child: child),
       ),
-      builder: (_) => content,
     );
-  } else {
-    // Size to the viewport instead of a fixed box: on a laptop the old
-    // 520x600 dialog floated small and cramped while the screen sat empty
-    // around it, and on a short window it had no room to breathe at all.
-    final maxW = (mq.size.width - 96).clamp(360.0, 680.0);
-    final maxH = (mq.size.height - 120).clamp(320.0, 720.0);
-    showAppDialog(
-      context: context,
-      builder: (_) => Dialog(
-        backgroundColor: AdminUi.surface,
-        clipBehavior: Clip.antiAlias,
-        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+    return;
+  }
+
+  showGeneralDialog<void>(
+    context: context,
+    barrierDismissible: true,
+    barrierLabel: title,
+    barrierColor: Colors.black.withValues(alpha: 0.12),
+    transitionDuration: const Duration(milliseconds: 180),
+    pageBuilder: (ctx, _, _) => _BreakdownModal(
+      title: title,
+      accent: accent,
+      urgencyMode: urgencyMode,
+      items: items,
+      onOpenItem: handoff(ctx),
+    ),
+    transitionBuilder: (_, anim, _, child) {
+      final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
+      final content = FadeTransition(
+        opacity: curved,
+        child: SlideTransition(
+          position: Tween(
+            begin: const Offset(0, -0.03),
+            end: Offset.zero,
+          ).animate(curved),
+          child: child,
+        ),
+      );
+      // Frost the console behind the panel, ramping with the same animation so
+      // it grows on open and clears on close — matching every other pop-up.
+      return withDialogBlur(anim, content);
+    },
+  );
+}
+
+/// The modal shell: a rounded, height-capped card holding the same list the
+/// pushed screen shows. Same radius, inset, cap and elevation as the Recent
+/// activity modal — the numbers are duplicated rather than shared because each
+/// sheet owns its own shell, but they must not drift apart.
+class _BreakdownModal extends StatelessWidget {
+  final String title;
+  final Color accent;
+  final bool urgencyMode;
+  final List<FeedbackInsightItem> items;
+  final void Function(FeedbackInsightItem)? onOpenItem;
+  const _BreakdownModal({
+    required this.title,
+    required this.accent,
+    required this.urgencyMode,
+    required this.items,
+    this.onOpenItem,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    // Leave breathing room on every side so the scrim and blur stay visible;
+    // the card never outgrows the viewport on a short laptop screen.
+    final maxH = (size.height - 112).clamp(400.0, 760.0);
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 56),
         child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: maxW, maxHeight: maxH),
-          child: content,
+          constraints: BoxConstraints(maxWidth: 680, maxHeight: maxH),
+          child: Material(
+            color: AdminUi.surface,
+            borderRadius: BorderRadius.circular(20),
+            clipBehavior: Clip.antiAlias,
+            elevation: 24,
+            shadowColor: Colors.black.withValues(alpha: 0.28),
+            child: _BreakdownSheet(
+              title: title,
+              accent: accent,
+              urgencyMode: urgencyMode,
+              items: items,
+              inModal: true,
+              onOpenItem: onOpenItem,
+            ),
+          ),
         ),
       ),
     );
   }
 }
 
-class _BreakdownSheet extends StatelessWidget {
+/// The list itself. Hosted either by [_BreakdownModal] (desktop web) or pushed
+/// as its own screen (mobile app, narrow browser) - the same body in both, the
+/// way the Recent activity sheet works.
+class _BreakdownSheet extends StatefulWidget {
   final String title;
   final Color accent;
   final bool urgencyMode;
   final List<FeedbackInsightItem> items;
 
-  /// Phone layout (bottom sheet). Drives the side gutters and the hint line —
-  /// "select" is wrong wording on a touch device, and a hover affordance is
-  /// moot there.
-  final bool narrow;
+  /// True when hosted inside [_BreakdownModal] - the card already provides the
+  /// surface, rounding and inset, so the content drops the Scaffold's page
+  /// background and SafeArea and skips the entry slide (the modal's own
+  /// transition covers it).
+  final bool inModal;
+
+  final void Function(FeedbackInsightItem)? onOpenItem;
+
   const _BreakdownSheet({
     required this.title,
     required this.accent,
     required this.urgencyMode,
     required this.items,
-    required this.narrow,
+    this.inModal = false,
     this.onOpenItem,
   });
 
-  final void Function(FeedbackInsightItem)? onOpenItem;
+  @override
+  State<_BreakdownSheet> createState() => _BreakdownSheetState();
+}
+
+class _BreakdownSheetState extends State<_BreakdownSheet>
+    with SingleTickerProviderStateMixin {
+  // Content slide-up + fade-in on entry (the route itself opens instantly).
+  late final AnimationController _entryCtrl;
+  late final Animation<double> _entryFade;
+  late final Animation<Offset> _entrySlide;
+
+  @override
+  void initState() {
+    super.initState();
+    _entryCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 320),
+    );
+    _entryFade = CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOut);
+    _entrySlide = Tween<Offset>(
+      begin: const Offset(0, 0.06),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOutCubic));
+    if (!widget.inModal) _entryCtrl.forward();
+  }
+
+  @override
+  void dispose() {
+    _entryCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final width = MediaQuery.of(context).size.width;
+    // Phone-width layout. Not the same question as "is this a modal": a narrow
+    // browser window pushes a screen AND needs the tighter gutters, while a
+    // tablet pushes a screen but has room to breathe.
+    final narrow = width < 480;
     final gutter = narrow ? 16.0 : 20.0;
-    final tappable = onOpenItem != null;
-    return SafeArea(
-      top: false,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // ── Header ───────────────────────────────────────────────────────
-          // Laid out like the Recent activity dialog: title on the left, close
-          // on the right, both centred on the same line. The count moves into a
-          // pill beside the title — as loose grey text it read like part of the
-          // heading ("All reports 9") rather than a total.
-          //
-          // The right inset is `gutter - 6`, not the full gutter: an IconButton
-          // carries its own padding, so matching the left gutter numerically
-          // pushed the glyph visually inward. Subtracting that padding is what
-          // makes the X sit the same distance from the edge as the title does.
-          Padding(
-            padding: EdgeInsets.fromLTRB(
-              gutter,
-              narrow ? 4 : 14,
-              gutter - 6,
-              // The hint line below carries its own bottom spacing, so the
-              // header only needs enough to separate the two — 12 on both sides
-              // of the gap left the title stranded from its own subtitle.
-              tappable ? 2 : 12,
+    final items = widget.items;
+    final tappable = widget.onOpenItem != null;
+
+    final Widget list = items.isEmpty
+        ? _BreakdownEmpty(urgencyMode: widget.urgencyMode)
+        : ListView.builder(
+            padding: EdgeInsets.fromLTRB(gutter, 4, gutter, gutter),
+            itemCount: items.length,
+            itemBuilder: (_, i) => Padding(
+              // Top-padded rather than separated, so the first card clears the
+              // divider by the same 8px that separates every pair below it.
+              padding: const EdgeInsets.only(top: 8),
+              child: _BreakdownRow(
+                item: items[i],
+                urgencyMode: widget.urgencyMode,
+                expanded: true,
+                narrow: narrow,
+                onOpen: widget.onOpenItem == null
+                    ? null
+                    : () => widget.onOpenItem!(items[i]),
+              ),
             ),
-            child: Row(
-              // The close control is taller than the text; centring the row
-              // keeps the X on the title's optical line instead of floating
-              // toward the top edge of the card.
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Container(
-                  width: 10,
-                  height: 10,
-                  decoration: BoxDecoration(
-                    color: accent,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                // Flexible, not Expanded: the title takes only what it needs so
-                // the count pill stays tucked against it, and it still yields
-                // on a 360px phone where a long category name would otherwise
-                // shove the pill off screen.
-                Flexible(
-                  child: Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: narrow ? 16 : 17,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -0.2,
-                      color: AdminUi.textPrimary,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: accent.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    '${items.length}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: accent == AdminUi.textMuted
-                          ? AdminUi.textSecondary
-                          : accent,
-                    ),
-                  ),
-                ),
-                const Spacer(),
-                // Same control as the Recent activity modal. The phone sheet
-                // has a drag handle and a back gesture, so the X is desktop
-                // only — on a 360px screen it was competing with the title for
-                // the little width there is.
-                if (!narrow)
-                  IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close_rounded, size: 20),
-                    color: AdminUi.textMuted,
-                    tooltip: 'Close',
-                    visualDensity: VisualDensity.compact,
-                  ),
-              ],
+          );
+
+    final unbarred = Column(
+      children: [
+        _header(gutter, narrow),
+        if (tappable) _hint(gutter, narrow),
+        const Divider(height: 1, thickness: 1, color: AdminUi.border),
+        Expanded(
+          child: ScrollConfiguration(
+            behavior: const NoScrollbarBehavior(),
+            child: list,
+          ),
+        ),
+      ],
+    );
+
+    if (widget.inModal) return unbarred;
+
+    return Scaffold(
+      backgroundColor: AdminUi.pageBg,
+      body: SafeArea(
+        child: FadeTransition(
+          opacity: _entryFade,
+          child: SlideTransition(position: _entrySlide, child: unbarred),
+        ),
+      ),
+    );
+  }
+
+  // -- Header ----------------------------------------------------------------
+  /// Title block, laid out exactly like the Recent activity sheet: a status dot,
+  /// the title, its count in a pill, and - on the modal only - a close button
+  /// pinned to the card's right edge.
+  Widget _header(double gutter, bool narrow) {
+    return Container(
+      color: AdminUi.surface,
+      // The modal keeps a tighter right inset for its close button; the pushed
+      // screen has no trailing control, so it uses the full gutter.
+      //
+      // `gutter - 6` is not a fudge: an IconButton carries its own padding, so
+      // matching the left gutter numerically would push the glyph visually
+      // inward. Subtracting that padding is what puts the X the same distance
+      // from the card edge as the title is from the other one.
+      padding: EdgeInsets.fromLTRB(
+        gutter,
+        14,
+        widget.inModal ? gutter - 6 : gutter,
+        12,
+      ),
+      child: Row(
+        children: [
+          // Pushed screen -> chevron back at the left, like the Recent activity
+          // screen and the citizen settings sub-screens. Modal -> a top-right X.
+          if (!widget.inModal) ...[
+            AdminDialogBack(onTap: () => Navigator.pop(context)),
+            const SizedBox(width: 12),
+          ],
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(
+              color: widget.accent,
+              shape: BoxShape.circle,
             ),
           ),
-          // Say that the rows go somewhere. Without this the list reads as a
-          // static dump and the jump-to-console behaviour is never discovered.
-          if (tappable)
-            Padding(
-              padding: EdgeInsets.fromLTRB(gutter, 0, gutter, 12),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.touch_app_outlined,
-                    size: 13,
-                    color: AdminUi.textMuted,
-                  ),
-                  const SizedBox(width: 6),
-                  Flexible(
-                    child: Text(
-                      narrow
-                          ? 'Tap an item to open it'
-                          : 'Select an item to open it on its console',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 11.5,
-                        color: AdminUi.textMuted,
-                      ),
-                    ),
-                  ),
-                ],
+          const SizedBox(width: 10),
+          // Flexible, not Expanded: the title takes only what it needs so the
+          // count pill stays tucked against it, and it still yields on a 360px
+          // phone where a long filter name would shove the pill off screen.
+          Flexible(
+            child: Text(
+              widget.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: narrow ? 17 : 19,
+                fontWeight: FontWeight.w700,
+                color: AdminUi.textPrimary,
+                letterSpacing: -0.3,
               ),
             ),
-          const Divider(height: 1, color: AdminUi.border),
-          Flexible(
-            // A fade at the bottom edge. Without it the list ends flush against
-            // the sheet, slicing whichever row lands on the boundary in half —
-            // which reads as a clipping bug rather than "there is more below".
-            child: ShaderMask(
-              shaderCallback: (rect) => const LinearGradient(
-                begin: Alignment.bottomCenter,
-                end: Alignment.topCenter,
-                colors: [Colors.transparent, Colors.white],
-                stops: [0.0, 0.055],
-              ).createShader(rect),
-              blendMode: BlendMode.dstIn,
-              child: Scrollbar(
-                child: ListView.separated(
-                  shrinkWrap: true,
-                  // Cards sit a little inside the header's gutter on a phone:
-                  // the card's own 12px padding is an extra 24px off the text
-                  // width, which on a 360px screen is the difference between a
-                  // readable description and one clipped mid-word. On desktop
-                  // there is width to spare, so they line up with the title.
-                  padding: EdgeInsets.fromLTRB(
-                    narrow ? gutter - 6 : gutter,
-                    12,
-                    narrow ? gutter - 6 : gutter,
-                    narrow ? 16 : 12,
-                  ),
-                  itemCount: items.length,
-                  // Each row is a bordered card, so a separator rule would be a
-                  // second edge on top of the one the card already draws.
-                  separatorBuilder: (_, _) => const SizedBox(height: 8),
-                  itemBuilder: (_, i) => _BreakdownRow(
-                    item: items[i],
-                    urgencyMode: urgencyMode,
-                    expanded: true,
-                    narrow: narrow,
-                    onOpen: onOpenItem == null
-                        ? null
-                        : () => onOpenItem!(items[i]),
-                  ),
-                ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: widget.accent.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              '${widget.items.length}',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: widget.accent == AdminUi.textMuted
+                    ? AdminUi.textSecondary
+                    : widget.accent,
               ),
+            ),
+          ),
+          const Spacer(),
+          if (widget.inModal)
+            IconButton(
+              onPressed: () => Navigator.pop(context),
+              icon: const Icon(Icons.close_rounded, size: 20),
+              color: AdminUi.textMuted,
+              tooltip: 'Close',
+              visualDensity: VisualDensity.compact,
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Say that the rows go somewhere. Without this the list reads as a static
+  /// dump and the jump-to-console behaviour is never discovered.
+  Widget _hint(double gutter, bool narrow) {
+    return Container(
+      color: AdminUi.surface,
+      padding: EdgeInsets.fromLTRB(gutter, 0, gutter, 12),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.touch_app_outlined,
+            size: 13,
+            color: AdminUi.textMuted,
+          ),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              // "Select" is wrong wording on a touch device, and a hover
+              // affordance is moot there.
+              narrow
+                  ? 'Tap an item to open it'
+                  : 'Select an item to open it on its console',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 11.5, color: AdminUi.textMuted),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Shown when a filter selects a bucket with nothing in it. The bars can only
+/// be tapped when their count is non-zero, so this is rare - but a modal that
+/// opens onto blank white reads as a failed load.
+class _BreakdownEmpty extends StatelessWidget {
+  final bool urgencyMode;
+  const _BreakdownEmpty({required this.urgencyMode});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Text(
+          urgencyMode ? 'No reports in this bucket.' : 'No responses here yet.',
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 13, color: AdminUi.textMuted),
+        ),
       ),
     );
   }

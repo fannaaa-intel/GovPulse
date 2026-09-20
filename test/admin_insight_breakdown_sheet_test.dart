@@ -19,10 +19,11 @@
 //    to a filled badge. A regression that silently passed `expanded: false`
 //    would still lay out cleanly, so the split is asserted directly.
 //
-// The widget-test binding runs with `kIsWeb == false` and these sizes are all
-// under the 640px cutoff, so the bottom-sheet branch is what these pump. The
-// dialog branch was checked visually in
-// tool/preview_admin_insight_breakdown.dart at 641, 1053 and 1280 px.
+// The widget-test binding runs with `kIsWeb == false`, and the launcher pushes
+// a full screen for every non-web caller regardless of width — so what these
+// pump is the PUSHED branch, which is also what the mobile app always gets.
+// The modal branch needs `kIsWeb` and so cannot be reached from here at all; it
+// was checked visually in tool/preview_admin_insight_breakdown.dart at 1280px.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -256,11 +257,15 @@ void main() {
         .toList();
     expect(rows, isNotEmpty, reason: 'nothing rendered a breakdown row');
 
-    // The card stays mounted BEHIND the sheet, so both forms are legitimately
-    // in the tree at once. What matters is that the split exists: the sheet's
-    // rows are expanded (two-line description, filled badge) and the card's
-    // stay compact. A regression that reused the compact row in the sheet
-    // still lays out cleanly, so this is what actually catches it.
+    // At phone width the sheet is a PUSHED screen, so it replaces the card
+    // rather than floating over it — the compact rows are legitimately gone
+    // from the tree here, and asserting they survive would be asserting the
+    // old bottom-sheet architecture.
+    //
+    // What this test is actually for is the split between the two row forms:
+    // the sheet must render EXPANDED rows (two-line description, filled badge,
+    // pinned barangay), never the card's compact one. A regression that reused
+    // the compact row still lays out cleanly, so nothing else catches it.
     final expanded = rows.where((r) => (r as dynamic).expanded == true);
     final compact = rows.where((r) => (r as dynamic).expanded != true);
     expect(
@@ -270,8 +275,8 @@ void main() {
     );
     expect(
       compact,
-      isNotEmpty,
-      reason: 'the card behind the sheet should still be compact',
+      isEmpty,
+      reason: 'the pushed screen should have replaced the compact card',
     );
 
     // The phone sheet drops the chevron: there is no hover on touch, and at
@@ -285,8 +290,9 @@ void main() {
     }
 
     // The full description is present, not just the card's clipped line.
-    // findsWidgets, not findsOneWidget: the card behind the sheet carries its
-    // own compact copy of the same sentence.
+    // findsWidgets rather than findsOneWidget: the count is not the point here,
+    // and pinning it to exactly one would break the moment a row gains a
+    // second line carrying the same sentence.
     expect(
       find.textContaining('Delikado sa mga motor lalo na kapag gabi'),
       findsWidgets,

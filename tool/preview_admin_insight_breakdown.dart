@@ -15,9 +15,10 @@
 // list can be opened and READ at each width.
 //
 // ── What to look at ────────────────────────────────────────────────────────
-//  * < 640 CSS px → bottom sheet with a drag handle, capped at 90% height.
-//  * >= 640 → centred dialog sized to the viewport (was a fixed 520x600 that
-//    floated small on a laptop).
+//  * < 760 CSS px (and the mobile app at any width) → a PUSHED full screen with
+//    a back chevron, mirroring Recent activity. Was a bottom sheet.
+//  * >= 760 on web → a centred modal card: radius 20, elevation 24, max 680
+//    wide, frosted backdrop, X pinned to the card's right edge.
 //  * Every row: two-line description (the card preview clips to one), the
 //    barangay on its own pinned line, a filled urgency badge, and a chevron
 //    that brightens on hover.
@@ -303,8 +304,10 @@ double _seedWidth() {
 }
 
 class _PreviewAppState extends State<_PreviewApp> {
-  // 639/641 straddle the bottom-sheet cutoff; 360 is the tightest phone worth
-  // supporting, and 1280 is the laptop where the old dialog floated small.
+  // 759/761 straddle kRecentActivityModalMinWidth, the pushed-screen vs modal
+  // cutoff this sheet now shares with Recent activity; 360 is the tightest
+  // phone worth supporting, and 1280 is a laptop window. 640 is kept because it
+  // was the OLD cutoff - it must now render a pushed screen, not a dialog.
   // Seeded from a `window.previewWidth` global so a headless capture can pick
   // the width without having to land a synthetic click on a canvas-rendered
   // chip. Not a query parameter: Flutter's default hash URL strategy rewrites
@@ -334,9 +337,9 @@ class _PreviewAppState extends State<_PreviewApp> {
                         for (final w in const [
                           360.0,
                           475.0,
-                          639.0,
-                          641.0,
-                          1053.0,
+                          640.0,
+                          759.0,
+                          761.0,
                           1280.0,
                         ])
                           FilledButton(
