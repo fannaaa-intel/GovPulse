@@ -1299,8 +1299,79 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
     // Sized off viewport WIDTH, which is right on a phone: narrow and tall.
     // The web clamp that used to live here is gone with the rest of the web
     // arm - web returns [_buildWebScaffold] above and never reaches this.
-    final double ovalW = size.width * 0.62;
-    final double ovalH = ovalW * 1.36;
+    //
+    // ...but width alone is not enough. The oval is centred in the whole
+    // screen while the footer is pinned to the bottom, so neither knows the
+    // other exists. Once the result footer grows - the selfie-quality hint
+    // strip ("We could not find a face...") is two lines, plus two buttons -
+    // it slid up underneath the oval, and the caption ran straight through the
+    // frozen selfie and its corner brackets.
+    //
+    // So the oval also has to fit the band left between the status title and
+    // the footer. Height wins when it is the tighter of the two, and the
+    // aspect ratio is preserved by deriving the width back from it.
+    // A short handset (iPhone SE and friends) cannot seat the title, a
+    // legible oval and the footer at the roomy spacing a tall phone gets: the
+    // band comes out ~33px short of the 180px minimum oval. Rather than let
+    // them collide again, the generous insets are what give way first.
+    final bool shortScreen = size.height < 700;
+    final double bottomInset = size.height * (shortScreen ? 0.02 : 0.06);
+    final double clearance = shortScreen ? 12 : 32;
+
+    final double titleBottom = size.height * 0.12 + 34;
+    final double footerTop =
+        size.height - bottomInset - _estimatedFooterHeight();
+    // Clearance at each end, and the corner brackets bleed 16px past the oval
+    // on every side, so they need counting too.
+    final double band = (footerTop - titleBottom) - clearance - 32;
+
+    double ovalW = size.width * 0.62;
+    double ovalH = ovalW * 1.36;
+    if (band > 0 && ovalH > band) {
+      ovalH = band;
+      ovalW = ovalH / 1.36;
+    }
+    // A floor, so the oval never shrinks to something you cannot line a face
+    // up in - but NOT an absolute one. On the smallest handset with the
+    // advisory strip showing, the band is ~50px short of this: honouring the
+    // floor there would push the oval straight back under the buttons, which
+    // is the bug. A slightly small oval is recoverable; one hidden behind the
+    // footer is not, so the band wins and the floor only applies while it
+    // fits.
+    const double minOvalW = 180;
+    // Below this the oval stops being an aiming guide at all, so the layout
+    // gives up on fitting everything and the footer scrolls instead.
+    const double hardMinOvalW = 150;
+    bool scrollFooter = false;
+    if (ovalW < minOvalW) {
+      final double floorH = minOvalW * 1.36;
+      if (band <= 0 || floorH <= band) {
+        ovalW = minOvalW;
+        ovalH = floorH;
+      } else if (ovalW < hardMinOvalW) {
+        // Hold the oval at the hard floor and let the footer scroll under it.
+        ovalW = hardMinOvalW;
+        ovalH = ovalW * 1.36;
+        scrollFooter = true;
+      }
+      // else: keep the band-derived size, however small.
+    }
+
+    // Sizing alone does not separate them: the band sits ABOVE the screen's
+    // centre line (the title takes less room than the footer), so an oval
+    // centred on the screen still reaches down into the footer however small
+    // it gets. The oval has to be centred on the BAND instead.
+    //
+    // Every oval layer - preview, cutout, border arc, brackets - is a Center,
+    // so they are all shifted together by this one offset rather than each
+    // being repositioned by hand.
+    final double bandCentre = (titleBottom + footerTop) / 2;
+    // Alignment.y is -1 at the top edge and +1 at the bottom, so the band's
+    // centre expressed in that space is what every oval layer aligns to.
+    final Alignment ovalAlign = Alignment(
+      0,
+      ((bandCentre / size.height) * 2 - 1).clamp(-1.0, 1.0),
+    );
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -1311,7 +1382,8 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
 
           // ── Camera preview / frozen still ─────────────────────────────
           if (_cameraReady && _cameraController != null)
-            Center(
+            Align(
+              alignment: ovalAlign,
               child: SizedBox(
                 width: ovalW,
                 height: ovalH,
@@ -1339,10 +1411,15 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
             ),
 
           // ── White overlay outside oval ────────────────────────────────
-          _OvalCutoutOverlay(ovalW: ovalW, ovalH: ovalH),
+          _OvalCutoutOverlay(
+            ovalW: ovalW,
+            ovalH: ovalH,
+            alignY: ovalAlign.y,
+          ),
 
           // ── Oval border + progress arc ────────────────────────────────
-          Center(
+          Align(
+            alignment: ovalAlign,
             child: AnimatedBuilder(
               animation: Listenable.merge([_borderAnim, _progressController]),
               builder: (_, _) => CustomPaint(
@@ -1364,7 +1441,8 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
           ),
 
           // ── Corner brackets ───────────────────────────────────────────
-          Center(
+          Align(
+            alignment: ovalAlign,
             child: SizedBox(
               width: ovalW + 32,
               height: ovalH + 32,
@@ -1399,12 +1477,31 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
 
           // ── Bottom area ───────────────────────────────────────────────
           Positioned(
-            bottom: size.height * 0.06,
+            // Same inset the oval's band was measured against; if these two
+            // disagree the footer moves out from under the oval and they
+            // overlap again.
+            bottom: bottomInset,
             left: 24,
             right: 24,
-            child: _scanState == _ScanState.done
-                ? _buildResultButtons()
-                : _buildScanningFooter(),
+            // On the smallest handset carrying BOTH the advisory strip and an
+            // upload error there is no arrangement that seats a usable oval
+            // and the whole footer at once. Scrolling the footer is the one
+            // outcome where nothing is hidden and nothing overlaps.
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: scrollFooter
+                    ? size.height - bottomInset - footerTop
+                    : double.infinity,
+              ),
+              child: SingleChildScrollView(
+                physics: scrollFooter
+                    ? const ClampingScrollPhysics()
+                    : const NeverScrollableScrollPhysics(),
+                child: _scanState == _ScanState.done
+                    ? _buildResultButtons()
+                    : _buildScanningFooter(),
+              ),
+            ),
           ),
 
           // ── Spinner (initializing / warming) ──────────────────────────
@@ -1485,6 +1582,30 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
         ],
       ),
     );
+  }
+
+  /// Roughly how tall the bottom area is about to be, so the oval can be sized
+  /// to the space left above it rather than overlapping it.
+  ///
+  /// An estimate on purpose: the real height is only known after layout, and
+  /// reading it back (LayoutBuilder + a post-frame measure) would size the
+  /// oval one frame late - the overlap would flash on the frame the hint strip
+  /// appears, which is exactly the frame the user is looking at. These numbers
+  /// are the widgets' own fixed metrics, so they only drift if the footer is
+  /// restyled, and erring high just makes the oval slightly smaller.
+  double _estimatedFooterHeight() {
+    if (_scanState != _ScanState.done) {
+      // Instruction line + gap + the scanning dots.
+      return 20 + 20 + 12;
+    }
+    // Caption (13px at height 1.5, usually one line) + 24 gap + two 50px
+    // buttons + the 12 between them.
+    double h = 20 + 24 + 50 + 12 + 50;
+    // The advisory strip: two lines of 12px at height 1.4, plus 9px padding
+    // each side and a 1px border, plus the 8px that separates it.
+    if (_selfieCheck != null && !_selfieCheck!.ok) h += 8 + 52;
+    if (_uploadError != null) h += 8 + 44;
+    return h;
   }
 
   Widget _buildScanningFooter() {
@@ -1717,11 +1838,22 @@ class _OvalPathClipper extends CustomClipper<Path> {
 class _OvalCutoutOverlay extends StatelessWidget {
   final double ovalW;
   final double ovalH;
-  const _OvalCutoutOverlay({required this.ovalW, required this.ovalH});
+
+  /// Where the oval's centre sits, as an [Alignment.y]. The oval is centred on
+  /// the band between the title and the footer rather than on the screen, so
+  /// the hole this punches has to follow it - otherwise the mask covers the
+  /// preview and the oval outline frames plain white.
+  final double alignY;
+
+  const _OvalCutoutOverlay({
+    required this.ovalW,
+    required this.ovalH,
+    required this.alignY,
+  });
 
   @override
   Widget build(BuildContext context) => CustomPaint(
-    painter: _CutoutPainter(ovalW: ovalW, ovalH: ovalH),
+    painter: _CutoutPainter(ovalW: ovalW, ovalH: ovalH, alignY: alignY),
     child: const SizedBox.expand(),
   );
 }
@@ -1729,7 +1861,12 @@ class _OvalCutoutOverlay extends StatelessWidget {
 class _CutoutPainter extends CustomPainter {
   final double ovalW;
   final double ovalH;
-  _CutoutPainter({required this.ovalW, required this.ovalH});
+  final double alignY;
+  _CutoutPainter({
+    required this.ovalW,
+    required this.ovalH,
+    required this.alignY,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1737,7 +1874,7 @@ class _CutoutPainter extends CustomPainter {
     final oval = Path()
       ..addOval(
         Rect.fromCenter(
-          center: Offset(size.width / 2, size.height / 2),
+          center: Offset(size.width / 2, (alignY + 1) / 2 * size.height),
           width: ovalW,
           height: ovalH,
         ),
@@ -1750,7 +1887,7 @@ class _CutoutPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_CutoutPainter old) =>
-      old.ovalW != ovalW || old.ovalH != ovalH;
+      old.ovalW != ovalW || old.ovalH != ovalH || old.alignY != alignY;
 }
 
 // ── Oval border + progress arc ────────────────────────────────────────────────

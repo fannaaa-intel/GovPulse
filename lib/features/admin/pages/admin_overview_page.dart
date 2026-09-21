@@ -2038,6 +2038,27 @@ Color _urgencyColor(String u) => switch (u) {
   _ => AppColors.green,
 };
 
+/// The glyph for a breakdown row's leading disc, mirroring the Recent activity
+/// feed's kind icons. Reports read as a priority (an urgent one is a siren, a
+/// routine one a flag); feedback reads as the sentiment it carries.
+///
+/// Deliberately not `activityKindIcon`: that switches on [ActivityKind], which
+/// these rows do not have — they are raw reports and feedback, not feed events.
+IconData _breakdownIcon(bool urgencyMode, FeedbackInsightItem item) {
+  if (urgencyMode) {
+    return switch (item.urgency) {
+      'high' => Icons.priority_high_rounded,
+      'medium' => Icons.report_problem_rounded,
+      _ => Icons.flag_rounded,
+    };
+  }
+  return switch (item.sentiment) {
+    'positive' => Icons.sentiment_satisfied_alt_rounded,
+    'negative' => Icons.sentiment_dissatisfied_rounded,
+    _ => Icons.sentiment_neutral_rounded,
+  };
+}
+
 // Urgency sort rank so the breakdown reads High→Medium→Low, matching the bars.
 // (Sentiment is ordered by star rating instead — see _NlpSentimentState.)
 int _urgRank(String u) => u == 'high' ? 0 : (u == 'medium' ? 1 : 2);
@@ -2902,7 +2923,7 @@ class _BreakdownEmpty extends StatelessWidget {
   }
 }
 
-class _BreakdownRow extends StatefulWidget {
+class _BreakdownRow extends StatelessWidget {
   final FeedbackInsightItem item;
   final bool urgencyMode;
 
@@ -2929,19 +2950,12 @@ class _BreakdownRow extends StatefulWidget {
   });
 
   @override
-  State<_BreakdownRow> createState() => _BreakdownRowState();
-}
-
-class _BreakdownRowState extends State<_BreakdownRow> {
-  bool _hovered = false;
-
-  @override
   Widget build(BuildContext context) {
-    final item = widget.item;
-    final urgencyMode = widget.urgencyMode;
-    final expanded = widget.expanded;
-    final narrow = widget.narrow;
-    final interactive = widget.onOpen != null;
+    final item = this.item;
+    final urgencyMode = this.urgencyMode;
+    final expanded = this.expanded;
+    final narrow = this.narrow;
+    final interactive = onOpen != null;
     final color = urgencyMode
         ? _urgencyColor(item.urgency)
         : _sentimentColor(item.sentiment);
@@ -2968,14 +2982,43 @@ class _BreakdownRowState extends State<_BreakdownRow> {
     final time = _relTimeShort(item.createdAt);
 
     final content = Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: expanded
+          ? CrossAxisAlignment.center
+          : CrossAxisAlignment.start,
       children: [
-        Container(
-          width: 7,
-          height: 7,
-          margin: EdgeInsets.only(top: expanded ? 6 : 4, right: 8),
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-        ),
+        // Expanded rows carry the Recent activity feed's leading mark: a 38px
+        // tinted disc with the kind's icon. The compact card preview keeps its
+        // 7px dot, where a 38px disc would outweigh the two lines beside it.
+        //
+        // The phone sheet keeps the dot too. A Recent activity row spends its
+        // width on a title and a timestamp; these rows also carry an urgency
+        // badge and a chevron, and at 360px the disc's 50px pushed the Tagalog
+        // description from two readable lines to one clipped mid-word. Reading
+        // the report is the reason the sheet exists, so the disc yields first.
+        if (expanded && !narrow) ...[
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              _breakdownIcon(urgencyMode, item),
+              size: 17,
+              color: color,
+            ),
+          ),
+          const SizedBox(width: 12),
+        ] else
+          Container(
+            width: 7,
+            height: 7,
+            // The compact row is top-aligned, so the dot needs nudging onto the
+            // title's line; the expanded phone row centres, so it must not.
+            margin: EdgeInsets.only(top: expanded ? 0 : 4, right: 8),
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -3101,18 +3144,16 @@ class _BreakdownRowState extends State<_BreakdownRow> {
             ],
           ),
         ),
-        // A chevron is the one cue that says "this opens something". Reserved
-        // only in the expanded list, where there is width to spare.
-        if (expanded && interactive && !narrow) ...[
+        // A chevron is the one cue that says "this opens something", and the
+        // Recent activity feed shows it outright rather than fading it in on
+        // hover: a cue that only appears under the pointer is not a cue on a
+        // touch screen, and the phone sheet is a touch screen.
+        if (expanded && interactive) ...[
           const SizedBox(width: 4),
-          AnimatedOpacity(
-            duration: _motion(context),
-            opacity: _hovered ? 1 : 0.35,
-            child: const Icon(
-              Icons.chevron_right_rounded,
-              size: 18,
-              color: AdminUi.textMuted,
-            ),
+          const Icon(
+            Icons.chevron_right_rounded,
+            size: 20,
+            color: AdminUi.textMuted,
           ),
         ],
       ],
@@ -3130,7 +3171,7 @@ class _BreakdownRowState extends State<_BreakdownRow> {
       return MouseRegion(
         cursor: SystemMouseCursors.click,
         child: GestureDetector(
-          onTap: widget.onOpen,
+          onTap: onOpen,
           behavior: HitTestBehavior.opaque,
           child: row,
         ),
@@ -3161,28 +3202,22 @@ class _BreakdownRowState extends State<_BreakdownRow> {
         child: padded,
       );
     }
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: Material(
-        color: AdminUi.surface,
+    // The Recent activity feed row, exactly: a Material + InkWell, with the
+    // border constant. No MouseRegion and no hover-darkened edge — InkWell
+    // already provides the hover wash, the focus highlight and the press
+    // ripple, and it does it identically on both sheets.
+    return Material(
+      color: AdminUi.surface,
+      borderRadius: BorderRadius.circular(radius),
+      child: InkWell(
+        onTap: onOpen,
         borderRadius: BorderRadius.circular(radius),
-        child: InkWell(
-          onTap: widget.onOpen,
-          borderRadius: BorderRadius.circular(radius),
-          hoverColor: AdminUi.subtle,
-          child: Ink(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(radius),
-              // Hover darkens the edge rather than summoning one, so the row
-              // does not change size or gain structure under the pointer.
-              border: Border.all(
-                color: _hovered ? AdminUi.textMuted : AdminUi.border,
-              ),
-            ),
-            child: padded,
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(radius),
+            border: Border.all(color: AdminUi.border),
           ),
+          child: padded,
         ),
       ),
     );
