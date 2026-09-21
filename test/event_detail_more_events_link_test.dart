@@ -113,4 +113,87 @@ void main() {
       expect(size.height, greaterThanOrEqualTo(40));
     });
   });
+
+  // ── The category chip beside the status pill ───────────────────────────────
+  //
+  // Both chips size to their own content, and BOTH used to be rigid: the
+  // category could not shrink past its text and `EventStatusPill` had no
+  // maxLines at all. The row overflowed by a hairline at 1.0x — small enough
+  // to pass for a rounding artefact — and by 38px at Android's largest font,
+  // which is a visible clip of the pill.
+  //
+  // Three things had to change together, so all three are pinned here:
+  //   * the `Spacer()` between them is gone — it is flex: 1, and so is a loose
+  //     `Flexible`, so the two split the slack and the category never got to
+  //     use it (see the admin breakdown modal for the same trap);
+  //   * the pill's LABEL ellipsizes rather than demanding its full width;
+  //   * the pill itself is `Flexible` in this row, because at 1.3x
+  //     "Happening now" alone wants ~192px of a ~294px row — more than the
+  //     category can return by shrinking to nothing.
+  //
+  // The worst pairing is the longest category against the longest phase label,
+  // which is `live` ("Happening now") — an event whose window is open NOW.
+  group('the category chip and the status pill share the row', () {
+    final now = DateTime.now();
+
+    EventItem worstPair() => EventItem(
+      id: 'e2',
+      title: 'Libreng Tuli at Medical Mission para sa mga Kabataan',
+      location: 'Plaza',
+      date: 'Sep 20, 2026',
+      time: '12:00 AM - 11:59 PM', // spans today → "Happening now"
+      category: 'Disaster Preparedness',
+      categoryColor: const Color(0xFF22C55E),
+      eventDate: DateTime(now.year, now.month, now.day),
+      isFeatured: true,
+      description: 'Bringing services closer to the community.',
+    );
+
+    for (final device in kAllPhones) {
+      for (final scale in const [1.0, 1.3]) {
+        testWidgets('$device @ ${scale}x fits the longest chips', (
+          tester,
+        ) async {
+          final errors = await pumpAt(
+            tester,
+            device,
+            () => host(worstPair()),
+            textScale: scale,
+          );
+          expect(errors, isEmpty, reason: '\n${errors.join('\n')}');
+        });
+      }
+    }
+
+    // ── Web, not just the handset ─────────────────────────────────────────
+    //
+    // This screen is NOT mobile-only: citizen_shell_router mounts it at an
+    // id-addressable URL. And `uiScaleWidth` measures the VIEWPORT on web
+    // (clamped to 480) rather than the shortest side, so a browser window
+    // dragged to phone width lands on exactly the same `w` — and reproduced
+    // exactly the same overflow. A narrow browser is the case a phone-only
+    // sweep would have kept missing.
+    const webSizes = <Device>[
+      Device('web narrow', Size(420, 900)),
+      Device('web 768', Size(768, 1024)),
+      Device('web 1024', Size(1024, 900)),
+      Device('web 1440', Size(1440, 900)),
+    ];
+
+    for (final device in webSizes) {
+      for (final scale in const [1.0, 1.3]) {
+        testWidgets('$device @ ${scale}x fits the longest chips', (
+          tester,
+        ) async {
+          final errors = await pumpAt(
+            tester,
+            device,
+            () => host(worstPair()),
+            textScale: scale,
+          );
+          expect(errors, isEmpty, reason: '\n${errors.join('\n')}');
+        });
+      }
+    }
+  });
 }

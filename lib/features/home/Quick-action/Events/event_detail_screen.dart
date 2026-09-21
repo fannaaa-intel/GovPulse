@@ -272,7 +272,22 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                                   // yields: Flexible lets it shrink and clip
                                   // its own text rather than pushing the row
                                   // past the column.
+                                  //
+                                  // A `Spacer()` used to sit between them to
+                                  // push the pill right, and it is why the row
+                                  // STILL overflowed — by a hairline at 1.0x
+                                  // and by 38px at Android's largest font.
+                                  // Spacer is flex: 1 and a loose Flexible
+                                  // carries flex: 1 too, so the two split the
+                                  // free space 50/50: the category never got
+                                  // to use the slack it needed, because half
+                                  // of it had already gone to the Spacer.
+                                  // Exactly ONE flex child may own the slack —
+                                  // here the category — and `spaceBetween`
+                                  // does the pushing the Spacer was there for.
                                   Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
                                     children: [
                                       Flexible(
                                         child: Container(
@@ -299,11 +314,23 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                                         ),
                                       ),
                                       SizedBox(width: w * 0.02),
-                                      const Spacer(),
-                                      EventStatusPill(
-                                        eventDate: event.eventDate,
-                                        eventTime: event.time,
-                                        fontSize: w * 0.028,
+                                      // Flexible, not bare: the pill hugs its
+                                      // own text, and at Android's largest
+                                      // font "Happening now" alone measures
+                                      // ~192px of a ~294px row — more than the
+                                      // category chip can give back by
+                                      // shrinking to nothing. Both chips have
+                                      // to be able to yield or the pair
+                                      // overflows whatever the category does.
+                                      // `loose` keeps it at its natural width
+                                      // whenever there IS room, so the common
+                                      // case is unchanged.
+                                      Flexible(
+                                        child: EventStatusPill(
+                                          eventDate: event.eventDate,
+                                          eventTime: event.time,
+                                          fontSize: w * 0.028,
+                                        ),
                                       ),
                                     ],
                                   ),
@@ -605,33 +632,41 @@ class _EventDetailScreenState extends State<EventDetailScreen>
     required String? sublabel,
     required double w,
   }) {
+    // The text column is `Expanded`, not bare. Without it the Column takes its
+    // children's full intrinsic width and the Row simply overflows — nothing
+    // here can wrap, however long the content is. This row carries the venue
+    // and the date/time, both free text from the admin form: a two-line Aparri
+    // address or a "12:00 AM - 11:59 PM" range overran it by ~25px at Android's
+    // largest font, on handsets AND in a narrow browser.
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Icon(icon, size: w * 0.05, color: iconColor),
         SizedBox(width: w * 0.03),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: w * 0.036,
-                fontWeight: FontWeight.w600,
-                color: const Color(0xFF1F2937),
-              ),
-            ),
-            if (sublabel != null && sublabel.isNotEmpty) ...[
-              SizedBox(height: w * 0.004),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
               Text(
-                sublabel,
+                label,
                 style: TextStyle(
-                  fontSize: w * 0.030,
-                  color: const Color(0xFF6B7280),
+                  fontSize: w * 0.036,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF1F2937),
                 ),
               ),
+              if (sublabel != null && sublabel.isNotEmpty) ...[
+                SizedBox(height: w * 0.004),
+                Text(
+                  sublabel,
+                  style: TextStyle(
+                    fontSize: w * 0.030,
+                    color: const Color(0xFF6B7280),
+                  ),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ],
     );

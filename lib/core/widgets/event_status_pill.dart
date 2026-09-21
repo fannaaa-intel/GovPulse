@@ -146,17 +146,35 @@ class EventStatusPill extends StatelessWidget {
           ),
         ],
       ),
+      // `MainAxisSize.min` makes this pill exactly as wide as its own content,
+      // which is right — but on its own it also made the pill RIGID. The label
+      // carried no maxLines and no Flexible, so a host Row could not shrink it
+      // by even a pixel: beside a long category chip on a 320dp handset the
+      // pair overflowed by a hairline at 1.0x and by 38px at Android's largest
+      // font, and no amount of yielding on the CATEGORY's side could absorb it
+      // once that chip hit its own floor.
+      //
+      // The icon stays fixed (it is the phase at a glance); the label is what
+      // gives. Under a bounded parent it now ellipsizes instead of overflowing,
+      // and because the Row is still `min`, an unbounded parent — the event
+      // cards that place this pill on its own — is unaffected and the pill
+      // keeps hugging its text exactly as before.
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, size: fontSize * 1.1, color: color),
           SizedBox(width: fontSize * 0.3),
-          Text(
-            s.label,
-            style: TextStyle(
-              fontSize: fontSize,
-              fontWeight: FontWeight.w700,
-              color: color,
+          Flexible(
+            child: Text(
+              s.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              softWrap: false,
+              style: TextStyle(
+                fontSize: fontSize,
+                fontWeight: FontWeight.w700,
+                color: color,
+              ),
             ),
           ),
         ],
