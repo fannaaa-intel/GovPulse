@@ -513,4 +513,86 @@ void main() {
       }
     }
   });
+
+  // ── Cached rows cut mid-word by the OLD server clamp are repaired ─────────
+  //
+  // The server clamp is fixed and redeployed, but `ai_dashboard_insights` rows
+  // written before that keep the old `.slice(0, 24)` strings, and the dashboard
+  // only regenerates them when new submissions arrive. The reported screenshot
+  // was one of those rows.
+  //
+  // The client cannot re-clamp its way out: at the dashboard's real widths a
+  // 24-char stub FITS, so nothing ellipsises and it renders as a confident
+  // label that is secretly truncated. Hence the repair at parse time.
+  //
+  // Half these cases are false-positive guards. The repair rewrites model text,
+  // so the risk is not that it under-fires (the old string is merely ugly) but
+  // that it MANGLES a legitimate metric - destroying a number an admin needs is
+  // worse than the bug. Two of these were real false positives caught while
+  // writing this: "Permits and licensing 24" and a trailing-rating string.
+  group('a metric cut by the old server clamp is repaired', () {
+    const cases = <String, String>{
+      // Repaired - the exact strings from the report.
+      '1 recent complaint (docu': '1 recent complaint…',
+      '3 recent high-urgency re': '3 recent high-urgency…',
+      'Civil Registrar complain': 'Civil Registrar…',
+      // Left alone - shorter than the old ceiling, so never cut.
+      '2.75★': '2.75★',
+      '4 mentions': '4 mentions',
+      // Left alone - already carries an ellipsis (new clamp, or re-parsed).
+      '1 recent complaint…': '1 recent complaint…',
+      // Left alone - 25 chars, so not the old ceiling.
+      '12 reports in 3 barangays': '12 reports in 3 barangays',
+      // Left alone - one unbreakable token; backing up would erase it.
+      'aaaaaaaaaaaaaaaaaaaaaaaa': 'aaaaaaaaaaaaaaaaaaaaaaaa',
+      // Left alone - trailing token is a complete number/rating, not a
+      // clipped word. Healing these would destroy the metric's value.
+      'Permits and licensing 24': 'Permits and licensing 24',
+      '3 reports in Macanaya 12': '3 reports in Macanaya 12',
+      // Left alone - a hard cut never lands on whitespace.
+      'Average wait time 3.5★  ': 'Average wait time 3.5★  ',
+      '12 high-urgency reports ': '12 high-urgency reports ',
+    };
+
+    cases.forEach((input, want) {
+      test('"$input"', () {
+        expect(AdminDashboardNotifier.healHardCut(input), want);
+      });
+    });
+  });
+
+  // The repair has to run on the path the dashboard actually uses, not just as
+  // a pure function - wiring it into the wrong branch would leave the reported
+  // bug exactly as it was while the unit tests above stayed green.
+  testWidgets('the repaired metric is what reaches the card', (tester) async {
+    final nlp = _notifier.analyseNlp(
+      [_feedback(2, _now.subtract(const Duration(days: 3)))],
+      const [],
+      const [],
+      {
+        'generated_at': _now.toIso8601String(),
+        'summary': 'Overall service rating is moderate (3.5★).',
+        'focus': [
+          {
+            'title': 'Document handling',
+            'scope': 'Municipal Civil Registrar',
+            'metric': '1 recent complaint (docu',
+            'suggestion': 'Create a centralized document receipt log.',
+            'severity': 'high',
+            'target': 'feedback',
+          },
+        ],
+      },
+      _now,
+    );
+
+    final text = await _render(tester, nlp, widget: needsAttentionForTesting(nlp));
+
+    expect(text, contains('1 recent complaint…'));
+    expect(
+      text,
+      isNot(contains('(docu')),
+      reason: 'the mid-word cut must not survive to the card',
+    );
+  });
 }

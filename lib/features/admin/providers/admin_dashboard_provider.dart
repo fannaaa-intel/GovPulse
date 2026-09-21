@@ -1447,7 +1447,7 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
         OutlookFocus(
           title: title,
           scope: cleanScope,
-          metric: (e['metric'] as String?)?.trim() ?? '',
+          metric: healHardCut((e['metric'] as String?)?.trim() ?? ''),
           suggestion: suggestion,
           severity: severity,
           target: _aiTarget(e['target'], title, cleanScope),
@@ -1455,6 +1455,56 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
       );
     }
     return out.take(4).toList();
+  }
+
+  /// Repairs a `metric` that an OLD deploy of recommend-actions cut mid-word.
+  ///
+  /// That function used a bare `.slice(0, 24)`, which turned "1 recent
+  /// complaint (document handling)" into "1 recent complaint (docu". The clamp
+  /// is fixed and redeployed (it now backs up to a word boundary and appends
+  /// "…"), but rows already written to `ai_dashboard_insights` keep the old
+  /// strings until they regenerate — and the dashboard only kicks a refresh
+  /// when new submissions arrive, so a quiet week leaves the damage on screen
+  /// indefinitely.
+  ///
+  /// The client cannot re-clamp its way out of this: at the dashboard's real
+  /// widths a 24-char stub FITS, so nothing ellipsises and it renders as a
+  /// confident label that is secretly truncated. The cut has to be detected and
+  /// repaired here, once, where every cached row is read.
+  ///
+  /// Deliberately conservative — it only fires on the exact signature of the
+  /// old bug:
+  ///  • exactly 24 characters (the old ceiling; a shorter string was never cut),
+  ///  • no existing "…" (already repaired, or written by the new clamp),
+  ///  • the last word is clipped (no trailing space, and a space to back up to).
+  /// A legitimate 24-char metric ending on a word boundary is left untouched.
+  @visibleForTesting
+  static String healHardCut(String s) {
+    const oldCeiling = 24;
+    if (s.length != oldCeiling || s.endsWith('…')) return s;
+    // A hard cut never lands on whitespace — if it ends in a space the string
+    // is intact and merely happens to be 24 characters long.
+    if (s != s.trimRight()) return s;
+    final lastSpace = s.lastIndexOf(' ');
+    // No space at all → one long token; backing up would erase the whole
+    // string, so leave it and let the widget's ellipsis handle the width.
+    if (lastSpace <= 0) return s;
+    // A trailing token that is a COMPLETE unit is intact data, not a clipped
+    // word — "Permits and licensing 24" is a real metric that happens to be 24
+    // characters, and healing it to "Permits and licensing…" would destroy the
+    // number the admin needs. Numbers (with an optional ★/%/unit) read as
+    // finished; a bare alphabetic fragment does not.
+    final lastWord = s.substring(lastSpace + 1);
+    if (RegExp(r'^[\d.,]+[★%]?$').hasMatch(lastWord)) return s;
+    // Keep the ellipsis honest: drop the partial word, then any separator it
+    // dangled on ("1 recent complaint (" → "1 recent complaint").
+    final body = s
+        .substring(0, lastSpace)
+        .replaceAll(RegExp(r'''[\s([{<"'\-–—:,.]+$'''), '');
+    // Backing up must leave something worth reading; over half the ceiling is
+    // the same threshold the server-side clamp uses.
+    if (body.length < oldCeiling * 0.5) return s;
+    return '$body…';
   }
 
   /// Resolves an AI focus entry to the console that owns it.
