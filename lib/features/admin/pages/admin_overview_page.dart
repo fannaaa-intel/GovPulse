@@ -3656,36 +3656,66 @@ class _FocusCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                width: 7,
-                height: 7,
-                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-              ),
-              const SizedBox(width: 7),
-              Expanded(
-                child: Text(
-                  focus.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w700,
-                    color: AdminUi.textPrimary,
+          // LayoutBuilder so the metric's cap is a share of the ACTUAL row
+          // width. The card is used in the dashboard rail, in a full-width
+          // phone column and inside a dialog, so a fixed pixel cap would be
+          // right in one place and wrong in the other two.
+          LayoutBuilder(
+            builder: (context, constraints) => Row(
+              children: [
+                Container(
+                  width: 7,
+                  height: 7,
+                  decoration: BoxDecoration(
+                    color: color,
+                    shape: BoxShape.circle,
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                focus.metric,
-                style: TextStyle(
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w700,
-                  color: color,
+                const SizedBox(width: 7),
+                Expanded(
+                  child: Text(
+                    focus.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: AdminUi.textPrimary,
+                    ),
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(width: 8),
+                // Flexible + ellipsis, never a bare Text. `metric` is model
+                // output: the edge function clamps it, but rows already cached
+                // in ai_dashboard_insights carry the old hard-cut strings, and
+                // an unconstrained Text in a Row takes whatever width it asks
+                // for and is then clipped by the card edge - no ellipsis, cut
+                // mid-word, reading as a broken layout rather than a long label.
+                //
+                // Capped at 45% of the row so a long metric can never starve the
+                // title, which is the more important of the two. On a narrow
+                // phone card both then ellipsise instead of one shoving the
+                // other out.
+                Flexible(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: constraints.maxWidth * 0.45,
+                    ),
+                    child: Text(
+                      focus.metric,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.end,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                        color: color,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
           // WHERE the finding applies + how much evidence backs it. Aligned to
           // the title (past the severity dot) so it reads as the title's

@@ -33,6 +33,27 @@ const corsHeaders = {
 
 const SEVERITIES = new Set(["high", "medium", "low"]);
 
+/// Clamp a model string to `max` characters WITHOUT cutting mid-word.
+///
+/// A bare `.slice(0, 24)` turned "1 recent complaint (document handling)" into
+/// "1 recent complaint (docu" — which the dashboard then rendered as-is, so it
+/// read on screen as a broken layout rather than a shortened label. Back up to
+/// the last space and append an ellipsis so a truncation announces itself.
+///
+/// Falls back to a hard cut only when there is no space to back up to (one
+/// very long token), and never emits a dangling separator like "(" or "-".
+function clamp(raw: unknown, max: number): string {
+  const s = String(raw ?? "").trim();
+  if (s.length <= max) return s;
+  // -1 leaves room for the ellipsis character.
+  const cut = s.slice(0, max - 1);
+  const lastSpace = cut.lastIndexOf(" ");
+  // Only honour the word boundary if it keeps a useful amount of the string;
+  // backing up from 24 chars to 3 would be worse than a hard cut.
+  const body = lastSpace > max * 0.5 ? cut.slice(0, lastSpace) : cut;
+  return body.replace(/[\s([{<"'\-–—:,.]+$/, "") + "…";
+}
+
 const SYSTEM_PROMPT = `
 You are a public-service operations analyst for the Local Government Unit (LGU)
 of Aparri, Cagayan, Philippines. You are given AGGREGATED citizen feedback,
@@ -114,13 +135,13 @@ function parseResult(raw: string): { summary: string; focus: Focus[] } | null {
       if (!SEVERITIES.has(severity)) severity = "medium";
       const scope = String(f?.scope ?? "").trim();
       focus.push({
-        title: title.slice(0, 60),
+        title: clamp(title, 60),
         // Empty/"null" scope is legitimate — the client just omits the line.
         scope: scope && scope.toLowerCase() !== "null"
-          ? scope.slice(0, 60)
+          ? clamp(scope, 60)
           : null,
-        metric: String(f?.metric ?? "").trim().slice(0, 24),
-        suggestion: suggestion.slice(0, 200),
+        metric: clamp(f?.metric, 24),
+        suggestion: clamp(suggestion, 200),
         severity,
       });
       if (focus.length >= 4) break;

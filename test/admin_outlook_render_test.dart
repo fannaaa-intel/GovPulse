@@ -218,4 +218,130 @@ void main() {
       });
     }
   });
+
+  // ── Long AI metric must not overflow the focus card ────────────────────────
+  //
+  // `metric` is model output. The edge function clamps it, but rows already
+  // cached in ai_dashboard_insights carry the OLD hard `.slice(0, 24)` strings,
+  // so the client has to survive them on its own.
+  //
+  // The reported bug: the metric was a bare Text in a Row - unconstrained, so
+  // it took whatever width it asked for and was then clipped by the card edge.
+  // No ellipsis, cut mid-word ("1 recent complaint (docu"), which reads as a
+  // broken layout rather than a shortened label. It showed on desktop AND on a
+  // phone, so every width below has to stay clean.
+  group('a long AI metric never overflows the focus card', () {
+    // The exact strings from the report: 24 chars, cut mid-word by the server.
+    Map<String, dynamic> aiInsight() => {
+      'generated_at': _now.toIso8601String(),
+      'summary': 'Overall service rating is moderate (3.5 stars).',
+      'focus': [
+        {
+          'title': 'Document handling',
+          'scope': 'Municipal Civil Registrar',
+          'metric': '1 recent complaint (docu',
+          'suggestion':
+              'Create a centralized document receipt log and assign a staff '
+              'member to verify and confirm each filing.',
+          'severity': 'high',
+          'target': 'feedback',
+        },
+        {
+          'title': 'High-urgency reports',
+          'scope': 'Sanja, Macanaya (Pescaria), Maura - 3 reports',
+          'metric': '3 recent high-urgency re',
+          'suggestion':
+              'Deploy inspection teams to these barangays this week to '
+              'address road and drainage hazards.',
+          'severity': 'high',
+          'target': 'reports',
+        },
+        {
+          // A pathological single token with no space to break on.
+          'title': 'Unbreakable token',
+          'scope': null,
+          'metric': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          'suggestion': 'Should still ellipsise rather than overflow.',
+          'severity': 'medium',
+          'target': null,
+        },
+      ],
+    };
+
+    // 320 is the tightest phone; 360/393 are the common ones; 440 is the
+    // dashboard rail; 700 is the card inside a wide dialog.
+    for (final w in [320.0, 360.0, 393.0, 440.0, 700.0]) {
+      testWidgets('at ${w.toInt()}px wide', (tester) async {
+        final nlp = _notifier.analyseNlp(
+          [
+            _feedback(2, _now.subtract(const Duration(days: 3))),
+            _feedback(4, _now.subtract(const Duration(days: 10))),
+          ],
+          const [],
+          const [],
+          aiInsight(),
+          _now,
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: SingleChildScrollView(
+                child: SizedBox(
+                  width: w,
+                  child: needsAttentionForTesting(nlp),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        // A RenderFlex overflow throws here. This is the assertion that fails
+        // against the bare-Text version of the card.
+        expect(
+          tester.takeException(),
+          isNull,
+          reason: 'the focus card overflowed at ${w.toInt()}px',
+        );
+      });
+    }
+
+    testWidgets('the metric still renders and stays on one line', (
+      tester,
+    ) async {
+      final nlp = _notifier.analyseNlp(
+        [_feedback(2, _now.subtract(const Duration(days: 3)))],
+        const [],
+        const [],
+        aiInsight(),
+        _now,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: SizedBox(
+                width: 360,
+                child: needsAttentionForTesting(nlp),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+
+      // Clipping it away entirely would also "not overflow" - the text has to
+      // actually be there, ellipsised rather than hidden.
+      final metric = tester.widgetList<Text>(find.byType(Text)).firstWhere(
+            (t) => (t.data ?? '').startsWith('1 recent complaint'),
+            orElse: () => const Text('MISSING'),
+          );
+      expect(metric.data, isNot('MISSING'));
+      expect(metric.maxLines, 1);
+      expect(metric.overflow, TextOverflow.ellipsis);
+    });
+  });
 }
