@@ -7,6 +7,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:govpulse/features/admin/pages/admin_overview_page.dart';
 import 'package:govpulse/features/admin/providers/admin_dashboard_provider.dart';
 
+import '_responsive_matrix.dart';
+
 final _notifier = AdminDashboardNotifier();
 final _now = DateTime(2026, 7, 14, 12);
 var _seq = 0;
@@ -430,6 +432,85 @@ void main() {
               'is splitting the row\'s slack',
         );
       });
+    }
+  });
+
+  // ── Hostile content at large text, every phone ────────────────────────────
+  //
+  // The two groups above feed the card the strings from the bug report, which
+  // are the GENTLE case: short scopes, no Tagalog, 1.0x text. `scope` and
+  // `suggestion` are free text that a model writes from DB rows, so the real
+  // worst case is a long barangay list at Android's largest font size.
+  //
+  // Sweeping realistic-worst content rather than a convenient fixture is what
+  // surfaced a bare Column in a Row over in the events detail screen - a row
+  // that looked clean at 1.0x could never wrap its text. The gentler fixture
+  // never reached it.
+  //
+  // `pumpAt` is used rather than a hand-rolled pump because it sets the scale
+  // on the VIEW: MaterialApp inserts its own MediaQuery.fromView, so a
+  // textScaler wrapped around the app is dropped and every scale silently
+  // re-tests 1.0. It also tears the tree down between sizes, because a
+  // RenderFlex reports an overflow only the first time it paints one.
+  group('the focus card survives hostile content at large text', () {
+    // Every field at its realistic worst: a long Tagalog-length title, the
+    // multi-barangay scope the AI actually emits, a full-length suggestion,
+    // and a metric at the server clamp's 24-char ceiling.
+    Map<String, dynamic> hostileInsight() => {
+      'generated_at': _now.toIso8601String(),
+      'summary':
+          'Overall service rating is moderate (3.5★); document handling and '
+          'wait-time at the Municipal Civil Registrar need immediate '
+          'attention, while rising high-urgency reports in three barangays '
+          'pose a safety risk to residents and commuters alike.',
+      'focus': [
+        {
+          'title': 'Mabagal na pagproseso ng dokumento',
+          'scope':
+              'Sanja, Macanaya (Pescaria), Maura, Punta, Toran, '
+              'Paruddun Norte, Bisagu · 14 reports',
+          'metric': '12 recent high-urgency…',
+          'suggestion':
+              'Deploy inspection teams to these barangays this week to '
+              'address road and drainage hazards before the rainy season '
+              'begins, and assign a staff member to confirm each filing.',
+          'severity': 'high',
+          'target': 'reports',
+        },
+      ],
+    };
+
+    for (final device in kAllPhones) {
+      for (final scale in [1.0, 1.3]) {
+        testWidgets('${device.name} @ ${scale}x', (tester) async {
+          final nlp = _notifier.analyseNlp(
+            [_feedback(2, _now.subtract(const Duration(days: 3)))],
+            const [],
+            const [],
+            hostileInsight(),
+            _now,
+          );
+
+          final errors = await pumpAt(
+            tester,
+            device,
+            () => MaterialApp(
+              home: Scaffold(
+                body: SingleChildScrollView(
+                  child: needsAttentionForTesting(nlp),
+                ),
+              ),
+            ),
+            textScale: scale,
+          );
+
+          expect(
+            errors,
+            isEmpty,
+            reason: errors.join('\n'),
+          );
+        });
+      }
     }
   });
 }
