@@ -344,4 +344,92 @@ void main() {
       expect(metric.overflow, TextOverflow.ellipsis);
     });
   });
+
+  // ── A SHORT metric must sit flush against the card's right edge ────────────
+  //
+  // Separate bug from the overflow above, same Row. The title is `Expanded`
+  // (flex: 1) and the metric was `Flexible` (ALSO flex: 1, because loose fit
+  // still carries a flex). Two flex children split the leftover space 50/50,
+  // so the metric got a box far wider than its text and `TextAlign.end`
+  // aligned it inside THAT box - leaving a short metric like "2.75★" floating
+  // mid-row with a visible gap to the card edge.
+  //
+  // The overflow tests above cannot catch this: a long metric fills its
+  // oversized box, so it looks correct while the bug is still present. Only a
+  // metric far shorter than 45% of the row exposes it.
+  group('a short AI metric stays pinned to the card edge', () {
+    Map<String, dynamic> shortMetricInsight() => {
+      'generated_at': _now.toIso8601String(),
+      'summary': 'Overall service rating is moderate (3.5★).',
+      'focus': [
+        {
+          'title': 'Wait time',
+          'scope': 'Municipal Civil Registrar · 4 responses',
+          // The reported string: short enough that the split-slack gap shows.
+          'metric': '2.75★',
+          'suggestion':
+              'Add an extra service window and display real-time queue '
+              'estimates to reduce waiting time.',
+          'severity': 'medium',
+          'target': 'feedback',
+        },
+      ],
+    };
+
+    for (final w in [320.0, 360.0, 393.0, 440.0, 700.0]) {
+      testWidgets('at ${w.toInt()}px wide', (tester) async {
+        final nlp = _notifier.analyseNlp(
+          [_feedback(2, _now.subtract(const Duration(days: 3)))],
+          const [],
+          const [],
+          shortMetricInsight(),
+          _now,
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: SingleChildScrollView(
+                child: SizedBox(
+                  width: w,
+                  child: needsAttentionForTesting(nlp),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+        expect(tester.takeException(), isNull);
+
+        final metricFinder = find.text('2.75★');
+        expect(metricFinder, findsOneWidget);
+
+        // The focus row's tinted container is the metric's nearest ancestor
+        // that draws the edge the metric must hug. Its padding is 11px, so a
+        // correctly pinned metric ends 11px inside the container's right edge.
+        final metricRight = tester.getBottomRight(metricFinder).dx;
+        final cardRight = tester
+            .getBottomRight(
+              find
+                  .ancestor(
+                    of: metricFinder,
+                    matching: find.byType(Container),
+                  )
+                  .first,
+            )
+            .dx;
+
+        // Against the split-slack version this gap was ~a quarter of the row
+        // (tens of px). Allowing 1px absorbs text-layout rounding only.
+        expect(
+          cardRight - metricRight,
+          lessThanOrEqualTo(12.0),
+          reason:
+              'the metric floated ${(cardRight - metricRight).toStringAsFixed(1)}px '
+              'short of the card edge at ${w.toInt()}px - a second flex child '
+              'is splitting the row\'s slack',
+        );
+      });
+    }
+  });
 }

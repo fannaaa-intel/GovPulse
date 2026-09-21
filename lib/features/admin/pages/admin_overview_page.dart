@@ -3685,7 +3685,7 @@ class _FocusCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 8),
-                // Flexible + ellipsis, never a bare Text. `metric` is model
+                // Constrained + ellipsis, never a bare Text. `metric` is model
                 // output: the edge function clamps it, but rows already cached
                 // in ai_dashboard_insights carry the old hard-cut strings, and
                 // an unconstrained Text in a Row takes whatever width it asks
@@ -3696,7 +3696,19 @@ class _FocusCard extends StatelessWidget {
                 // title, which is the more important of the two. On a narrow
                 // phone card both then ellipsise instead of one shoving the
                 // other out.
+                //
+                // `flex: 0` is load-bearing, not a tidy-up. A default Flexible
+                // carries flex: 1 even at FlexFit.loose, so it and the title's
+                // Expanded split the row's leftover space 50/50 - the metric
+                // then got a box far wider than its text and TextAlign.end
+                // aligned it inside THAT box, leaving a short metric like
+                // "2.75★" floating ~260px short of the card edge. At flex: 0
+                // the metric sizes to its content (still capped, still
+                // ellipsised) and the title's Expanded owns all the slack, so
+                // the metric is pushed flush right. Exactly one flex child may
+                // own a row's slack.
                 Flexible(
+                  flex: 0,
                   child: ConstrainedBox(
                     constraints: BoxConstraints(
                       maxWidth: constraints.maxWidth * 0.45,
