@@ -11,6 +11,7 @@ import '../../../core/router/app_router.dart'
 import '../../../core/services/auth_ready.dart';
 import '../../../core/services/citizen_guard.dart';
 import '../../../core/services/events_service.dart';
+import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/citizen_ui.dart';
 import '../../../core/widgets/citizen_guard_modals.dart';
 import '../../../core/widgets/loading/brand_spinner.dart';
@@ -1509,6 +1510,12 @@ class GovPulseWebApp extends StatelessWidget {
       title: 'GovPulse',
       color: Colors.white,
       theme: ThemeData(
+        // The SAME scheme the mobile app uses. Without it this ThemeData had
+        // no colorScheme at all, so the browser fell back to Flutter's stock
+        // #6750A4 and every bare TextButton — every "Cancel" beside a
+        // destructive action — drew a purple label on an otherwise blue site.
+        // Sharing the scheme is what stops web and mobile drifting apart.
+        colorScheme: govPulseColorScheme,
         scaffoldBackgroundColor: Colors.white,
         // Every platform key maps to the same builder. This ThemeData is only
         // ever built by GovPulseWebApp, so "every platform" only ever means the

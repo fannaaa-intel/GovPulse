@@ -44,6 +44,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:govpulse/core/theme/app_colors.dart';
 import 'package:govpulse/features/admin/providers/admin_staff_replies_provider.dart';
 import 'package:govpulse/features/admin/theme/admin_ui.dart';
 import 'package:govpulse/features/admin/widgets/staff_reply_approvals.dart';
@@ -187,6 +188,12 @@ class _PreviewAppState extends State<_PreviewApp> {
     _current = _state;
     return MaterialApp(
       debugShowCheckedModeBanner: false,
+      // The REAL scheme, not a bare ThemeData. Without this the harness
+      // reproduces the exact bug it is meant to reveal: a scheme-less
+      // MaterialApp falls back to Flutter's stock #6750A4 and every bare
+      // TextButton — "Cancel" in the send-back sheet — draws a purple label,
+      // which is then wrongly read as the app's own styling.
+      theme: ThemeData(colorScheme: govPulseColorScheme),
       home: Scaffold(
         backgroundColor: const Color(0xFF1F2937),
         body: Column(

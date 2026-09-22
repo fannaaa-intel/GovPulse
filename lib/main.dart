@@ -357,17 +357,12 @@ Future<void> _initServices() async {
 /// surfaces are therefore pinned to plain white/greys afterwards, which is what
 /// the hand-built pages (AdminUi, CitizenUi) already assume. Doing it here, once,
 /// keeps every popup consistent without touching ~700 widget call sites.
+///
+/// The scheme itself is [govPulseColorScheme], which lives beside the brand
+/// colours in `app_colors.dart` because the WEB app shares it — see its own
+/// note for why `primary` is pinned rather than seeded (the purple "Cancel").
 final ThemeData _appTheme = () {
-  final base = ColorScheme.fromSeed(seedColor: AppColors.primaryBlue);
-  final scheme = base.copyWith(
-    surface: Colors.white,
-    surfaceContainerLowest: Colors.white,
-    surfaceContainerLow: Colors.white,
-    surfaceContainer: Colors.white,
-    surfaceContainerHigh: Colors.white,
-    surfaceContainerHighest: const Color(0xFFF4F6FA),
-    surfaceTint: Colors.transparent, // no elevation tint over white
-  );
+  final scheme = govPulseColorScheme;
 
   return ThemeData(
     colorScheme: scheme,
