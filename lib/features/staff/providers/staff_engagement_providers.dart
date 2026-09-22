@@ -68,17 +68,36 @@ class StaffSuggestionsNotifier extends AsyncNotifier<List<StaffSuggestion>>
     }
   }
 
+  /// Refetch WITHOUT tearing the page down to a skeleton.
+  ///
+  /// A bare `state = const AsyncLoading()` discards the current value, so
+  /// `when(loading:)` fires and the whole page — header, KPI tiles, filters,
+  /// the list, and the open detail pane — is replaced by the skeleton for the
+  /// length of a round trip. That is wrong for every caller here: the data is
+  /// already on screen and still valid, and the user is looking at it.
+  ///
+  /// `copyWithPrevious` keeps the previous value attached to the loading
+  /// state, so `when` still routes to `data:` and the page holds its position
+  /// while `isRefreshing` is true. Callers that want a visible progress
+  /// affordance read that flag instead.
   Future<void> refresh() async {
     final dept = ref.read(staffDepartmentProvider);
     if (dept == null) return;
-    state = const AsyncLoading();
+    final previous = state;
+    state =
+        const AsyncLoading<List<StaffSuggestion>>().copyWithPrevious(previous);
     state = await AsyncValue.guard(() => _repo.fetchSuggestions(dept));
     ref.read(staffSuggestionsStaleProvider.notifier).state = false;
   }
 
-  /// Submit a draft, then refresh so the composer closes against real state
+  /// Submit a draft, then refetch so the composer closes against real state
   /// rather than an optimistic guess. A reply that appears locally but was
   /// refused by RLS is the exact failure the staff write gap produces.
+  ///
+  /// The refetch is silent: a staff member who just pressed Send is mid-task,
+  /// and flashing the whole inbox back to a skeleton reads as though the reply
+  /// threw the page away. The card they replied to simply changes state under
+  /// them.
   Future<void> submitReply(String suggestionId, String body) async {
     final dept = ref.read(staffDepartmentProvider);
     if (dept == null) return;
@@ -136,10 +155,13 @@ class StaffFeedbackNotifier extends AsyncNotifier<List<StaffFeedback>>
     }
   }
 
+  /// Same non-destructive refetch as suggestions — see the note there.
   Future<void> refresh() async {
     final dept = ref.read(staffDepartmentProvider);
     if (dept == null) return;
-    state = const AsyncLoading();
+    final previous = state;
+    state =
+        const AsyncLoading<List<StaffFeedback>>().copyWithPrevious(previous);
     state = await AsyncValue.guard(() => _repo.fetchFeedback(dept));
     ref.read(staffFeedbackStaleProvider.notifier).state = false;
   }
@@ -191,8 +213,7 @@ final staffMyScorecardProvider = FutureProvider<StaffScorecard?>((ref) async {
 });
 
 /// Weekly rating trend for this office, oldest first.
-final staffRatingTrendProvider =
-    FutureProvider<List<RatingPoint>>((ref) async {
+final staffRatingTrendProvider = FutureProvider<List<RatingPoint>>((ref) async {
   final dept = ref.watch(staffDepartmentProvider);
   if (dept == null || !departmentReceivesFeedback(dept)) return const [];
   return ref.read(staffEngagementRepoProvider).fetchRatingTrend(dept);

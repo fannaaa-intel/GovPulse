@@ -117,15 +117,33 @@ class _StaffSuggestionsPageState extends ConsumerState<StaffSuggestionsPage> {
     return StaffPageBody(
       onRefresh: () => ref.read(staffSuggestionsProvider.notifier).refresh(),
       maxWidth: 1240,
+      // Value first, THEN loading/error.
+      //
+      // `when` routes on isLoading and hasError AHEAD of the value it is still
+      // holding, so a refetch — which is what sending a reply triggers —
+      // replaced the whole page with the skeleton for the length of a round
+      // trip, and a failed refetch replaced it with an error page. Once rows
+      // are on screen they stay on screen; a failed refresh is reported by the
+      // stale banner, which exists for exactly that. `skipLoadingOnRefresh`
+      // would cover the first case alone, not the error one.
       child: async.when(
+        skipLoadingOnRefresh: true,
         loading: () => const StaffListPageSkeleton(
           twoPaneFrom: _kTwoPaneFrom,
         ),
-        error: (e, _) => StaffErrorState(
-          message: 'Suggestions could not be loaded.',
-          onRetry: () => ref.read(staffSuggestionsProvider.notifier).refresh(),
-        ),
-        data: (all) {
+        error: (e, _) => async.hasValue
+            ? _content(async.requireValue, true)
+            : StaffErrorState(
+                message: 'Suggestions could not be loaded.',
+                onRetry: () =>
+                    ref.read(staffSuggestionsProvider.notifier).refresh(),
+              ),
+        data: (all) => _content(all, stale),
+      ),
+    );
+  }
+
+  Widget _content(List<StaffSuggestion> all, bool stale) {
           final items = _apply(all);
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -216,9 +234,6 @@ class _StaffSuggestionsPageState extends ConsumerState<StaffSuggestionsPage> {
                 ),
             ],
           );
-        },
-      ),
-    );
   }
 
   void _openSheet(StaffSuggestion s) {

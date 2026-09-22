@@ -95,16 +95,29 @@ class _StaffFeedbackPageState extends ConsumerState<StaffFeedbackPage> {
     return StaffPageBody(
       onRefresh: () => ref.read(staffFeedbackProvider.notifier).refresh(),
       maxWidth: 1240,
+      // Value first, THEN loading/error — see the note on the Suggestions
+      // page. Once rows are on screen a refetch must not replace them with a
+      // skeleton, and a failed refetch is reported by the "Showing older data"
+      // notice rather than by discarding the page.
       child: async.when(
+        skipLoadingOnRefresh: true,
         loading: () => const StaffListPageSkeleton(
           panelHeight: 176,
           twoPaneFrom: _kTwoPaneFrom,
         ),
-        error: (e, _) => StaffErrorState(
-          message: 'Feedback could not be loaded.',
-          onRetry: () => ref.read(staffFeedbackProvider.notifier).refresh(),
-        ),
-        data: (all) {
+        error: (e, _) => async.hasValue
+            ? _content(async.requireValue, true)
+            : StaffErrorState(
+                message: 'Feedback could not be loaded.',
+                onRetry: () =>
+                    ref.read(staffFeedbackProvider.notifier).refresh(),
+              ),
+        data: (all) => _content(all, stale),
+      ),
+    );
+  }
+
+  Widget _content(List<StaffFeedback> all, bool stale) {
           final items = _apply(all);
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -199,9 +212,6 @@ class _StaffFeedbackPageState extends ConsumerState<StaffFeedbackPage> {
                 ),
             ],
           );
-        },
-      ),
-    );
   }
 
   void _openSheet(StaffFeedback f) {
