@@ -58,15 +58,23 @@ class PendingStaffReply {
   /// drive the admin's ordering — not when the draft was written.
   Duration get citizenWaiting => DateTime.now().difference(suggestionCreatedAt);
 
-  static PendingStaffReply fromRow(Map<String, dynamic> r) {
+  /// [authors] maps `author_id` -> that staff member's `admin_profiles` row.
+  /// It is passed in rather than embedded: `suggestion_replies.author_id` is a
+  /// foreign key to `auth.users`, NOT to `admin_profiles`, so PostgREST has no
+  /// relationship to resolve and an `admin_profiles(...)` embed fails the whole
+  /// SELECT — which is how this queue silently rendered as nothing at all.
+  static PendingStaffReply fromRow(
+    Map<String, dynamic> r, [
+    Map<String, Map<String, dynamic>> authors = const {},
+  ]) {
     final s = r['suggestions'];
     final sug = s is Map ? Map<String, dynamic>.from(s) : const {};
-    final a = r['admin_profiles'];
-    final author = a is Map ? Map<String, dynamic>.from(a) : const {};
+    final authorId = (r['author_id'] as String?) ?? '';
+    final author = authors[authorId] ?? const <String, dynamic>{};
     return PendingStaffReply(
       id: r['id'] as String,
       suggestionId: r['suggestion_id'] as String,
-      authorId: (r['author_id'] as String?) ?? '',
+      authorId: authorId,
       authorName: (author['full_name'] as String?) ?? 'Staff',
       authorPhotoUrl: author['photo_url'] as String?,
       department: (r['department'] as String?) ?? '',
@@ -92,20 +100,46 @@ class AdminStaffRepliesNotifier
   Future<List<PendingStaffReply>> build() => _fetch();
 
   Future<List<PendingStaffReply>> _fetch() async {
+    // `suggestions` IS embeddable (suggestion_id is a real FK to it).
+    // `admin_profiles` is NOT — see PendingStaffReply.fromRow.
     final rows = await _db
         .from('suggestion_replies')
         .select(
           'id, suggestion_id, author_id, department, body, created_at, '
-          'suggestions(category, category_other, details, created_at), '
-          'admin_profiles(full_name, photo_url)',
+          'suggestions(category, category_other, details, created_at)',
         )
         .eq('status', 'pending_approval')
         // Oldest first: the citizen who has waited longest is answered first.
         .order('created_at', ascending: true)
         .limit(200);
-    return List<Map<String, dynamic>>.from(rows)
-        .map(PendingStaffReply.fromRow)
+    final list = List<Map<String, dynamic>>.from(rows);
+    if (list.isEmpty) return const [];
+
+    // Second hop for the authors' names and avatars. Best-effort: if this read
+    // fails the queue still renders with a generic "Staff" byline, because a
+    // missing avatar must never cost the admin the ability to approve.
+    final ids = list
+        .map((r) => (r['author_id'] as String?) ?? '')
+        .where((s) => s.isNotEmpty)
+        .toSet()
         .toList();
+    var authors = <String, Map<String, dynamic>>{};
+    if (ids.isNotEmpty) {
+      try {
+        final profiles = await _db
+            .from('admin_profiles')
+            .select('user_id, full_name, photo_url')
+            .inFilter('user_id', ids);
+        authors = {
+          for (final p in List<Map<String, dynamic>>.from(profiles))
+            (p['user_id'] as String): p,
+        };
+      } catch (_) {
+        authors = {};
+      }
+    }
+
+    return list.map((r) => PendingStaffReply.fromRow(r, authors)).toList();
   }
 
   Future<void> refresh() async {

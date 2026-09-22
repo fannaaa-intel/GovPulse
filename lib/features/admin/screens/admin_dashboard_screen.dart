@@ -230,6 +230,11 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
       // queue is right there in the Work log tab.
       'report_update' => 'Reports',
       'suggestion' => 'Suggestions',
+      // A staff draft awaiting approval. reference_id is the SUGGESTION id (see
+      // notify_admins_of_pending_reply), so this lands on Suggestions and
+      // flashes the suggestion being answered — the approval queue sits at the
+      // top of that page.
+      'suggestion_reply_pending' => 'Suggestions',
       'feedback' => 'Feedback',
       'verification' => 'Verification',
       // A staff submission awaiting review lands on Community too — the page

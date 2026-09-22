@@ -33,16 +33,116 @@ class StaffReplyApprovalsPanel extends ConsumerWidget {
     final async = ref.watch(adminStaffRepliesProvider);
     final items = async.valueOrNull ?? const <PendingStaffReply>[];
 
+    // A FAILED read must not look like an empty queue. Collapsing on error is
+    // how the broken admin_profiles embed stayed invisible: the read threw on
+    // every load, the panel rendered nothing, and the console said — silently —
+    // that there was no work waiting. An error now says so and offers a retry.
+    if (async.hasError && items.isEmpty) {
+      return _PanelFrame(
+        accent: const Color(0xFFDC2626),
+        icon: Icons.error_outline_rounded,
+        title: 'Approvals could not be loaded',
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Staff replies may be waiting. This is a loading problem, not '
+                'an empty queue.',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  height: 1.45,
+                  color: AdminUi.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 11),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: OutlinedButton.icon(
+                  onPressed: () =>
+                      ref.read(adminStaffRepliesProvider.notifier).refresh(),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFFDC2626),
+                    side: const BorderSide(color: Color(0xFFE5A3A3)),
+                    minimumSize: const Size(0, 40),
+                    shape: RoundedRectangleBorder(
+                      borderRadius:
+                          BorderRadius.circular(AdminUi.controlRadius),
+                    ),
+                  ),
+                  icon: const Icon(Icons.refresh_rounded, size: 16),
+                  label: const Text('Try again'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // First load shows a skeleton in the panel's own shape, so nothing below it
+    // jumps when the queue lands. Only on the FIRST load — a refresh keeps the
+    // rows on screen rather than blanking work the admin is reading.
+    if (async.isLoading && items.isEmpty) {
+      return const _ApprovalsSkeleton();
+    }
+
     // The panel disappears when there is nothing to approve rather than showing
     // an empty box on every visit — this is a queue, not a permanent section.
     if (items.isEmpty) return const SizedBox.shrink();
 
+    return _PanelFrame(
+      accent: const Color(0xFFF39C12),
+      icon: Icons.rate_review_rounded,
+      title: items.length == 1
+          ? '1 staff reply waiting for approval'
+          : '${items.length} staff replies waiting for approval',
+      // One line of orientation for an admin meeting this queue for the first
+      // time. Without it the panel states a count but never says what pressing
+      // the green button actually does to the citizen.
+      subtitle: 'Nothing here has reached the citizen yet. Approving publishes '
+          'the reply and notifies them.',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < items.length; i++) ...[
+            if (i > 0)
+              const Divider(height: 1, thickness: 1, color: AdminUi.border),
+            _ReplyRow(item: items[i]),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// The panel's shell — one border, one tinted header, one body — shared by the
+/// queue, the skeleton and the error state so all three occupy the same shape
+/// and nothing below shifts as the panel moves between them.
+class _PanelFrame extends StatelessWidget {
+  final Color accent;
+  final IconData icon;
+  final String title;
+  final String? subtitle;
+  final Widget child;
+
+  const _PanelFrame({
+    required this.accent,
+    required this.icon,
+    required this.title,
+    required this.child,
+    this.subtitle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
         color: AdminUi.surface,
         borderRadius: BorderRadius.circular(AdminUi.cardRadius),
-        border: Border.all(color: const Color(0xFFF39C12).withValues(alpha: 0.5)),
+        border: Border.all(color: accent.withValues(alpha: 0.5)),
         boxShadow: AdminUi.cardShadow,
       ),
       clipBehavior: Clip.antiAlias,
@@ -51,35 +151,113 @@ class StaffReplyApprovalsPanel extends ConsumerWidget {
         children: [
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-            color: const Color(0xFFF39C12).withValues(alpha: 0.09),
+            color: accent.withValues(alpha: 0.09),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.rate_review_rounded,
-                    size: 17, color: Color(0xFFB8770A)),
+                // Nudged onto the first line's optical centre so the icon does
+                // not float when the title wraps to two lines on a phone.
+                Padding(
+                  padding: const EdgeInsets.only(top: 1),
+                  child: Icon(icon,
+                      size: 17, color: Color.lerp(accent, Colors.black, 0.28)),
+                ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text(
-                    items.length == 1
-                        ? '1 staff reply waiting for approval'
-                        : '${items.length} staff replies waiting for approval',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF8A5A05),
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w800,
+                          color: Color.lerp(accent, Colors.black, 0.45),
+                        ),
+                      ),
+                      if (subtitle != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle!,
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            height: 1.35,
+                            color: AdminUi.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
               ],
             ),
           ),
-          for (var i = 0; i < items.length; i++) ...[
-            if (i > 0)
-              const Divider(height: 1, thickness: 1, color: AdminUi.border),
-            _ReplyRow(item: items[i]),
-          ],
+          child,
         ],
+      ),
+    );
+  }
+}
+
+/// First-load placeholder in the panel's own shape.
+class _ApprovalsSkeleton extends StatelessWidget {
+  const _ApprovalsSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    Widget bar(double w, double h) => Container(
+          width: w,
+          height: h,
+          decoration: BoxDecoration(
+            color: AdminUi.border,
+            borderRadius: BorderRadius.circular(4),
+          ),
+        );
+
+    return _PanelFrame(
+      accent: const Color(0xFFF39C12),
+      icon: Icons.rate_review_rounded,
+      title: 'Checking for staff replies…',
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: const BoxDecoration(
+                    color: AdminUi.border,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      bar(140, 11),
+                      const SizedBox(height: 6),
+                      bar(96, 9),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 13),
+            // Full-width bars: LayoutBuilder-free, so they shrink with the
+            // phone rather than overflowing a narrow console.
+            bar(double.infinity, 44),
+            const SizedBox(height: 9),
+            bar(double.infinity, 44),
+          ],
+        ),
       ),
     );
   }
@@ -257,11 +435,15 @@ class _ReplyRowState extends ConsumerState<_ReplyRow> {
                   ],
                 );
               }
+              // Flexible, not bare: the buttons are intrinsically sized, so on
+              // a narrow-but-above-breakpoint console (a tablet rail, a split
+              // window) two unshrinkable labels would overflow the row rather
+              // than ellipsise. Flexible lets them give way instead.
               return Row(
                 children: [
-                  SizedBox(height: 40, child: approve),
+                  Flexible(child: SizedBox(height: 40, child: approve)),
                   const SizedBox(width: 9),
-                  SizedBox(height: 40, child: reject),
+                  Flexible(child: SizedBox(height: 40, child: reject)),
                 ],
               );
             },
@@ -331,22 +513,42 @@ class _WaitBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final days = waiting.inDays;
     final late = days >= 3;
-    final label = days >= 1
-        ? '${days}d waiting'
-        : '${waiting.inHours}h waiting';
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: (late ? const Color(0xFFDC2626) : AdminUi.textMuted)
-            .withValues(alpha: 0.11),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 10.5,
-          fontWeight: FontWeight.w800,
-          color: late ? const Color(0xFFDC2626) : AdminUi.textSecondary,
+    // A reply drafted within the hour read as "0h waiting", which looks like a
+    // bug rather than a fresh item. Minutes below the hour, and a floor of
+    // "just now" below that.
+    final String label;
+    if (days >= 1) {
+      label = '${days}d waiting';
+    } else if (waiting.inHours >= 1) {
+      label = '${waiting.inHours}h waiting';
+    } else if (waiting.inMinutes >= 1) {
+      label = '${waiting.inMinutes}m waiting';
+    } else {
+      label = 'just now';
+    }
+    return Semantics(
+      // The colour alone carries the "overdue" meaning; a screen reader needs
+      // it said.
+      label: late
+          ? 'Overdue: the citizen has been waiting $label'
+          : 'Citizen waiting $label',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: (late ? const Color(0xFFDC2626) : AdminUi.textMuted)
+              .withValues(alpha: 0.11),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          softWrap: false,
+          style: TextStyle(
+            fontSize: 10.5,
+            fontWeight: FontWeight.w800,
+            color: late ? const Color(0xFFDC2626) : AdminUi.textSecondary,
+          ),
         ),
       ),
     );

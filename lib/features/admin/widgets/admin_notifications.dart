@@ -63,6 +63,11 @@ const List<String> kAllAdminTopics = [
   'comment_reply',
   'feedback',
   'suggestion',
+  // A staff member's draft reply awaiting approval
+  // (trg_notify_admins_pending_reply). Same trap as community_request above:
+  // every tab filters server-side on `topic IN kAllAdminTopics`, so leaving it
+  // out wrote the row, never showed it, and never counted it in the badge.
+  'suggestion_reply_pending',
 ];
 
 // Topics grouped under "Others".
@@ -77,6 +82,7 @@ const List<String> kOtherTopics = [
   'comment_reply',
   'feedback',
   'suggestion',
+  'suggestion_reply_pending',
 ];
 
 // Primary row — always visible.
@@ -113,6 +119,7 @@ const List<AdminNotifTab> kOtherTabs = [
   AdminNotifTab('feedback', 'Feedback', ['feedback'], Color(0xFF14B8A6)),
   AdminNotifTab('suggestions', 'Suggestions', [
     'suggestion',
+    'suggestion_reply_pending',
   ], Color(0xFF22C55E)),
 ];
 
@@ -139,6 +146,10 @@ IconData _iconForTopic(String topic) {
       return Icons.reviews_outlined;
     case 'suggestion':
       return Icons.lightbulb_outline_rounded;
+    // A draft awaiting a decision — the same review icon report_update uses,
+    // so "something is waiting on you" reads the same way in both places.
+    case 'suggestion_reply_pending':
+      return Icons.rate_review_rounded;
     default:
       return Icons.notifications_none_rounded;
   }
@@ -193,7 +204,8 @@ class AdminNotif {
     // kAllAdminTopics only, the row renders and the tap dead-ends on 'general'
     // — which is exactly how report_update shipped. Both lists, every time.
     'report', 'report_update',
-    'suggestion', 'feedback', 'verification', 'community_request',
+    'suggestion', 'suggestion_reply_pending',
+    'feedback', 'verification', 'community_request',
     'comment', 'post_heart', 'comment_heart',
     'post_like', 'comment_like', 'post_comment', 'comment_reply',
   };
