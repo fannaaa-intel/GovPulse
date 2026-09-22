@@ -5,24 +5,65 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../admin/providers/admin_reports_provider.dart' show ReportStatus;
 import '../../admin/widgets/report_detail_kit.dart' show ReportCategoryIconBox;
 import '../data/staff_repository.dart' show StaffConversation, StaffReport;
+import '../providers/staff_engagement_providers.dart';
 import '../providers/staff_providers.dart';
 import '../theme/staff_ui.dart';
 import '../widgets/staff_common.dart';
+import '../widgets/staff_performance_panels.dart';
 
 /// The staff landing page: a queue snapshot + quick jumps into the sections.
-class StaffOverviewPage extends ConsumerWidget {
+///
+/// ── Layout ─────────────────────────────────────────────────────────────────
+/// Below [_kTabbedMaxWidth] this takes the ADMIN dashboard's shape: the
+/// greeting and a segmented tab bar stay PINNED while only the active tab's
+/// content scrolls beneath them. One long column put six stat tiles, two list
+/// panels and two performance cards on a single scroll, so the performance
+/// panels — the thing a staff member opens this page to check — sat two
+/// screens down. Splitting it means each tab is about one screen.
+///
+/// At or above that width the whole column is shown at once: a desktop console
+/// has the room, and hiding half of it behind a tab would be strictly worse.
+/// The threshold matches the admin console's so the two change shape together.
+class StaffOverviewPage extends ConsumerStatefulWidget {
   /// Jump to a section by key: 'conversations' | 'reports' | 'endorsements'.
   final void Function(String key) onNavigate;
   const StaffOverviewPage({super.key, required this.onNavigate});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final identity = ref.watch(staffIdentityProvider).valueOrNull;
+  ConsumerState<StaffOverviewPage> createState() => _StaffOverviewPageState();
+}
+
+class _StaffOverviewPageState extends ConsumerState<StaffOverviewPage> {
+  static const double _kTabbedMaxWidth = 1024;
+
+  int _tab = 0;
+
+  void Function(String key) get onNavigate => widget.onNavigate;
+
+  @override
+  Widget build(BuildContext context) {
+    // Identity is the ROOT: every list provider waits on it for the department.
+    // Until it lands the page would render a greeting with no name and six
+    // tiles reading 0, which is indistinguishable from an office with no work.
+    final identityAsync = ref.watch(staffIdentityProvider);
+    if (identityAsync.isLoading && !identityAsync.hasValue) {
+      return const StaffPageBodyStatic(child: _DashboardSkeleton());
+    }
+    final identity = identityAsync.valueOrNull;
     final isExternal = identity?.isExternal ?? false;
 
     final convos = ref.watch(staffConversationsProvider).valueOrNull ?? const [];
     final reports = ref.watch(staffReportsProvider).valueOrNull ?? const [];
     final endorsed = ref.watch(staffEndorsementsProvider).valueOrNull ?? const [];
+
+    // Engagement, internal offices only. External agencies hold neither inbox.
+    final pendingSuggestions =
+        isExternal ? 0 : ref.watch(staffPendingSuggestionsProvider);
+    final lowRatings = isExternal ? 0 : ref.watch(staffLowRatingsProvider);
+    final hasFeedback = !isExternal && ref.watch(staffHasFeedbackProvider);
+    final myCard = ref.watch(staffMyScorecardProvider).valueOrNull;
+    final deptRating = ref.watch(staffAverageRatingProvider);
+    final trend = ref.watch(staffRatingTrendProvider).valueOrNull ?? const [];
 
     // A poll that failed must be visible. A dashboard showing confident counts
     // from a refresh that silently died is worse than one admitting it is stale
@@ -61,50 +102,63 @@ class StaffOverviewPage extends ConsumerWidget {
     final queue = [
       ...convos.where((c) => c.isWaiting),
       ...convos.where((c) => !c.isWaiting && !c.isResolved),
-    ].take(5).toList();
-    final recentReports = reports.take(5).toList();
-    final recentEndorsed = endorsed.take(6).toList();
+    ];
+    final recentReportsAll = reports;
+    final recentEndorsedAll = endorsed;
 
-    return StaffPageBody(
-      onRefresh: () async {
-        await Future.wait([
+    // Three rows per panel, and a "+N more" line when there are more. Five made
+    // the two panels different heights whenever one list was shorter than the
+    // other, which is what made the dashboard look ragged; a fixed three plus a
+    // fixed overflow line means both panels are the same height at every load,
+    // and the full list is one tap away behind "View all".
+    const kPanelRows = 3;
+    final queueShown = queue.take(kPanelRows).toList();
+    final reportsShown = recentReportsAll.take(kPanelRows).toList();
+    final endorsedShown = recentEndorsedAll.take(kPanelRows).toList();
+
+    Future<void> refreshAll() => Future.wait([
           ref.read(staffConversationsProvider.notifier).refresh(),
           ref.read(staffReportsProvider.notifier).refresh(),
           ref.read(staffEndorsementsProvider.notifier).refresh(),
         ]);
-      },
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (staleSources.isNotEmpty) ...[
-            _StaleDashboardBanner(
-              sources: staleSources,
-              onRetry: () async {
-                await Future.wait([
-                  ref.read(staffConversationsProvider.notifier).poll(),
-                  ref.read(staffReportsProvider.notifier).poll(),
-                  ref.read(staffEndorsementsProvider.notifier).poll(),
-                ]);
-              },
-            ),
-            const SizedBox(height: 14),
-          ],
-          Text(
-            '${_greeting()}${identity?.displayName != null ? ', ${identity!.displayName}' : ''}!',
-            style: const TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
-              color: StaffUi.textPrimary,
-            ),
+
+    final stale = staleSources.isEmpty
+        ? null
+        : _StaleDashboardBanner(
+            sources: staleSources,
+            onRetry: () async {
+              await Future.wait([
+                ref.read(staffConversationsProvider.notifier).poll(),
+                ref.read(staffReportsProvider.notifier).poll(),
+                ref.read(staffEndorsementsProvider.notifier).poll(),
+              ]);
+            },
+          );
+
+    final greeting = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          '${_greeting()}${identity?.displayName != null ? ', ${identity!.displayName}' : ''}!',
+          style: const TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.w800,
+            color: StaffUi.textPrimary,
           ),
-          const SizedBox(height: 4),
-          Text(
-            identity == null
-                ? 'Your department queue'
-                : '${identity.department}${isExternal ? ' · External entity' : ''}',
-            style: const TextStyle(fontSize: 13.5, color: StaffUi.textMuted),
-          ),
-          const SizedBox(height: 18),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          identity == null
+              ? 'Your department queue'
+              : '${identity.department}${isExternal ? ' · External entity' : ''}',
+          style: const TextStyle(fontSize: 13.5, color: StaffUi.textMuted),
+        ),
+      ],
+    );
+
+    // ── The three section groups ───────────────────────────────────────────
+    final statsSection = <Widget>[
           LayoutBuilder(
             builder: (context, c) {
               final tiles = <Widget>[
@@ -137,6 +191,27 @@ class StaffOverviewPage extends ConsumerWidget {
                     color: StaffUi.online,
                     onTap: () => onNavigate('reports'),
                   ),
+                  _StatTile(
+                    label: 'Suggestions to answer',
+                    value: '$pendingSuggestions',
+                    icon: Icons.lightbulb_outline_rounded,
+                    color: pendingSuggestions > 0
+                        ? StaffUi.warn
+                        : StaffUi.textMuted,
+                    onTap: () => onNavigate('suggestions'),
+                  ),
+                  // Omitted entirely for an office no feedback can reach: a
+                  // permanent 0 invites someone to go looking for the list
+                  // behind it, and there isn't one.
+                  if (hasFeedback)
+                    _StatTile(
+                      label: 'Low ratings (7d)',
+                      value: '$lowRatings',
+                      icon: Icons.trending_down_rounded,
+                      color:
+                          lowRatings > 0 ? StaffUi.danger : StaffUi.textMuted,
+                      onTap: () => onNavigate('feedback'),
+                    ),
                 ] else ...[
                   _StatTile(
                     label: 'Endorsed to us',
@@ -155,29 +230,49 @@ class StaffOverviewPage extends ConsumerWidget {
                 ],
               ];
               // Content-sized tiles laid out in IntrinsicHeight rows (mirrors the
-              // admin dashboard) so they never bottom-overflow at any width. cols
-              // is capped to the tile count so a 2-tile external view doesn't
-              // stretch across 4 columns.
-              final cols = (c.maxWidth >= 720 ? 4 : 2).clamp(1, tiles.length);
-              return _statGrid(tiles, cols);
+              // admin dashboard) so they never bottom-overflow at any width.
+              //
+              // The column count DIVIDES the tile count where it can. Six tiles
+              // in a 4-wide grid leaves a 4 + 2 split whose second row is half
+              // empty — a dead gap the eye reads as a missing card. Six into
+              // three is 3 + 3, which fills both rows. cols is also capped to
+              // the tile count so a 2-tile external view doesn't stretch across
+              // four columns.
+              final int cols;
+              if (c.maxWidth < 720) {
+                cols = 2;
+              } else if (tiles.length % 4 == 0) {
+                cols = 4;
+              } else if (tiles.length % 3 == 0) {
+                cols = 3;
+              } else {
+                cols = 4;
+              }
+              return _statGrid(tiles, cols.clamp(1, tiles.length));
             },
           ),
-          const SizedBox(height: 20),
+        ];
+
+    final queueSection = <Widget>[
           if (isExternal)
             _Panel(
               title: 'Recent endorsements',
               icon: Icons.forward_to_inbox_rounded,
               onViewAll: () => onNavigate('endorsements'),
-              child: recentEndorsed.isEmpty
+              child: endorsedShown.isEmpty
                   ? const _PanelEmpty(
                       icon: Icons.assignment_turned_in_outlined,
                       text: 'No endorsed reports yet.',
                     )
                   : Column(
                       children: [
-                        for (final r in recentEndorsed)
+                        for (final r in endorsedShown)
                           _MiniReportRow(
                               report: r, onTap: () => onNavigate('endorsements')),
+                        _MoreRow(
+                          hidden: recentEndorsedAll.length - endorsedShown.length,
+                          onTap: () => onNavigate('endorsements'),
+                        ),
                       ],
                     ),
             )
@@ -189,18 +284,22 @@ class StaffOverviewPage extends ConsumerWidget {
                   title: 'Live queue',
                   icon: Icons.forum_rounded,
                   onViewAll: () => onNavigate('conversations'),
-                  child: queue.isEmpty
+                  child: queueShown.isEmpty
                       ? const _PanelEmpty(
                           icon: Icons.check_circle_outline_rounded,
                           text: "You're all caught up — no active chats.",
                         )
                       : Column(
                           children: [
-                            for (final conv in queue)
+                            for (final conv in queueShown)
                               _MiniConvRow(
                                 conversation: conv,
                                 onTap: () => onNavigate('conversations'),
                               ),
+                            _MoreRow(
+                              hidden: queue.length - queueShown.length,
+                              onTap: () => onNavigate('conversations'),
+                            ),
                           ],
                         ),
                 );
@@ -208,16 +307,21 @@ class StaffOverviewPage extends ConsumerWidget {
                   title: 'Recent reports',
                   icon: Icons.flag_rounded,
                   onViewAll: () => onNavigate('reports'),
-                  child: recentReports.isEmpty
+                  child: reportsShown.isEmpty
                       ? const _PanelEmpty(
                           icon: Icons.flag_outlined,
                           text: 'No reports for your department yet.',
                         )
                       : Column(
                           children: [
-                            for (final r in recentReports)
+                            for (final r in reportsShown)
                               _MiniReportRow(
                                   report: r, onTap: () => onNavigate('reports')),
+                            _MoreRow(
+                              hidden: recentReportsAll.length -
+                                  reportsShown.length,
+                              onTap: () => onNavigate('reports'),
+                            ),
                           ],
                         ),
                 );
@@ -230,18 +334,187 @@ class StaffOverviewPage extends ConsumerWidget {
                     ],
                   );
                 }
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(child: queuePanel),
-                    const SizedBox(width: 14),
-                    Expanded(child: reportsPanel),
-                  ],
+                // stretch, NOT IntrinsicHeight: both cards take the height of
+                // the taller one, so the row finishes on a single straight
+                // edge. With CrossAxisAlignment.start each card kept its own
+                // height and an empty Live queue beside a full Recent reports
+                // left a visible step between the two columns.
+                //
+                // IntrinsicHeight would also equalise them, but it interrogates
+                // every child for an intrinsic height, and any LayoutBuilder in
+                // the subtree throws rather than answering. stretch needs no
+                // such query — see the performance row below, where that is
+                // exactly what crashed.
+                return IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(child: queuePanel),
+                      const SizedBox(width: 14),
+                      Expanded(child: reportsPanel),
+                    ],
+                  ),
                 );
               },
             ),
-        ],
-      ),
+        ];
+
+    // Performance: this person's own card only. The ranked comparison against
+    // colleagues is an ADMIN surface — a leaderboard pushed down to everyone
+    // mostly produces gaming and resentment.
+    final performanceSection = <Widget>[
+          if (!isExternal && myCard != null)
+            LayoutBuilder(
+              builder: (context, c) {
+                final scorecard = ScorecardPanel(
+                  card: myCard,
+                  // Half the row, so the four metric tiles get ~half the width.
+                  compact: c.maxWidth < kMetricsCompactBelow * 2,
+                  departmentRating: deptRating,
+                  departmentReceivesRatings: hasFeedback,
+                );
+                // Only an office that receives ratings has a trend to draw.
+                if (!hasFeedback || trend.isEmpty) return scorecard;
+                final trendPanel = RatingTrendPanel(points: trend);
+                // Same 720 threshold and the same even split as the queue /
+                // reports row above. A 3:2 here against a 1:1 there put two
+                // different column edges on one page, which is what made the
+                // dashboard look ragged.
+                if (c.maxWidth < 720) {
+                  return Column(
+                    children: [
+                      scorecard,
+                      const SizedBox(height: 14),
+                      trendPanel,
+                    ],
+                  );
+                }
+                // Same rule as the queue / reports row above: the scorecard and
+                // the trend chart end on one edge instead of the chart
+                // stopping short.
+                //
+                // NO IntrinsicHeight here. ScorecardPanel lays its metric tiles
+                // out with a LayoutBuilder, and a LayoutBuilder cannot report an
+                // intrinsic dimension — wrapping this row in one throws
+                // "LayoutBuilder does not support returning intrinsic
+                // dimensions" at layout time and the whole dashboard fails to
+                // render. A Row with CrossAxisAlignment.stretch already gives
+                // both children the height of the taller one, which is all that
+                // was wanted; it sizes from the natural row height instead of
+                // interrogating each child for its intrinsic one.
+                return IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(child: scorecard),
+                      const SizedBox(width: 14),
+                      Expanded(child: trendPanel),
+                    ],
+                  ),
+                );
+              },
+            ),
+        ];
+
+    // Tabs exist only where scrolling is the problem. An external agency has
+    // one panel and no scorecard, so tabbing it would add a control that hides
+    // nothing — and a one-tab bar is just a label.
+    final tabs = <String>[
+      'Overview',
+      // An external agency has two stat tiles and ONE panel. Splitting that
+      // across tabs hides nothing and costs a tap, and "Queue" is the wrong
+      // word for an endorsement list anyway.
+      if (!isExternal) 'Queue',
+      if (performanceSection.isNotEmpty) 'Performance',
+    ];
+    // The label list shrinks when the scorecard has not loaded, so a stale
+    // index must not point past the end.
+    final tab = _tab.clamp(0, tabs.length - 1);
+
+    return LayoutBuilder(
+      builder: (context, c) {
+        if (c.maxWidth >= _kTabbedMaxWidth || tabs.length < 2) {
+          return StaffPageBody(
+            onRefresh: refreshAll,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (stale != null) ...[stale, const SizedBox(height: 14)],
+                greeting,
+                const SizedBox(height: 18),
+                ...statsSection,
+                const SizedBox(height: 20),
+                ...queueSection,
+                if (performanceSection.isNotEmpty) ...[
+                  const SizedBox(height: 20),
+                  ...performanceSection,
+                ],
+              ],
+            ),
+          );
+        }
+
+        final sections = switch (tabs[tab]) {
+          'Queue' => queueSection,
+          'Performance' => performanceSection,
+          _ => statsSection,
+        };
+        final width = MediaQuery.of(context).size.width;
+        final pad = width < 600 ? 14.0 : 24.0;
+
+        return Container(
+          color: StaffUi.pageBg,
+          child: Column(
+            children: [
+              // Pinned: the greeting and the tab bar stay put so switching
+              // tabs never means scrolling back up to find the control.
+              Padding(
+                padding: EdgeInsets.fromLTRB(pad, pad, pad, 0),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 1080),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (stale != null) ...[
+                          stale,
+                          const SizedBox(height: 14),
+                        ],
+                        greeting,
+                        const SizedBox(height: 16),
+                        StaffSegmentedTabs(
+                          labels: tabs,
+                          selected: tab,
+                          onSelect: (i) => setState(() => _tab = i),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: RefreshIndicator(
+                  color: StaffUi.accent,
+                  onRefresh: refreshAll,
+                  child: SingleChildScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: EdgeInsets.fromLTRB(pad, 16, pad, pad + 40),
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 1080),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: sections,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
@@ -637,4 +910,103 @@ Widget _statGrid(List<Widget> tiles, int cols) {
     if (end < tiles.length) rows.add(const SizedBox(height: gap));
   }
   return Column(children: rows);
+}
+
+/// The "+N more" line that closes a dashboard panel.
+///
+/// Renders an empty slot of the same height when nothing is hidden, so two
+/// panels side by side finish at the same y whether one list is longer than
+/// the other or not. A panel that grows with its content made the two columns
+/// different heights on every load, which is what read as ragged.
+class _MoreRow extends StatelessWidget {
+  final int hidden;
+  final VoidCallback onTap;
+  const _MoreRow({required this.hidden, required this.onTap});
+
+  static const double height = 30;
+
+  @override
+  Widget build(BuildContext context) {
+    if (hidden <= 0) return const SizedBox(height: height);
+    return SizedBox(
+      height: height,
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(6),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+            child: Text(
+              '+$hidden more',
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: StaffUi.accent,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
+/// Mirrors the dashboard's real shape: greeting, a six-tile grid, then two
+/// side-by-side panels. Sized to the layout it stands in for, so nothing jumps
+/// when the data lands.
+class _DashboardSkeleton extends StatelessWidget {
+  const _DashboardSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return StaffShimmer(
+      child: LayoutBuilder(
+        builder: (context, c) {
+          final cols = c.maxWidth < 720 ? 2 : 3;
+          const gap = 12.0;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const StaffSkeletonBox(width: 240, height: 26),
+              const SizedBox(height: 8),
+              const StaffSkeletonBox(width: 150, height: 14),
+              const SizedBox(height: 18),
+              for (var r = 0; r < 2; r++) ...[
+                Row(
+                  children: [
+                    for (var i = 0; i < cols; i++) ...[
+                      const Expanded(
+                        child: StaffSkeletonBox(height: 96, radius: 14),
+                      ),
+                      if (i < cols - 1) const SizedBox(width: gap),
+                    ],
+                  ],
+                ),
+                if (r == 0) const SizedBox(height: gap),
+              ],
+              const SizedBox(height: 20),
+              if (c.maxWidth < 720)
+                const Column(
+                  children: [
+                    StaffSkeletonBox(height: 150, radius: 14),
+                    SizedBox(height: 14),
+                    StaffSkeletonBox(height: 150, radius: 14),
+                  ],
+                )
+              else
+                const Row(
+                  children: [
+                    Expanded(child: StaffSkeletonBox(height: 170, radius: 14)),
+                    SizedBox(width: 14),
+                    Expanded(child: StaffSkeletonBox(height: 170, radius: 14)),
+                  ],
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
 }

@@ -16,11 +16,14 @@ import '../../admin/pages/admin_change_password.dart' show showAdminChangePasswo
 import '../data/staff_repository.dart';
 import '../pages/staff_community_page.dart';
 import '../pages/staff_conversations_page.dart';
+import '../pages/staff_feedback_page.dart';
 import '../pages/staff_history_page.dart';
 import '../pages/staff_overview_page.dart';
 import '../pages/staff_reports_page.dart'
     show StaffReportsPage, StaffEndorsementsPage;
 import '../pages/staff_settings_page.dart';
+import '../pages/staff_suggestions_page.dart';
+import '../providers/staff_engagement_providers.dart';
 import '../providers/staff_providers.dart';
 import '../../../core/widgets/logout_control.dart';
 import '../theme/staff_ui.dart';
@@ -140,6 +143,10 @@ class _StaffConsoleScreenState extends ConsumerState<StaffConsoleScreen>
       'report' => 'reports',
       'endorsement' => 'endorsements',
       'chat' || 'ticket' || 'message' => 'conversations',
+      // A returned reply draft: the author must land on the suggestion so they
+      // can read the reason and revise it in place.
+      'suggestion_reply_rejected' || 'suggestion' => 'suggestions',
+      'feedback' => 'feedback',
       // Approval decisions AND engagement (likes/comments) on the staff's own
       // post all open the Community section where their submissions live.
       'post_approved' || 'post_rejected' || 'community' => 'community',
@@ -168,7 +175,11 @@ class _StaffConsoleScreenState extends ConsumerState<StaffConsoleScreen>
     // The referenceId rides along so the feed scrolls to — and flashes — the
     // post (or the submission row for approvals). Blue highlight on likes is
     // intentional on the staff side.
-    _goToKey(_navFor(isExternal), resolvedKey,
+    // The nav this resolves against must be the SAME one the build renders, or
+    // _goToKey's indexWhere lands on a different section than the user sees.
+    _goToKey(
+        _navFor(isExternal, hasFeedback: ref.read(staffHasFeedbackProvider)),
+        resolvedKey,
         highlightId: target.referenceId);
   }
 
@@ -180,7 +191,15 @@ class _StaffConsoleScreenState extends ConsumerState<StaffConsoleScreen>
     );
   }
 
-  List<_NavItem> _navFor(bool isExternal) => [
+  /// [hasFeedback] is false for an office no feedback can ever reach —
+  /// Environment Office, because no office in the citizen feedback form maps to
+  /// it. The item is omitted rather than rendered empty: a tab that will never
+  /// fill reads as a bug and gets reported as one.
+  ///
+  /// External agencies (DPWH, DENR, …) get neither inbox. They own no citizen
+  /// category and appear in no feedback office list; they only ever see reports
+  /// an admin endorses to them.
+  List<_NavItem> _navFor(bool isExternal, {bool hasFeedback = false}) => [
         const _NavItem(Icons.dashboard_rounded, 'Dashboard', 'dashboard'),
         if (!isExternal)
           const _NavItem(Icons.forum_rounded, 'Conversations', 'conversations'),
@@ -189,6 +208,11 @@ class _StaffConsoleScreenState extends ConsumerState<StaffConsoleScreen>
               Icons.forward_to_inbox_rounded, 'Endorsements', 'endorsements')
         else
           const _NavItem(Icons.flag_rounded, 'Reports', 'reports'),
+        if (!isExternal)
+          const _NavItem(
+              Icons.lightbulb_outline_rounded, 'Suggestions', 'suggestions'),
+        if (!isExternal && hasFeedback)
+          const _NavItem(Icons.reviews_outlined, 'Feedback', 'feedback'),
         const _NavItem(Icons.campaign_rounded, 'Community', 'community'),
         const _NavItem(Icons.history_rounded, 'History', 'history'),
         const _NavItem(Icons.settings_rounded, 'Settings', 'settings'),
@@ -271,6 +295,10 @@ class _StaffConsoleScreenState extends ConsumerState<StaffConsoleScreen>
         return StaffReportsPage(highlightId: highlightId);
       case 'endorsements':
         return StaffEndorsementsPage(highlightId: highlightId);
+      case 'suggestions':
+        return StaffSuggestionsPage(highlightId: highlightId);
+      case 'feedback':
+        return StaffFeedbackPage(highlightId: highlightId);
       case 'community':
         return StaffCommunityPage(
           highlightId: highlightId,
@@ -371,7 +399,11 @@ class _StaffConsoleScreenState extends ConsumerState<StaffConsoleScreen>
   Widget build(BuildContext context) {
     final identity = ref.watch(staffIdentityProvider).valueOrNull;
     final isExternal = identity?.isExternal ?? false;
-    final nav = _navFor(isExternal);
+    final hasFeedback = ref.watch(staffHasFeedbackProvider);
+    final nav = _navFor(isExternal, hasFeedback: hasFeedback);
+    // Identity resolving can shorten the nav (an office that turns out to
+    // receive no feedback loses an item), so a stale index must not index past
+    // the end.
     if (_index >= nav.length) _index = 0;
 
     final width = MediaQuery.of(context).size.width;

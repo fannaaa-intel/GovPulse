@@ -15,6 +15,7 @@ import '../widgets/admin_submission_ui.dart'
         AdminListSkeleton,
         StatusPill,
         adminShortDate;
+import '../widgets/admin_staff_leaderboard.dart';
 import '../widgets/admin_user_actions.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -103,6 +104,15 @@ class _AdminTeamPageState extends ConsumerState<AdminTeamPage> {
                 children: [
                   _Header(notifier: notifier),
                   const SizedBox(height: 14),
+                  // Performance sits above the directory: "how is the team
+                  // doing" is the question this page is opened to answer, and
+                  // the roster is the reference material below it.
+                  const _SectionLabel('Performance'),
+                  const SizedBox(height: 10),
+                  const AdminStaffLeaderboard(),
+                  const SizedBox(height: 22),
+                  const _SectionLabel('Directory'),
+                  const SizedBox(height: 10),
                   AdminSearchField(
                     controller: _search,
                     hint: 'Search team by name, email or username…',
@@ -500,4 +510,22 @@ class _Card extends StatelessWidget {
       ),
     );
   }
+}
+
+/// A small heading that separates the two halves of this page — performance
+/// above, the roster below.
+class _SectionLabel extends StatelessWidget {
+  final String text;
+  const _SectionLabel(this.text);
+
+  @override
+  Widget build(BuildContext context) => Text(
+        text,
+        style: const TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.3,
+          color: AdminUi.textSecondary,
+        ),
+      );
 }

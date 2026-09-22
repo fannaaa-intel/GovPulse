@@ -16,6 +16,7 @@ import '../widgets/admin_moderation.dart';
 import '../widgets/admin_skeleton.dart';
 import '../widgets/admin_submission_ui.dart';
 import '../widgets/revealable_submitter.dart';
+import '../widgets/staff_reply_approvals.dart';
 import '../widgets/admin_snackbar.dart';
 import '../../../core/widgets/app_dialog.dart';
 
@@ -330,6 +331,11 @@ class _AdminSuggestionsPageState extends ConsumerState<AdminSuggestionsPage>
               children: [
                 _Header(async: async, notifier: notifier),
                 const SizedBox(height: 14),
+                // Staff drafts awaiting approval. Sits ABOVE the toolbar
+                // because it is time-sensitive work with a citizen already
+                // waiting, and it hides itself entirely when the queue is
+                // empty rather than occupying space on every visit.
+                const StaffReplyApprovalsPanel(),
                 _Toolbar(
                   searchCtrl: _searchCtrl,
                   activeCount: _activeFilterCount(filters),
