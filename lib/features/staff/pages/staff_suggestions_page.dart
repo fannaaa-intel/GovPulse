@@ -16,6 +16,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/widgets/app_snackbar.dart';
 import '../data/staff_engagement_repository.dart';
 import '../providers/staff_engagement_providers.dart';
 import '../providers/staff_providers.dart';
@@ -737,6 +738,10 @@ class _SuggestionDetailState extends ConsumerState<_SuggestionDetail> {
       _busy = true;
       _error = null;
     });
+    // Captured BEFORE the await and before any pop: in a bottom sheet this
+    // widget's own context is gone by the time the toast fires, and the root
+    // overlay outlives it.
+    final overlay = Overlay.maybeOf(context, rootOverlay: true);
     try {
       final n = ref.read(staffSuggestionsProvider.notifier);
       if (widget.item.canEdit(
@@ -747,11 +752,11 @@ class _SuggestionDetailState extends ConsumerState<_SuggestionDetail> {
       }
       if (!mounted) return;
       if (widget.inSheet) Navigator.of(context).maybePop();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Sent to the Municipality for approval.'),
-          behavior: SnackBarBehavior.floating,
-        ),
+      showAppSnackBar(
+        null,
+        'Sent to the Municipality for approval.',
+        type: AppSnackType.success,
+        overlay: overlay,
       );
     } catch (e) {
       if (!mounted) return;

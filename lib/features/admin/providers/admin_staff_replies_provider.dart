@@ -150,26 +150,55 @@ class AdminStaffRepliesNotifier
   /// Publish the reply. The UPDATE is all that happens here — the trigger
   /// copies the body onto the suggestion and notifies the citizen, so this
   /// client cannot publish without approving, or approve without publishing.
+  ///
+  /// The `.select()` is load-bearing, NOT a convenience. An UPDATE that RLS
+  /// filters to zero rows is not an error in PostgREST: it succeeds, having
+  /// changed nothing. Without reading the row back, a blocked approval would
+  /// report "Reply published. The citizen has been notified." and the draft
+  /// would even leave the queue on refresh — while the citizen got nothing.
+  /// Asking for the changed row turns that silent no-op into a thrown error
+  /// the panel already surfaces.
   Future<void> approve(String replyId) async {
-    await _db.from('suggestion_replies').update({
-      'status': 'approved',
-      'approved_by': _db.auth.currentUser?.id,
-      'approved_at': DateTime.now().toUtc().toIso8601String(),
-      'updated_at': DateTime.now().toUtc().toIso8601String(),
-    }).eq('id', replyId);
+    final rows = await _db
+        .from('suggestion_replies')
+        .update({
+          'status': 'approved',
+          'approved_by': _db.auth.currentUser?.id,
+          'approved_at': DateTime.now().toUtc().toIso8601String(),
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
+        })
+        .eq('id', replyId)
+        // Only a draft still awaiting a decision may be approved. Without this
+        // a double-submit could re-approve an already-published reply and fire
+        // the citizen's notification a second time.
+        .eq('status', 'pending_approval')
+        .select('id');
+    if (rows.isEmpty) {
+      throw StateError('approve-no-op:$replyId');
+    }
     await refresh();
   }
 
   /// Send it back. The reason is required by the UI, not the schema: a draft
   /// returned with no explanation gives the author nothing to act on and comes
   /// straight back.
+  ///
+  /// Same read-back as [approve], for the same reason.
   Future<void> reject(String replyId, String reason) async {
-    await _db.from('suggestion_replies').update({
-      'status': 'rejected',
-      'rejected_reason': reason.trim(),
-      'approved_by': _db.auth.currentUser?.id,
-      'updated_at': DateTime.now().toUtc().toIso8601String(),
-    }).eq('id', replyId);
+    final rows = await _db
+        .from('suggestion_replies')
+        .update({
+          'status': 'rejected',
+          'rejected_reason': reason.trim(),
+          'approved_by': _db.auth.currentUser?.id,
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
+        })
+        .eq('id', replyId)
+        .eq('status', 'pending_approval')
+        .select('id');
+    if (rows.isEmpty) {
+      throw StateError('reject-no-op:$replyId');
+    }
     await refresh();
   }
 }

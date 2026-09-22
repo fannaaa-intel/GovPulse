@@ -21,6 +21,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../providers/admin_staff_replies_provider.dart';
 import '../theme/admin_ui.dart';
+import 'admin_snackbar.dart';
 
 /// Below this the action buttons stack instead of sharing a row.
 const double _kActionsRowFrom = 420;
@@ -277,28 +278,53 @@ class _ReplyRowState extends ConsumerState<_ReplyRow> {
   /// mean approving twice.
   bool _busy = false;
 
+  /// The console's shared top-anchored toast, not a SnackBar.
+  ///
+  /// [overlay] is captured by the caller BEFORE its await: approving removes
+  /// this row from the queue, so by the time the result lands this widget is
+  /// often already unmounted and its own context can no longer find an
+  /// overlay. The root overlay lives for the app's lifetime.
+  void _say(OverlayState? overlay, String message, {bool error = false}) {
+    showAdminSnackBar(
+      null,
+      message,
+      type: error ? AdminSnackType.error : AdminSnackType.success,
+      overlay: overlay,
+    );
+  }
+
+  /// Turns a failure into something the admin can act on. "Please try again" is
+  /// the wrong advice for two of these three cases, and retrying a permission
+  /// error forever is how a real problem gets mistaken for a flaky network.
+  String _failure(Object e, String verb) {
+    final s = e.toString();
+    // Raised by the provider when the UPDATE matched no row: either RLS
+    // filtered it out, or someone else already decided this draft.
+    if (s.contains('-no-op:')) {
+      return 'Nothing changed — this draft was already decided, or your '
+          'account lacks permission. Refresh to see its current state.';
+    }
+    // PostgREST's RLS refusal.
+    if (s.contains('42501') || s.toLowerCase().contains('row-level security')) {
+      return 'Your account does not have permission to approve replies. '
+          'An administrator role is required.';
+    }
+    return 'The reply could not be $verb. Check your connection and try again.';
+  }
+
   Future<void> _approve() async {
     if (_busy) return;
+    // Before the await: an approved row leaves the queue, unmounting this
+    // widget, and an unmounted context can no longer find an overlay.
+    final overlay = Overlay.maybeOf(context, rootOverlay: true);
     setState(() => _busy = true);
     try {
       await ref
           .read(adminStaffRepliesProvider.notifier)
           .approve(widget.item.id);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Reply published. The citizen has been notified.'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('The reply could not be published. Please try again.'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      _say(overlay, 'Reply published. The citizen has been notified.');
+    } catch (e) {
+      _say(overlay, _failure(e, 'published'), error: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -306,6 +332,7 @@ class _ReplyRowState extends ConsumerState<_ReplyRow> {
 
   Future<void> _reject() async {
     if (_busy) return;
+    final overlay = Overlay.maybeOf(context, rootOverlay: true);
     final reason = await _askReason(context);
     if (reason == null || !mounted) return;
     setState(() => _busy = true);
@@ -313,21 +340,9 @@ class _ReplyRowState extends ConsumerState<_ReplyRow> {
       await ref
           .read(adminStaffRepliesProvider.notifier)
           .reject(widget.item.id, reason);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Sent back to the office with your note.'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('The reply could not be returned. Please try again.'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      _say(overlay, 'Sent back to the office with your note.');
+    } catch (e) {
+      _say(overlay, _failure(e, 'returned'), error: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }

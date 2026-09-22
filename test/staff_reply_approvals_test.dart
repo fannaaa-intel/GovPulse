@@ -50,10 +50,14 @@ PendingStaffReply _reply({
 
 /// Overrides the queue with a fixed state. The panel reads nothing else, so
 /// this renders the real widget with no network at all.
-Widget _host(AsyncValue<List<PendingStaffReply>> state) {
+Widget _host(
+  AsyncValue<List<PendingStaffReply>> state, {
+  _StubReplies? stub,
+}) {
   return ProviderScope(
     overrides: [
-      adminStaffRepliesProvider.overrideWith(() => _StubReplies(state)),
+      adminStaffRepliesProvider
+          .overrideWith(() => stub ?? _StubReplies(state)),
     ],
     child: const MaterialApp(
       home: Scaffold(
@@ -71,7 +75,14 @@ Widget _host(AsyncValue<List<PendingStaffReply>> state) {
 
 class _StubReplies extends AdminStaffRepliesNotifier {
   final AsyncValue<List<PendingStaffReply>> _state;
-  _StubReplies(this._state);
+
+  /// When set, approve/reject throw this instead of touching the network.
+  final Object? throws;
+
+  /// Records that the write was actually attempted.
+  final List<String> calls = [];
+
+  _StubReplies(this._state, {this.throws});
 
   @override
   Future<List<PendingStaffReply>> build() {
@@ -80,6 +91,18 @@ class _StubReplies extends AdminStaffRepliesNotifier {
       loading: () => Completer<List<PendingStaffReply>>().future,
       error: (e, st) => Future.error(e, st),
     );
+  }
+
+  @override
+  Future<void> approve(String id) async {
+    calls.add('approve:$id');
+    if (throws != null) throw throws!;
+  }
+
+  @override
+  Future<void> reject(String id, String reason) async {
+    calls.add('reject:$id:$reason');
+    if (throws != null) throw throws!;
   }
 }
 
@@ -143,6 +166,82 @@ void main() {
       await tester.pumpWidget(_host(AsyncValue.data([_reply()])));
       await tester.pumpAndSettle();
       expect(find.text('1 staff reply waiting for approval'), findsOneWidget);
+    });
+  });
+
+  group('the actions actually fire, and report honestly', () {
+    testWidgets('Approve & publish calls approve and toasts the result',
+        (tester) async {
+      final stub = _StubReplies(AsyncValue.data([_reply()]));
+      await tester.pumpWidget(_host(const AsyncValue.loading(), stub: stub));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Approve & publish'));
+      await tester.pumpAndSettle();
+
+      expect(stub.calls, ['approve:r1']);
+      expect(find.text('Reply published. The citizen has been notified.'),
+          findsOneWidget);
+    });
+
+    // The whole point of the read-back added to the provider: an UPDATE that
+    // RLS filters to zero rows SUCCEEDS in PostgREST, changing nothing. If the
+    // panel reported that as published, the admin would believe a citizen had
+    // been answered who had not been.
+    testWidgets('a silent no-op is reported as a failure, not a success',
+        (tester) async {
+      final stub = _StubReplies(
+        AsyncValue.data([_reply()]),
+        throws: StateError('approve-no-op:r1'),
+      );
+      await tester.pumpWidget(_host(const AsyncValue.loading(), stub: stub));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Approve & publish'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Nothing changed'), findsOneWidget);
+      expect(find.text('Reply published. The citizen has been notified.'),
+          findsNothing);
+    });
+
+    testWidgets('a permission error names permission, not the network',
+        (tester) async {
+      final stub = _StubReplies(
+        AsyncValue.data([_reply()]),
+        throws: Exception('42501: new row violates row-level security policy'),
+      );
+      await tester.pumpWidget(_host(const AsyncValue.loading(), stub: stub));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Approve & publish'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('does not have permission'), findsOneWidget);
+    });
+
+    testWidgets('Send back requires a reason and passes it through',
+        (tester) async {
+      final stub = _StubReplies(AsyncValue.data([_reply()]));
+      await tester.pumpWidget(_host(const AsyncValue.loading(), stub: stub));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Send back'));
+      await tester.pumpAndSettle();
+
+      // Submitting empty must NAME the field rather than doing nothing.
+      await tester.tap(find.widgetWithText(FilledButton, 'Send back'));
+      await tester.pumpAndSettle();
+      expect(find.text('Please say what needs changing.'), findsOneWidget);
+      expect(stub.calls, isEmpty, reason: 'nothing may be written yet');
+
+      await tester.enterText(find.byType(TextField), 'Answer the drainage bit');
+      await tester.tap(find.widgetWithText(FilledButton, 'Send back'));
+      await tester.pumpAndSettle();
+
+      expect(stub.calls, ['reject:r1:Answer the drainage bit']);
+      expect(find.text('Sent back to the office with your note.'),
+          findsOneWidget);
     });
   });
 
