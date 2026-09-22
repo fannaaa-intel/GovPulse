@@ -52,15 +52,47 @@ class _StaffOverviewPageState extends ConsumerState<StaffOverviewPage> {
     final identity = identityAsync.valueOrNull;
     final isExternal = identity?.isExternal ?? false;
 
-    final convos = ref.watch(staffConversationsProvider).valueOrNull ?? const [];
-    final reports = ref.watch(staffReportsProvider).valueOrNull ?? const [];
-    final endorsed = ref.watch(staffEndorsementsProvider).valueOrNull ?? const [];
+    final convosAsync = ref.watch(staffConversationsProvider);
+    final reportsAsync = ref.watch(staffReportsProvider);
+    final endorsedAsync = ref.watch(staffEndorsementsProvider);
+
+    final convos = convosAsync.valueOrNull ?? const [];
+    final reports = reportsAsync.valueOrNull ?? const [];
+    final endorsed = endorsedAsync.valueOrNull ?? const [];
+
+    // Identity landing does NOT mean the dashboard has data. Each queue is its
+    // own fetch, and until one returns `valueOrNull` is an empty list — which
+    // rendered a confident "0" on the tiles and "You're all caught up" in the
+    // panels. That is the same silent-success failure the stale banner exists
+    // to prevent, except it reads as good news: a staff member could open a
+    // full queue and be told there was nothing waiting.
+    //
+    // `hasValue` rather than `isLoading`: a REFRESH also passes through
+    // AsyncLoading, and skeletoning a dashboard that is already showing
+    // numbers would make every 30s poll tick flash the whole page. Only the
+    // first load — no value yet — gets a skeleton. A refresh that fails is
+    // already covered by the stale banner above.
+    final convosPending = !convosAsync.hasValue;
+    final reportsPending = !reportsAsync.hasValue;
+    final endorsedPending = !endorsedAsync.hasValue;
 
     // Engagement, internal offices only. External agencies hold neither inbox.
     final pendingSuggestions =
         isExternal ? 0 : ref.watch(staffPendingSuggestionsProvider);
     final lowRatings = isExternal ? 0 : ref.watch(staffLowRatingsProvider);
     final hasFeedback = !isExternal && ref.watch(staffHasFeedbackProvider);
+
+    // The two engagement counts are derived selectors over the same lists the
+    // Suggestions and Feedback pages read, so their loading state has to come
+    // from the SOURCE provider — the selector itself collapses a pending fetch
+    // and a genuinely empty inbox into the same 0.
+    //
+    // An external agency holds neither inbox and never reads these, so it must
+    // not be made to wait on them.
+    final suggestionsPending =
+        !isExternal && !ref.watch(staffSuggestionsProvider).hasValue;
+    final feedbackPending =
+        hasFeedback && !ref.watch(staffFeedbackProvider).hasValue;
     final myCard = ref.watch(staffMyScorecardProvider).valueOrNull;
     final deptRating = ref.watch(staffAverageRatingProvider);
     final trend = ref.watch(staffRatingTrendProvider).valueOrNull ?? const [];
@@ -163,70 +195,129 @@ class _StaffOverviewPageState extends ConsumerState<StaffOverviewPage> {
             builder: (context, c) {
               final tiles = <Widget>[
                 if (!isExternal) ...[
-                  _StatTile(
-                    label: 'Waiting',
-                    value: '$waiting',
-                    icon: Icons.hourglass_top_rounded,
-                    color: StaffUi.warn,
-                    onTap: () => onNavigate('conversations'),
-                  ),
-                  _StatTile(
-                    label: 'Active chats',
-                    value: '$active',
-                    icon: Icons.forum_rounded,
-                    color: StaffUi.accent,
-                    onTap: () => onNavigate('conversations'),
-                  ),
-                  _StatTile(
-                    label: 'Open reports',
-                    value: '$pendingReports',
-                    icon: Icons.flag_rounded,
-                    color: const Color(0xFF2563EB),
-                    onTap: () => onNavigate('reports'),
-                  ),
-                  _StatTile(
-                    label: 'Resolved',
-                    value: '$resolvedReports',
-                    icon: Icons.check_circle_rounded,
-                    color: StaffUi.online,
-                    onTap: () => onNavigate('reports'),
-                  ),
-                  _StatTile(
-                    label: 'Suggestions to answer',
-                    value: '$pendingSuggestions',
-                    icon: Icons.lightbulb_outline_rounded,
-                    color: pendingSuggestions > 0
-                        ? StaffUi.warn
-                        : StaffUi.textMuted,
-                    onTap: () => onNavigate('suggestions'),
-                  ),
+                  if (convosPending)
+                    const _StatTileLoading(
+                      label: 'Waiting',
+                      icon: Icons.hourglass_top_rounded,
+                      color: StaffUi.warn,
+                    )
+                  else
+                    _StatTile(
+                      label: 'Waiting',
+                      value: '$waiting',
+                      icon: Icons.hourglass_top_rounded,
+                      color: StaffUi.warn,
+                      onTap: () => onNavigate('conversations'),
+                    ),
+                  if (convosPending)
+                    const _StatTileLoading(
+                      label: 'Active chats',
+                      icon: Icons.forum_rounded,
+                      color: StaffUi.accent,
+                    )
+                  else
+                    _StatTile(
+                      label: 'Active chats',
+                      value: '$active',
+                      icon: Icons.forum_rounded,
+                      color: StaffUi.accent,
+                      onTap: () => onNavigate('conversations'),
+                    ),
+                  if (reportsPending)
+                    const _StatTileLoading(
+                      label: 'Open reports',
+                      icon: Icons.flag_rounded,
+                      color: Color(0xFF2563EB),
+                    )
+                  else
+                    _StatTile(
+                      label: 'Open reports',
+                      value: '$pendingReports',
+                      icon: Icons.flag_rounded,
+                      color: const Color(0xFF2563EB),
+                      onTap: () => onNavigate('reports'),
+                    ),
+                  if (reportsPending)
+                    const _StatTileLoading(
+                      label: 'Resolved',
+                      icon: Icons.check_circle_rounded,
+                      color: StaffUi.online,
+                    )
+                  else
+                    _StatTile(
+                      label: 'Resolved',
+                      value: '$resolvedReports',
+                      icon: Icons.check_circle_rounded,
+                      color: StaffUi.online,
+                      onTap: () => onNavigate('reports'),
+                    ),
+                  if (suggestionsPending)
+                    const _StatTileLoading(
+                      label: 'Suggestions to answer',
+                      icon: Icons.lightbulb_outline_rounded,
+                      // Muted, NOT warn: the alert colour is a claim that
+                      // something needs attention, and we do not yet know
+                      // whether anything does.
+                      color: StaffUi.textMuted,
+                    )
+                  else
+                    _StatTile(
+                      label: 'Suggestions to answer',
+                      value: '$pendingSuggestions',
+                      icon: Icons.lightbulb_outline_rounded,
+                      color: pendingSuggestions > 0
+                          ? StaffUi.warn
+                          : StaffUi.textMuted,
+                      onTap: () => onNavigate('suggestions'),
+                    ),
                   // Omitted entirely for an office no feedback can reach: a
                   // permanent 0 invites someone to go looking for the list
                   // behind it, and there isn't one.
                   if (hasFeedback)
-                    _StatTile(
-                      label: 'Low ratings (7d)',
-                      value: '$lowRatings',
-                      icon: Icons.trending_down_rounded,
-                      color:
-                          lowRatings > 0 ? StaffUi.danger : StaffUi.textMuted,
-                      onTap: () => onNavigate('feedback'),
-                    ),
+                    if (feedbackPending)
+                      const _StatTileLoading(
+                        label: 'Low ratings (7d)',
+                        icon: Icons.trending_down_rounded,
+                        color: StaffUi.textMuted,
+                      )
+                    else
+                      _StatTile(
+                        label: 'Low ratings (7d)',
+                        value: '$lowRatings',
+                        icon: Icons.trending_down_rounded,
+                        color:
+                            lowRatings > 0 ? StaffUi.danger : StaffUi.textMuted,
+                        onTap: () => onNavigate('feedback'),
+                      ),
                 ] else ...[
-                  _StatTile(
-                    label: 'Endorsed to us',
-                    value: '${endorsed.length}',
-                    icon: Icons.forward_to_inbox_rounded,
-                    color: StaffUi.accent,
-                    onTap: () => onNavigate('endorsements'),
-                  ),
-                  _StatTile(
-                    label: 'Open',
-                    value: '$pendingEndorsed',
-                    icon: Icons.pending_actions_rounded,
-                    color: StaffUi.warn,
-                    onTap: () => onNavigate('endorsements'),
-                  ),
+                  if (endorsedPending)
+                    const _StatTileLoading(
+                      label: 'Endorsed to us',
+                      icon: Icons.forward_to_inbox_rounded,
+                      color: StaffUi.accent,
+                    )
+                  else
+                    _StatTile(
+                      label: 'Endorsed to us',
+                      value: '${endorsed.length}',
+                      icon: Icons.forward_to_inbox_rounded,
+                      color: StaffUi.accent,
+                      onTap: () => onNavigate('endorsements'),
+                    ),
+                  if (endorsedPending)
+                    const _StatTileLoading(
+                      label: 'Open',
+                      icon: Icons.pending_actions_rounded,
+                      color: StaffUi.textMuted,
+                    )
+                  else
+                    _StatTile(
+                      label: 'Open',
+                      value: '$pendingEndorsed',
+                      icon: Icons.pending_actions_rounded,
+                      color: StaffUi.warn,
+                      onTap: () => onNavigate('endorsements'),
+                    ),
                 ],
               ];
               // Content-sized tiles laid out in IntrinsicHeight rows (mirrors the
@@ -259,7 +350,9 @@ class _StaffOverviewPageState extends ConsumerState<StaffOverviewPage> {
               title: 'Recent endorsements',
               icon: Icons.forward_to_inbox_rounded,
               onViewAll: () => onNavigate('endorsements'),
-              child: endorsedShown.isEmpty
+              child: endorsedPending
+                  ? const _PanelLoading()
+                  : endorsedShown.isEmpty
                   ? const _PanelEmpty(
                       icon: Icons.assignment_turned_in_outlined,
                       text: 'No endorsed reports yet.',
@@ -284,7 +377,9 @@ class _StaffOverviewPageState extends ConsumerState<StaffOverviewPage> {
                   title: 'Live queue',
                   icon: Icons.forum_rounded,
                   onViewAll: () => onNavigate('conversations'),
-                  child: queueShown.isEmpty
+                  child: convosPending
+                      ? const _PanelLoading()
+                      : queueShown.isEmpty
                       ? const _PanelEmpty(
                           icon: Icons.check_circle_outline_rounded,
                           text: "You're all caught up — no active chats.",
@@ -307,7 +402,9 @@ class _StaffOverviewPageState extends ConsumerState<StaffOverviewPage> {
                   title: 'Recent reports',
                   icon: Icons.flag_rounded,
                   onViewAll: () => onNavigate('reports'),
-                  child: reportsShown.isEmpty
+                  child: reportsPending
+                      ? const _PanelLoading()
+                      : reportsShown.isEmpty
                       ? const _PanelEmpty(
                           icon: Icons.flag_outlined,
                           text: 'No reports for your department yet.',
@@ -752,6 +849,117 @@ class _StaleDashboardBanner extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// A [_StatTile] whose COUNT has not arrived yet.
+///
+/// The label, the icon and the tile's whole chrome are already known — only the
+/// number is in flight — so only the number is replaced. Showing the real label
+/// under a shimmering value tells the reader which figure is still coming;
+/// blanking the tile would just look like the dashboard lost a card.
+///
+/// The value box is sized to the 24px line it stands in for so the tile does
+/// not change height when the count lands. It is not tappable: the destination
+/// is known, but a tile that navigates while still claiming to be loading
+/// invites a tap on a figure that is about to change.
+class _StatTileLoading extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color color;
+  const _StatTileLoading({
+    required this.label,
+    required this.icon,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return StaffCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: Icon(icon, color: color, size: 18),
+              ),
+              const Icon(Icons.arrow_outward_rounded,
+                  size: 16, color: StaffUi.textMuted),
+            ],
+          ),
+          const SizedBox(height: 14),
+          // Matches the 24px/w800 value line's height so the swap is invisible.
+          // Shimmer wraps the BOX ONLY, never the StaffCard: a ShaderMask over
+          // a white card repaints the card itself and the tile reads as a solid
+          // grey slab.
+          const StaffShimmer(
+            child: StaffSkeletonBox(width: 44, height: 24, radius: 7),
+          ),
+          const SizedBox(height: 5),
+          Text(label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 12.5, color: StaffUi.textMuted)),
+        ],
+      ),
+    );
+  }
+}
+
+/// Placeholder rows for a dashboard panel whose list is still loading.
+///
+/// [_PanelEmpty] is the WRONG thing to show here: "You're all caught up" and
+/// "No reports for your department yet" are claims about the queue, and making
+/// them before the fetch returns tells a staff member there is no work waiting
+/// when there may be plenty. This says "still counting" instead.
+///
+/// Three rows, matching the panel's fixed `kPanelRows`, so the panel occupies
+/// its loaded height and the two side-by-side panels do not resize when the
+/// data lands.
+class _PanelLoading extends StatelessWidget {
+  const _PanelLoading();
+
+  @override
+  Widget build(BuildContext context) {
+    return StaffShimmer(
+      child: Column(
+        children: [
+          for (var i = 0; i < 3; i++)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 9),
+              child: Row(
+                children: [
+                  StaffSkeletonCircle(size: 32),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        StaffSkeletonBox(width: double.infinity, height: 12),
+                        SizedBox(height: 7),
+                        StaffSkeletonBox(width: 120, height: 10),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          // Stands in for the "+N more" line, which always reserves its slot.
+          const SizedBox(height: 4),
+          const StaffSkeletonBox(width: 70, height: 12),
+          const SizedBox(height: 4),
+        ],
       ),
     );
   }
