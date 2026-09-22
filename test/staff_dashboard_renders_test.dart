@@ -13,6 +13,8 @@
 // the full-width layout and the tabbed narrow one are covered, and every tab is
 // visited, because a throw hides in whichever branch is not built.
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -88,6 +90,39 @@ class _Endorsed extends StaffEndorsementsNotifier {
   Future<List<StaffReport>> build() async => const [];
 }
 
+// ── Never-resolving queues, for the first-load skeleton ─────────────────────
+//
+// Every notifier above resolves on the first microtask, so no test here had
+// ever seen the dashboard's LOADING state. That is the state where it used to
+// print a confident "0" on all six tiles and "You're all caught up" in the
+// panels while the fetches were still in flight. A Completer that is never
+// completed holds the page in that state for as long as the test wants.
+
+class _PendingConvos extends StaffConversationsNotifier {
+  @override
+  Future<List<StaffConversation>> build() => Completer<List<StaffConversation>>().future;
+}
+
+class _PendingReports extends StaffReportsNotifier {
+  @override
+  Future<List<StaffReport>> build() => Completer<List<StaffReport>>().future;
+}
+
+class _PendingEndorsed extends StaffEndorsementsNotifier {
+  @override
+  Future<List<StaffReport>> build() => Completer<List<StaffReport>>().future;
+}
+
+class _PendingSuggestions extends StaffSuggestionsNotifier {
+  @override
+  Future<List<StaffSuggestion>> build() => Completer<List<StaffSuggestion>>().future;
+}
+
+class _PendingFeedback extends StaffFeedbackNotifier {
+  @override
+  Future<List<StaffFeedback>> build() => Completer<List<StaffFeedback>>().future;
+}
+
 /// Pumps the real page and returns every exception Flutter raised while laying
 /// it out. An empty list is the pass condition.
 Future<List<String>> _pumpDashboard(
@@ -133,7 +168,122 @@ Future<List<String>> _pumpDashboard(
   return errors;
 }
 
+/// Pumps the dashboard with identity RESOLVED but every queue still in flight —
+/// the window the skeletons exist for — and returns the exceptions raised.
+Future<List<String>> _pumpLoading(
+  WidgetTester tester,
+  Size size, {
+  StaffIdentity identity = _identity,
+}) async {
+  await tester.pumpWidget(const SizedBox.shrink());
+
+  final errors = <String>[];
+  final prev = FlutterError.onError;
+  FlutterError.onError = (details) => errors.add(details.exceptionAsString());
+
+  tester.view.physicalSize = size;
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.reset);
+
+  try {
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        staffIdentityProvider.overrideWith(() => _Identity(identity)),
+        staffConversationsProvider.overrideWith(_PendingConvos.new),
+        staffReportsProvider.overrideWith(_PendingReports.new),
+        staffEndorsementsProvider.overrideWith(_PendingEndorsed.new),
+        staffSuggestionsProvider.overrideWith(_PendingSuggestions.new),
+        staffFeedbackProvider.overrideWith(_PendingFeedback.new),
+        staffHasFeedbackProvider.overrideWithValue(!identity.isExternal),
+        staffMyScorecardProvider.overrideWith((ref) async => null),
+        staffRatingTrendProvider.overrideWith((ref) async => const []),
+      ],
+      child: MaterialApp(
+        home: Scaffold(body: StaffOverviewPage(onNavigate: (_) {})),
+      ),
+    ));
+    // Enough pumps for identity to resolve and the page to rebuild past the
+    // whole-page skeleton, but NOT enough for the queues — they never resolve.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+  } finally {
+    FlutterError.onError = prev;
+  }
+  return errors;
+}
+
 void main() {
+  // ── First-load skeletons ─────────────────────────────────────────────────
+  //
+  // The dashboard used to skeleton ONLY while identity loaded. Once identity
+  // landed, the six tiles rendered `valueOrNull ?? []` — a confident "0" — and
+  // the panels rendered their empty states ("You're all caught up") while the
+  // queue fetches were still in flight. A staff member with a full queue was
+  // told, in as many words, that there was no work waiting.
+  //
+  // These pin the fix at both ends: nothing false is on screen during the
+  // load, and the page still lays out (the tiles sit inside _statGrid's
+  // IntrinsicHeight, which throws on any LayoutBuilder in the subtree).
+  group('staff dashboard first-load skeletons', () {
+    testWidgets('no false zeros or empty states while the queues load',
+        (tester) async {
+      final errors = await _pumpLoading(tester, const Size(1400, 1400));
+      expect(errors, isEmpty, reason: errors.join('\n'));
+
+      // The labels stay — a skeleton that blanks them looks like a lost card.
+      expect(find.text('Waiting'), findsOneWidget);
+      expect(find.text('Open reports'), findsOneWidget);
+
+      // ...but no COUNT is claimed for them yet.
+      expect(find.text('0'), findsNothing);
+
+      // And neither panel asserts an empty queue it has not seen.
+      expect(find.textContaining("You're all caught up"), findsNothing);
+      expect(
+          find.textContaining('No reports for your department'), findsNothing);
+    });
+
+    testWidgets('lays out on a phone, where the tiles are 2-up',
+        (tester) async {
+      // _statGrid puts the tiles in IntrinsicHeight rows, so a placeholder
+      // that cannot report an intrinsic height takes the whole page down.
+      final errors = await _pumpLoading(tester, const Size(390, 844));
+      expect(errors, isEmpty, reason: errors.join('\n'));
+      expect(find.text('0'), findsNothing);
+    });
+
+    testWidgets('the loading Queue tab lays out', (tester) async {
+      // The narrow layout hides the panels behind a tab, so the skeleton
+      // panels are in a branch the Overview tab never builds.
+      await _pumpLoading(tester, const Size(390, 844));
+      final more = <String>[];
+      final prev = FlutterError.onError;
+      FlutterError.onError = (d) => more.add(d.exceptionAsString());
+      try {
+        await tester.tap(find.text('Queue'));
+        await tester.pump(const Duration(milliseconds: 400));
+      } finally {
+        FlutterError.onError = prev;
+      }
+      expect(more, isEmpty, reason: more.join('\n'));
+      expect(find.textContaining("You're all caught up"), findsNothing);
+    });
+
+    testWidgets('an external agency skeletons its two tiles', (tester) async {
+      // The external branch is a different tile set on a different provider,
+      // and it must not be made to wait on the two inboxes it never holds.
+      final errors = await _pumpLoading(
+        tester,
+        const Size(390, 844),
+        identity: _external,
+      );
+      expect(errors, isEmpty, reason: errors.join('\n'));
+      expect(find.text('Endorsed to us'), findsOneWidget);
+      expect(find.text('0'), findsNothing);
+      expect(find.textContaining('No endorsed reports yet'), findsNothing);
+    });
+  });
+
   group('staff dashboard renders', () {
     testWidgets('full layout at desktop width', (tester) async {
       final errors = await _pumpDashboard(tester, const Size(1400, 1400));
