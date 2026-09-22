@@ -11,6 +11,16 @@
 //  Rejecting REQUIRES a reason. A draft returned with no explanation gives the
 //  author nothing to act on and comes straight back — the reason is what makes
 //  the loop terminate.
+//
+//  ── WHY ONLY TWO ROWS SHOW ────────────────────────────────────────────────
+//  Each row is tall: an avatar line, the citizen's words, the office's reply,
+//  and two buttons. Seven of them is a screen and a half of scrolling on a
+//  desktop and far worse on a phone — and all of it sits ABOVE the suggestions
+//  list, so a busy queue buries the page it is attached to. The panel is a
+//  gate, not the work surface: it shows the two longest-waiting drafts (the
+//  ordering already puts those first) and sends the rest to a surface built for
+//  a list. Nothing is hidden — the header still counts every one of them, and
+//  the footer row names how many are behind it.
 // ════════════════════════════════════════════════════════════════════════════
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -21,10 +31,14 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../providers/admin_staff_replies_provider.dart';
 import '../theme/admin_ui.dart';
+import 'admin_detail_screen.dart';
 import 'admin_snackbar.dart';
 
 /// Below this the action buttons stack instead of sharing a row.
 const double _kActionsRowFrom = 420;
+
+/// How many drafts the inline panel draws before deferring to "View all".
+const int kInlineApprovalRows = 2;
 
 class StaffReplyApprovalsPanel extends ConsumerWidget {
   const StaffReplyApprovalsPanel({super.key});
@@ -104,16 +118,221 @@ class StaffReplyApprovalsPanel extends ConsumerWidget {
       // the green button actually does to the citizen.
       subtitle: 'Nothing here has reached the citizen yet. Approving publishes '
           'the reply and notifies them.',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (var i = 0; i < items.length; i++) ...[
-            if (i > 0)
-              const Divider(height: 1, thickness: 1, color: AdminUi.border),
-            _ReplyRow(item: items[i]),
-          ],
-        ],
+      child: _ApprovalList(
+        items: items,
+        // The inline panel shows the front of the queue only. The full list
+        // lives behind the footer, where it has a surface of its own.
+        max: kInlineApprovalRows,
+        onViewAll: () => _openAllApprovals(context),
       ),
+    );
+  }
+}
+
+/// The rows, divided, optionally capped with a "View all N" footer.
+///
+/// Shared by the inline panel and the full view so a row cannot drift between
+/// the two: the expanded surface is the SAME widget with the cap lifted.
+class _ApprovalList extends StatelessWidget {
+  final List<PendingStaffReply> items;
+
+  /// Null draws every row — the full view.
+  final int? max;
+  final VoidCallback? onViewAll;
+
+  const _ApprovalList({required this.items, this.max, this.onViewAll});
+
+  @override
+  Widget build(BuildContext context) {
+    final shown = max == null ? items.length : items.length.clamp(0, max!);
+    final hidden = items.length - shown;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var i = 0; i < shown; i++) ...[
+          if (i > 0)
+            const Divider(height: 1, thickness: 1, color: AdminUi.border),
+          _ReplyRow(item: items[i]),
+        ],
+        if (hidden > 0 && onViewAll != null) ...[
+          const Divider(height: 1, thickness: 1, color: AdminUi.border),
+          _ViewAllRow(hidden: hidden, onTap: onViewAll!),
+        ],
+      ],
+    );
+  }
+}
+
+/// The footer that opens the rest of the queue.
+///
+/// It states the REMAINDER, not the total: "2 of 7 shown" makes the admin do
+/// the subtraction to learn what pressing it gains them.
+class _ViewAllRow extends StatelessWidget {
+  final int hidden;
+  final VoidCallback onTap;
+  const _ViewAllRow({required this.hidden, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 13, 12, 13),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  hidden == 1
+                      ? 'View all — 1 more reply waiting'
+                      : 'View all — $hidden more replies waiting',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.primaryBlue,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              // The console's "this opens something" cue, the same glyph the
+              // dashboard cards and settings rows use.
+              const Icon(
+                Icons.chevron_right_rounded,
+                size: 18,
+                color: AppColors.primaryBlue,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Opens the whole queue.
+///
+/// [showAdminDetail] already makes the choice the console makes everywhere
+/// else: a centred dialog card on desktop and laptop, and below 640px an
+/// INSTANT full-screen route whose chevron header stays put while only the
+/// body slides up. Rebuilding either shape here would be a near-miss of a
+/// surface the admin already knows.
+void _openAllApprovals(BuildContext context) {
+  showAdminDetail<void>(
+    context,
+    builder: (_) => const _AllApprovalsView(),
+  );
+}
+
+/// The full queue, on whichever surface [showAdminDetail] chose.
+///
+/// It watches the same provider rather than taking a snapshot: approving from
+/// in here empties a row, and a list built from a tap-time copy would keep
+/// offering work that no longer exists.
+class _AllApprovalsView extends StatelessWidget {
+  const _AllApprovalsView();
+
+  static const String title = 'Staff replies waiting';
+
+  @override
+  Widget build(BuildContext context) {
+    if (adminDetailIsNarrow(context)) {
+      return const AdminDetailScaffold(
+        title: title,
+        child: _AllApprovalsBody(),
+      );
+    }
+
+    // Desktop / laptop: the centred card. Capped in both directions so a queue
+    // of forty does not grow a dialog taller than the window.
+    return Dialog(
+      backgroundColor: AdminUi.surface,
+      insetPadding: const EdgeInsets.all(40),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      clipBehavior: Clip.antiAlias,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 720,
+          maxHeight: MediaQuery.sizeOf(context).height * 0.86,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 12, 14),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: AdminUi.textPrimary,
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded, size: 20),
+                    color: AdminUi.textSecondary,
+                    tooltip: 'Close',
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1, color: AdminUi.border),
+            const Flexible(child: _AllApprovalsBody()),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The phone body, separated so [AdminDetailScaffold] can be `const` and the
+/// list rebuilds from the provider inside the slide-up rather than around it.
+class _AllApprovalsBody extends ConsumerWidget {
+  const _AllApprovalsBody();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final items =
+        ref.watch(adminStaffRepliesProvider).valueOrNull ?? const [];
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(0, 4, 0, 24),
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+          child: Text(
+            items.isEmpty
+                ? 'Everything here has been decided.'
+                : 'Nothing here has reached the citizen yet. Approving '
+                    'publishes the reply and notifies them. Longest wait '
+                    'first.',
+            style: const TextStyle(
+              fontSize: 12.5,
+              height: 1.45,
+              color: AdminUi.textSecondary,
+            ),
+          ),
+        ),
+        if (items.isEmpty)
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 30, 16, 16),
+            child: Center(
+              child: Text(
+                'No replies are waiting for approval.',
+                style: TextStyle(fontSize: 13, color: AdminUi.textMuted),
+              ),
+            ),
+          )
+        else
+          _ApprovalList(items: items),
+      ],
     );
   }
 }
@@ -612,86 +831,180 @@ class _Avatar extends StatelessWidget {
 /// Asks for the reason. Returns null when cancelled, and never returns an empty
 /// string — the send-back is refused until a reason is typed, and the refusal
 /// names the field rather than silently doing nothing.
+///
+/// ── WHY THE SHAPE CHANGES WITH THE SCREEN ─────────────────────────────────
+/// As a centred AlertDialog on a 445px phone this was a small white card
+/// floating in the middle of the viewport: the field it exists to collect was
+/// four lines tall inside a box narrower than the page behind it, and the
+/// keyboard then covered the buttons. A phone's own answer to "type one thing
+/// and confirm" is a sheet that rises from the bottom edge, sits above the
+/// keyboard, and gives the field the full width. On a laptop the card is still
+/// right — it keeps the reply visible behind it and says "this is a step".
+///
+/// Both shapes render the SAME body, so the copy, the validation and the
+/// refusal message cannot drift between them.
 Future<String?> _askReason(BuildContext context) {
   final ctrl = TextEditingController();
   // `error` lives OUTSIDE the builder. Declared inside, every rebuild would
   // reset it to null and the message would never render — the button would
   // look dead, which is the exact failure this message exists to prevent.
   String? error;
+
+  // The same 640 the console uses to decide screen-vs-modal everywhere else,
+  // so one dialog does not change shape at a width no other dialog does.
+  final narrow = MediaQuery.sizeOf(context).width < kAdminDetailNarrowBelow;
+
+  Widget body(BuildContext ctx, StateSetter setLocal, {required bool sheet}) {
+    final field = TextField(
+      controller: ctrl,
+      maxLines: sheet ? 3 : 4,
+      // Not on the sheet: autofocus raises the keyboard as the sheet is still
+      // animating up, and the two movements fight. The admin taps the field.
+      autofocus: !sheet,
+      textInputAction: TextInputAction.newline,
+      style: const TextStyle(fontSize: 13.5),
+      onChanged: (_) {
+        if (error != null) setLocal(() => error = null);
+      },
+      decoration: InputDecoration(
+        hintText: 'e.g. Please answer the drainage question too.',
+        hintStyle: const TextStyle(fontSize: 13, color: AdminUi.textMuted),
+        errorText: error,
+        filled: true,
+        fillColor: AdminUi.subtle,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AdminUi.controlRadius),
+          borderSide: const BorderSide(color: AdminUi.border),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AdminUi.controlRadius),
+          borderSide: const BorderSide(color: AdminUi.border),
+        ),
+      ),
+    );
+
+    void submit() {
+      final v = ctrl.text.trim();
+      // Name the field. A bare return here reads as a dead button.
+      if (v.isEmpty) {
+        setLocal(() => error = 'Please say what needs changing.');
+        return;
+      }
+      Navigator.of(ctx).pop(v);
+    }
+
+    final cancel = TextButton(
+      onPressed: () => Navigator.of(ctx).pop(),
+      child: const Text('Cancel'),
+    );
+    final send = FilledButton(
+      style: FilledButton.styleFrom(
+        backgroundColor: const Color(0xFFDC2626),
+        minimumSize: sheet ? const Size(0, 46) : null,
+      ),
+      onPressed: submit,
+      child: const Text('Send back'),
+    );
+
+    if (!sheet) {
+      return AlertDialog(
+        backgroundColor: AdminUi.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AdminUi.cardRadius),
+        ),
+        title: const Text(
+          'Send back for changes',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Tell the office what to change. They see this note.',
+              style: TextStyle(fontSize: 13, color: AdminUi.textMuted),
+            ),
+            const SizedBox(height: 12),
+            field,
+          ],
+        ),
+        actions: [cancel, send],
+      );
+    }
+
+    // The sheet. The drag handle is the grab affordance; the title carries the
+    // same words as the card so the two are recognisably one control.
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Send back for changes',
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w800,
+                color: AdminUi.textPrimary,
+                letterSpacing: -0.2,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Tell the office what to change. They see this note.',
+              style: TextStyle(
+                fontSize: 12.5,
+                height: 1.4,
+                color: AdminUi.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 14),
+            field,
+            const SizedBox(height: 16),
+            // Full width, confirm on top: on a phone the thumb sits at the
+            // bottom, and the destructive-but-intended action is the one being
+            // reached for. Cancel stays a text button so the two never read as
+            // a pair of equal choices.
+            SizedBox(width: double.infinity, child: send),
+            const SizedBox(height: 4),
+            Center(child: cancel),
+          ],
+        ),
+      ),
+    );
+  }
+
+  if (narrow) {
+    return showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: AdminUi.surface,
+      // Both load-bearing: without them the sheet is capped at half the screen
+      // and the keyboard covers the field it just raised.
+      isScrollControlled: true,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Padding(
+        // viewInsets read from the SHEET's context, not the caller's: the
+        // caller's media query does not change when the keyboard opens, so
+        // padding built from it never moves and the field stays covered.
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.viewInsetsOf(ctx).bottom,
+        ),
+        child: StatefulBuilder(
+          builder: (ctx, setLocal) => body(ctx, setLocal, sheet: true),
+        ),
+      ),
+    );
+  }
+
   return showAppDialog<String>(
     context: context,
     builder: (ctx) => StatefulBuilder(
-      builder: (ctx, setLocal) {
-        return AlertDialog(
-          backgroundColor: AdminUi.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AdminUi.cardRadius),
-          ),
-          title: const Text(
-            'Send back for changes',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
-          ),
-          content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Tell the office what to change. They see this note.',
-                  style: TextStyle(fontSize: 13, color: AdminUi.textMuted),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: ctrl,
-                  maxLines: 4,
-                  autofocus: true,
-                  style: const TextStyle(fontSize: 13.5),
-                  onChanged: (_) {
-                    if (error != null) setLocal(() => error = null);
-                  },
-                  decoration: InputDecoration(
-                    hintText: 'e.g. Please answer the drainage question too.',
-                    hintStyle: const TextStyle(
-                        fontSize: 13, color: AdminUi.textMuted),
-                    errorText: error,
-                    filled: true,
-                    fillColor: AdminUi.subtle,
-                    border: OutlineInputBorder(
-                      borderRadius:
-                          BorderRadius.circular(AdminUi.controlRadius),
-                      borderSide: const BorderSide(color: AdminUi.border),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius:
-                          BorderRadius.circular(AdminUi.controlRadius),
-                      borderSide: const BorderSide(color: AdminUi.border),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFFDC2626),
-              ),
-              onPressed: () {
-                final v = ctrl.text.trim();
-                // Name the field. A bare return here reads as a dead button.
-                if (v.isEmpty) {
-                  setLocal(() => error = 'Please say what needs changing.');
-                  return;
-                }
-                Navigator.of(ctx).pop(v);
-              },
-              child: const Text('Send back'),
-            ),
-          ],
-        );
-      },
+      builder: (ctx, setLocal) => body(ctx, setLocal, sheet: false),
     ),
   );
 }

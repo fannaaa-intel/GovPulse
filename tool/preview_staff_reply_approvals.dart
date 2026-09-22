@@ -28,6 +28,18 @@
 //              labels clipping.
 // The hostile row carries the longest plausible value in every field at once;
 // a gentle fixture passes layouts that real data breaks.
+//
+// ── The cap and the two responsive shapes ──────────────────────────────────
+// The queue holds SIX rows but the panel draws only the first two, then a
+// "View all — 4 more replies waiting" footer. Six rows drawn inline is a
+// screen and a half above the suggestions list the panel is attached to.
+//  * "View all" at >= 640 px opens a centred card over the frosted console;
+//    below 640 it pushes a full screen whose chevron header stays PUT while
+//    only the body slides up.
+//  * "Send back" below 640 is a bottom sheet with a full-width field; at
+//    >= 640 it stays the centred card. Submitting it EMPTY must name the
+//    field in both shapes — a bare refusal reads as a dead button.
+// 600 vs 700 is the pair to flip between: they straddle that 640 boundary.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -98,6 +110,44 @@ final _rows = <PendingStaffReply>[
     body: 'Noted. A bin will be installed before the end of the month.',
     waited: const Duration(minutes: 7),
   ),
+  // ── Rows 3+ exist to overflow the inline cap ───────────────────────────────
+  // The panel draws only the first [kInlineApprovalRows] and defers the rest
+  // to "View all". With two rows there is no footer to look at, so the queue
+  // has to be longer than the cap for the thing under test to render at all.
+  _reply(
+    id: 'h3',
+    authorName: 'Mr. Ramirez',
+    department: "Mayor's Office",
+    details:
+        'Can we have a free tutoring program for elementary students during '
+        'summer break?',
+    body: 'We will include this in the next barangay assembly agenda.',
+    waited: const Duration(days: 2),
+  ),
+  _reply(
+    id: 'h4',
+    authorName: 'Engr. Dela Cruz',
+    department: 'Engineering Office',
+    details: 'Please repaint the pedestrian lane near the school.',
+    body: 'Forwarded to the district engineer.',
+    waited: const Duration(hours: 20),
+  ),
+  _reply(
+    id: 'h5',
+    authorName: 'Ms. Bautista',
+    department: 'Sanitation Office',
+    details: 'Can the garbage truck come twice a week in Centro 5?',
+    body: 'Collection in your area moves to Monday and Thursday.',
+    waited: const Duration(hours: 9),
+  ),
+  _reply(
+    id: 'h6',
+    authorName: 'Mr. Mendoza',
+    department: "Mayor's Office",
+    details: 'Please open the permit window earlier than 8am.',
+    body: 'Acknowledged. The permit desk now opens at 7:30am on weekdays.',
+    waited: const Duration(hours: 4),
+  ),
 ];
 
 class _StubReplies extends AdminStaffRepliesNotifier {
@@ -152,7 +202,16 @@ class _PreviewAppState extends State<_PreviewApp> {
                       spacing: 8,
                       runSpacing: 6,
                       children: [
-                        for (final w in const [360.0, 420.0, 700.0, 1280.0])
+                        // 600 and 700 straddle 640, where "View all" changes
+                        // from a pushed screen to a centred card and the
+                        // send-back prompt from a sheet to a dialog.
+                        for (final w in const [
+                          360.0,
+                          420.0,
+                          600.0,
+                          700.0,
+                          1280.0,
+                        ])
                           FilledButton(
                             onPressed: () => setState(() => _width = w),
                             style: FilledButton.styleFrom(
@@ -226,9 +285,21 @@ class _PreviewAppState extends State<_PreviewApp> {
                                 adminStaffRepliesProvider
                                     .overrideWith(_StubReplies.new),
                               ],
-                              child: const SingleChildScrollView(
-                                padding: EdgeInsets.all(16),
-                                child: StaffReplyApprovalsPanel(),
+                              // A nested Navigator so the full-screen "View
+                              // all" stays INSIDE the simulated viewport
+                              // rather than covering the launcher chrome —
+                              // which is what makes the phone branch
+                              // inspectable at all.
+                              child: Navigator(
+                                onGenerateRoute: (_) => MaterialPageRoute(
+                                  builder: (_) => const Scaffold(
+                                    backgroundColor: AdminUi.pageBg,
+                                    body: SingleChildScrollView(
+                                      padding: EdgeInsets.all(16),
+                                      child: StaffReplyApprovalsPanel(),
+                                    ),
+                                  ),
+                                ),
                               ),
                             ),
                           ),

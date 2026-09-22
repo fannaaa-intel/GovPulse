@@ -19,6 +19,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:govpulse/features/admin/providers/admin_staff_replies_provider.dart';
+import 'package:govpulse/features/admin/widgets/admin_dialog_back.dart';
 import 'package:govpulse/features/admin/widgets/staff_reply_approvals.dart';
 
 import '_responsive_matrix.dart';
@@ -242,6 +243,184 @@ void main() {
       expect(stub.calls, ['reject:r1:Answer the drainage bit']);
       expect(find.text('Sent back to the office with your note.'),
           findsOneWidget);
+    });
+  });
+
+  group('the inline panel is capped, and the rest is reachable', () {
+    // A long queue used to render every row inline, above the suggestions list
+    // it belongs to. Seven rows is a screen and a half on a desktop and far
+    // worse on a phone — the page the panel is attached to became unreachable
+    // by scrolling past its own gate.
+    List<PendingStaffReply> many(int n) => [
+          for (var i = 0; i < n; i++)
+            _reply(
+              id: 'q$i',
+              authorName: 'Officer $i',
+              // Descending wait, matching the provider's oldest-first order.
+              waited: Duration(days: n - i),
+            ),
+        ];
+
+    testWidgets('only two rows draw, however long the queue', (tester) async {
+      await tester.pumpWidget(_host(AsyncValue.data(many(7))));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Approve & publish'), findsNWidgets(kInlineApprovalRows));
+      expect(find.text('Send back'), findsNWidgets(kInlineApprovalRows));
+    });
+
+    testWidgets('the header still counts every one of them', (tester) async {
+      await tester.pumpWidget(_host(AsyncValue.data(many(7))));
+      await tester.pumpAndSettle();
+
+      // Capping what is DRAWN must not cap what is REPORTED: an admin reading
+      // "2 waiting" over a queue of seven has been told something false.
+      expect(find.text('7 staff replies waiting for approval'), findsOneWidget);
+    });
+
+    testWidgets('the two shown are the longest-waiting', (tester) async {
+      await tester.pumpWidget(_host(AsyncValue.data(many(7))));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Officer 0'), findsOneWidget);
+      expect(find.text('Officer 1'), findsOneWidget);
+      expect(find.text('Officer 2'), findsNothing);
+    });
+
+    testWidgets('the footer names the REMAINDER, not the total',
+        (tester) async {
+      await tester.pumpWidget(_host(AsyncValue.data(many(7))));
+      await tester.pumpAndSettle();
+
+      // "2 of 7 shown" makes the admin do the subtraction to learn what the
+      // control gains them.
+      expect(find.text('View all — 5 more replies waiting'), findsOneWidget);
+    });
+
+    testWidgets('one hidden reply is singular', (tester) async {
+      await tester.pumpWidget(_host(AsyncValue.data(many(3))));
+      await tester.pumpAndSettle();
+      expect(find.text('View all — 1 more reply waiting'), findsOneWidget);
+    });
+
+    testWidgets('a queue that fits shows no footer', (tester) async {
+      await tester.pumpWidget(_host(AsyncValue.data(many(2))));
+      await tester.pumpAndSettle();
+
+      // A "View all" over a list already fully shown is a no-op control.
+      expect(find.textContaining('View all'), findsNothing);
+      expect(find.text('Approve & publish'), findsNWidgets(2));
+    });
+
+    testWidgets('View all opens the whole queue on a desktop', (tester) async {
+      await pumpAt(
+        tester,
+        const Device('web', Size(1280, 900)),
+        () => _host(AsyncValue.data(many(7))),
+      );
+
+      await tester.tap(find.textContaining('View all'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Staff replies waiting'), findsOneWidget);
+      // Every row, not just the two the panel drew. The rows scroll inside the
+      // card, so some are off-screen but built.
+      expect(find.text('Officer 6'), findsOneWidget);
+    });
+
+    testWidgets('View all pushes a chevron screen on a phone', (tester) async {
+      await pumpAt(tester, kPhone, () => _host(AsyncValue.data(many(7))));
+
+      await tester.scrollUntilVisible(
+        find.textContaining('View all'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(find.textContaining('View all'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Staff replies waiting'), findsOneWidget);
+      // The console's own back chip, not a second copy of it — the screen is a
+      // place you navigated to, so it is dismissed by a chevron.
+      expect(find.byType(AdminDialogBack), findsOneWidget);
+    });
+
+    testWidgets('no overflow in the full view on the smallest phone',
+        (tester) async {
+      final errors = await pumpAt(
+        tester,
+        kSmallPhone,
+        () => _host(AsyncValue.data(many(7))),
+        after: (t) async {
+          await t.scrollUntilVisible(
+            find.textContaining('View all'),
+            300,
+            scrollable: find.byType(Scrollable).first,
+          );
+          await t.tap(find.textContaining('View all'));
+          await t.pumpAndSettle();
+        },
+      );
+      expect(errors, isEmpty, reason: errors.join('\n'));
+    });
+  });
+
+  group('the send-back prompt changes shape with the screen', () {
+    // As a centred AlertDialog on a 445px phone this was a small card floating
+    // mid-viewport, with the keyboard covering the buttons. The validation and
+    // the write must survive the shape change — both shapes render one body.
+    testWidgets('a phone gets a bottom sheet that still refuses empty',
+        (tester) async {
+      final stub = _StubReplies(AsyncValue.data([_reply()]));
+      await pumpAt(
+        tester,
+        kPhone,
+        () => _host(const AsyncValue.loading(), stub: stub),
+      );
+
+      await tester.tap(find.text('Send back'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(BottomSheet), findsOneWidget);
+      expect(find.byType(AlertDialog), findsNothing);
+
+      await tester.tap(find.widgetWithText(FilledButton, 'Send back'));
+      await tester.pumpAndSettle();
+      expect(find.text('Please say what needs changing.'), findsOneWidget);
+      expect(stub.calls, isEmpty);
+
+      await tester.enterText(find.byType(TextField), 'Add the timeline');
+      await tester.tap(find.widgetWithText(FilledButton, 'Send back'));
+      await tester.pumpAndSettle();
+      expect(stub.calls, ['reject:r1:Add the timeline']);
+    });
+
+    testWidgets('a desktop keeps the centred card', (tester) async {
+      await pumpAt(
+        tester,
+        const Device('web', Size(1280, 900)),
+        () => _host(AsyncValue.data([_reply()])),
+      );
+
+      await tester.tap(find.text('Send back'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(find.byType(BottomSheet), findsNothing);
+    });
+
+    testWidgets('no overflow in the sheet on the smallest phone',
+        (tester) async {
+      final errors = await pumpAt(
+        tester,
+        kSmallPhone,
+        () => _host(AsyncValue.data([_reply()])),
+        after: (t) async {
+          await t.tap(find.text('Send back'));
+          await t.pumpAndSettle();
+        },
+      );
+      expect(errors, isEmpty, reason: errors.join('\n'));
     });
   });
 
