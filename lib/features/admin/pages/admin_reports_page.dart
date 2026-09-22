@@ -1906,15 +1906,28 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
   /// Endorses this report to an external entity (out-of-LGU-scope). The report
   /// then lands in that entity's staff-console inbox, and the server mints the
   /// token + PIN that back the printed endorsement letter.
+  ///
+  /// Repeatable by design: an admin may re-endorse as often as the situation
+  /// needs — to a different agency, or to the same one to reissue a letter that
+  /// was lost. `endorse_report_to_agency` mints a fresh token and PIN on
+  /// conflict, which voids the previously printed letter.
   Future<void> _endorse() async {
+    // `report`, not `widget.report`. The dialog STAYS OPEN across an
+    // endorsement, so on the second pass the snapshot still says this report is
+    // un-endorsed: the picker opened with nothing selected and no "Clear
+    // endorsement" affordance, telling the admin the opposite of the truth
+    // while the pane behind it already read "Change endorsement". Every render
+    // path here reads through the live getter for this reason; these two were
+    // the ones left behind.
+    final r = report;
     final picked = await showEndorseEntityDialog(
       context,
-      currentEndorsement: widget.report.endorsedToDepartment,
+      currentEndorsement: r.endorsedToDepartment,
       // ai_endorse_hint has been written on every classified report since
       // 20260914000000 but was surfaced nowhere — this is the first place it
       // reaches an admin. Badge only; it never pre-selects. Null (the common
       // case) renders the dialog exactly as before.
-      aiSuggestedAgency: widget.report.aiEndorseHint,
+      aiSuggestedAgency: r.aiEndorseHint,
     );
     if (picked == null || !mounted) return;
 
@@ -1970,7 +1983,11 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
 
       await showEndorsementSuccessDialog(
         context,
-        report: widget.report,
+        // Live row again: `endorse` above awaited a `_reload()`, so the store
+        // now holds the endorsed columns and the new status. The letter is
+        // typeset from this, and the snapshot would print the report as it
+        // stood before the endorsement it is the receipt for.
+        report: report,
         credentials: credentials,
         reason: picked.reason,
         media: shots,

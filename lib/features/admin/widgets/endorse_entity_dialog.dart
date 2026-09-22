@@ -27,10 +27,46 @@ import 'admin_responsive_dialog.dart';
 
 const Color _selectBlue = Color(0xFF2563EB);
 
+/// Amber "still to do / take note" palette, shared by the re-endorse notice and
+/// the reason reminder. Deliberately the same three values the endorsement
+/// SUCCESS dialog uses for its own cautions, so a caution looks like a caution
+/// across the whole endorsement flow. Amber rather than red throughout: these
+/// say "not finished yet", while red is reserved for a refusal that has already
+/// happened (the reason field's own errorText).
+const Color _warnBg = Color(0xFFFFF7ED);
+const Color _warnBorder = Color(0xFFFED7AA);
+const Color _warnInk = Color(0xFF9A3412);
+
 /// Longest reason accepted. The reason is reproduced verbatim in the body of a
 /// printed one-page letter, so this is a layout constraint as much as a data
 /// one.
 const int kEndorseReasonMaxLength = 600;
+
+/// Unwrapped width of [text] at [size], honouring the viewer's text scale.
+///
+/// Used by the footer to decide whether its three buttons fit on one line.
+/// Measuring beats another hard-coded breakpoint here: the labels grow with the
+/// system text scale, so a width that fits at scale 1.0 overflows at 1.3, and
+/// no single pixel cut-off is right for both.
+double _textWidth(
+  String text,
+  double size,
+  TextScaler scaler,
+  FontWeight weight,
+) {
+  final tp = TextPainter(
+    text: TextSpan(
+      text: text,
+      style: TextStyle(fontSize: size, fontWeight: weight),
+    ),
+    textDirection: TextDirection.ltr,
+    textScaler: scaler,
+    maxLines: 1,
+  )..layout();
+  final w = tp.width;
+  tp.dispose();
+  return w;
+}
 
 /// What the dialog resolves to. See the file header for the full contract.
 class EndorseChoice {
@@ -172,30 +208,81 @@ class _EndorseEntityDialogState extends State<_EndorseEntityDialog> {
   /// are still picking an agency.
   bool _reasonTouched = false;
 
+  /// Anchors the reason field so a refused submit can scroll it into view.
+  ///
+  /// Needed because of the RE-ENDORSE asymmetry. On a first endorsement Send is
+  /// disabled until an agency card is tapped, and that tap is itself far enough
+  /// down the form that the admin is already looking at the reason box. On a
+  /// re-endorsement the agency arrives PRESELECTED from the current
+  /// endorsement, so Send is live the moment the dialog opens — and at 1280x800
+  /// the reason field sits at y=772 of 800 with its error text 60px BELOW the
+  /// fold. The admin pressed Send, the form refused, and every trace of the
+  /// refusal was off-screen inside a scroll view they had no reason to touch.
+  /// That is indistinguishable from a dead button, which is exactly how it was
+  /// reported.
+  final GlobalKey _reasonKey = GlobalKey();
+
+  /// Focused alongside the scroll so the caret lands where the admin must type.
+  final FocusNode _reasonFocus = FocusNode();
+
   @override
   void dispose() {
     _reason.dispose();
+    _reasonFocus.dispose();
     super.dispose();
   }
 
   String get _reasonText => _reason.text.trim();
   bool get _reasonMissing => _reasonText.isEmpty;
 
+  /// True when this report is ALREADY endorsed, i.e. the "Change endorsement"
+  /// flow. A report may be re-endorsed as often as the LGU needs.
+  bool get _isReEndorse => (widget.currentEndorsement ?? '').trim().isNotEmpty;
+
   /// Validates, then resolves the dialog. Endorsing hands ownership out of the
   /// LGU and mints a printed letter whose PIN is shown exactly once, so both
   /// fields are checked here as well as on the server.
+  ///
+  /// A refusal must always be something the admin can SEE — a bare `return`
+  /// here reads as a broken button. Re-endorsing is allowed as often as the
+  /// LGU needs (the server's `endorse_report_to_agency` mints a fresh token and
+  /// PIN on conflict), so this path is walked routinely, not just once.
   void _submit() {
     final agency = _selected;
     if (agency == null || agency.isEmpty) return;
 
     if (_reasonMissing) {
       setState(() => _reasonTouched = true);
+      _revealReason();
       return;
     }
 
     Navigator.of(context).pop(
       EndorseChoice(agency: agency, reason: _reasonText),
     );
+  }
+
+  /// Brings the reason field — and the error the submit just raised — onto the
+  /// screen, then puts the caret in it.
+  ///
+  /// Deferred to the next frame: the errorText is added by the setState above,
+  /// which grows the field, so scrolling before that frame is laid out targets
+  /// the old, shorter rect and can still leave the message clipped.
+  void _revealReason() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = _reasonKey.currentContext;
+      if (ctx == null || !mounted) return;
+      Scrollable.ensureVisible(
+        ctx,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+        // The field plus its error is the tallest thing in the form; aligning
+        // to the END of the viewport keeps the red text on screen rather than
+        // parking the label at the top and pushing the message off the bottom.
+        alignment: 1.0,
+      );
+      _reasonFocus.requestFocus();
+    });
   }
 
   /// Withdrawing voids a signed letter and revokes the agency's credential, so
@@ -442,6 +529,10 @@ class _EndorseEntityDialogState extends State<_EndorseEntityDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (_isReEndorse) ...[
+          _reEndorseNotice(narrow),
+          const SizedBox(height: 16),
+        ],
         label,
         const SizedBox(height: 16),
         LayoutBuilder(
@@ -469,6 +560,65 @@ class _EndorseEntityDialogState extends State<_EndorseEntityDialog> {
     );
   }
 
+  /// Banner shown only on the "Change endorsement" flow.
+  ///
+  /// Re-endorsing is a supported, repeatable action, but it does not RESUME the
+  /// first one — the server mints a new token and PIN and the previously
+  /// printed letter stops scanning. Two things follow that the admin cannot
+  /// otherwise tell from the form, because the agency card arrives already
+  /// selected and so the whole dialog LOOKS pre-filled:
+  ///
+  ///   * a fresh reason is required (the field is deliberately blank — the old
+  ///     reason justified the old letter), and
+  ///   * the existing letter is voided.
+  ///
+  /// Without this, a re-endorsement looked like a form needing one confirming
+  /// tap, and the refusal that followed was off-screen.
+  Widget _reEndorseNotice(bool narrow) {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(narrow ? 12 : 14),
+      decoration: BoxDecoration(
+        color: _warnBg,
+        border: Border.all(color: _warnBorder),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.history_rounded,
+              size: 17, color: _warnInk),
+          const SizedBox(width: 9),
+          // Expanded, not bare Text: a Row gives a non-flex child unbounded
+          // width, and this copy wraps to three lines on a 360px phone.
+          Expanded(
+            child: Text.rich(
+              TextSpan(
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  height: 1.4,
+                  color: _warnInk,
+                ),
+                children: [
+                  TextSpan(
+                    text: 'Already endorsed to '
+                        '${widget.currentEndorsement!.trim()}. ',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const TextSpan(
+                    text: 'Re-sending issues a new letter and PIN, and the '
+                        'one already printed stops working. Write a new '
+                        'reason below to continue.',
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// Required free-text justification.
   ///
   /// Not a formality: this sentence is reproduced verbatim in the body of the
@@ -485,6 +635,7 @@ class _EndorseEntityDialogState extends State<_EndorseEntityDialog> {
     );
 
     return Column(
+      key: _reasonKey,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Flexible, not a bare Text: a Row hands its non-flex children an
@@ -524,6 +675,7 @@ class _EndorseEntityDialogState extends State<_EndorseEntityDialog> {
         const SizedBox(height: 10),
         TextField(
           controller: _reason,
+          focusNode: _reasonFocus,
           maxLines: narrow ? 3 : 4,
           minLines: 3,
           maxLength: kEndorseReasonMaxLength,
@@ -531,7 +683,14 @@ class _EndorseEntityDialogState extends State<_EndorseEntityDialog> {
           onChanged: (_) {
             // Once the admin starts typing, clear the error state on the first
             // keystroke rather than making them submit again to find out.
-            if (_reasonTouched) setState(() {});
+            //
+            // Unconditional, not `if (_reasonTouched)`. That guard was right
+            // when a raised error was the only thing a keystroke could change,
+            // but the footer reminder also tracks `_reasonMissing` — and it
+            // shows BEFORE any submit, so on the common path `_reasonTouched`
+            // is false and the guard skipped the rebuild that should have
+            // dismissed it. The reminder sat there while the admin typed.
+            setState(() {});
           },
           style: const TextStyle(fontSize: 13.5, color: AdminUi.textPrimary),
           decoration: InputDecoration(
@@ -896,8 +1055,17 @@ class _EndorseEntityDialogState extends State<_EndorseEntityDialog> {
         narrow ? 16 : 24,
         narrow ? 16 : 18,
       ),
-      child: narrow
-          ? Column(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // The reminder rides ABOVE the buttons, inside the pinned footer.
+          if (_showReminder && _footerHasRoomForReminder(context)) ...[
+            _reasonReminder(narrow),
+            SizedBox(height: narrow ? 12 : 10),
+          ],
+          if (narrow)
+            Column(
               children: [
                 SizedBox(width: double.infinity, child: send),
                 const SizedBox(height: 10),
@@ -908,15 +1076,201 @@ class _EndorseEntityDialogState extends State<_EndorseEntityDialog> {
                 ],
               ],
             )
-          : Row(
-              children: [
-                if (canClear) clear,
-                const Spacer(),
-                cancel,
-                const SizedBox(width: 12),
-                send,
-              ],
+          else
+            // ── Three buttons do not always fit on one line ────────────────
+            //
+            // PRE-EXISTING overflow, found by the width sweep rather than by
+            // this change: on the "Change endorsement" flow `canClear` adds a
+            // THIRD control, and Clear + Cancel + Send overflowed this Row by
+            // 14px between 768 and 834px — the iPad-portrait band, which is
+            // above the 640 `narrow` cut-off and so was getting the wide
+            // layout. Worse at raised text scale, where the labels grow.
+            //
+            // Fixed by measuring rather than by adding another breakpoint: the
+            // pair on the right is what must survive, so Clear is the one that
+            // gives way. Above the threshold nothing moves and the layout is
+            // byte-identical to before.
+            LayoutBuilder(
+              builder: (context, c) {
+                // Measured from the LABELS, because the text is what grows
+                // with the system scale — the paddings and icons are fixed.
+                // Each button's constant chrome is added back explicitly so
+                // the sum is a real width rather than a guess that happens to
+                // hold at scale 1.0.
+                final scaler = MediaQuery.textScalerOf(context);
+                double label(String s, double size, {double chrome = 0}) =>
+                    _textWidth(s, size, scaler, FontWeight.w700) + chrome;
+
+                // Cancel/Send: 22 and 24 horizontal padding each side, plus a
+                // 17px icon and its 8px gap on Send.
+                final rightPair = label('Cancel', 14, chrome: 22 * 2) +
+                    12 +
+                    label('Send Endorsement', 14, chrome: 24 * 2 + 17 + 8);
+                // TextButton.icon: 17px icon + 8 gap + ~8 padding each side.
+                final clearW = canClear
+                    ? label('Clear endorsement', 13.5, chrome: 17 + 8 + 16)
+                    : 0.0;
+                // 16 keeps the two groups from touching when it is tight.
+                final fitsOneLine = clearW + 16 + rightPair <= c.maxWidth;
+
+                if (!canClear || fitsOneLine) {
+                  return Row(
+                    children: [
+                      if (canClear) clear,
+                      const Spacer(),
+                      cancel,
+                      const SizedBox(width: 12),
+                      send,
+                    ],
+                  );
+                }
+                // Too tight: Clear drops to its own line ABOVE the pair. It is
+                // the destructive, least-used action, so it is the one that
+                // should move — and it stays left-aligned and full-size rather
+                // than being squeezed into an ambiguous target.
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    clear,
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        const Spacer(),
+                        cancel,
+                        const SizedBox(width: 12),
+                        send,
+                      ],
+                    ),
+                  ],
+                );
+              },
             ),
+        ],
+      ),
+    );
+  }
+
+  /// Whether the footer can afford the reminder's extra ~45px.
+  ///
+  /// The footer is PINNED, so anything in it is height taken permanently from
+  /// the scroll body. On the phone form the footer already stacks Send, Cancel
+  /// and (on a re-endorsement) Clear vertically; at 1.3x text scale on a 568px
+  /// screen, adding the reminder on top of that overflowed the dialog's outer
+  /// column by 62px.
+  ///
+  /// Measured against the real viewport rather than fixed at a breakpoint,
+  /// because the trigger is height × text scale, not width: a 320px phone is
+  /// fine at 1.0 and overflows at 1.3, so no width cut-off separates the two.
+  ///
+  /// Dropping the reminder here costs little: the re-endorse notice at the top
+  /// of the body still explains what is needed, the field's own errorText still
+  /// names it, and [_revealReason] still scrolls it into view on a refused
+  /// press — which is the fix that actually cured the dead-button report. The
+  /// reminder is the belt, not the braces.
+  bool _footerHasRoomForReminder(BuildContext context) {
+    final mq = MediaQuery.of(context);
+    // Two text lines plus padding, grown by the viewer's scale.
+    final cost = mq.textScaler.scale(12.5) * 1.35 * 2 + 20;
+    // The phone form spends far more of its height on the stacked buttons, so
+    // it needs proportionally more headroom before the reminder is affordable.
+    final needed = adminDialogIsFullscreen(context) ? cost * 9 : cost * 4;
+    return mq.size.height >= needed;
+  }
+
+  /// Whether the "a reason is still needed" reminder is showing.
+  ///
+  /// Shown once an agency is selected and the reason is still blank — i.e.
+  /// exactly while pressing Send would be refused. It disappears on the first
+  /// keystroke, so it is a prompt rather than a scold, and it never appears
+  /// before the admin has picked anything (nothing is missing yet at that
+  /// point; the form has not been started).
+  bool get _showReminder =>
+      _selected != null && _selected!.isNotEmpty && _reasonMissing;
+
+  /// Live reminder that a written reason is still required.
+  ///
+  /// ── Why it lives in the PINNED FOOTER ──────────────────────────────────
+  /// The re-endorse notice at the top of the body is the right place to explain
+  /// what re-sending does, but it scrolls away — and the reason box is at the
+  /// BOTTOM of the form, so by the time the admin reaches Send the explanation
+  /// is off-screen behind them. The footer is outside the scroll view, so this
+  /// sits beside the button at every scroll position and every width: the
+  /// admin cannot be looking at Send without also seeing what it still wants.
+  ///
+  /// That is the whole lesson of the dead-button report. The old design put
+  /// every trace of the requirement somewhere the admin was not looking — the
+  /// blank field below the fold, the error below that. This states the
+  /// requirement BEFORE the press, in the one region that is always visible,
+  /// and [_revealReason] still handles the press itself.
+  ///
+  /// Amber, not red: nothing has gone wrong yet. The field's own errorText goes
+  /// red after a refused submit, which keeps "still to do" and "you tried and
+  /// it failed" visually distinct.
+  Widget _reasonReminder(bool narrow) {
+    // Tappable: the reminder names a field that may be off-screen, so it also
+    // takes the admin there rather than leaving them to find it.
+    return Semantics(
+      button: true,
+      label: 'A written reason is required. Activate to go to the reason field.',
+      child: InkWell(
+        onTap: _revealReason,
+        borderRadius: BorderRadius.circular(9),
+        child: Container(
+          padding: EdgeInsets.symmetric(
+            horizontal: narrow ? 11 : 12,
+            vertical: narrow ? 9 : 8,
+          ),
+          decoration: BoxDecoration(
+            color: _warnBg,
+            border: Border.all(color: _warnBorder),
+            borderRadius: BorderRadius.circular(9),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Padding(
+                // Nudged to sit on the first text line rather than the centre
+                // of a box that grows to two or three lines when wrapped.
+                padding: EdgeInsets.only(top: 1),
+                child: Icon(Icons.edit_note_rounded, size: 16, color: _warnInk),
+              ),
+              const SizedBox(width: 8),
+              // Expanded, not a bare Text: a Row gives its non-flex children an
+              // UNBOUNDED main-axis constraint, so this copy would refuse to
+              // wrap and overflow instead — which it does below ~500px, and at
+              // any width once the system text scale is turned up.
+              Expanded(
+                child: Text(
+                  // Shorter copy on the phone form. The reminder lives in the
+                  // PINNED footer, so every line it takes is a line the scroll
+                  // body loses — at 1.3x text scale on a 360px phone the long
+                  // sentence wrapped to three lines and overflowed the dialog's
+                  // outer column by 10px. The short form says the same thing.
+                  narrow
+                      ? (_isReEndorse
+                          ? 'Write a new reason below to re-send.'
+                          : 'Add a written reason below.')
+                      : (_isReEndorse
+                          ? 'Write a NEW reason below to re-send this '
+                              'endorsement.'
+                          : 'Add a written reason below before sending.'),
+                  // Belt to the braces: capped so no text scale or future
+                  // wording can push this past two lines and overflow again.
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    height: 1.35,
+                    fontWeight: FontWeight.w600,
+                    color: _warnInk,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
