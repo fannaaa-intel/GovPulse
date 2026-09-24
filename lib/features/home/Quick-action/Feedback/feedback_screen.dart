@@ -15,6 +15,7 @@ import '../../../../core/widgets/Home/Newsfeed/rate_limit_dialogs.dart';
 import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/services/gps_stamp_service.dart';
 import '../../../../core/services/image_compressor.dart';
+import '../../../../core/services/feedback_photos.dart';
 import '../../../../core/widgets/reveal_loading.dart';
 import '../../../../core/widgets/app_dialog.dart';
 import '../../../../core/theme/mobile_metrics.dart';
@@ -691,6 +692,8 @@ class _FeedbackScreenState extends State<FeedbackForm>
 
       // Upload photos. `photoSources` stays aligned index-for-index with
       // `photoUrls` so the admin can label each one (camera = GPS-stamped).
+      // `photoUrls` holds storage PATHS: the bucket is private, so readers sign
+      // them (FeedbackPhotos.sign) rather than loading a public URL.
       final List<String> photoUrls = [];
       final List<String> photoSources = [];
       for (final photo in _photos) {
@@ -708,19 +711,15 @@ class _FeedbackScreenState extends State<FeedbackForm>
           sourceMime: ImageCompressor.mimeForExtension(srcExt),
           sourceExt: srcExt,
         );
-        final path =
-            'feedback/${userId ?? 'anon'}/'
-            '${DateTime.now().millisecondsSinceEpoch}.${out.ext}';
+        final path = FeedbackPhotos.newUploadPath(out.ext);
         await supabase.storage
-            .from('feedback-assets')
+            .from(FeedbackPhotos.bucket)
             .uploadBinary(
               path,
               out.bytes,
               fileOptions: FileOptions(contentType: out.mime),
             );
-        photoUrls.add(
-          supabase.storage.from('feedback-assets').getPublicUrl(path),
-        );
+        photoUrls.add(path);
         photoSources.add(
           _gpsVerifiedPaths.contains(photo.path) ? 'camera' : 'upload',
         );
@@ -789,9 +788,10 @@ class _FeedbackScreenState extends State<FeedbackForm>
 
       // Fire-and-forget AI-generated-image check, once per photo. NOT awaited —
       // it must never delay the success toast/navigation, and a failure (or an
-      // un-migrated DB / down detector) leaves the submission untouched. Feedback
-      // photos are already public, so we pass the URL. `index` is 1-BASED because
-      // Postgres arrays start at 1 (see update_feedback_photo_ai).
+      // un-migrated DB / down detector) leaves the submission untouched. The
+      // function reads the photo path back from the row and downloads it itself.
+      // `index` is 1-BASED because Postgres arrays start at 1
+      // (see update_feedback_photo_ai).
       final feedbackId = insertedFeedback['id'];
       for (int i = 0; i < photoUrls.length; i++) {
         supabase.functions
@@ -801,7 +801,6 @@ class _FeedbackScreenState extends State<FeedbackForm>
                 'table': 'feedbacks',
                 'feedbackId': feedbackId,
                 'index': i + 1,
-                'publicUrl': photoUrls[i],
               },
             )
             .ignore(); // swallow errors — never disturb the submission flow

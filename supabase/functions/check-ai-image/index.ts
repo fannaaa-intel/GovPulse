@@ -25,8 +25,9 @@
 //   report/suggestion media (private bucket, downloaded server-side w/ service role):
 //     { "bucket": "report-media",     "path": "<storage_path>", "table": "report_media",     "id": "<media row uuid>" }
 //     { "bucket": "suggestion-media", "path": "<storage_path>", "table": "suggestion_media", "id": "<media row uuid>" }
-//   feedback (photo already public — checked by URL, no download):
-//     { "table": "feedbacks", "feedbackId": "<uuid>", "index": <1-based array pos>, "publicUrl": "<public url>" }
+//   feedback (private bucket too — the stored value is re-read from the row and
+//   downloaded server-side; `publicUrl` is accepted but ignored):
+//     { "table": "feedbacks", "feedbackId": "<uuid>", "index": <1-based array pos> }
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -55,7 +56,19 @@ interface FeedbackPayload {
   table: "feedbacks";
   feedbackId: string;
   index: number; // 1-BASED position in photo_urls[] (client already added +1)
-  publicUrl: string;
+  publicUrl?: string; // legacy clients still send it; never trusted
+}
+
+const FEEDBACK_BUCKET = "feedback-assets";
+
+// feedbacks.photo_urls holds storage PATHS since feedback-assets went private.
+// Rows written before that (or by an app build that predates it) hold the full
+// public URL instead; strip it back to the object key so both forms download.
+function feedbackStoragePath(stored: string): string {
+  const marker = `/object/public/${FEEDBACK_BUCKET}/`;
+  const at = stored.indexOf(marker);
+  const path = at >= 0 ? stored.slice(at + marker.length) : stored;
+  return decodeURIComponent(path.split("?")[0]);
 }
 
 // Pull the AI-generated likelihood in [0,1] out of Sightengine's JSON. Kept
@@ -73,32 +86,6 @@ function parseAiScore(data: unknown): number | null {
     return Math.max(0, Math.min(1, v));
   }
   return null;
-}
-
-// Feedback photos are already public → let Sightengine fetch the URL itself
-// (GET). Honors "pass the URL straight to the detector" and needs no download.
-async function detectFromUrl(
-  apiUser: string,
-  apiSecret: string,
-  url: string,
-): Promise<number | null> {
-  try {
-    const qs = new URLSearchParams({
-      url,
-      models: "genai",
-      api_user: apiUser,
-      api_secret: apiSecret,
-    });
-    const res = await fetch(`${SIGHTENGINE_ENDPOINT}?${qs.toString()}`);
-    if (!res.ok) {
-      console.error("Sightengine url mode", res.status, await res.text());
-      return null;
-    }
-    return parseAiScore(await res.json());
-  } catch (e) {
-    console.error("Sightengine url request failed:", e);
-    return null;
-  }
 }
 
 // Private-bucket photos → POST the raw bytes as multipart (never throws).
@@ -239,12 +226,31 @@ serve(async (req: Request) => {
     if (fbErr) return markFailed(`feedback lookup ${fbErr.message}`);
     if (!fb) return markFailed("feedback row not found");
 
-    const urls = (fb.photo_urls ?? []) as unknown[];
-    const url = urls[idx - 1];
-    if (typeof url !== "string" || !url) {
+    const stored = ((fb.photo_urls ?? []) as unknown[])[idx - 1];
+    if (typeof stored !== "string" || !stored) {
       return markFailed(`no photo at index ${idx}`);
     }
-    score = await detectFromUrl(apiUser, apiSecret, url);
+    // The bucket is private, so Sightengine cannot fetch a URL itself —
+    // download with the service role and send the bytes, like report media.
+    const storagePath = feedbackStoragePath(stored);
+    let bytes: Uint8Array;
+    let mime = "image/jpeg";
+    try {
+      const { data, error } = await supabase.storage.from(FEEDBACK_BUCKET)
+        .download(storagePath);
+      if (error || !data) return markFailed(`download ${error?.message}`);
+      mime = data.type || mime;
+      bytes = new Uint8Array(await data.arrayBuffer());
+    } catch (e) {
+      return markFailed(`obtain bytes: ${e}`);
+    }
+    score = await detectFromBytes(
+      apiUser,
+      apiSecret,
+      bytes,
+      mime,
+      storagePath.split("/").pop() || "image.jpg",
+    );
   } else {
     // Private bucket → download server-side with the service role so we never
     // depend on a client signed URL (those expire) and the bucket stays private.

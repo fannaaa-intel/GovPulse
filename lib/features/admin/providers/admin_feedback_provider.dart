@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../core/services/feedback_photos.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  Admin → Feedback data layer
@@ -535,7 +536,16 @@ class AdminFeedbackNotifier extends AsyncNotifier<List<AdminFeedback>> {
     final identifiedIds = idToUid.values.toSet().toList();
     final profiles = await _fetchProfiles(identifiedIds);
 
+    // feedback-assets is PRIVATE — every photo needs a signed url. One batch
+    // for the whole list, aligned row-for-row and photo-for-photo.
+    final signedPhotos = await FeedbackPhotos.signAll(
+      _db,
+      [for (final r in list) _parseStringList(r['photo_urls'])],
+    );
+    var rowIndex = 0;
+
     return list.map((r) {
+      final photos = signedPhotos[rowIndex++];
       final id = r['id'] as String;
       final isAnon = (r['is_anonymous'] as bool?) ?? false;
 
@@ -567,7 +577,7 @@ class AdminFeedbackNotifier extends AsyncNotifier<List<AdminFeedback>> {
         comment: (r['comment'] as String?)?.trim().isEmpty ?? true
             ? null
             : (r['comment'] as String?),
-        photoUrls: _parseStringList(r['photo_urls']),
+        photoUrls: photos,
         photoSources: _parseStringList(r['photo_sources']),
         photoAiScores: _parseNullableDoubleList(r['photo_ai_scores']),
         photoAiStatus: _parseNullableStringList(r['photo_ai_status']),

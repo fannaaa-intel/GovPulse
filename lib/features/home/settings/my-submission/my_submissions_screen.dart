@@ -16,6 +16,7 @@ import '../../../../core/theme/citizen_ui.dart';
 import '../../../../core/widgets/Home/Account/account_web_kit.dart';
 import '../../../../core/theme/mobile_metrics.dart';
 import '../../../../core/widgets/app_back_chevron.dart';
+import '../../../../core/services/feedback_photos.dart';
 // ── Private config classes ────────────────────────────────────────────────────
 
 class _CatCfg {
@@ -875,6 +876,22 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
         ),
       ]);
 
+      // feedback-assets is PRIVATE: swap each stored photo path for a signed
+      // url before building the rows, so the detail sheet needs no change.
+      final feedbackRows = [
+        for (final r in results[2]) Map<String, dynamic>.of(r),
+      ];
+      final signedPhotos = await FeedbackPhotos.signAll(supabase, [
+        for (final r in feedbackRows)
+          [
+            for (final u in (r['photo_urls'] as List<dynamic>?) ?? const [])
+              u.toString(),
+          ],
+      ]);
+      for (var i = 0; i < feedbackRows.length; i++) {
+        feedbackRows[i]['photo_urls'] = signedPhotos[i];
+      }
+
       if (!mounted) return;
       final reportRows = results[0];
       _reportItemById
@@ -888,7 +905,7 @@ class _MySubmissionsScreenState extends State<MySubmissionsScreen>
       setState(() {
         _reports = reportRows.map((e) => _Report.fromJson(e)).toList();
         _suggestions = results[1].map((e) => _Suggestion.fromJson(e)).toList();
-        _feedbacks = results[2].map((e) => _Feedback.fromJson(e)).toList();
+        _feedbacks = feedbackRows.map((e) => _Feedback.fromJson(e)).toList();
         _loading = false;
       });
       await _refreshReplyIndicators();
