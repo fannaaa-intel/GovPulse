@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -299,8 +301,25 @@ class _RevealFormState extends State<_RevealForm> {
   /// Masked address the code went to; non-null means we're on step two.
   String? _sentTo;
 
+  /// Seconds until "Resend code" is allowed again. Supabase refuses a second
+  /// code email to the same account within ~60s, so the button counts down
+  /// instead of letting the admin hit that refusal.
+  int _resendIn = 0;
+  Timer? _resendTimer;
+
+  void _startResendCooldown(int seconds) {
+    _resendTimer?.cancel();
+    setState(() => _resendIn = seconds);
+    _resendTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) return t.cancel();
+      setState(() => _resendIn = _resendIn > 0 ? _resendIn - 1 : 0);
+      if (_resendIn == 0) t.cancel();
+    });
+  }
+
   @override
   void dispose() {
+    _resendTimer?.cancel();
     _passwordCtrl.dispose();
     _reasonCtrl.dispose();
     _codeCtrl.dispose();
@@ -334,6 +353,14 @@ class _RevealFormState extends State<_RevealForm> {
         _sentTo = sentTo;
         _codeCtrl.clear();
       });
+      _startResendCooldown(60);
+    } on RevealException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = e.message;
+      });
+      if (e.retryAfter != null) _startResendCooldown(e.retryAfter!);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -467,7 +494,7 @@ class _RevealFormState extends State<_RevealForm> {
       spacing: 4,
       children: [
         TextButton(
-          onPressed: _busy ? null : _sendCode,
+          onPressed: _busy || _resendIn > 0 ? null : _sendCode,
           style: TextButton.styleFrom(
             padding: const EdgeInsets.symmetric(horizontal: 6),
             textStyle: const TextStyle(
@@ -475,7 +502,9 @@ class _RevealFormState extends State<_RevealForm> {
               fontWeight: FontWeight.w600,
             ),
           ),
-          child: const Text('Resend code'),
+          child: Text(
+            _resendIn > 0 ? 'Resend in ${_resendIn}s' : 'Resend code',
+          ),
         ),
         TextButton(
           onPressed: _busy

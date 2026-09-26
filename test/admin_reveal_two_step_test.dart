@@ -286,16 +286,58 @@ void main() {
       },
     );
 
-    testWidgets('Resend code asks the server again', (t) async {
-      final s = _FakeServer();
+    testWidgets(
+      'Resend waits 60s (Supabase limit), then asks the server again',
+      (t) async {
+        final s = _FakeServer();
+        await t.pumpWidget(_app(s));
+        await t.pumpAndSettle();
+        await _openForm(t);
+        await _toStepTwo(t);
+        // Straight after sending, Resend is counting down and does nothing.
+        expect(find.text('Resend in 60s'), findsOneWidget);
+        await t.tap(find.text('Resend in 60s'));
+        await t.pump();
+        expect(s.sent.length, 1);
+        await t.pump(const Duration(seconds: 30));
+        expect(find.text('Resend in 30s'), findsOneWidget);
+        await t.pump(const Duration(seconds: 30));
+        expect(find.text('Resend code'), findsOneWidget);
+        await t.tap(find.text('Resend code'));
+        await t.pumpAndSettle();
+        expect(s.sent.length, 2);
+        expect(find.text('Step 2 of 2'), findsOneWidget);
+        expect(find.text('Resend in 60s'), findsOneWidget);
+        await t.pump(const Duration(seconds: 61));
+      },
+    );
+
+    testWidgets('server "wait N seconds" shows the message and counts down N', (
+      t,
+    ) async {
+      final s = _FakeServer()
+        ..sendAnswers.addAll([
+          'r•••@gmail.com',
+          const RevealException(
+            'wait',
+            'Please wait 42 seconds before requesting another code.',
+            retryAfter: 42,
+          ),
+        ]);
       await t.pumpWidget(_app(s));
       await t.pumpAndSettle();
       await _openForm(t);
       await _toStepTwo(t);
-      await t.tap(find.text('Resend code'));
+      // Back to step one and send again inside the window: server refuses.
+      await t.tap(find.text('Back'));
       await t.pumpAndSettle();
-      expect(s.sent.length, 2);
-      expect(find.text('Step 2 of 2'), findsOneWidget);
+      await t.tap(find.text('Send code'));
+      await t.pumpAndSettle();
+      expect(
+        find.text('Please wait 42 seconds before requesting another code.'),
+        findsOneWidget,
+      );
+      await t.pump(const Duration(seconds: 61));
     });
 
     testWidgets('Back returns to step one', (t) async {

@@ -150,7 +150,24 @@ serve(async (req) => {
         options: { shouldCreateUser: false },
       })
       if (otpErr) {
-        console.error("reveal-identity: code email failed:", otpErr.message)
+        console.error("reveal-identity: code email failed:", otpErr.status, otpErr.message)
+        // Supabase Auth allows one code email per account per ~60s ("you can
+        // only request this after N seconds") and caps emails per hour ("Email
+        // rate limit exceeded"). Both are 429s; say which, and for how long.
+        if (otpErr.status === 429) {
+          const secs = Number(/after (\d+) second/.exec(otpErr.message)?.[1] ?? 0)
+          if (secs > 0) {
+            return json(
+              { success: false, code: "wait", retryAfter: secs, message: `Please wait ${secs} seconds before requesting another code.` },
+              429,
+              { "Retry-After": String(secs) },
+            )
+          }
+          return json(
+            { success: false, code: "email_limit", message: "Too many emails were sent recently. Please try again in an hour." },
+            429,
+          )
+        }
         return fail(500, "server", "Could not send the code. Please try again.")
       }
       return json({ success: true, email: maskEmail(caller.email) })

@@ -60,7 +60,11 @@ class RevealedIdentity {
 class RevealException implements Exception {
   final String code;
   final String message;
-  const RevealException(this.code, this.message);
+
+  /// Seconds the server asked us to wait before another code email, when it
+  /// said (Supabase allows one code email per account per ~60s).
+  final int? retryAfter;
+  const RevealException(this.code, this.message, {this.retryAfter});
   @override
   String toString() => message;
 }
@@ -75,9 +79,11 @@ Future<Map<String, dynamic>> _invokeReveal(Map<String, dynamic> body) async {
   } on FunctionException catch (e) {
     final d = e.details;
     if (d is Map && d['message'] is String) {
+      final wait = d['retryAfter'];
       throw RevealException(
         (d['code'] as String?) ?? 'error',
         d['message'] as String,
+        retryAfter: wait is num ? wait.ceil() : null,
       );
     }
     throw const RevealException(
