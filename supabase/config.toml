@@ -396,6 +396,13 @@ entrypoint = "./functions/send-email-otp/index.ts"
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/send-email-otp/*.html" ]
 
+[functions.reveal-identity]
+enabled = true
+# Signed-in admins only. verify_jwt alone is satisfied by the anon key, so the
+# function also checks role_id = 1 from the caller's JWT in its own body.
+verify_jwt = true
+entrypoint = "./functions/reveal-identity/index.ts"
+
 [functions.sync-verification-avatar]
 enabled = true
 # Requires a signed-in caller (the admin approving the submission). The function

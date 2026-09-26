@@ -6,10 +6,12 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 //
 //  Anonymous reports/suggestions/feedback keep their real user_id server-side
 //  but withhold the identity. The ONLY sanctioned way to surface it is the
-//  guarded `admin_reveal_submitter` RPC: full admin (role 1) + password re-auth
-//  + a reason, all audited. This file exposes:
+//  `reveal-identity` edge function: full admin (role 1) + password + a code
+//  emailed to the admin + a reason, all audited, locked after 5 failures.
+//  This file exposes:
 //    • currentAdminIsFullAdminProvider — gates the "Reveal" button to role 1.
-//    • revealSubmitterIdentity()       — calls the guarded RPC.
+//    • sendRevealCode()                — step 1: password → emailed code.
+//    • revealSubmitterIdentity()       — step 2: code → identity.
 // ════════════════════════════════════════════════════════════════════════════
 
 /// True only when the signed-in console user is a FULL admin (role_id = 1) —
@@ -52,27 +54,83 @@ class RevealedIdentity {
   });
 }
 
-/// Calls the guarded `admin_reveal_submitter` RPC. The server verifies the
-/// caller is a full admin, re-checks the password, requires the reason, and
-/// writes the audit-log entry before returning the identity. Any failure
-/// (wrong password → 28P01, not authorized → 42501, blank reason, missing row)
-/// throws so the caller can surface it.
+/// A refusal from the `reveal-identity` edge function, already worded for the
+/// admin. [code] is the server's machine code (bad_password, bad_code, locked,
+/// …) so the form can decide which step to show.
+class RevealException implements Exception {
+  final String code;
+  final String message;
+  const RevealException(this.code, this.message);
+  @override
+  String toString() => message;
+}
+
+Future<Map<String, dynamic>> _invokeReveal(Map<String, dynamic> body) async {
+  try {
+    final res = await Supabase.instance.client.functions.invoke(
+      'reveal-identity',
+      body: body,
+    );
+    return (res.data as Map).cast<String, dynamic>();
+  } on FunctionException catch (e) {
+    final d = e.details;
+    if (d is Map && d['message'] is String) {
+      throw RevealException(
+        (d['code'] as String?) ?? 'error',
+        d['message'] as String,
+      );
+    }
+    throw const RevealException(
+      'error',
+      'Could not reveal identity. Please try again.',
+    );
+  } on RevealException {
+    rethrow;
+  } catch (_) {
+    throw const RevealException(
+      'network',
+      'Unable to connect. Check your internet and try again.',
+    );
+  }
+}
+
+/// Step one: checks the admin's password and emails them a one-time code.
+/// Returns the masked address the code went to (e.g. "r•••@gmail.com").
+Future<String> sendRevealCode({
+  required String password,
+  String? actorName,
+}) async {
+  final res = await _invokeReveal({
+    'action': 'send',
+    'password': password,
+    'actorName': actorName,
+  });
+  return (res['email'] as String?) ?? 'your email';
+}
+
+/// Step two: verifies the emailed [code] and reveals the identity. All checks
+/// (full admin, password, code, reason, 5-failure lockout, audit row) run
+/// server-side in the `reveal-identity` edge function; the reveal RPC itself is
+/// not callable from the app. Throws [RevealException] on any refusal.
 Future<RevealedIdentity> revealSubmitterIdentity({
   required RevealSource source,
   required String submissionId,
   required String password,
   required String reason,
+  required String code,
   String? actorName,
 }) async {
   final db = Supabase.instance.client;
-  final res = await db.rpc('admin_reveal_submitter', params: {
-    'p_source': _sourceKey(source),
-    'p_id': submissionId,
-    'p_password': password,
-    'p_reason': reason,
-    'p_actor_name': actorName,
+  final res = await _invokeReveal({
+    'action': 'reveal',
+    'source': _sourceKey(source),
+    'id': submissionId,
+    'password': password,
+    'reason': reason,
+    'code': code,
+    'actorName': actorName,
   });
-  final map = (res as Map).cast<String, dynamic>();
+  final map = (res['identity'] as Map).cast<String, dynamic>();
 
   final path = map['photo_path'] as String?;
   String? photoUrl;
@@ -88,3 +146,28 @@ Future<RevealedIdentity> revealSubmitterIdentity({
     phone: (phone == null || phone.isEmpty) ? null : phone,
   );
 }
+
+/// The two reveal calls, behind a provider so widget tests can drive the form
+/// through every server answer (wrong password, wrong code, lockout, success)
+/// without a live backend. The app always uses the real functions above.
+class RevealApi {
+  final Future<String> Function({required String password, String? actorName})
+  sendCode;
+  final Future<RevealedIdentity> Function({
+    required RevealSource source,
+    required String submissionId,
+    required String password,
+    required String reason,
+    required String code,
+    String? actorName,
+  })
+  reveal;
+  const RevealApi({required this.sendCode, required this.reveal});
+}
+
+final revealApiProvider = Provider<RevealApi>(
+  (ref) => const RevealApi(
+    sendCode: sendRevealCode,
+    reveal: revealSubmitterIdentity,
+  ),
+);

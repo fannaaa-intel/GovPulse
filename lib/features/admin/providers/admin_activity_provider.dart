@@ -50,6 +50,7 @@ class AdminActivity {
       'user_reactivated' => 'Reactivated',
       'broadcast_sent' => 'Broadcast to citizens',
       'identity_revealed' => 'Revealed anonymous identity —',
+      'identity_reveal_failed' => 'Failed identity reveal attempt',
       _ => action.replaceAll('_', ' '),
     };
     final target = targetLabel;

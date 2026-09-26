@@ -801,12 +801,13 @@ IconData _activityIcon(String action) => switch (action) {
   'user_reactivated' => Icons.person_outline_rounded,
   'broadcast_sent' => Icons.campaign_rounded,
   'identity_revealed' => Icons.visibility_rounded,
+  'identity_reveal_failed' => Icons.gpp_bad_rounded,
   _ => Icons.history_rounded,
 };
 
 Color _activityColor(String action) => switch (action) {
   'user_suspended' || 'user_restricted' || 'user_deactivated' ||
-        'identity_revealed' =>
+        'identity_revealed' || 'identity_reveal_failed' =>
     AppColors.red,
   'suspension_lifted' || 'restriction_lifted' || 'user_reactivated' =>
     AppColors.green,
