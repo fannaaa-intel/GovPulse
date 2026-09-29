@@ -28,6 +28,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { groqChat } from "../_shared/groq.ts";
+import { authorizeCaller } from "../_shared/caller.ts";
 
 // Replaces llama-3.1-8b-instant, decommissioned by Groq on 2026-08-16. Small +
 // fast is plenty for classification. See reasoning_effort at the call site —
@@ -192,6 +193,9 @@ serve(async (req: Request) => {
       headers: corsHeaders,
     });
   }
+
+  const denied = await authorizeCaller(req, corsHeaders);
+  if (denied) return denied;
 
   const apiKey = Deno.env.get("GROQ_API_KEY");
   if (!apiKey) {

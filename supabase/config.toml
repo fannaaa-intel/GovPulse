@@ -495,6 +495,8 @@ entrypoint = "./functions/check-ai-image/index.ts"
 enabled = true
 # true. Client invoke (admin dashboard); admin session sends the key.
 # Live-confirmed true.
+# MUST STAY true: _shared/caller.ts trusts the JWT role claim unverified,
+# because the gateway has already checked the signature. false = forgeable.
 verify_jwt = true
 entrypoint = "./functions/recommend-actions/index.ts"
 
@@ -519,6 +521,8 @@ entrypoint = "./functions/create-staff/index.ts"
 enabled = true
 # true. Server-only: cron/trigger net.http_post sends a service-role Bearer from
 # vault. No client caller. Bearer satisfies true. Live-confirmed true.
+# MUST STAY true: _shared/caller.ts trusts the JWT role claim unverified,
+# because the gateway has already checked the signature. false = forgeable.
 verify_jwt = true
 entrypoint = "./functions/classify-feedback/index.ts"
 
@@ -526,6 +530,8 @@ entrypoint = "./functions/classify-feedback/index.ts"
 enabled = true
 # true. Same pattern as classify-feedback (trigger + vault service-role Bearer).
 # Live-confirmed true.
+# MUST STAY true: _shared/caller.ts trusts the JWT role claim unverified,
+# because the gateway has already checked the signature. false = forgeable.
 verify_jwt = true
 entrypoint = "./functions/classify-report/index.ts"
 
@@ -535,6 +541,8 @@ enabled = true
 # catchup-classify-suggestion cron both send a service-role Bearer read from
 # vault (see classify-suggestion/AUTO_CLASSIFY.sql). No client caller — nothing
 # in lib/ invokes it.
+# MUST STAY true: _shared/caller.ts trusts the JWT role claim unverified,
+# because the gateway has already checked the signature. false = forgeable.
 verify_jwt = true
 entrypoint = "./functions/classify-suggestion/index.ts"
 

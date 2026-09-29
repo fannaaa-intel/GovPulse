@@ -16,6 +16,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { groqChat } from "../_shared/groq.ts";
+import { authorizeCaller } from "../_shared/caller.ts";
 
 // Replaces llama-3.3-70b-versatile, deprecated by Groq on 2026-06-17 (same
 // notice as the 8B). Recommendations genuinely benefit from reasoning depth —
@@ -347,6 +348,9 @@ serve(async (req: Request) => {
       headers: corsHeaders,
     });
   }
+
+  const denied = await authorizeCaller(req, corsHeaders, { allowAdmin: true });
+  if (denied) return denied;
 
   const apiKey = Deno.env.get("GROQ_API_KEY");
   if (!apiKey) {

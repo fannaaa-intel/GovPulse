@@ -44,6 +44,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { groqChat } from "../_shared/groq.ts";
+import { authorizeCaller } from "../_shared/caller.ts";
 
 // Same model as classify-report / classify-feedback: small + fast is plenty for
 // picking one label from a closed list. GPT-OSS is a reasoning model, hence
@@ -253,6 +254,9 @@ serve(async (req: Request) => {
       headers: corsHeaders,
     });
   }
+
+  const denied = await authorizeCaller(req, corsHeaders);
+  if (denied) return denied;
 
   const apiKey = Deno.env.get("GROQ_API_KEY");
   if (!apiKey) {
