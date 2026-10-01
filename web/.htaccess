@@ -1,0 +1,35 @@
+# Apache config for the self-hosted copy (govpulse.aparri.org.ph).
+# Vercel ignores this file; it uses vercel.json instead.
+#
+# Kept deliberately small: a directive the host's AllowOverride does not permit
+# (e.g. `Options`) turns EVERY request into a 500, so only rewrite, MIME and
+# header rules are used, each guarded by IfModule.
+
+# ── SPA fallback ────────────────────────────────────────────────────────────
+# GovPulse uses path URLs (/login, /privacy_policy, /scan/<token>). Those are
+# not files on disk, so a reload or a shared link must be answered with
+# index.html and Flutter's router takes it from there. Real files and folders
+# are served as-is.
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+  RewriteRule ^ /index.html [L]
+</IfModule>
+
+# ── WebAssembly MIME type ───────────────────────────────────────────────────
+# Some Apache builds do not know .wasm; served as octet-stream, the browser's
+# streaming compile refuses it and the app has to fall back to a slower path.
+<IfModule mod_mime.c>
+  AddType application/wasm .wasm
+</IfModule>
+
+# ── Never cache the entry files ─────────────────────────────────────────────
+# Otherwise a returning visitor keeps an OLD index.html / bootstrap after an
+# upload and runs a stale app until their cache expires.
+<IfModule mod_headers.c>
+  <FilesMatch "^(index\.html|flutter_bootstrap\.js|flutter_service_worker\.js|version\.json|manifest\.json)$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+</IfModule>
