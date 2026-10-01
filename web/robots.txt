@@ -37,4 +37,4 @@ Disallow: /emergency
 Disallow: /newsfeed
 Disallow: /guest
 
-Sitemap: https://gov-pulse-rose.vercel.app/sitemap.xml
+Sitemap: https://govpulse.aparri.org.ph/sitemap.xml

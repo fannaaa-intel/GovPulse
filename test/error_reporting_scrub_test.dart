@@ -70,7 +70,7 @@ void main() {
 
     test('drops a fragment, where a hash-routed app carries its route args', () {
       final safe = sanitizeUrlForReport(
-        'https://gov-pulse-rose.vercel.app/#/scan/SECRET-TOKEN-123',
+        'https://govpulse.aparri.org.ph/#/scan/SECRET-TOKEN-123',
       );
 
       expect(safe, isNot(contains('SECRET-TOKEN-123')));
@@ -83,7 +83,7 @@ void main() {
     // pins the form the app is moving to.
     test('an endorsement token in the PATH is redacted too', () {
       final safe = sanitizeUrlForReport(
-        'https://gov-pulse-rose.vercel.app/scan/SECRET-TOKEN-123',
+        'https://govpulse.aparri.org.ph/scan/SECRET-TOKEN-123',
       );
 
       expect(
@@ -98,7 +98,7 @@ void main() {
 
     test('a report id in the path is redacted, the route is not', () {
       final safe = sanitizeUrlForReport(
-        'https://gov-pulse-rose.vercel.app/my-reports/detail/8821',
+        'https://govpulse.aparri.org.ph/my-reports/detail/8821',
       );
 
       expect(safe, isNot(contains('8821')));
