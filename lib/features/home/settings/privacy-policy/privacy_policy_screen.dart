@@ -8,7 +8,15 @@ import '../../../../core/theme/mobile_metrics.dart';
 import '../../../../core/widgets/app_back_chevron.dart';
 
 class PrivacyPolicyScreen extends StatefulWidget {
-  const PrivacyPolicyScreen({super.key});
+  const PrivacyPolicyScreen({super.key, this.onBack, this.backLabel});
+
+  /// Web only. Replaces the default back action, for when this page is
+  /// opened as a public route (the landing footer) rather than pushed over
+  /// Settings — there is nothing to pop there. Null keeps the default.
+  final VoidCallback? onBack;
+
+  /// Screen-reader name for [onBack]'s destination.
+  final String? backLabel;
 
   @override
   State<PrivacyPolicyScreen> createState() => _PrivacyPolicyScreenState();
@@ -288,8 +296,8 @@ class _PrivacyPolicyScreenState extends State<PrivacyPolicyScreen>
                 // the rail still reads Settings and the browser's Back button
                 // leaves the account area rather than closing this page. Without
                 // a door here there is no way out at all.
-                onBack: () => Navigator.pop(context),
-                backLabel: 'Back to Settings',
+                onBack: widget.onBack ?? () => Navigator.pop(context),
+                backLabel: widget.backLabel ?? 'Back to Settings',
                 title: 'Privacy Policy',
                 subtitle:
                     'How GovPulse collects, uses and protects your personal '

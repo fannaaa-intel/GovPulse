@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderAbstractViewport;
 import 'package:go_router/go_router.dart';
 
 import 'landing_theme.dart';
@@ -72,21 +73,33 @@ class _LandingPageState extends State<LandingPage> {
     super.dispose();
   }
 
-  /// Scrolls [key]'s section to just under the sticky nav.
+  /// Scrolls [key]'s section so its top sits just under the nav.
   ///
-  /// [Scrollable.ensureVisible] rather than a computed offset: it walks the
-  /// real render tree, so it stays correct no matter how the sections above
-  /// have restacked at this width.
+  /// The offset is read from the real render tree, so it stays correct no
+  /// matter how the sections above have restacked at this width.
+  ///
+  /// ── Not `Scrollable.ensureVisible(alignment: …)` ─────────────────────────
+  /// That aligns a FRACTION of (viewport − section height). For a section
+  /// taller than the screen — Features and How it Works on a phone — that
+  /// number is negative, so any positive alignment scrolled PAST the section's
+  /// top and the eyebrow ("HOW IT WORKS") landed half off-screen. FAQ, short
+  /// enough to fit, looked fine, which is why it went unnoticed.
   void _scrollTo(GlobalKey key) {
-    final target = key.currentContext;
-    if (target == null) return;
-    Scrollable.ensureVisible(
+    final box = key.currentContext?.findRenderObject();
+    if (box == null || !_scrollController.hasClients) return;
+    final viewport = RenderAbstractViewport.maybeOf(box);
+    if (viewport == null) return;
+    final position = _scrollController.position;
+    // A little air above the section's own top padding.
+    const gap = 8.0;
+    final target = (viewport.getOffsetToReveal(box, 0).offset - gap).clamp(
+      position.minScrollExtent,
+      position.maxScrollExtent,
+    );
+    _scrollController.animateTo(
       target,
       duration: const Duration(milliseconds: 640),
       curve: Curves.easeInOutCubic,
-      // The sticky nav floats over the content, so aligning a section's top to
-      // the viewport's top would slide it under the bar. 0.06 leaves it clear.
-      alignment: 0.06,
     );
   }
 

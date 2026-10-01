@@ -23,6 +23,7 @@ import '../../auth/facebook_username_screen.dart';
 import '../../guest/screen/guest.dart';
 import '../../landing/landing_page.dart';
 import '../../landing/not_found_page.dart';
+import '../../landing/public_info_page.dart';
 import '../../scan/scan_page.dart';
 import '../../staff/screens/staff_console_screen.dart';
 import '../Quick-action/Events/event_detail_screen.dart';
@@ -32,6 +33,8 @@ import '../my_report/my_reports_screen.dart';
 import '../my_report/report_detail_screen.dart';
 import '../newsfeed/news_feed_screen.dart';
 import '../settings/about/about_govpulse_screen.dart';
+import '../settings/privacy-policy/privacy_policy_screen.dart';
+import '../settings/terms-of-service/terms_of_service_screen.dart';
 import '../settings/change-password/change_password_send_screen.dart';
 import '../settings/contact-support/contact_support_screen.dart';
 import '../settings/edit_profile_screen.dart';
@@ -126,6 +129,19 @@ const String _kLandingPath = '/';
 /// A citizen's feed is the shell's Home pane, so the two never share a URL —
 /// see the redirect in [_authRedirect].
 const String _kNewsFeedPath = '/newsfeed';
+
+// ── Public information pages ───────────────────────────────────────────────
+// Linked from the landing footer. Public in ALL directions, like the scan
+// page: a signed-out visitor must be able to read the Privacy Policy before
+// signing up. Same strings as the legacy (mobile) route names.
+const String _kPrivacyPath = '/privacy_policy';
+const String _kTermsPath = '/terms_of_service';
+const String _kAboutPath = '/about';
+const List<String> _kPublicInfoPaths = <String>[
+  _kPrivacyPath,
+  _kTermsPath,
+  _kAboutPath,
+];
 
 /// The two NON-citizen consoles.
 ///
@@ -594,6 +610,7 @@ bool _isKnownLocation(String loc) {
     _kAdminPath,
     _kStaffPath,
     _kFacebookUsernamePath,
+    ..._kPublicInfoPaths,
   ];
   if (exact.contains(loc)) return true;
 
@@ -632,6 +649,7 @@ enum RouterIdentity { signedOut, guest, citizen, admin, staff }
 @visibleForTesting
 String? debugRedirectFor(String loc, {required RouterIdentity identity}) {
   if (loc.startsWith(kScanRoutePrefix)) return null;
+  if (_kPublicInfoPaths.contains(loc)) return null;
   if (loc == _kLandingPath) return null;
   if (!_isKnownLocation(loc)) return null;
 
@@ -665,6 +683,9 @@ String? _authRedirect(BuildContext context, GoRouterState state) {
   // officer scanning it has no session and must not be sent to login, and
   // neither a citizen nor a guest opening it should be swept anywhere else.
   if (loc.startsWith(kScanRoutePrefix)) return null;
+
+  // Privacy / Terms / About from the landing footer: public for everyone.
+  if (_kPublicInfoPaths.contains(loc)) return null;
 
   // ── The landing page ─────────────────────────────────────────────────────
   // Public in all directions like the scan page, with ONE exception: the very
@@ -1042,6 +1063,31 @@ final GoRouter citizenRouter = GoRouter(
     GoRoute(
       path: '$kScanRoutePrefix:token',
       builder: (_, state) => ScanPage(token: state.pathParameters['token']!),
+    ),
+
+    // ── Public information pages (landing footer) ───────────────────────────
+    // No NetworkWrapper: these are static text with nothing to fetch, and the
+    // wrapper is built for signed-in users.
+    GoRoute(
+      path: _kPrivacyPath,
+      builder: (_, _) => PublicInfoPage(
+        builder: (onBack) =>
+            PrivacyPolicyScreen(onBack: onBack, backLabel: 'Back to home'),
+      ),
+    ),
+    GoRoute(
+      path: _kTermsPath,
+      builder: (_, _) => PublicInfoPage(
+        builder: (onBack) =>
+            TermsOfServiceScreen(onBack: onBack, backLabel: 'Back to home'),
+      ),
+    ),
+    GoRoute(
+      path: _kAboutPath,
+      builder: (_, _) => PublicInfoPage(
+        builder: (onBack) =>
+            AboutGovPulseScreen(onBack: onBack, backLabel: 'Back to home'),
+      ),
     ),
 
     // ── Guest feed ──────────────────────────────────────────────────────────

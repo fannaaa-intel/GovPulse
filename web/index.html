@@ -225,21 +225,28 @@
       #splash-subtitle { font-size: 12px; margin-top: -16px; }
     }
 
-    /* Respect a reduced-motion preference: hold the ring still rather than
-       rotating it. The arc gap still reads as a spinner at rest. */
     /* Failsafe state: Flutter never booted (see the 12s timer below). */
     #splash-ring.splash-ring-stopped::after { animation: none; opacity: 0.3; }
     #splash-reload {
-      margin-left: 6px;
-      padding: 6px 16px;
+      min-height: 44px;
+      padding: 10px 28px;
       border: 0;
       border-radius: 999px;
       background: #0D47A1;
       color: #ffffff;
-      font: inherit;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        Helvetica, Arial, sans-serif;
+      font-size: 14px;
+      font-weight: 600;
       cursor: pointer;
     }
+    #splash-reload:focus-visible { outline: 3px solid #90CAF9; outline-offset: 2px; }
+    /* The offline sentence is longer than "Loading GovPulse"; keep it to a
+       readable measure on a desktop and inside the gutter on a phone. */
+    #splash-subtitle { max-width: 320px; }
 
+    /* Respect a reduced-motion preference: hold the ring still rather than
+       rotating it. The arc gap still reads as a spinner at rest. */
     @media (prefers-reduced-motion: reduce) {
       #splash { transition: none; }
       #splash-ring::after { animation: none; }
@@ -283,28 +290,71 @@
     // But if Flutter never mounted at all, lifting the splash leaves a blank
     // white page with no clue what went wrong — exactly what a host serving
     // the SOURCE web/ folder instead of build/web looks like (no
-    // flutter_bootstrap.js, so nothing ever boots). In that case keep the
-    // splash and turn it into a message with a reload button instead.
-    window.setTimeout(function () {
+    // flutter_bootstrap.js, so nothing ever boots), and what a connection that
+    // drops mid-load looks like. In that case keep the splash and turn it into
+    // a message instead: "You're offline" when the browser says so (and reload
+    // by itself once it is back), otherwise "couldn't load" + Reload.
+    //
+    // Dart's own removeSplashFromWeb() still takes this down if Flutter boots
+    // late after all, whatever state it is in.
+    function flutterMounted() {
+      return !!document.querySelector("flutter-view, flt-glass-pane");
+    }
+
+    function showBootFailure() {
       var splash = document.getElementById("splash");
-      if (!splash) return;
-      if (document.querySelector("flutter-view, flt-glass-pane")) {
-        removeSplashFromWeb();
-        return;
-      }
+      if (!splash || flutterMounted()) return;
+      var offline = navigator.onLine === false;
       var title = document.getElementById("splash-title");
       var subtitle = document.getElementById("splash-subtitle");
       var ring = document.getElementById("splash-ring");
       if (ring) ring.classList.add("splash-ring-stopped");
-      if (title) title.textContent = "GovPulse couldn't load";
+      if (title) {
+        title.textContent = offline
+          ? "You're offline"
+          : "GovPulse couldn't load";
+      }
       if (subtitle) {
-        subtitle.textContent = "Check your connection, then try again. ";
+        subtitle.textContent = offline
+          ? "Check your internet connection. GovPulse will reload when you're back online."
+          : "Check your connection, then try again.";
+      }
+      if (!document.getElementById("splash-reload")) {
         var btn = document.createElement("button");
         btn.id = "splash-reload";
-        btn.textContent = "Reload";
+        btn.type = "button";
+        btn.textContent = offline ? "Try again" : "Reload";
         btn.onclick = function () { window.location.reload(); };
-        subtitle.appendChild(btn);
+        document.getElementById("splash-branding").appendChild(btn);
       }
+    }
+
+    // Back online with the app still not running: reload into a real boot.
+    window.addEventListener("online", function () {
+      if (!flutterMounted() && document.getElementById("splash-reload")) {
+        window.location.reload();
+      }
+    });
+
+    // Offline: nothing more is going to arrive, so say so after a short grace
+    // (a fully cached app still gets its chance to boot) instead of making the
+    // visitor watch a spinner for 12s.
+    window.addEventListener("offline", function () {
+      window.setTimeout(showBootFailure, 3000);
+    });
+    window.setTimeout(function () {
+      if (navigator.onLine === false) showBootFailure();
+    }, 3000);
+
+    // The healthy-load ceiling, as before.
+    window.setTimeout(function () {
+      var splash = document.getElementById("splash");
+      if (!splash) return;
+      if (flutterMounted()) {
+        removeSplashFromWeb();
+        return;
+      }
+      showBootFailure();
     }, 12000);
   </script>
 
@@ -337,6 +387,6 @@
     </div>
   </noscript>
 
-  <script src="flutter_bootstrap.js" async=""></script>
+  <script src="flutter_bootstrap.js" async="" onerror="showBootFailure()"></script>
 </body>
 </html>

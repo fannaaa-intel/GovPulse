@@ -8,7 +8,15 @@ import '../../../../core/theme/mobile_metrics.dart';
 import '../../../../core/widgets/app_back_chevron.dart';
 
 class AboutGovPulseScreen extends StatefulWidget {
-  const AboutGovPulseScreen({super.key});
+  const AboutGovPulseScreen({super.key, this.onBack, this.backLabel});
+
+  /// Web only. Replaces the default back action, for when this page is
+  /// opened as a public route (the landing footer) rather than pushed over
+  /// Settings — there is nothing to pop there. Null keeps the default.
+  final VoidCallback? onBack;
+
+  /// Screen-reader name for [onBack]'s destination.
+  final String? backLabel;
 
   @override
   State<AboutGovPulseScreen> createState() => _AboutGovPulseScreenState();
@@ -255,7 +263,11 @@ class _AboutGovPulseScreenState extends State<AboutGovPulseScreen>
               // it sat at the top of the scroll saying what the page was, which
               // is the job [AccountPageTitle] does on every other account page.
               // Keeping both would state it twice, once as a 200px slab.
-              const AccountPageTitle(
+              AccountPageTitle(
+                // Null inside the account area, where About is a rail
+                // destination and needs no back chevron.
+                onBack: widget.onBack,
+                backLabel: widget.backLabel ?? 'Back',
                 title: 'About GovPulse',
                 subtitle:
                     'The official digital platform connecting Aparri citizens with '
