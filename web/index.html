@@ -227,6 +227,19 @@
 
     /* Respect a reduced-motion preference: hold the ring still rather than
        rotating it. The arc gap still reads as a spinner at rest. */
+    /* Failsafe state: Flutter never booted (see the 12s timer below). */
+    #splash-ring.splash-ring-stopped::after { animation: none; opacity: 0.3; }
+    #splash-reload {
+      margin-left: 6px;
+      padding: 6px 16px;
+      border: 0;
+      border-radius: 999px;
+      background: #0D47A1;
+      color: #ffffff;
+      font: inherit;
+      cursor: pointer;
+    }
+
     @media (prefers-reduced-motion: reduce) {
       #splash { transition: none; }
       #splash-ring::after { animation: none; }
@@ -266,9 +279,32 @@
     //
     // Showing the app's own loading state — or even an empty page the visitor
     // can reload — beats a branded splash that never lifts.
+    //
+    // But if Flutter never mounted at all, lifting the splash leaves a blank
+    // white page with no clue what went wrong — exactly what a host serving
+    // the SOURCE web/ folder instead of build/web looks like (no
+    // flutter_bootstrap.js, so nothing ever boots). In that case keep the
+    // splash and turn it into a message with a reload button instead.
     window.setTimeout(function () {
       var splash = document.getElementById("splash");
-      if (splash) removeSplashFromWeb();
+      if (!splash) return;
+      if (document.querySelector("flutter-view, flt-glass-pane")) {
+        removeSplashFromWeb();
+        return;
+      }
+      var title = document.getElementById("splash-title");
+      var subtitle = document.getElementById("splash-subtitle");
+      var ring = document.getElementById("splash-ring");
+      if (ring) ring.classList.add("splash-ring-stopped");
+      if (title) title.textContent = "GovPulse couldn't load";
+      if (subtitle) {
+        subtitle.textContent = "Check your connection, then try again. ";
+        var btn = document.createElement("button");
+        btn.id = "splash-reload";
+        btn.textContent = "Reload";
+        btn.onclick = function () { window.location.reload(); };
+        subtitle.appendChild(btn);
+      }
     }, 12000);
   </script>
 
