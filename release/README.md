@@ -1,7 +1,7 @@
 # GovPulse web release
 
 `govpulse-web.zip` is the ready-to-upload website for **govpulse.aparri.org.ph**
-(Flutter web release build, 2026-10-01, always the commit that last changed
+(Flutter web release build, 2026-10-06, always the commit that last changed
 this zip).
 
 ## How to upload
