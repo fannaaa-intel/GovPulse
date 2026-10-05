@@ -1,137 +1,163 @@
-// Tests for the per-question fact selection in index.ts.
+// Tests for the per-question fact selection.
 //
-// Run with:  deno test supabase/functions/chat-agent/facts_selection_test.ts
+// Run with:  deno test supabase/functions/chat-agent/facts_selection_test.ts --allow-read
 //
-// WHY THIS EXISTS
-// The fact table passed 25 rows, so the chat function stopped sending every
-// fact on every turn and started selecting by `category` against the citizen's
-// message. That makes `category` load-bearing: a fact filed under the wrong
-// one is not a cosmetic mistake, it is a fact the assistant can never retrieve
-// and nobody gets an error. These tests pin the routing so that failure is
-// loud instead of silent.
+// These import the REAL selection code (facts_selection.ts) and run it over the
+// REAL fact set (lgu_facts_fixture.json, replayed from the migrations by
+// tool/gen_lgu_facts_fixture.py). Both halves matter:
 //
-// The logic under test is duplicated here rather than imported, because
-// index.ts calls serve() at module scope and importing it would start a
-// server. Keep this copy in sync with index.ts — the assertions below are
-// about behaviour, so a drift shows up as a failing test rather than silence.
+//   • v6 kept a hand-copied duplicate of the logic here, because index.ts
+//     calls serve() at module scope and cannot be imported.
+//   • v6's fixture had 9 rows. The live table has 38, and at 38 the always-on
+//     categories alone overflowed the 14-fact cap — so 24 facts were never
+//     sent for any question. Nine rows could not show that; 38 do.
+//
+// Re-run tool/gen_lgu_facts_fixture.py after any migration touching lgu_facts.
 
 import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import {
+  CORE_KEYS,
+  FACT_TERMS,
+  type LguFact,
+  MAX_FACT_CHARS,
+  MAX_FACTS,
+  pickRelevantFacts,
+  tokenize,
+} from "./facts_selection.ts";
 
-const MAX_FACTS = 14;
-const ALWAYS_CATEGORIES = new Set(["officials", "contact", "emergency"]);
+const FACTS: LguFact[] = JSON.parse(
+  await Deno.readTextFile(new URL("./lgu_facts_fixture.json", import.meta.url)),
+);
 
-const CATEGORY_TRIGGERS: Array<{ category: string; terms: string[] }> = [
-  {
-    category: "services",
-    terms: [
-      "permit", "business", "negosyo", "cedula", "ctc", "community tax",
-      "clearance", "birth", "kapanganakan", "marriage", "kasal", "death",
-      "civil registrar", "registro", "id", "pwd", "senior", "osca",
-      "building", "zoning", "sanitary", "occupancy", "requirement",
-      "requisito", "kailangan", "dokumento", "papeles", "bayad", "fee",
-      "magkano", "sagot", "tax", "buwis", "assessor", "treasurer",
-    ],
-  },
-  {
-    category: "general",
-    terms: [
-      "aparri", "barangay", "brgy", "populasyon", "population", "kasaysayan",
-      "history", "fiesta", "festival", "aramang", "tourist", "turista",
-      "pasyalan", "simbahan", "church", "lugar", "saan", "ilog", "river",
-      "isda", "fishing", "mangingisda", "ekonomiya", "economy", "trabaho",
-      "school", "eskwela", "paano pumunta", "byahe", "travel", "distance",
-      "layo", "klima", "weather", "panahon", "bagyo", "typhoon",
-    ],
-  },
-];
+const keysFor = (q: string) => pickRelevantFacts(FACTS, q).map((f) => f.key as string);
 
-interface LguFact {
-  key?: unknown;
-  label?: unknown;
-  value?: unknown;
-  category?: unknown;
-}
+const size = (f: LguFact) => String(f.label).length + String(f.value).length;
 
-function pickRelevantFacts(facts: LguFact[], userMessage: string): LguFact[] {
-  const text = (userMessage ?? "").toLowerCase();
-  const wanted = new Set(ALWAYS_CATEGORIES);
-  let matchedTopic = false;
-  for (const { category, terms } of CATEGORY_TRIGGERS) {
-    if (terms.some((t) => text.includes(t))) {
-      wanted.add(category);
-      matchedTopic = true;
-    }
+Deno.test("the fixture is the real table, not a toy", () => {
+  assertEquals(FACTS.length, 38);
+});
+
+Deno.test("EVERY fact is reachable by at least one question", () => {
+  // The regression test for the v6 bug: 24 of these were unreachable.
+  const unreachable: string[] = [];
+  for (const f of FACTS) {
+    const key = f.key as string;
+    const terms = FACT_TERMS[key] ?? [];
+    const questions = terms.length > 0
+      ? terms.map((t) => `ano po ang ${t}?`)
+      // A fact with no terms of its own must ride in with its category.
+      : [`${String(f.category)} po`, "may emergency po", "ano ang requirements"];
+    if (!questions.some((q) => keysFor(q).includes(key))) unreachable.push(key);
   }
-  if (!matchedTopic) return facts;
-  const picked = facts.filter((f) => {
-    const category = typeof f.category === "string" ? f.category : "general";
-    return wanted.has(category);
-  });
-  return picked.length > 0 ? picked : facts;
-}
-
-/** A stand-in for the live table, one row per category actually in use. */
-const FACTS: LguFact[] = [
-  { key: "mayor", label: "Mayor", value: "Dominador J. Dayag", category: "officials" },
-  { key: "vice_mayor", label: "Vice Mayor", value: "Bryan Dale G. Chan", category: "officials" },
-  { key: "hall_loc", label: "Hall", value: "Centro-01", category: "contact" },
-  { key: "emergency", label: "Emergency", value: "911", category: "emergency" },
-  { key: "police", label: "Police", value: "0917 203 2003", category: "emergency" },
-  { key: "cedula_fee", label: "Cedula fee", value: "PHP 5 basic", category: "services" },
-  { key: "bp_reqs", label: "BP requirements", value: "11 requirements", category: "services" },
-  { key: "about", label: "About", value: "1st class municipality", category: "general" },
-  { key: "fiesta", label: "Fiesta", value: "May 1-11", category: "general" },
-];
-
-const keysFor = (q: string) => pickRelevantFacts(FACTS, q).map((f) => f.key);
-
-Deno.test("officials, contact and emergency ride along on every question", () => {
-  for (const q of ["magkano ang cedula?", "ano ang fiesta?", "kumusta po", ""]) {
-    const keys = keysFor(q);
-    for (const always of ["mayor", "vice_mayor", "hall_loc", "emergency", "police"]) {
-      assert(keys.includes(always), `"${q}" dropped the always-on fact ${always}`);
-    }
-  }
+  assertEquals(unreachable, [], `never sent: ${unreachable.join(", ")}`);
 });
 
-Deno.test("a service question pulls service facts and leaves out town trivia", () => {
-  const keys = keysFor("paano po kumuha ng business permit?");
-  assert(keys.includes("bp_reqs"), "permit question missed the requirements");
-  assert(keys.includes("cedula_fee"), "permit question missed the cedula fee");
-  assert(!keys.includes("fiesta"), "permit question should not carry the fiesta");
+Deno.test("every fact in the table has its own terms (so it can go FIRST)", () => {
+  // emergency_caveat is the one deliberate exception: it rides with the
+  // emergency directory and is never asked for by name.
+  const missing = FACTS.map((f) => f.key as string)
+    .filter((k) => k !== "emergency_caveat" && (FACT_TERMS[k] ?? []).length === 0);
+  assertEquals(missing, []);
 });
 
-Deno.test("a town question pulls general facts and leaves out service checklists", () => {
-  const keys = keysFor("kailan ang fiesta sa Aparri?");
-  assert(keys.includes("fiesta"), "fiesta question missed the fiesta fact");
-  assert(keys.includes("about"), "fiesta question missed the town profile");
-  assert(!keys.includes("bp_reqs"), "fiesta question should not carry permit requirements");
-});
-
-Deno.test("selection is language-agnostic across the forms citizens actually use", () => {
-  // Same underlying ask, three languages: each must reach the services bucket.
+Deno.test("the core rides along on every question", () => {
   for (const q of [
-    "how much is the cedula?",
-    "magkano po ang cedula?",
-    "ania ti bayad iti cedula?", // Ilocano — 'bayad' and 'cedula' both trigger
+    "magkano ang cedula?",
+    "kailan ang fiesta?",
+    "kumusta po",
+    "",
+    "ano po ang requirements sa business permit at marriage license at birth certificate?",
   ]) {
-    assert(keysFor(q).includes("cedula_fee"), `"${q}" did not reach the cedula fee`);
+    const keys = keysFor(q);
+    for (const k of CORE_KEYS) assert(keys.includes(k), `"${q}" dropped core fact ${k}`);
   }
 });
 
-Deno.test("an emergency mid-conversation still carries the hotlines", () => {
-  // The point of ALWAYS_CATEGORIES: someone asking about a permit who then
-  // mentions a fire must not have to wait a turn for the hotline to appear.
-  const keys = keysFor("may sunog po sa tabi ng bahay namin!!");
-  assert(keys.includes("emergency"));
-  assert(keys.includes("police"));
+Deno.test("no turn exceeds the count cap or the character budget", () => {
+  for (const q of [
+    "",
+    "ano po ang alam mo?",
+    "requirements business permit marriage birth building senior pwd cedula fiesta",
+    "sino ang mga opisyal at saan ang opisina at magkano ang bayad?",
+    "may sunog at baha at aksidente!",
+  ]) {
+    const picked = pickRelevantFacts(FACTS, q);
+    assert(picked.length <= MAX_FACTS, `"${q}" sent ${picked.length} facts`);
+    const chars = picked.reduce((n, f) => n + size(f), 0);
+    assert(chars <= MAX_FACT_CHARS, `"${q}" sent ${chars} chars`);
+  }
 });
 
-Deno.test("a broad question falls back to everything rather than near-nothing", () => {
-  // "ano ang alam mo" trips no keyword. Without the fallback this would return
-  // only the always-on set and the assistant would look ignorant of its town.
-  const keys = keysFor("ano ang alam mo?");
-  assertEquals(keys.length, FACTS.length);
+// The questions from the audit, each of which v6 answered with "confirm at the
+// municipio" while the answer sat in the table.
+const MUST_REACH: Array<[string, string]> = [
+  ["Magkano ang cedula?", "cedula_fee"],
+  ["how much is the cedula?", "cedula_fee"],
+  ["Mano ti bayad iti cedula?", "cedula_fee"], // Ilocano
+  ["Piga i cedula?", "cedula_fee"], // Ybanag
+  ["Ano requirements ng business permit?", "business_permit_requirements"],
+  ["mag-renew po ako ng mayor's permit", "business_permit_requirements"],
+  ["Kailan ang fiesta sa Aparri?", "aparri_fiesta"],
+  ["May sunog! ano number ng bumbero?", "fire_hotline"],
+  ["kailangan ko ng ambulansya", "hospital_hotline"],
+  ["may nagnakaw, pulis po", "police_hotline"],
+  ["baha na po dito, rescue", "emergency_number"],
+  ["paano magpakasal dito?", "marriage_license_requirements"],
+  ["late registration ng birth certificate", "birth_registration"],
+  ["saan kukuha ng senior citizen id?", "osca_office"],
+  ["pwd id po", "pdao_office"],
+  ["magpapatayo ako ng bahay, anong permit?", "building_permit_office"],
+  ["may ayuda ba para sa burial?", "mswdo_services"],
+  ["RSBSA para sa magsasaka", "agriculture_services"],
+  ["sino ang treasurer?", "treasurer_head"],
+  ["sino ang mga konsehal?", "sangguniang_bayan"],
+  ["anong oras bukas ang munisipyo?", "municipal_hall_hours"],
+  ["ano ang kasaysayan ng Aparri?", "aparri_history"],
+  ["ano ang aramang?", "aparri_economy"],
+  ["mga pasyalan sa Aparri", "aparri_landmarks"],
+  ["anong barangay ang Punta?", "barangay_list"],
+];
+
+for (const [q, key] of MUST_REACH) {
+  Deno.test(`"${q}" reaches ${key}`, () => {
+    assert(keysFor(q).includes(key), `got: ${keysFor(q).join(", ")}`);
+  });
+}
+
+Deno.test("an emergency puts the whole directory first", () => {
+  const keys = keysFor("may sunog po sa tabi ng bahay namin!!");
+  for (const k of [
+    "emergency_911", "emergency_number", "police_hotline", "fire_hotline",
+    "hospital_hotline", "rhu_hotline",
+  ]) {
+    assert(keys.includes(k), `fire report missing ${k}`);
+  }
+  assertEquals(keys[0], "emergency_911");
+});
+
+Deno.test("a broad question gets breadth, not ten officials", () => {
+  const keys = keysFor("ano po ang alam mo?");
+  const categories = new Set(
+    pickRelevantFacts(FACTS, "ano po ang alam mo?").map((f) => f.category),
+  );
+  for (const c of ["officials", "contact", "emergency", "services", "general"]) {
+    assert(categories.has(c), `broad question missing category ${c}: ${keys.join(", ")}`);
+  }
+});
+
+Deno.test("whole-word matching: no false hits inside other words", () => {
+  // "kasal" (wedding) is a prefix of "kasalukuyan" (currently).
+  assert(!keysFor("sino ang kasalukuyang mayor?").includes("marriage_license_requirements"));
+  // "id" used to fire inside "video"; "fire" inside "fireworks" is fine to
+  // miss, but "video" must not read as an ID question.
+  assert(!keysFor("may video po ako").includes("osca_office"));
+  // A message that only mentions Aparri must not look like an emergency.
+  assertEquals(keysFor("taga Aparri po ako")[0], "mayor");
+});
+
+Deno.test("possessives still match", () => {
+  assert(keysFor("number ng mayor's office").includes("mayors_office_line"));
+  assert(tokenize("Mayor's office!").includes("mayor's"));
 });
 
 Deno.test("an unknown or missing category is treated as general, never dropped", () => {
@@ -139,19 +165,6 @@ Deno.test("an unknown or missing category is treated as general, never dropped",
     { key: "no_category", label: "L", value: "V" },
     { key: "typo_category", label: "L", value: "V", category: "generl" },
   ];
-  // A row with no category defaults to general and is reachable.
   assert(pickRelevantFacts(odd, "kasaysayan ng aparri").some((f) => f.key === "no_category"));
-  // A typo'd category matches nothing, so the fallback returns the whole set
-  // rather than silently serving zero facts.
-  assertEquals(pickRelevantFacts([odd[1]], "kasaysayan ng aparri").length, 1);
-});
-
-Deno.test("the cap never lets one turn exceed MAX_FACTS", () => {
-  const many: LguFact[] = Array.from({ length: 40 }, (_, i) => ({
-    key: `k${i}`,
-    label: `L${i}`,
-    value: "v",
-    category: "officials",
-  }));
-  assert(pickRelevantFacts(many, "sino ang mayor").slice(0, MAX_FACTS).length <= MAX_FACTS);
+  assertEquals(pickRelevantFacts(odd, "kumusta").length, 2);
 });

@@ -1,9 +1,30 @@
 // supabase/functions/chat-agent/index.ts
 //
-// Kuya Gov — LGU Aparri virtual assistant (v6)
+// Kuya Gov — LGU Aparri virtual assistant (v7)
 //
 // Deploy with:  supabase functions deploy chat-agent
 // Set secret:   supabase secrets set GROQ_API_KEY=gsk_...
+//
+// v7 changes vs v6 (model, temperature, token limits and reasoning UNCHANGED):
+//   • Fact selection rewritten (facts_selection.ts). v6's always-on categories
+//     held 20 rows against a 14-fact cap, so 24 of the 38 live facts — the
+//     cedula fee, every service checklist, the PNP/BFP/hospital lines, the
+//     whole town profile — were never sent for any question. Facts are now
+//     ranked (named by the question → small core → rest of the topic) and
+//     packed under a count cap AND a character budget. Matching is whole-word
+//     and covers Ilocano and sourced Ybanag question words.
+//   • KNOWLEDGE_BASE gains NBI and police clearance, LTO license, BIR TIN,
+//     certificate of indigency, solo parent ID, 4Ps and TUPAD — process steps
+//     only, no fees, same rules as the existing sections.
+//   • The Ybanag rule gains a short list of words from published sources
+//     (Dita 2010, A Reference Grammar of Ibanag; Wikipedia) that the model may
+//     write, and a list it should only recognise. Not yet checked by an Aparri
+//     speaker — the fall-back-to-Ilocano rule is unchanged and still governs.
+//   • Unanswerable questions are logged (knowledge_gaps.ts → migration
+//     20261006000000): the model ends such replies with [[KB_GAP]], which is
+//     always stripped here; the redacted question is stored with no user id.
+//   • SYSTEM_PROMPT changed, so expect ONE cold prefix-cache miss per key after
+//     deploy; it is byte-identical call to call again from then on.
 //
 // v6 changes vs v5:
 //   • Aparri's own facts are LIVE. APARRI_FACTS was a const struct whose every
@@ -88,6 +109,8 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { type LguFact, MAX_FACTS, pickRelevantFacts } from "./facts_selection.ts";
+import { extractGapMarker, redactQuestion } from "./knowledge_gaps.ts";
 
 // Named, rather than inlined in the request body as it was through v3 — the
 // inline literal was the one model reference in the repo that a grep for
@@ -150,107 +173,9 @@ interface ChatResponse {
 /** Longest single fact value we will forward; a runaway row can't eat the budget. */
 const MAX_FACT_VALUE_CHARS = 400;
 
-/**
- * Ceiling on how many facts ride along on ONE turn.
- *
- * This is a token budget, not a table limit. The fact set grew past 25 rows
- * when the town's background, services and emergency directory were added, and
- * shipping all of them cost ~1.3K tokens per message against a Groq free-tier
- * ceiling of 8K tokens/minute that this function SHARES with recommend-actions.
- * Two citizens asking two questions each would have started 429-ing.
- *
- * So the facts are now SELECTED per question (see pickRelevantFacts) rather
- * than sent wholesale, and this caps what survives that selection.
- */
-const MAX_FACTS = 14;
-
-/**
- * Facts always worth sending, whatever was asked.
- *
- * `officials` and `contact` are here because they are the two things a citizen
- * asks about with no warning mid-conversation ("sino nga pala ang mayor?"),
- * and because they are short. `emergency` is here for a blunter reason: if
- * someone mentions a fire while asking about a permit, the hotline must
- * already be in the prompt.
- */
-const ALWAYS_CATEGORIES = new Set(["officials", "contact", "emergency"]);
-
-/**
- * Which words in a citizen's message pull in which category of fact.
- *
- * Deliberately keyword-based rather than a second model call: this runs on
- * every turn while the citizen watches a typing indicator, and a round trip to
- * classify the question would cost more latency than the tokens it saves.
- * Terms are matched against the lowercased message, so they must be lowercase,
- * and they cover English, Filipino and Ilocano forms of the same ask.
- */
-const CATEGORY_TRIGGERS: Array<{ category: string; terms: string[] }> = [
-  {
-    category: "services",
-    terms: [
-      "permit", "business", "negosyo", "cedula", "ctc", "community tax",
-      "clearance", "birth", "kapanganakan", "marriage", "kasal", "death",
-      "civil registrar", "registro", "id", "pwd", "senior", "osca",
-      "building", "zoning", "sanitary", "occupancy", "requirement",
-      "requisito", "kailangan", "dokumento", "papeles", "bayad", "fee",
-      "magkano", "sagot", "tax", "buwis", "assessor", "treasurer",
-    ],
-  },
-  {
-    category: "general",
-    terms: [
-      "aparri", "barangay", "brgy", "populasyon", "population", "kasaysayan",
-      "history", "fiesta", "festival", "aramang", "tourist", "turista",
-      "pasyalan", "simbahan", "church", "lugar", "saan", "ilog", "river",
-      "isda", "fishing", "mangingisda", "ekonomiya", "economy", "trabaho",
-      "school", "eskwela", "paano pumunta", "byahe", "travel", "distance",
-      "layo", "klima", "weather", "panahon", "bagyo", "typhoon",
-    ],
-  },
-];
-
-interface LguFact {
-  key?: unknown;
-  label?: unknown;
-  value?: unknown;
-  category?: unknown;
-}
-
-/**
- * Narrows the fact set to what this question plausibly needs.
- *
- * Order is preserved from the caller (which sorts by sort_order), so when the
- * cap bites it drops the facts the LGU ranked least important rather than an
- * arbitrary subset. A message that triggers nothing still gets the ALWAYS
- * categories, which is why "sino ang mayor" works without a "mayor" keyword.
- */
-function pickRelevantFacts(facts: LguFact[], userMessage: string): LguFact[] {
-  const text = (userMessage ?? "").toLowerCase();
-
-  const wanted = new Set(ALWAYS_CATEGORIES);
-  let matchedTopic = false;
-  for (const { category, terms } of CATEGORY_TRIGGERS) {
-    if (terms.some((t) => text.includes(t))) {
-      wanted.add(category);
-      matchedTopic = true;
-    }
-  }
-
-  // Nothing in the message named a topic — a bare greeting, or something
-  // broad like "ano ang alam mo?". Narrowing to the always-on categories
-  // there would answer a question about the town with nothing but the
-  // mayor's name and a hotline, so send everything and let the cap trim.
-  if (!matchedTopic) return facts;
-
-  const picked = facts.filter((f) => {
-    const category = typeof f.category === "string" ? f.category : "general";
-    return wanted.has(category);
-  });
-
-  // A category set that matched no rows at all (every fact miscategorised, or
-  // the table reorganised) must not silently serve zero facts.
-  return picked.length > 0 ? picked : facts;
-}
+// Which facts ride along on a turn is decided in facts_selection.ts — a
+// separate module so its tests import the real code. See the v7 notes there
+// for why v6's category filter sent the same 14 facts on every turn.
 
 /**
  * Renders the facts relevant to this question as labelled lines.
@@ -373,6 +298,67 @@ are maintained live by the LGU rather than baked into this prompt.
 - Where: the local PDAO or MSWDO (social welfare).
 - Free. Bring a medical certificate/assessment of disability, valid ID, and ID photos.
 
+[NBI CLEARANCE]
+- Apply online at clearance.nbi.gov.ph: register → fill out the form → pick an NBI branch or
+  satellite site and a schedule → pay through the payment options shown on the site.
+- On the schedule: go in person with the reference number and two valid IDs for photo, signature
+  and fingerprints.
+- Release: usually the same day. If the name has a "HIT" (a namesake with a record), the
+  clearance is released on a later date given by NBI.
+- Fee: shown on the site during application; do not quote an amount.
+
+[POLICE CLEARANCE — National Police Clearance]
+- Apply online at pnpclearance.ph: register → fill out the form → choose a police station that
+  issues clearances and a schedule → pay online.
+- On the schedule: go to the chosen station with the reference number and valid IDs for photo
+  and biometrics. Usually released the same day.
+- Which stations issue it, and the fee, are shown on pnpclearance.ph — tell them to check there.
+
+[DRIVER'S LICENSE — LTO]
+- Student Permit: at least 16 years old; complete the 15-hour Theoretical Driving Course (TDC)
+  at an LTO-accredited driving school; medical certificate from an LTO-accredited clinic;
+  register on the LTMS portal (portal.lto.gov.ph) and apply at an LTO office.
+- Non-Professional license: at least 17, has held a Student Permit, completed the Practical
+  Driving Course (PDC); pass the written exam and the practical driving test at LTO.
+- Fees and the nearest LTO office's schedule: confirm with LTO.
+
+[TIN — BIR]
+- A TIN is FREE. Each person may have only ONE TIN for life — getting a second one is illegal.
+- Online: BIR ORUS (orus.bir.gov.ph). Or at the BIR Revenue District Office (RDO) covering
+  their residence or workplace.
+- Form depends on the person: employees usually register through their employer (BIR Form
+  1902); self-employed / professionals / business owners use BIR Form 1901; one-time taxpayers
+  and those needing a TIN for a government transaction use BIR Form 1904.
+- Bring: a valid ID or PSA birth certificate. Exact requirements: confirm with the RDO.
+
+[CERTIFICATE OF INDIGENCY]
+- Where: your own Barangay Hall (issued by the Punong Barangay). Some offices instead ask for a
+  certificate or social case study from the MSWDO — check what the requesting office needs.
+- Bring: a valid ID and state the purpose (e.g. medical, burial, school, legal assistance).
+- Usually free; confirm at the barangay.
+
+[SOLO PARENT ID — RA 11861, Expanded Solo Parents Welfare Act]
+- Where: the MSWDO (Municipal Social Welfare and Development Office).
+- Free. Valid for one year, renewable.
+- Bring: barangay certificate of residency, the children's PSA birth certificates, and a document
+  proving solo-parent status (e.g. spouse's death certificate, court decision, or the other
+  documents MSWDO will list for their situation).
+- Benefits exist (e.g. parental leave for working solo parents, some discounts) but depend on
+  the case and income — tell them MSWDO will explain which apply.
+
+[4Ps — Pantawid Pamilyang Pilipino Program, DSWD]
+- Cash aid for poor households with children 0–18 or a pregnant member, in exchange for
+  conditions like school attendance and health check-ups.
+- There is NO walk-in application: households are selected through DSWD's household assessment
+  (Listahanan). Inquiries and complaints: MSWDO or the DSWD field office.
+- Warn kindly: never pay anyone who promises to "include" you in 4Ps — that is a scam.
+
+[TUPAD — DOLE emergency employment]
+- Short-term community work (usually 10–30 days) paid at the regional minimum wage, for
+  unemployed, underemployed, displaced or seasonal workers aged 18+.
+- Slots open in batches; apply through the municipal PESO (Public Employment Service Office)
+  or the DOLE field office. Confirm whether there is an open batch.
+
 [EMERGENCIES]
 - For accidents, fire, crime, medical emergencies, or any threat to life/safety:
   tell the citizen to call the emergency number IMMEDIATELY (911 nationwide, or the
@@ -419,6 +405,7 @@ LANGUAGE (mirror the citizen — but never output broken text)
   • Citizen: "Paano po mag-apply ng National ID?" → reply in Filipino.
   • Citizen: "How do I renew my business permit?" → reply in English.
   • Citizen: "Pwede ba mag-process ng cedula online?" (Taglish) → reply in Taglish.
+  • Citizen: "Sadino ti ayan ti Municipal Hall?" → reply in Ilocano.
 - English, Filipino/Tagalog, Taglish, and Ilocano: mirror them confidently and fully.
 - NEVER default to Tagalog when English, Taglish, or Ilocano was used.
 
@@ -435,6 +422,15 @@ YBANAG / IBANAG — SPECIAL RULE (read carefully):
      (e.g. a brief greeting), then continue the actual answer in Ilocano/Filipino. Do NOT apologize at
      length, do NOT say you "can't speak Ybanag," and do NOT mention being a model — just help clearly.
 - The rule in one line: a clear answer in Ilocano or Filipino is ALWAYS better than a broken one in Ybanag.
+- VERIFIED YBANAG WORDS (from published sources). To write Ybanag, use ONLY these, spelled exactly:
+  • Greetings: "Mapia nga umma" (good morning), "Mapia nga fugak" (good afternoon),
+    "Kunnasi ka?" (how are you?)
+  • "Mabbalo'" (thank you), "Uwan" (yes), "Ari" (no), "Tullung kamu" (please come in)
+- Words that signal a Ybanag message (to RECOGNISE, not to write): anni (what), sinni (who),
+  sitaw (where), sonu anni (when), ngatta (why), kunnasi (how), piga (how much / how many),
+  egga (there is), awan (none), mawag (needed), sakan (I), sikaw (you).
+  Example: a message with "piga" or "kunnasi" in it is most likely Ybanag → you may open with
+  "Mabbalo'!" or another word above, then give the answer in Ilocano.
 
 - If the language is genuinely unclear, default to friendly Taglish.
 
@@ -460,13 +456,19 @@ ACCURACY (CRITICAL — DO NOT FABRICATE)
 - For exact fees: give a general idea only if it's in the KB, and always say to confirm the current amount at the office.
 - For follow-up timelines: say "within 24–48 hours" — never promise an exact date.
 - Never give legal or medical advice — redirect to the right professional or office.
+- KNOWLEDGE GAP MARKER: if the citizen's MAIN question asked for information you could not
+  find in the KNOWLEDGE BASE, the VERIFIED APARRI LGU FACTS or the event data — so you had to
+  say you're not sure or send them elsewhere for it — add the marker [[KB_GAP]] on its own
+  line at the very END of your reply. Do NOT add it for greetings, thanks, reports, requests
+  for a live person, or questions you answered. Never mention or explain the marker.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━
 YOUR TWO CORE JOBS
 ━━━━━━━━━━━━━━━━━━━━━━━━
 1. ANSWER QUESTIONS about LGU Aparri services and Philippine civic processes (PhilHealth, SSS,
    Pag-IBIG, PSA, DFA, COMELEC, national ID, birth certificate, passport, voter reg, barangay
-   clearance, business permit, cedula, senior/PWD ID, etc.) — using the KNOWLEDGE BASE.
+   clearance, business permit, cedula, senior/PWD ID, NBI/police clearance, driver's license,
+   TIN, indigency, solo parent ID, 4Ps, TUPAD, etc.) — using the KNOWLEDGE BASE.
 2. REDIRECT CONCERN REPORTS. Any issue a citizen wants to REPORT (road, garbage, drainage,
    streetlight, flooding, stray animals, noise, environment, etc.) must go to the "Report Issue"
    button in Quick Actions on the GovPulse Home screen. You do NOT collect or log reports in chat.
@@ -1028,7 +1030,27 @@ serve(async (req: Request) => {
       data.choices?.[0]?.message?.content?.trim() ??
       "Sorry po, I could not generate a response. Please try again.";
 
-    const reply = normalizeActionTag(rawReply);
+    // Strip the knowledge-gap marker BEFORE anything else sees the reply —
+    // see knowledge_gaps.ts. Logging is best-effort and never delays or
+    // breaks the citizen's answer.
+    const { reply: unmarked, gap } = extractGapMarker(rawReply);
+    if (gap) {
+      const question = redactQuestion(body.userMessage ?? "");
+      if (question && !question.startsWith("__")) {
+        const write = supabase
+          .from("kuya_gov_knowledge_gaps")
+          .insert({ question, stage: body.stage })
+          .then(({ error }) => {
+            if (error) console.error("knowledge gap log failed:", error.message);
+          });
+        // deno-lint-ignore no-explicit-any
+        const runtime = (globalThis as any).EdgeRuntime;
+        if (runtime?.waitUntil) runtime.waitUntil(write);
+        else await write;
+      }
+    }
+
+    const reply = normalizeActionTag(unmarked);
 
     return new Response(JSON.stringify({ reply } as ChatResponse), {
       headers: { "Content-Type": "application/json", ...corsHeaders },

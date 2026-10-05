@@ -1,0 +1,230 @@
+[
+ {
+  "key": "mayor",
+  "label": "Kasalukuyang Mayor ng Aparri",
+  "value": "Dominador J. Dayag (nahalal noong 2025 elections; nanunungkulan pa rin noong 2026)",
+  "category": "officials"
+ },
+ {
+  "key": "vice_mayor",
+  "label": "Kasalukuyang Vice Mayor",
+  "value": "Bryan Dale G. Chan (nahalal noong 2025 elections)",
+  "category": "officials"
+ },
+ {
+  "key": "sangguniang_bayan",
+  "label": "Mga miyembro ng Sangguniang Bayan",
+  "value": "Ronald Labbao, King Tumaru, Joylyn Eslabon, Julie Ann Alameda, Dian Jaycerett Dayag, Jocelmonay Albanio, Alex Agbanglo, Larry Chan, Rene Chan, Lito Mape, Arnel Reynon, Windell Urdas (2025-2028)",
+  "category": "officials"
+ },
+ {
+  "key": "municipal_administrator",
+  "label": "Municipal Administrator",
+  "value": "Atty. Mary Jane P. Tadili — Municipal Hall, Centro-01",
+  "category": "officials"
+ },
+ {
+  "key": "treasurer_head",
+  "label": "Municipal Treasurer",
+  "value": "Mr. Romarico T. Panaga — Municipal Hall, Centro-01",
+  "category": "officials"
+ },
+ {
+  "key": "civil_registrar_head",
+  "label": "Municipal Civil Registrar",
+  "value": "Ms. Ruth M. Mabbun — Municipal Hall, Centro-01",
+  "category": "officials"
+ },
+ {
+  "key": "mswdo_head",
+  "label": "MSWDO (Social Welfare)",
+  "value": "Ms. Corazon M. Cabauatan, RSW — Municipal Hall, Centro-01",
+  "category": "officials"
+ },
+ {
+  "key": "engineer_head",
+  "label": "Municipal Engineer",
+  "value": "Engr. Marvin V. Danao — Municipal Hall, Centro-01",
+  "category": "officials"
+ },
+ {
+  "key": "health_officers",
+  "label": "Municipal Health Officers",
+  "value": "East: Dr. Maria Rowena Guzman-Marantan (Centro-03). West: Dr. Cristina B. Agtarap (Bangag).",
+  "category": "officials"
+ },
+ {
+  "key": "municipal_hall_hours",
+  "label": "Oras ng Municipal Hall",
+  "value": "8:00 AM - 5:00 PM, Lunes hanggang Biyernes. WALANG NOON BREAK — may naka-duty po kahit tanghalian, ayon sa RA 11032 (Ease of Doing Business Act). Sarado tuwing weekend at holiday. Mabuting tumawag muna kung may holiday o suspension.",
+  "category": "contact"
+ },
+ {
+  "key": "municipal_hall_location",
+  "label": "Lokasyon ng Municipal Hall",
+  "value": "Municipal Hall, Centro-01, Aparri, Cagayan",
+  "category": "contact"
+ },
+ {
+  "key": "municipal_hotline",
+  "label": "Hotline ng munisipyo",
+  "value": "(078) 822-8752 — ito ang nakalista sa national directory ng DBM para sa Munisipyo ng Aparri, kasama ang email na lguaparriphil@yahoo.com. Luma na po ang listahang iyon, kaya kung hindi masagot, subukan ang Mayor's Office sa 0995 431 6944 o dumeretso sa Municipal Hall.",
+  "category": "contact"
+ },
+ {
+  "key": "mayors_office_line",
+  "label": "Mayor's Office / Municipal Hall (mobile)",
+  "value": "0995 431 6944 — ito po ang numerong nakalista sa GovPulse Emergency screen para sa Mayor's Office sa Municipal Hall.",
+  "category": "contact"
+ },
+ {
+  "key": "emergency_911",
+  "label": "Pambansang emergency number",
+  "value": "911 — tawagan po ito AGAD para sa anumang emergency kahit saan sa Pilipinas.",
+  "category": "emergency"
+ },
+ {
+  "key": "emergency_number",
+  "label": "Emergency number",
+  "value": "MDRRMO Aparri (nakalista sa Cagayan PDRRMO): 0955 798 2134. Rescue 511 East: 0997 240 4984. West: 0965 584 5600. Email: mdrrmoaparri511@gmail.com",
+  "category": "emergency"
+ },
+ {
+  "key": "police_hotline",
+  "label": "Aparri Police Station (PNP)",
+  "value": "0917 203 2003",
+  "category": "emergency"
+ },
+ {
+  "key": "fire_hotline",
+  "label": "Aparri Fire Station (BFP)",
+  "value": "0916 491 0946 o 0956 260 7818",
+  "category": "emergency"
+ },
+ {
+  "key": "hospital_hotline",
+  "label": "Aparri Provincial Hospital",
+  "value": "0936 374 8430",
+  "category": "emergency"
+ },
+ {
+  "key": "rhu_hotline",
+  "label": "Rural Health Units (Municipal Health Office)",
+  "value": "East: 0953 190 8364. West: 0995 186 8014 o 0935 951 9786.",
+  "category": "emergency"
+ },
+ {
+  "key": "emergency_caveat",
+  "label": "Paalala tungkol sa mga hotline",
+  "value": "Ang mga lokal na numero ay galing sa mga opisyal na listahan ng LGU at ng Cagayan PDRRMO, at sa GovPulse Emergency screen. Maaaring nagbago na ang ilan. Kung hindi po masagot ang isang numero, tumawag AGAD sa 911 — huwag pong maghintay.",
+  "category": "emergency"
+ },
+ {
+  "key": "cedula_office",
+  "label": "Saan kumuha ng Cedula",
+  "value": "Office of the Municipal Treasurer, Municipal Hall, Centro-01 (ang ilang barangay ay nag-iisyu rin ng cedula)",
+  "category": "services"
+ },
+ {
+  "key": "business_permit_office",
+  "label": "Business permit office (BPLO)",
+  "value": "Business Permits and Licensing Office (BPLO), Municipal Hall, Centro-01",
+  "category": "services"
+ },
+ {
+  "key": "business_permit_requirements",
+  "label": "Requirements para sa Business Permit (NEW at RENEWAL)",
+  "value": "11 requirements: (1) Barangay Clearance, (2) Cedula/CTC, (3) accomplished form mula BPLO, (4) DTI Certificate of Business Name, (5) Zoning Clearance (MPDC), (6) Sanitary/Health Clearance (MHO), (7) Occupancy Permit (Municipal Engineer), (8) Fire Safety Inspection Certificate (BFP), (9) BIR Registration, (10) SSS Registration, (11) Pag-IBIG Certification.",
+  "category": "services"
+ },
+ {
+  "key": "cedula_fee",
+  "label": "Bayad sa Cedula (CTC)",
+  "value": "Ayon sa Local Government Code: PHP 5.00 basic, dagdag PHP 1.00 kada PHP 1,000 ng kita, hanggang PHP 5,000 lang ang maximum. Para sa 18 anyos pataas. Dalhin: valid ID; ITR kung employed, gross sales kung may negosyo.",
+  "category": "services"
+ },
+ {
+  "key": "marriage_license_requirements",
+  "label": "Requirements para sa Marriage License",
+  "value": "Sa Office of the Municipal Civil Registrar: proof of age (birth/baptismal certificate), Family Planning at Pre-Marriage Counseling Certificate (MHO), proof of previous marriage kung meron (CENOMAR, death certificate, o annulment decree), Cedula ng mga aplikante, at Tree Planting Certificate. Para sa dayuhan: Certificate of Legal Capacity to Contract Marriage.",
+  "category": "services"
+ },
+ {
+  "key": "birth_registration",
+  "label": "Pagpaparehistro ng kapanganakan",
+  "value": "Sa Office of the Municipal Civil Registrar. Timely registration ng lehitimong anak: dalhin ang facts of birth at Certificate of Marriage ng mga magulang. LIBRE po ito. Para sa PSA-authenticated copy, sa PSA kumuha.",
+  "category": "services"
+ },
+ {
+  "key": "building_permit_office",
+  "label": "Building at iba pang construction permits",
+  "value": "Office of the Municipal Engineer, Municipal Hall, Centro-01 — building, electrical, demolition, fencing, occupancy at sanitary permits. Ang zoning at locational clearance ay sa Municipal Planning and Development Coordinator.",
+  "category": "services"
+ },
+ {
+  "key": "mswdo_services",
+  "label": "Mga serbisyo ng MSWDO",
+  "value": "Financial Assistance to Individuals in Crisis Situation (AICS), Social Case Study Report, Certificate of Indigency, Solo Parent at PWD ID, marriage counselling, day care/ECCD, supplementary feeding, social pension, at disaster relief assistance.",
+  "category": "services"
+ },
+ {
+  "key": "agriculture_services",
+  "label": "Mga serbisyo para sa magsasaka at mangingisda",
+  "value": "Office of the Municipal Agriculturist: RSBSA enrollment, fisherfolk registration, fishing boat registration, rice seeds at fertilizer assistance, crop/livestock/fisheries insurance, animal health care, at technical assistance.",
+  "category": "services"
+ },
+ {
+  "key": "osca_office",
+  "label": "Senior Citizen (OSCA) office",
+  "value": "OSCA (Office for Senior Citizens Affairs) sa Municipal Hall, Centro-01. LIBRE po ang Senior Citizen ID at para sa 60 anyos pataas (RA 9994). Dalhin: patunay ng edad (PSA birth certificate o valid ID) at patunay ng paninirahan sa Aparri. Itanong po sa information desk kung saang opisina eksakto.",
+  "category": "services"
+ },
+ {
+  "key": "pdao_office",
+  "label": "PWD ID office (PDAO/MSWDO)",
+  "value": "Office of the Municipal Social Welfare and Development Officer (MSWDO), Municipal Hall, Centro-01",
+  "category": "services"
+ },
+ {
+  "key": "barangay_list",
+  "label": "Mga barangay ng Aparri",
+  "value": "42 barangays, kabilang ang Centro 1-15 (Poblacion), Macanaya, Punta, Maura, Bukig, Bulala Norte, Bulala Sur, Paruddun Norte, Paruddun Sur, Tallungan, Minanga, Sanja, Toran, Bangag, Linao, Fuga Island. Para sa barangay-level na transaksyon, pumunta sa sariling Barangay Hall.",
+  "category": "general"
+ },
+ {
+  "key": "about_aparri",
+  "label": "Tungkol sa Aparri",
+  "value": "1st-class municipality sa Cagayan, nasa bunganga ng Cagayan River (ang pinakamahabang ilog sa Pilipinas) at Babuyan Channel. Populasyon 68,368 (2024 census), lawak 286.64 km2, 42 barangays kasama ang Fuga Island. Mga 104 km mula Tuguegarao, 590 km mula Maynila.",
+  "category": "general"
+ },
+ {
+  "key": "aparri_history",
+  "label": "Kasaysayan ng Aparri",
+  "value": "Itinatag noong 1605 sa panahon ng Espanyol. Naging mahalagang daungan ng galleon trade noong Mayo 11, 1680, nang ihiwalay ito sa Nueva Segovia. Sinakop ng Hapon noong Disyembre 10, 1941 at napalaya noong Hunyo 20, 1945.",
+  "category": "general"
+ },
+ {
+  "key": "aparri_fiesta",
+  "label": "Piyesta at pagdiriwang",
+  "value": "Patronal Town Fiesta tuwing Mayo 1-11, para kay San Pedro Telmo (San Pedro Gonzales Telmo), ang patron ng bayan; Mayo 10 ang mismong araw ng kapistahan. Kasabay nito ang Aramang Festival, na may fluvial parade ng mga bangka.",
+  "category": "general"
+ },
+ {
+  "key": "aparri_economy",
+  "label": "Ekonomiya at kabuhayan",
+  "value": "Pangingisda ang pangunahing kabuhayan. Ang \"aramang\" (pink soft-shelled shrimp) ang One-Town-One-Product ng Aparri — ginagawang bagoong at dried shrimp, at ini-export. Dating malaking prodyuser din ng tabako. Sentro ng kalakalan sa hilagang Cagayan.",
+  "category": "general"
+ },
+ {
+  "key": "aparri_landmarks",
+  "label": "Mga pasyalan at landmarks",
+  "value": "Archdiocesan Shrine of Our Lady of the Most Holy Rosary; Shrine of San Lorenzo Ruiz; ang bunganga ng Cagayan River at ang baybayin sa Babuyan Channel; at ang Fuga Island, bahagi ng Babuyan Group.",
+  "category": "general"
+ },
+ {
+  "key": "aparri_climate",
+  "label": "Klima at bagyo",
+  "value": "Tropical ang klima, mga 1,892.7 mm ang ulan kada taon. Pinakamalakas ang ulan tuwing Oktubre-Nobyembre. Nasa typhoon belt ang hilagang Luzon kaya madalas ang bagyo — sundin po ang MDRRMO advisories at ang mga evacuation center kapag may babala.",
+  "category": "general"
+ }
+]

@@ -15,6 +15,8 @@
 // matching), so it's instant and needs no network. Replies are flagged
 // `offline` by the caller and shown with an "answered on-device" chip.
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
 class LocalAssistant {
   /// Produces a reply for [userMessage]. [followUp] tailors the generic
   /// fallback to the report-follow-up screen (using [reportRef]/[reportStatus]/
@@ -97,25 +99,54 @@ class LocalAssistant {
   // ── Language detection + localisation ────────────────────────────────────────
   /// Detects the citizen's language from high-signal markers. Ybanag maps to
   /// Ilocano downstream (the AI's safe rule — never fabricate shaky Ybanag).
+  ///
+  /// Markers match WHOLE WORDS, and the language with the most hits wins
+  /// (ties: Ybanag, then Ilocano, then English; no hits → Tagalog). This used
+  /// to be a plain substring check in that fixed order, which misfired on
+  /// ordinary Tagalog: "Saan po…" and "ano nga po…" came back in Ilocano (the
+  /// markers 'saan' and 'nga '), and "ayaw ko…" in Ybanag ('yaw ' inside
+  /// 'ayaw'). 'saan' and 'nga' are gone because they are everyday Tagalog.
   static _Lang _detectLang(String t) {
-    const ybanag = [
-      'kunnasi', 'anni ', 'piga', 'egga', 'mapia', 'dukko', 'kagitta',
-      'ajjan', 'nakuan', 'yaw ', 'kunna',
-    ];
-    const ilocano = [
-      'ania', 'aniya', 'kasano', 'kasanno', 'sadino', 'mano ', 'naimbag',
-      'agyaman', 'kayat', 'dagiti', 'apay', 'kaano', ' ti ', 'adda ', 'awan',
-      'saan', 'wen ', 'nga ', 'kunam', 'kasta',
-    ];
-    const english = [
-      'how ', 'what ', 'where ', 'when ', 'can i', 'could ', 'please',
-      'hello', 'thanks', 'i want', 'i need', 'the ', 'is there',
-    ];
-    if (_hasAny(t, ybanag)) return _Lang.ybanag;
-    if (_hasAny(t, ilocano)) return _Lang.ilocano;
-    if (_hasAny(t, english)) return _Lang.english;
-    return _Lang.tagalog;
+    // Sourced: Dita 2010, A Reference Grammar of Ibanag; Wikipedia "Ibanag
+    // language". Deliberately NOT 'ari' (no) — it is Tagalog for "property".
+    // 'dukko', 'kagitta', 'ajjan', 'nakuan' predate the sourcing and have no
+    // published source yet; kept so detection does not regress, but unverified.
+    const ybanag = {
+      'kunnasi', 'anni', 'sinni', 'sitaw', 'ngatta', 'nikanni', 'piga',
+      'egga', 'mawag', 'mabbalo', "mabbalo'", 'mapia', 'fugak', 'uwan',
+      'sakan', 'sikaw', 'sittam', 'sikamu', 'yaw', 'kunnaw', 'kunnatun',
+      'dukko', 'kagitta', 'ajjan', 'nakuan',
+    };
+    const ilocano = {
+      'ania', 'aniya', 'kasano', 'kasanno', 'sadino', 'mano', 'naimbag',
+      'agyaman', 'agyamanak', 'kayat', 'kayatko', 'dagiti', 'apay', 'kaano',
+      'ti', 'iti', 'adda', 'awan', 'haan', 'wen', 'kunam', 'kasta',
+      'pangngaasi', 'daytoy', 'dayta', 'kasapulan', 'ayan', 'ammo', 'diak',
+      'siak', 'maawatan',
+    };
+    const english = {
+      'how', 'what', 'where', 'when', 'could', 'please', 'hello', 'thanks',
+      'thank', 'the', 'need', 'want', 'can i', 'is there', 'i want', 'i need',
+    };
+    final words = t.split(RegExp(r"[^\p{L}\p{N}']+", unicode: true))
+      ..removeWhere((w) => w.isEmpty);
+    final joined = ' ${words.join(' ')} ';
+    int hits(Set<String> markers) => markers
+        .where((m) => m.contains(' ') ? joined.contains(' $m ') : words.contains(m))
+        .length;
+
+    final y = hits(ybanag), i = hits(ilocano), e = hits(english);
+    if (y == 0 && i == 0 && e == 0) return _Lang.tagalog;
+    if (y >= i && y >= e) return _Lang.ybanag;
+    if (i >= e) return _Lang.ilocano;
+    return _Lang.english;
   }
+
+  /// The language [_detectLang] picks for [message], by enum name
+  /// ('tagalog' | 'ilocano' | 'ybanag' | 'english').
+  @visibleForTesting
+  static String detectedLanguageName(String message) =>
+      _detectLang(_norm(message)).name;
 
   /// Picks the message variant for [lang]. Ybanag reuses the Ilocano variant.
   static String _pick(_Lang lang, Map<_Lang, String> m) {
