@@ -283,6 +283,35 @@ function uploadFlags(bytes: Uint8Array, source: string): string[] {
 // Handler
 // ────────────────────────────────────────────────────────────────────────────
 
+/// Writes one scan result to id_check_results. Never throws.
+async function recordCheck(
+  // deno-lint-ignore no-explicit-any
+  svc: any,
+  userId: string,
+  idType: string,
+  side: "front" | "back",
+  score: number,
+  verdict: string,
+  reasons: unknown,
+  sourceFlags: string[],
+): Promise<void> {
+  if (!idType) return;
+  try {
+    const { error } = await svc.from("id_check_results").insert({
+      user_id: userId,
+      id_type: idType,
+      side,
+      score: Math.max(0, Math.min(100, Math.round(score))),
+      verdict,
+      reasons: Array.isArray(reasons) ? reasons : [],
+      source_flags: sourceFlags,
+    });
+    if (error) console.error("[verify-id] recordCheck:", error.message);
+  } catch (e) {
+    console.error("[verify-id] recordCheck threw:", e);
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -306,10 +335,14 @@ serve(async (req) => {
     return json({ ok: false, error: "rate_limited" }, 429);
   }
 
+  let idTypeSeen = "";
+  let sideSeen: "front" | "back" = "front";
   try {
     const body = await req.json();
     const idType = String(body?.idType ?? "");
     const side = body?.side === "back" ? "back" : "front";
+    idTypeSeen = idType;
+    sideSeen = side;
     const source = String(body?.source ?? "camera");
     const imageBase64 = String(body?.imageBase64 ?? "");
 
@@ -346,6 +379,13 @@ serve(async (req) => {
     const autofill = autofillable(idType, result.fields);
     const sourceFlags = uploadFlags(bytes, source);
 
+    // The server's own record of this scan (audit 2026-10-09). Submissions take
+    // their check_* columns from these rows, never from the app, so the
+    // reviewer's "Passed automated checks" badge can no longer be forged.
+    // Best-effort: a failed write leaves the submission "not checked", which
+    // is honest, and never fails the citizen's scan.
+    await recordCheck(svc, userId, idType, side, result.score, result.verdict, result.reasons, sourceFlags);
+
     return json({
       ok: true,
       score: result.score,
@@ -361,6 +401,13 @@ serve(async (req) => {
     });
   } catch (e) {
     console.error("[verify-id]", e);
+    // Mirror what the app used to store on an outage: a `review` with the
+    // verifier_unavailable reason, so the reviewer still sees why.
+    await recordCheck(svc, userId, idTypeSeen, sideSeen, 0, "review", [{
+      code: "verifier_unavailable",
+      detail: "Automatic checking was unavailable, so this submission needs a manual review.",
+      delta: 0,
+    }], []);
     // A verification OUTAGE must not block a citizen from signing up. Failing
     // open to `review` keeps the human reviewer in the loop, which is exactly
     // where every submission went before this function existed.
