@@ -111,6 +111,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { type LguFact, MAX_FACTS, pickRelevantFacts } from "./facts_selection.ts";
 import { extractGapMarker, redactQuestion } from "./knowledge_gaps.ts";
+import { accountBlock } from "../_shared/caller.ts";
 
 // Named, rather than inlined in the request body as it was through v3 — the
 // inline literal was the one model reference in the repo that a grep for
@@ -829,6 +830,18 @@ serve(async (req: Request) => {
     return new Response(
       JSON.stringify({ error: "unauthorized" }),
       { status: 401, headers: { "Content-Type": "application/json", ...corsHeaders } },
+    );
+  }
+
+  // Suspended / deactivated / ai_chat-restricted accounts (audit 2026-10-09).
+  // The app already hides the chat from them (citizenGuardAllow 'ai_chat');
+  // this stops a direct call with a still-valid session. A non-2xx makes the
+  // app fall back to its offline assistant, so nothing hard-fails.
+  const block = await accountBlock(supabase, userId, "ai_chat");
+  if (block) {
+    return new Response(
+      JSON.stringify({ error: `account_${block}` }),
+      { status: 403, headers: { "Content-Type": "application/json", ...corsHeaders } },
     );
   }
 

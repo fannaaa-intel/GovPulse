@@ -79,3 +79,45 @@ export async function callerUserId(req: Request, svc: any): Promise<string | nul
     return null;
   }
 }
+
+/// Why [userId] may not use a feature right now, or null when they may.
+/// Mirrors CitizenGuard.refresh(): deactivated, OR a suspension that is not
+/// lifted and not expired, OR (when [feature] is given) an active restriction
+/// listing that feature. For service-role functions the database triggers do
+/// not cover — e.g. chat-agent, which writes nothing a trigger could stop.
+///
+/// FAILS OPEN on a lookup error: this is moderation, not a spend control (the
+/// caller is already signed in and rate-limited), and a database hiccup must
+/// not take the assistant away from every citizen.
+export async function accountBlock(
+  // deno-lint-ignore no-explicit-any
+  svc: any,
+  userId: string,
+  feature?: string,
+): Promise<"deactivated" | "suspended" | "restricted" | null> {
+  try {
+    const now = Date.now();
+    const live = (r: { expires_at?: string | null }) =>
+      !r.expires_at || Date.parse(r.expires_at) > now;
+    const [prof, susp, rest] = await Promise.all([
+      svc.from("profiles").select("is_deactivated").eq("id", userId).maybeSingle(),
+      svc.from("user_suspensions").select("expires_at").eq("user_id", userId)
+        .is("lifted_at", null),
+      feature
+        ? svc.from("user_restrictions").select("restricted_features, expires_at")
+          .eq("user_id", userId).is("lifted_at", null)
+        : Promise.resolve({ data: [] }),
+    ]);
+    if (prof?.data?.is_deactivated === true) return "deactivated";
+    if ((susp?.data ?? []).some(live)) return "suspended";
+    if (
+      feature &&
+      (rest?.data ?? []).some((r: { restricted_features?: string[] | null; expires_at?: string | null }) =>
+        live(r) && (r.restricted_features ?? []).includes(feature)
+      )
+    ) return "restricted";
+    return null;
+  } catch {
+    return null;
+  }
+}
