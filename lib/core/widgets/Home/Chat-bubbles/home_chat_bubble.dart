@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 
@@ -66,6 +67,7 @@ class _HomeChatBubbleState extends State<HomeChatBubble>
   bool _isOverDelete = false;
   bool _chatOpen = false;
   bool _isOnline = true;
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
   bool _hasUnread = false;
 
   bool _bubbleMoving = false;
@@ -263,7 +265,9 @@ class _HomeChatBubbleState extends State<HomeChatBubble>
   }
 
   void _listenConnectivity() {
-    Connectivity().onConnectivityChanged.listen((results) {
+    // Kept so dispose() can cancel it: the bare listen() outlived every
+    // bubble, leaking one live listener (and this State) per rebuild.
+    _connectivitySub = Connectivity().onConnectivityChanged.listen((results) {
       if (!mounted) return;
       final online = results.any((r) => r != ConnectivityResult.none);
       if (!online) _forceCloseChat();
@@ -280,6 +284,7 @@ class _HomeChatBubbleState extends State<HomeChatBubble>
   @override
   void dispose() {
     if (_activeBubbleState == this) _activeBubbleState = null;
+    _connectivitySub?.cancel();
     _slideCtrl.dispose();
     _bubbleSpawnCtrl.dispose();
     _posCtrl.dispose();

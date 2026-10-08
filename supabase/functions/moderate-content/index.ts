@@ -28,6 +28,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { groqChat } from "../_shared/groq.ts";
+import { authorizeCaller } from "../_shared/caller.ts";
 
 // Replaces llama-3.1-8b-instant, decommissioned by Groq on 2026-08-16. This is
 // the highest-volume AI call in the app (every post AND comment), so the
@@ -158,6 +159,12 @@ serve(async (req: Request) => {
       headers: corsHeaders,
     });
   }
+
+  // Server-only (insert trigger + catch-up cron, both send the vault
+  // service-role bearer). Before 2026-10-09 the public anon key could run
+  // batches here and burn the Groq quota Kuya Gov shares.
+  const denied = await authorizeCaller(req, corsHeaders);
+  if (denied) return denied;
 
   const apiKey = Deno.env.get("GROQ_API_KEY");
   if (!apiKey) {

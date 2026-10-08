@@ -33,6 +33,9 @@
 //   { ok, score, verdict, reasons[], fields{}, suspectedType, sourceFlags[] }
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { callerUserId } from "../_shared/caller.ts";
+import { checkRateLimit } from "../_shared/rate-limit.ts";
 import { Image } from "https://deno.land/x/imagescript@1.2.15/mod.ts";
 import { autofillable } from "../_shared/id_autofill.ts";
 import { extractFields } from "../_shared/id_extract.ts";
@@ -286,6 +289,21 @@ serve(async (req) => {
   }
   if (req.method !== "POST") {
     return json({ ok: false, error: "method_not_allowed" }, 405);
+  }
+
+  // Signed-in callers only, metered per user (audit 2026-10-09): this was
+  // open to the public anon key and spent the OCR provider's quota per call.
+  // Safe for the app: IdCheckService turns any non-2xx into `unchecked`,
+  // which routes the submission to a human reviewer - never a dead end.
+  const svc = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+  );
+  const userId = await callerUserId(req, svc);
+  if (!userId) return json({ ok: false, error: "unauthorized" }, 401);
+  const rl = await checkRateLimit(svc, `verify-id:${userId}`, 30, 3600);
+  if (rl.unavailable || !rl.allowed) {
+    return json({ ok: false, error: "rate_limited" }, 429);
   }
 
   try {

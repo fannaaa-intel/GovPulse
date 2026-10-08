@@ -10,11 +10,18 @@
 # not files on disk, so a reload or a shared link must be answered with
 # index.html and Flutter's router takes it from there. Real files and folders
 # are served as-is.
+#
+# A MISSING path that ends in a file extension (/missing.js, /old.png) is NOT
+# answered with index.html: it gets a plain 404. Before 2026-10-09 it got the
+# app page with a 200, so a stale browser asking for a deleted script received
+# HTML and broke with "Unexpected token <". Same rule as vercel.json's rewrite;
+# no app route contains a dot (scan tokens are base64url).
 <IfModule mod_rewrite.c>
   RewriteEngine On
   RewriteCond %{REQUEST_FILENAME} -f [OR]
   RewriteCond %{REQUEST_FILENAME} -d
   RewriteRule ^ - [L]
+  RewriteCond %{REQUEST_URI} !\.[A-Za-z0-9]+$
   RewriteRule ^ /index.html [L]
 </IfModule>
 
@@ -28,8 +35,13 @@
 # ── Never cache the entry files ─────────────────────────────────────────────
 # Otherwise a returning visitor keeps an OLD index.html / bootstrap after an
 # upload and runs a stale app until their cache expires.
+#
+# main.dart.js and the asset manifests are listed too: Flutter does not put a
+# hash in their names, so without this a returning visitor could run a NEW
+# index.html against an OLD main.dart.js. "no-cache" still caches; it only
+# revalidates, so an unchanged file costs a 304, not a re-download.
 <IfModule mod_headers.c>
-  <FilesMatch "^(index\.html|flutter_bootstrap\.js|flutter_service_worker\.js|version\.json|manifest\.json)$">
+  <FilesMatch "^(index\.html|flutter_bootstrap\.js|flutter_service_worker\.js|version\.json|manifest\.json|main\.dart\.js|AssetManifest\.bin|AssetManifest\.bin\.json|AssetManifest\.json|FontManifest\.json)$">
     Header set Cache-Control "no-cache"
   </FilesMatch>
 </IfModule>

@@ -63,3 +63,19 @@ export async function authorizeCaller(
     .maybeSingle();
   return data?.role_id === 1 ? null : deny(403, "forbidden");
 }
+
+/// The signed-in user behind this request, or null for the bare anon key, no
+/// header or a bad token. For client-invoked functions that run with
+/// the service role but must act only for a real session (audit 2026-10-09).
+// deno-lint-ignore no-explicit-any
+export async function callerUserId(req: Request, svc: any): Promise<string | null> {
+  const token = (req.headers.get("Authorization") ?? "")
+    .replace(/^Bearer\s+/i, "");
+  if (jwtRole(token) !== "authenticated") return null;
+  try {
+    const { data } = await svc.auth.getUser(token);
+    return data?.user?.id ?? null;
+  } catch {
+    return null;
+  }
+}

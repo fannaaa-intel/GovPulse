@@ -31,6 +31,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { callerUserId } from "../_shared/caller.ts";
 
 // Sightengine AI-generated-image detection. `models=genai` enables the model;
 // the score lives at response.type.ai_generated (0..1). Auth is api_user +
@@ -152,6 +153,45 @@ serve(async (req: Request) => {
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
+
+  // Only the submitter, for their own row (audit 2026-10-09). Every caller is
+  // the screen that just inserted the row, so this matches all real traffic;
+  // anonymous submissions keep user_id, so they pass too. Checked BEFORE
+  // markFailed can run, so a stranger can no longer overwrite ai_status.
+  const callerId = await callerUserId(req, supabase);
+  if (!callerId) {
+    return new Response(JSON.stringify({ error: "unauthorized" }), {
+      status: 401,
+      headers: corsHeaders,
+    });
+  }
+  const ownerOf = async (): Promise<string | null> => {
+    const t = String(payload.table ?? "");
+    if (t === "feedbacks") {
+      const { data } = await supabase.from("feedbacks").select("user_id")
+        .eq("id", String(payload.feedbackId)).maybeSingle();
+      return (data?.user_id as string | undefined) ?? null;
+    }
+    const parent = t === "report_media"
+      ? { media: "report_media", fk: "report_id", table: "reports" }
+      : t === "suggestion_media"
+      ? { media: "suggestion_media", fk: "suggestion_id", table: "suggestions" }
+      : null;
+    if (!parent) return null;
+    const { data: m } = await supabase.from(parent.media).select(parent.fk)
+      .eq("id", String(payload.id)).maybeSingle();
+    const parentId = (m as Record<string, unknown> | null)?.[parent.fk];
+    if (!parentId) return null;
+    const { data: p } = await supabase.from(parent.table).select("user_id")
+      .eq("id", String(parentId)).maybeSingle();
+    return (p?.user_id as string | undefined) ?? null;
+  };
+  if ((await ownerOf()) !== callerId) {
+    return new Response(JSON.stringify({ error: "forbidden" }), {
+      status: 403,
+      headers: corsHeaders,
+    });
+  }
 
   const table = String(payload.table ?? "");
   const isFeedback = table === "feedbacks";

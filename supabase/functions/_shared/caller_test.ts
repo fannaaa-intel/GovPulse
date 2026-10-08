@@ -1,0 +1,14 @@
+import { assertEquals } from "https://deno.land/std@0.168.0/testing/asserts.ts";
+import { authorizeCaller, callerUserId } from "./caller.ts";
+const b64 = (o: unknown) => btoa(JSON.stringify(o)).replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
+const jwt = (claims: unknown) => `${b64({ alg: "HS256" })}.${b64(claims)}.sig`;
+const req = (tok: string) => new Request("http://x", { headers: { Authorization: `Bearer ${tok}` } });
+const svc = { auth: { getUser: (t: string) => Promise.resolve({ data: { user: t.includes(b64({ role: "authenticated", sub: "u1" }).slice(0, 10)) ? { id: "u1" } : null } }) } };
+Deno.test("anon-key JWT is refused", async () => assertEquals(await callerUserId(req(jwt({ role: "anon" })), svc), null));
+Deno.test("publishable key is refused", async () => assertEquals(await callerUserId(req("sb_publishable_x"), svc), null));
+Deno.test("no header is refused", async () => assertEquals(await callerUserId(new Request("http://x"), svc), null));
+Deno.test("service_role is not a user", async () => assertEquals(await callerUserId(req(jwt({ role: "service_role" })), svc), null));
+Deno.test("signed-in user is accepted", async () => assertEquals(await callerUserId(req(jwt({ role: "authenticated", sub: "u1" })), svc), "u1"));
+Deno.test("getUser throwing fails closed", async () => assertEquals(await callerUserId(req(jwt({ role: "authenticated" })), { auth: { getUser: () => Promise.reject(new Error("x")) } }), null));
+Deno.test("moderate-content guard: service_role passes", async () => assertEquals(await authorizeCaller(req(jwt({ role: "service_role" })), {}), null));
+Deno.test("moderate-content guard: anon key gets 401", async () => assertEquals((await authorizeCaller(req(jwt({ role: "anon" })), {}))?.status, 401));

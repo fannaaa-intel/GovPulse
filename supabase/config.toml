@@ -586,3 +586,11 @@ enabled = true
 # accident that flipped check-email-exists.
 verify_jwt = true
 entrypoint = "./functions/scan-endorsement-media/index.ts"
+
+[functions.verify-id]
+enabled = true
+# true. Live-confirmed true 2026-10-09, pinned so a redeploy can't flip it via
+# the CLI default. The real gate is in index.ts: a signed-in caller (getUser)
+# plus a per-user limit, because the public anon key satisfies verify_jwt.
+verify_jwt = true
+entrypoint = "./functions/verify-id/index.ts"

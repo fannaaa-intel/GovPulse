@@ -173,6 +173,13 @@ interface ChatResponse {
 /** Longest single fact value we will forward; a runaway row can't eat the budget. */
 const MAX_FACT_VALUE_CHARS = 400;
 
+// Request caps — see the history loop in the handler.
+const MAX_HISTORY = 12;
+const MAX_HISTORY_CHARS = 6000;
+const MAX_USER_CHARS = 2000;
+const MAX_EVENTS = 10;
+const MAX_FACT_ROWS = 200;
+
 // Which facts ride along on a turn is decided in facts_selection.ts — a
 // separate module so its tests import the real code. See the v7 notes there
 // for why v6's category filter sent the same 14 facts on every turn.
@@ -854,10 +861,14 @@ serve(async (req: Request) => {
     { role: "system", content: systemPromptFor(body.stage) },
   ];
 
-  for (const m of body.history) {
+  // Server-side caps (audit 2026-10-09). The app sends at most 6 prior
+  // messages, 5 events and ~38 facts; these limits sit well above that, and
+  // trim rather than reject, so no real conversation is ever refused.
+  const history = Array.isArray(body.history) ? body.history.slice(-MAX_HISTORY) : [];
+  for (const m of history) {
     messages.push({
-      role: m.isUser ? "user" : "assistant",
-      content: m.text,
+      role: m?.isUser === true ? "user" : "assistant",
+      content: String(m?.text ?? "").slice(0, MAX_HISTORY_CHARS),
     });
   }
 
@@ -865,6 +876,9 @@ serve(async (req: Request) => {
   const stageHint = stageInstruction(body);
 
   let eventsBlock = "";
+  if (Array.isArray(body.events)) body.events = body.events.slice(0, MAX_EVENTS);
+  if (Array.isArray(body.lguFacts)) body.lguFacts = body.lguFacts.slice(0, MAX_FACT_ROWS);
+  body.userMessage = String(body.userMessage ?? "").slice(0, MAX_USER_CHARS);
   if (body.events && body.events.length > 0) {
     eventsBlock =
       `\n\n[Upcoming Aparri events — use ONLY this data, do not invent events:\n` +
