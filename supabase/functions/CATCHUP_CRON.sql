@@ -42,7 +42,8 @@ select cron.schedule(
         where name = 'classify_feedback_sr_key' limit 1
       )
     ),
-    body := '{"mode":"batch","limit":50}'::jsonb
+    body := '{"mode":"batch","limit":50}'::jsonb,
+    timeout_milliseconds := 120000
   );
   $$
 );
@@ -64,7 +65,8 @@ select cron.schedule(
         where name = 'classify_feedback_sr_key' limit 1
       )
     ),
-    body := '{"mode":"batch","limit":50}'::jsonb
+    body := '{"mode":"batch","limit":50}'::jsonb,
+    timeout_milliseconds := 120000
   );
   $$
 );
@@ -101,7 +103,8 @@ select cron.schedule(
            and left(decrypted_secret, 3) = 'eyJ' limit 1)
       )
     ),
-    body := '{"table":"community_comments","mode":"batch","limit":50}'::jsonb
+    body := '{"table":"community_comments","mode":"batch","limit":50}'::jsonb,
+    timeout_milliseconds := 120000
   );
   select net.http_post(
     url     := 'https://vxvflhjbafqwehuxnmeq.supabase.co/functions/v1/moderate-content',
@@ -116,7 +119,8 @@ select cron.schedule(
            and left(decrypted_secret, 3) = 'eyJ' limit 1)
       )
     ),
-    body := '{"table":"community_posts","mode":"batch","limit":50}'::jsonb
+    body := '{"table":"community_posts","mode":"batch","limit":50}'::jsonb,
+    timeout_milliseconds := 120000
   );
   $$
 );

@@ -129,7 +129,8 @@ select cron.schedule(
         where name = 'classify_feedback_sr_key' limit 1
       )
     ),
-    body := '{"mode":"batch","limit":50}'::jsonb
+    body := '{"mode":"batch","limit":50}'::jsonb,
+    timeout_milliseconds := 120000
   );
   $$
 );

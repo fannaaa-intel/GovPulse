@@ -61,7 +61,8 @@ create policy ai_dashboard_insights_read
 --         where name = 'classify_feedback_sr_key' limit 1
 --       )
 --     ),
---     body := '{}'::jsonb
+--     body := '{}'::jsonb,
+--     timeout_milliseconds := 120000
 --   );
 --   $$
 -- );
