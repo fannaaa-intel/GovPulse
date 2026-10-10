@@ -1072,6 +1072,16 @@ class ChatService extends ChangeNotifier {
   static const _eventDescriptionLimit = 200;
 
   Future<String> _callAgent(int session) async {
+    // Show the typing bubble for the WHOLE AI round trip. Every caller hands
+    // the reply to _agentSay(skipTyping: true), so without this the citizen
+    // stared at their own message for the seconds Groq took, with no sign
+    // anything was happening. _agentSay clears the flag when the reply lands;
+    // a stale session is reset by the new one. Holding the flag also blocks a
+    // second send while this call is in flight (sendUserText gates on it).
+    _isAgentTyping = true;
+    _markUserMessagesSeen();
+    notifyListeners();
+
     final priorMessages = _messages.take(_messages.length - 1).toList();
     // Capped for EVERY stage. The cap used to apply only to askingQuestion and
     // followUp; the other stages sent the whole transcript, which grew without
