@@ -24,9 +24,7 @@ class ChatOnlineDot extends StatelessWidget {
 // ── Agent avatar ──────────────────────────────────────────────────────────────
 class ChatAgentAvatar extends StatelessWidget {
   final double size;
-  // Connected staff's photo (their messages) → shown instead of the bot glyph.
-  final String? photoUrl;
-  const ChatAgentAvatar({super.key, this.size = 28, this.photoUrl});
+  const ChatAgentAvatar({super.key, this.size = 28});
 
   @override
   Widget build(BuildContext context) => Container(
@@ -36,14 +34,7 @@ class ChatAgentAvatar extends StatelessWidget {
       color: AppColors.primaryBlue.withValues(alpha: 0.10),
       shape: BoxShape.circle,
     ),
-    clipBehavior: Clip.antiAlias,
-    child: (photoUrl != null && photoUrl!.isNotEmpty)
-        ? CachedNetworkImage(
-            imageUrl: photoUrl!,
-            fit: BoxFit.cover,
-            errorWidget: (_, _, _) => _bot(),
-          )
-        : _bot(),
+    child: _bot(),
   );
 
   Widget _bot() => Center(

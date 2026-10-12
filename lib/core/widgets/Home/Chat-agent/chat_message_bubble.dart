@@ -12,14 +12,7 @@ class ChatMessageBubble extends StatelessWidget {
   final ChatMessage message;
   final String Function(DateTime) formatTime;
 
-  /// Wired only for the citizen's own messages so a failed send can be retried
-  /// or removed. Null elsewhere (e.g. the compact floating panel).
-  final VoidCallback? onResend;
-  final VoidCallback? onDelete;
-
-  /// The connected staff member's photo (for their bubbles) and the citizen's
-  /// own photo (for outgoing bubbles). Null → default icon avatars.
-  final String? agentPhotoUrl;
+  /// The citizen's own photo, for their outgoing bubbles. Null → default icon.
   final String? citizenPhotoUrl;
 
   const ChatMessageBubble({
@@ -27,9 +20,6 @@ class ChatMessageBubble extends StatelessWidget {
     required this.width,
     required this.message,
     required this.formatTime,
-    this.onResend,
-    this.onDelete,
-    this.agentPhotoUrl,
     this.citizenPhotoUrl,
   });
 
@@ -44,12 +34,9 @@ class ChatMessageBubble extends StatelessWidget {
             : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          // ── Agent avatar — staff photo once connected, else the bot ─────
+          // ── Kuya Gov avatar ─────────────────────────────────────────────
           if (!isUser) ...[
-            _AgentAvatar(
-              width: width,
-              photoUrl: message.fromStaff ? agentPhotoUrl : null,
-            ),
+            _AgentAvatar(width: width),
             SizedBox(width: width * 0.018),
           ],
 
@@ -135,7 +122,8 @@ class ChatMessageBubble extends StatelessWidget {
                     ],
                   ),
                 ),
-                // Failed send → inline Retry / Delete (Messenger-style).
+                // Only a message cached from the live-staff-chat era can be
+                // `failed` now; there is nothing left to retry it against.
                 if (isUser && message.status == MessageStatus.failed)
                   Padding(
                     padding: EdgeInsets.only(top: width * 0.008),
@@ -155,18 +143,6 @@ class ChatMessageBubble extends StatelessWidget {
                             color: AppColors.red,
                             fontWeight: FontWeight.w500,
                           ),
-                        ),
-                        SizedBox(width: width * 0.02),
-                        _FailAction(
-                          label: 'Retry',
-                          width: width,
-                          onTap: onResend,
-                        ),
-                        SizedBox(width: width * 0.012),
-                        _FailAction(
-                          label: 'Delete',
-                          width: width,
-                          onTap: onDelete,
                         ),
                       ],
                     ),
@@ -218,36 +194,6 @@ class _CitizenAvatar extends StatelessWidget {
   );
 }
 
-// ── Failed-send action (Retry / Delete) ──────────────────────────────────────
-class _FailAction extends StatelessWidget {
-  final String label;
-  final double width;
-  final VoidCallback? onTap;
-  const _FailAction({required this.label, required this.width, this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(width * 0.01),
-      child: Padding(
-        padding: EdgeInsets.symmetric(
-          horizontal: width * 0.01,
-          vertical: width * 0.004,
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: width * 0.024,
-            fontWeight: FontWeight.w700,
-            color: AppColors.primaryBlue,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 // ── Typing bubble ─────────────────────────────────────────────────────────────
 class ChatTypingBubble extends StatelessWidget {
   final double width;
@@ -288,10 +234,7 @@ class ChatTypingBubble extends StatelessWidget {
 // ── Shared agent avatar ───────────────────────────────────────────────────────
 class _AgentAvatar extends StatelessWidget {
   final double width;
-  // When set (a connected staff member's message), show their photo instead of
-  // the bot headphone.
-  final String? photoUrl;
-  const _AgentAvatar({required this.width, this.photoUrl});
+  const _AgentAvatar({required this.width});
 
   @override
   Widget build(BuildContext context) {
@@ -304,13 +247,7 @@ class _AgentAvatar extends StatelessWidget {
         shape: BoxShape.circle,
       ),
       clipBehavior: Clip.antiAlias,
-      child: (photoUrl != null && photoUrl!.isNotEmpty)
-          ? CachedNetworkImage(
-              imageUrl: photoUrl!,
-              fit: BoxFit.cover,
-              errorWidget: (_, _, _) => _bot(width),
-            )
-          : _bot(width),
+      child: _bot(width),
     );
   }
 

@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -10,9 +9,9 @@ import '../providers/staff_providers.dart';
 import '../theme/staff_ui.dart';
 import '../widgets/staff_common.dart';
 
-/// A read-only log of the staff member's closed work — resolved conversations
-/// and completed reports — fronted by a small summary of the two counts so the
-/// screen reads as a dashboard rather than a bare list.
+/// A read-only log of the staff member's closed work — completed reports, or
+/// closed endorsements for an external agency — fronted by a summary count so
+/// the screen reads as a dashboard rather than a bare list.
 class StaffHistoryPage extends ConsumerWidget {
   const StaffHistoryPage({super.key});
 
@@ -21,10 +20,6 @@ class StaffHistoryPage extends ConsumerWidget {
     final identity = ref.watch(staffIdentityProvider).valueOrNull;
     final isExternal = identity?.isExternal ?? false;
 
-    final convos =
-        (ref.watch(staffConversationsProvider).valueOrNull ?? const [])
-            .where((c) => c.isResolved)
-            .toList();
     final reportsSrc = isExternal
         ? (ref.watch(staffEndorsementsProvider).valueOrNull ?? const [])
         : (ref.watch(staffReportsProvider).valueOrNull ?? const []);
@@ -34,12 +29,11 @@ class StaffHistoryPage extends ConsumerWidget {
             r.status == ReportStatus.rejected)
         .toList();
 
-    final empty = convos.isEmpty && reports.isEmpty;
+    final empty = reports.isEmpty;
 
     return StaffPageBody(
       onRefresh: () async {
         await Future.wait([
-          ref.read(staffConversationsProvider.notifier).refresh(),
           if (isExternal)
             ref.read(staffEndorsementsProvider.notifier).refresh()
           else
@@ -56,29 +50,15 @@ class StaffHistoryPage extends ConsumerWidget {
                 icon: Icons.history_rounded,
                 title: 'Nothing here yet',
                 subtitle:
-                    'Resolved chats and completed reports will show up here.',
+                    'Completed reports will show up here.',
               ),
             )
           else ...[
             // ── Summary ────────────────────────────────────────────────────
-            // IntrinsicHeight bounds the cross-axis so `stretch` (which
-            // equalises the two tile heights) doesn't demand infinite height
-            // inside the scroll view.
             IntrinsicHeight(
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  if (!isExternal) ...[
-                    Expanded(
-                      child: _SummaryTile(
-                        icon: Icons.forum_rounded,
-                        label: 'Resolved chats',
-                        count: convos.length,
-                        color: StaffUi.accent,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                  ],
                   Expanded(
                     child: _SummaryTile(
                       icon: Icons.flag_rounded,
@@ -93,22 +73,6 @@ class StaffHistoryPage extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 22),
-
-            // ── Resolved conversations ─────────────────────────────────────
-            if (!isExternal && convos.isNotEmpty) ...[
-              _SectionHeader(
-                icon: Icons.forum_outlined,
-                title: 'Resolved conversations',
-                count: convos.length,
-              ),
-              const SizedBox(height: 12),
-              for (final c in convos)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: _ConversationCard(convo: c),
-                ),
-              const SizedBox(height: 22),
-            ],
 
             // ── Completed reports ──────────────────────────────────────────
             if (reports.isNotEmpty) ...[
@@ -243,104 +207,6 @@ class _SectionHeader extends StatelessWidget {
 }
 
 // ── Resolved conversation card ────────────────────────────────────────────────
-
-class _ConversationCard extends StatelessWidget {
-  final StaffConversation convo;
-  const _ConversationCard({required this.convo});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = convo;
-    final photo = c.photoUrl;
-    final leading = (photo != null && photo.isNotEmpty)
-        ? ClipOval(
-            child: SizedBox(
-              width: 40,
-              height: 40,
-              child: CachedNetworkImage(
-                imageUrl: photo,
-                fit: BoxFit.cover,
-                errorWidget: (_, _, _) => _avatarFallback,
-              ),
-            ),
-          )
-        : _avatarFallback;
-
-    return StaffCard(
-      padding: const EdgeInsets.all(13),
-      child: Row(
-        children: [
-          leading,
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  c.citizenLabel,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w700,
-                    color: StaffUi.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        c.category,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: StaffUi.textMuted,
-                        ),
-                      ),
-                    ),
-                    if (c.rating != null) ...[
-                      const SizedBox(width: 8),
-                      StaffStarRow(c.rating!, size: 12),
-                    ],
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 10),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              const StaffPill(
-                label: 'Resolved',
-                color: StaffUi.online,
-                icon: Icons.check_circle_rounded,
-              ),
-              const SizedBox(height: 6),
-              Text(
-                staffAgo(c.updatedAt ?? c.createdAt),
-                style: const TextStyle(fontSize: 11, color: StaffUi.textMuted),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget get _avatarFallback => Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: StaffUi.accentWash,
-          shape: BoxShape.circle,
-        ),
-        child: const Icon(Icons.forum_rounded,
-            size: 18, color: StaffUi.accent),
-      );
-}
 
 // ── Completed report card ─────────────────────────────────────────────────────
 

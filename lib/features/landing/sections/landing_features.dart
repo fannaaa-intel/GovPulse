@@ -44,8 +44,8 @@ class LandingFeatures extends StatelessWidget {
     LandingFeature(
       asset: 'assets/images/landing/icon_chat.webp',
       tint: Color(0xFFE9EDFD),
-      title: 'Chat with Agent',
-      body: 'Get instant assistance and answers from authorized LGU staff.',
+      title: 'Ask Kuya Gov',
+      body: 'Instant answers about Aparri services, requirements and offices.',
     ),
     LandingFeature(
       asset: 'assets/images/landing/icon_updates.webp',
@@ -142,7 +142,7 @@ class LandingFeatures extends StatelessWidget {
 ///     Suggestion        lower right
 ///     Events            bottom, just right of centre
 ///     LGU Updates       lower left
-///     Chat with Agent   upper left
+///     Ask Kuya Gov      upper left
 ///
 /// A [Stack] rather than Rows and Columns, because that is what "position by
 /// angle" means — there is no row or column here to belong to, and forcing one
@@ -235,7 +235,7 @@ class _FeatureRing extends StatelessWidget {
     // -0.63) and their boxes overlap vertically. -0.10 keeps 0.69 of Alignment
     // between them, which at the tightest band is the whole measure plus room.
     (at: Alignment(-0.10, -0.83), align: TextAlign.center),
-    // Chat with Agent — upper-left shoulder.
+    // Ask Kuya Gov — upper-left shoulder.
     (at: Alignment(-0.83, -0.61), align: TextAlign.right),
     // LGU Updates — lower-left, the left side's widest point.
     (at: Alignment(-0.90, 0.02), align: TextAlign.right),

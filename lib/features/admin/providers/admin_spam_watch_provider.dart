@@ -5,8 +5,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 //  Admin → Spam watch
 //
 //  Ranks the noisiest citizens over a window (default 24h) across EVERY channel —
-//  community posts, comments/replies, reports, suggestions, feedback, and the
-//  AI/live-agent chat — counting volume, duplicates, and already-flagged items.
+//  community posts, comments/replies, reports, suggestions and feedback —
+//  counting volume, duplicates, and already-flagged items.
 //  Backed by the admin_spam_watch() RPC (spam_detection.sql). Admin acts on an
 //  offender via the existing Users-page restrict/suspend levers.
 //

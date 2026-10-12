@@ -5,8 +5,8 @@
 // When the Groq `chat-agent` Edge Function is unavailable — no connection, or
 // its usage/rate limit is exhausted — ChatService routes the user's message
 // here instead of showing a dead-end "try again later" message. This keeps the
-// assistant genuinely useful offline: it detects intent (report / live agent /
-// goodbye) and answers common Philippine civic questions from a compact local
+// assistant genuinely useful offline: it detects intent (report / asking for a
+// person / goodbye) and answers common Philippine civic questions from a compact local
 // knowledge base mirrored from the Edge Function's KB.
 //
 // Contract: it returns the SAME format the Edge Function uses — an optional
@@ -45,7 +45,7 @@ class LocalAssistant {
       return '[ACTION:END]\n${_pick(lang, _mEnd)}';
     }
     if (_wantsAgent(t)) {
-      return '[ACTION:AGENT]\n${_pick(lang, _mAgent)}';
+      return '[ACTION:AGENT]\n${_pick(lang, _mNoLiveStaff)}';
     }
 
     if (followUp) {
@@ -142,6 +142,15 @@ class LocalAssistant {
     return _Lang.english;
   }
 
+  /// The answer to "can I talk to a person?", in the citizen's language.
+  ///
+  /// There is no live staff chat (panel revision, 2026-10-12). ChatService uses
+  /// this for EVERY `[ACTION:AGENT]` — the AI's included — rather than the
+  /// model's own text, which until the prompt is redeployed can still promise a
+  /// connection that no longer exists.
+  static String noLiveStaff(String userMessage) =>
+      _pick(_detectLang(_norm(userMessage)), _mNoLiveStaff);
+
   /// The language [_detectLang] picks for [message], by enum name
   /// ('tagalog' | 'ilocano' | 'ybanag' | 'english').
   @visibleForTesting
@@ -164,13 +173,33 @@ class LocalAssistant {
     _Lang.english:
         'Thank you po! If you have more questions, I\'m just here. Take care! 😊',
   };
-  static const _mAgent = {
+  static const _mNoLiveStaff = {
     _Lang.tagalog:
-        'Sige po, susubukan kong ikonekta kayo sa isang staff ng LGU Aparri. 🧑‍💼',
+        'Pasensya na po — walang live chat sa staff dito sa GovPulse. 🙏\n\n'
+        'Para maaksyunan ng tamang opisina, gamitin po ang Quick Actions sa Home:\n'
+        '• Report Issue — para sa problema o reklamo\n'
+        '• Suggestion — para sa mungkahi\n'
+        '• Feedback — para sa serbisyo ng opisina\n\n'
+        'Kung emergency po, tawagan ang hotlines sa Emergency section. '
+        'May iba pa po ba kayong tanong?',
     _Lang.ilocano:
-        'Sige po, padasek nga iyasideg kayo iti maysa a staff ti LGU Aparri. 🧑‍💼',
+        'Pasensia po — awan ti live chat iti staff ditoy GovPulse. 🙏\n\n'
+        'Tapno maaksionan ti umno nga opisina, usaren po ti Quick Actions '
+        'idiay Home:\n'
+        '• Report Issue — para iti problema wenno reklamo\n'
+        '• Suggestion — para iti singasing\n'
+        '• Feedback — para iti serbisio ti opisina\n\n'
+        'No emergency, tawagan dagiti hotline idiay Emergency section. '
+        'Adda pay kadi saludsodyo?',
     _Lang.english:
-        'Alright po, I\'ll try to connect you to an LGU Aparri staff member. 🧑‍💼',
+        'Sorry po — GovPulse has no live chat with staff. 🙏\n\n'
+        'To reach the right office and get it acted on, use Quick Actions on '
+        'Home:\n'
+        '• Report Issue — for a problem or complaint\n'
+        '• Suggestion — for an idea\n'
+        '• Feedback — about an office\'s service\n\n'
+        'For an emergency, call the hotlines in the Emergency section. '
+        'Anything else I can answer?',
   };
   static const _mReport = {
     _Lang.tagalog:
@@ -198,19 +227,19 @@ class LocalAssistant {
         'ang masasagot ko. ⏳ Pero matutulungan pa rin po kita sa mga karaniwang '
         'serbisyo: barangay clearance, cedula, business permit, PSA documents, '
         'National ID, passport, voter registration, senior/PWD ID.\n\n'
-        'I-type po ang paksa, o piliin ang "Talk to a person" para sa live na staff.',
+        'I-type po ang paksa, o subukan ulit maya-maya.',
     _Lang.ilocano:
         'Saan nga agbayag po — okupado ti AI assistant ita, isu a limitado pay '
         'ti masungbatak. ⏳ Ngem matulongan pa rin kayo iti gagangay a serbisio: '
         'barangay clearance, cedula, business permit, PSA documents, National ID, '
         'passport, voter registration, senior/PWD ID.\n\n'
-        'I-type po ti paksa, wenno pilien ti "Talk to a person" para iti live nga staff.',
+        'I-type po ti paksa, wenno padasenyo manen no madamdama.',
     _Lang.english:
         'One moment po — the AI assistant is busy right now, so what I can '
         'answer is limited. ⏳ But I can still help with common services: '
         'barangay clearance, cedula, business permit, PSA documents, National '
         'ID, passport, voter registration, senior/PWD ID.\n\n'
-        'Type the topic, or choose "Talk to a person" for live staff.',
+        'Type the topic, or try again in a little while.',
   };
 
   static const _mGenericHelp = {
@@ -219,22 +248,19 @@ class LocalAssistant {
         'masasagot ko. 📶 Pero matutulungan pa rin po kita sa mga karaniwang '
         'serbisyo: barangay clearance, cedula, business permit, PSA documents, '
         'National ID, passport, voter registration, senior/PWD ID.\n\n'
-        'I-type po ang paksa, o piliin ang "Talk to a person" para sa live na '
-        'staff kapag available na ulit.',
+        'I-type po ang paksa, o subukan ulit kapag may koneksyon na.',
     _Lang.ilocano:
         'Pasensia po — offline mode pay laeng ita, isu a limitado ti masungbatak. '
         '📶 Ngem matulongan pa rin kayo iti gagangay a serbisio: barangay '
         'clearance, cedula, business permit, PSA documents, National ID, '
         'passport, voter registration, senior/PWD ID.\n\n'
-        'I-type po ti paksa, wenno pilien ti "Talk to a person" para iti live '
-        'nga staff no adda manen ti koneksion.',
+        'I-type po ti paksa, wenno padasenyo manen no adda manen ti koneksion.',
     _Lang.english:
         'Sorry po — I\'m in offline mode right now, so what I can answer is '
         'limited. 📶 But I can still help with common services: barangay '
         'clearance, cedula, business permit, PSA documents, National ID, '
         'passport, voter registration, senior/PWD ID.\n\n'
-        'Type the topic, or choose "Talk to a person" for live staff once the '
-        'connection is back.',
+        'Type the topic, or try again once the connection is back.',
   };
 
   // ── Follow-up: report-scoped questions ───────────────────────────────────────
@@ -283,39 +309,39 @@ class LocalAssistant {
       if (english) {
         return 'About report $ref ($cat): its current status is "$status". ⏱️ '
             'Reports are usually updated within 24–48 hours. I\'m in offline '
-            'mode right now — for the latest update, choose "Talk to a person" '
-            'once the connection is back. Thank you po for your patience!';
+            'mode right now — check this report\'s timeline again once the '
+            'connection is back. Thank you po for your patience!';
       }
       if (ilocano) {
         return 'Maipapan iti report $ref ($cat): ti kasasaad na ita ket '
             '"$status". ⏱️ Dagiti report ket masansan a ma-update iti uneg ti '
             '24–48 nga oras. Offline mode pay laeng ak ita — para iti kabaruanan '
-            'nga update, pilien ti "Talk to a person" no adda manen ti koneksion. '
-            'Agyamanak iti panagitured!';
+            'nga update, kitaen manen ti timeline ti report no adda manen ti '
+            'koneksion. Agyamanak iti panagitured!';
       }
       return 'Tungkol po sa report na $ref ($cat): kasalukuyang status po ay '
           '"$status". ⏱️ Ang mga report po ay karaniwang na-a-update sa loob ng '
           '24–48 oras. Offline mode muna po ako ngayon — para sa mas bagong '
-          'update, piliin po ang "Talk to a person" kapag available na ulit. '
-          'Salamat po sa pasensya!';
+          'update, tingnan po ulit ang timeline ng report kapag may koneksyon '
+          'na. Salamat po sa pasensya!';
     }
 
     if (english) {
       return 'Here\'s what I know about report $ref ($cat): the status is '
           '"$status". 📌 I\'m in offline mode right now, so I can\'t check the '
-          'latest update — for that, choose "Talk to a person" once the '
+          'latest update — check the report\'s timeline again once the '
           'connection is back. Thank you po!';
     }
     if (ilocano) {
       return 'Daytoy ti ammok maipapan iti report $ref ($cat): ti kasasaad na '
           'ket "$status". 📌 Offline mode pay laeng ak ita, isu a saan ko a '
-          'ma-check ti kabaruanan — para iti dayta, pilien ti "Talk to a person" '
-          'no agsubli ti koneksion. Agyamanak po!';
+          'ma-check ti kabaruanan — kitaen manen ti timeline ti report no '
+          'agsubli ti koneksion. Agyamanak po!';
     }
     return 'Ito po ang alam ko tungkol sa report na $ref ($cat): '
         'ang status po ay "$status". 📌 Offline mode muna po ako ngayon, kaya '
-        'hindi ko ma-check ang pinakabagong update — para po dito, piliin ang '
-        '"Talk to a person" kapag bumalik na ang koneksyon. Salamat po!';
+        'hindi ko ma-check ang pinakabagong update — tingnan po ulit ang '
+        'timeline ng report kapag bumalik na ang koneksyon. Salamat po!';
   }
 
   // ── Normalisation ──────────────────────────────────────────────────────────
@@ -543,21 +569,20 @@ class LocalAssistant {
     if (lang == _Lang.english) {
       return 'I can see report $ref ($cat) — status: $status. 📌\n\n'
           'I\'m in offline mode right now, but here\'s what I know: reports are '
-          'usually updated within 24–48 hours. For live staff, choose "Talk to '
-          'a person" once the connection is back. Thank you po for your patience!';
+          'usually updated within 24–48 hours, and every update shows on the '
+          'report\'s timeline. Thank you po for your patience!';
     }
     if (lang == _Lang.ilocano || lang == _Lang.ybanag) {
       return 'Makitkitak ti report $ref ($cat) — kasasaad: $status. 📌\n\n'
           'Offline mode pay laeng ak ita, ngem daytoy ti ammok: dagiti report '
-          'ket masansan a ma-update iti uneg ti 24–48 nga oras. Para iti live '
-          'nga staff, pilien ti "Talk to a person" no agsubli ti koneksion. '
-          'Agyamanak iti panagitured!';
+          'ket masansan a ma-update iti uneg ti 24–48 nga oras, ket agparang '
+          'ti tunggal update iti timeline ti report. Agyamanak iti panagitured!';
     }
     return 'Nakikita ko po ang report na $ref ($cat) — status: $status. 📌\n\n'
         'Offline mode muna po ako ngayon, pero ito po ang alam ko: '
-        'ang mga report ay karaniwang na-a-update sa loob ng 24–48 oras. '
-        'Para sa live na staff, piliin po ang "Talk to a person" kapag '
-        'available na ulit ang koneksyon. Salamat po sa pasensya!';
+        'ang mga report ay karaniwang na-a-update sa loob ng 24–48 oras, at '
+        'makikita po ang bawat update sa timeline ng report. Salamat po sa '
+        'pasensya!';
   }
 }
 

@@ -181,9 +181,9 @@ class _AboutGovPulseScreenState extends State<AboutGovPulseScreen>
         w,
         icon: Icons.support_agent_rounded,
         color: AppColors.green,
-        title: 'Live Agent Support',
+        title: 'Kuya Gov Assistant',
         body:
-            'Escalate concerns to a real LGU staff member when needed. Live agent sessions connect you directly to the right department for personalized assistance.',
+            'Ask Kuya Gov about Aparri services, requirements and offices any time. Concerns that need action go through Report, Suggestion or Feedback so the right office can track them.',
       ),
       _buildBodyTile(
         w,

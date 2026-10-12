@@ -64,7 +64,9 @@ void main() {
       ]) {
         expect(busy, contains(service), reason: 'missing "$service"');
       }
-      expect(busy, contains('talk to a person'));
+      // There is no live staff chat to fall back on (2026-10-12): the fallback
+      // must not offer one.
+      expect(busy, isNot(contains('talk to a person')));
     });
 
     test('the server retry hint is shown when it sent one', () {
@@ -120,7 +122,7 @@ void main() {
 
     test('action-tag intents are unaffected by the busy flag', () {
       // END/AGENT/REPORT routing happens before the fallback, so the tag must
-      // survive — a throttled AI must not break "talk to a person".
+      // survive — a throttled AI must still answer "can I talk to a person?".
       expect(LocalAssistant.reply('salamat po', busy: true), contains('[ACTION:END]'));
       expect(
         LocalAssistant.reply('gusto ko po makausap ang staff', busy: true),

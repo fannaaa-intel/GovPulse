@@ -1,10 +1,9 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../admin/providers/admin_reports_provider.dart' show ReportStatus;
 import '../../admin/widgets/report_detail_kit.dart' show ReportCategoryIconBox;
-import '../data/staff_repository.dart' show StaffConversation, StaffReport;
+import '../data/staff_repository.dart' show StaffReport;
 import '../providers/staff_engagement_providers.dart';
 import '../providers/staff_providers.dart';
 import '../theme/staff_ui.dart';
@@ -25,7 +24,7 @@ import '../widgets/staff_performance_panels.dart';
 /// has the room, and hiding half of it behind a tab would be strictly worse.
 /// The threshold matches the admin console's so the two change shape together.
 class StaffOverviewPage extends ConsumerStatefulWidget {
-  /// Jump to a section by key: 'conversations' | 'reports' | 'endorsements'.
+  /// Jump to a section by key: 'reports' | 'endorsements' | 'suggestions' | …
   final void Function(String key) onNavigate;
   const StaffOverviewPage({super.key, required this.onNavigate});
 
@@ -52,11 +51,9 @@ class _StaffOverviewPageState extends ConsumerState<StaffOverviewPage> {
     final identity = identityAsync.valueOrNull;
     final isExternal = identity?.isExternal ?? false;
 
-    final convosAsync = ref.watch(staffConversationsProvider);
     final reportsAsync = ref.watch(staffReportsProvider);
     final endorsedAsync = ref.watch(staffEndorsementsProvider);
 
-    final convos = convosAsync.valueOrNull ?? const [];
     final reports = reportsAsync.valueOrNull ?? const [];
     final endorsed = endorsedAsync.valueOrNull ?? const [];
 
@@ -72,7 +69,6 @@ class _StaffOverviewPageState extends ConsumerState<StaffOverviewPage> {
     // numbers would make every 30s poll tick flash the whole page. Only the
     // first load — no value yet — gets a skeleton. A refresh that fails is
     // already covered by the stale banner above.
-    final convosPending = !convosAsync.hasValue;
     final reportsPending = !reportsAsync.hasValue;
     final endorsedPending = !endorsedAsync.hasValue;
 
@@ -101,25 +97,10 @@ class _StaffOverviewPageState extends ConsumerState<StaffOverviewPage> {
     // from a refresh that silently died is worse than one admitting it is stale
     // — that is the exact silent-success failure this remediation kept finding.
     final staleSources = <String>[
-      if (ref.watch(staffConversationsStaleProvider)) 'conversations',
       if (ref.watch(staffReportsStaleProvider)) 'reports',
       if (ref.watch(staffEndorsementsStaleProvider)) 'endorsements',
     ];
 
-    // NOTE ON LATENCY: `waiting` is the counter served by the SLOWEST path.
-    // A waiting ticket is by definition unassigned, and
-    // trg_notify_staff_ticket_assigned only fires when
-    // `assigned_staff_id IS NOT NULL AND is_ghost = false` — so an unassigned
-    // ticket produces no notification, no ticketEvent bump, and no ~1s refresh.
-    // It appears on the next 30s poll tick instead.
-    //
-    // That is exactly the case where nobody is on duty, i.e. the state most in
-    // need of visibility is the one updated slowest. If someone asks why
-    // Waiting lags while Active chats is instant, this is why. Fixing it needs
-    // a trigger that fires on unassigned inserts too (or Broadcast in 7c), not
-    // a change here.
-    final waiting = convos.where((c) => c.isWaiting).length;
-    final active = convos.where((c) => !c.isWaiting && !c.isResolved).length;
     final pendingReports =
         reports.where((r) => r.status != ReportStatus.resolved && r.status != ReportStatus.rejected).length;
     final resolvedReports =
@@ -129,12 +110,6 @@ class _StaffOverviewPageState extends ConsumerState<StaffOverviewPage> {
             r.status != ReportStatus.resolved && r.status != ReportStatus.rejected)
         .length;
 
-    // Live-queue rows for the dashboard: waiting chats first (most urgent), then
-    // the staff member's active chats.
-    final queue = [
-      ...convos.where((c) => c.isWaiting),
-      ...convos.where((c) => !c.isWaiting && !c.isResolved),
-    ];
     final recentReportsAll = reports;
     final recentEndorsedAll = endorsed;
 
@@ -144,12 +119,10 @@ class _StaffOverviewPageState extends ConsumerState<StaffOverviewPage> {
     // fixed overflow line means both panels are the same height at every load,
     // and the full list is one tap away behind "View all".
     const kPanelRows = 3;
-    final queueShown = queue.take(kPanelRows).toList();
     final reportsShown = recentReportsAll.take(kPanelRows).toList();
     final endorsedShown = recentEndorsedAll.take(kPanelRows).toList();
 
     Future<void> refreshAll() => Future.wait([
-          ref.read(staffConversationsProvider.notifier).refresh(),
           ref.read(staffReportsProvider.notifier).refresh(),
           ref.read(staffEndorsementsProvider.notifier).refresh(),
         ]);
@@ -160,7 +133,6 @@ class _StaffOverviewPageState extends ConsumerState<StaffOverviewPage> {
             sources: staleSources,
             onRetry: () async {
               await Future.wait([
-                ref.read(staffConversationsProvider.notifier).poll(),
                 ref.read(staffReportsProvider.notifier).poll(),
                 ref.read(staffEndorsementsProvider.notifier).poll(),
               ]);
@@ -195,34 +167,6 @@ class _StaffOverviewPageState extends ConsumerState<StaffOverviewPage> {
             builder: (context, c) {
               final tiles = <Widget>[
                 if (!isExternal) ...[
-                  if (convosPending)
-                    const _StatTileLoading(
-                      label: 'Waiting',
-                      icon: Icons.hourglass_top_rounded,
-                      color: StaffUi.warn,
-                    )
-                  else
-                    _StatTile(
-                      label: 'Waiting',
-                      value: '$waiting',
-                      icon: Icons.hourglass_top_rounded,
-                      color: StaffUi.warn,
-                      onTap: () => onNavigate('conversations'),
-                    ),
-                  if (convosPending)
-                    const _StatTileLoading(
-                      label: 'Active chats',
-                      icon: Icons.forum_rounded,
-                      color: StaffUi.accent,
-                    )
-                  else
-                    _StatTile(
-                      label: 'Active chats',
-                      value: '$active',
-                      icon: Icons.forum_rounded,
-                      color: StaffUi.accent,
-                      onTap: () => onNavigate('conversations'),
-                    ),
                   if (reportsPending)
                     const _StatTileLoading(
                       label: 'Open reports',
@@ -370,35 +314,7 @@ class _StaffOverviewPageState extends ConsumerState<StaffOverviewPage> {
                     ),
             )
           else
-            LayoutBuilder(
-              builder: (context, c) {
-                final wide = c.maxWidth >= 720;
-                final queuePanel = _Panel(
-                  title: 'Live queue',
-                  icon: Icons.forum_rounded,
-                  onViewAll: () => onNavigate('conversations'),
-                  child: convosPending
-                      ? const _PanelLoading()
-                      : queueShown.isEmpty
-                      ? const _PanelEmpty(
-                          icon: Icons.check_circle_outline_rounded,
-                          text: "You're all caught up — no active chats.",
-                        )
-                      : Column(
-                          children: [
-                            for (final conv in queueShown)
-                              _MiniConvRow(
-                                conversation: conv,
-                                onTap: () => onNavigate('conversations'),
-                              ),
-                            _MoreRow(
-                              hidden: queue.length - queueShown.length,
-                              onTap: () => onNavigate('conversations'),
-                            ),
-                          ],
-                        ),
-                );
-                final reportsPanel = _Panel(
+            _Panel(
                   title: 'Recent reports',
                   icon: Icons.flag_rounded,
                   onViewAll: () => onNavigate('reports'),
@@ -421,40 +337,9 @@ class _StaffOverviewPageState extends ConsumerState<StaffOverviewPage> {
                             ),
                           ],
                         ),
-                );
-                if (!wide) {
-                  return Column(
-                    children: [
-                      queuePanel,
-                      const SizedBox(height: 14),
-                      reportsPanel,
-                    ],
-                  );
-                }
-                // stretch, NOT IntrinsicHeight: both cards take the height of
-                // the taller one, so the row finishes on a single straight
-                // edge. With CrossAxisAlignment.start each card kept its own
-                // height and an empty Live queue beside a full Recent reports
-                // left a visible step between the two columns.
-                //
-                // IntrinsicHeight would also equalise them, but it interrogates
-                // every child for an intrinsic height, and any LayoutBuilder in
-                // the subtree throws rather than answering. stretch needs no
-                // such query — see the performance row below, where that is
-                // exactly what crashed.
-                return IntrinsicHeight(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Expanded(child: queuePanel),
-                      const SizedBox(width: 14),
-                      Expanded(child: reportsPanel),
-                    ],
-                  ),
-                );
-              },
             ),
         ];
+
 
     // Performance: this person's own card only. The ranked comparison against
     // colleagues is an ADMIN surface — a leaderboard pushed down to everyone
@@ -473,10 +358,8 @@ class _StaffOverviewPageState extends ConsumerState<StaffOverviewPage> {
                 // Only an office that receives ratings has a trend to draw.
                 if (!hasFeedback || trend.isEmpty) return scorecard;
                 final trendPanel = RatingTrendPanel(points: trend);
-                // Same 720 threshold and the same even split as the queue /
-                // reports row above. A 3:2 here against a 1:1 there put two
-                // different column edges on one page, which is what made the
-                // dashboard look ragged.
+                // An even split at 720, not 3:2: two different column edges on
+                // one page is what made the dashboard look ragged.
                 if (c.maxWidth < 720) {
                   return Column(
                     children: [
@@ -486,9 +369,8 @@ class _StaffOverviewPageState extends ConsumerState<StaffOverviewPage> {
                     ],
                   );
                 }
-                // Same rule as the queue / reports row above: the scorecard and
-                // the trend chart end on one edge instead of the chart
-                // stopping short.
+                // The scorecard and the trend chart end on one edge instead of
+                // the chart stopping short.
                 //
                 // NO IntrinsicHeight here. ScorecardPanel lays its metric tiles
                 // out with a LayoutBuilder, and a LayoutBuilder cannot report an
@@ -689,65 +571,6 @@ class _PanelEmpty extends StatelessWidget {
                 style: const TextStyle(fontSize: 13, color: StaffUi.textMuted)),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// A compact conversation row for the dashboard's live queue.
-class _MiniConvRow extends StatelessWidget {
-  final StaffConversation conversation;
-  final VoidCallback onTap;
-  const _MiniConvRow({required this.conversation, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = conversation;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Row(
-          children: [
-            _MiniAvatar(
-              label: c.citizenLabel,
-              anonymous: c.isAnonymous,
-              photoUrl: c.photoUrl,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    c.citizenLabel,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: StaffUi.textPrimary,
-                    ),
-                  ),
-                  Text(
-                    c.category,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        fontSize: 11.5, color: StaffUi.textMuted),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            if (c.isWaiting)
-              const StaffPill(label: 'New', color: StaffUi.warn)
-            else
-              Text(staffAgo(c.updatedAt ?? c.createdAt),
-                  style: const TextStyle(fontSize: 10.5, color: StaffUi.textMuted)),
-          ],
-        ),
       ),
     );
   }
@@ -1020,64 +843,6 @@ class _StatTile extends StatelessWidget {
               style: const TextStyle(fontSize: 12.5, color: StaffUi.textMuted)),
         ],
       ),
-    );
-  }
-}
-
-/// The 32px dashboard live-queue avatar: citizen photo, default person icon
-/// (anonymous), or name initial.
-class _MiniAvatar extends StatelessWidget {
-  final String label;
-  final bool anonymous;
-  final String? photoUrl;
-  const _MiniAvatar({
-    required this.label,
-    required this.anonymous,
-    required this.photoUrl,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    const d = 32.0;
-    if (anonymous) {
-      return Container(
-        width: d,
-        height: d,
-        decoration:
-            const BoxDecoration(color: StaffUi.subtle, shape: BoxShape.circle),
-        child: const Icon(Icons.person_rounded, size: 18, color: StaffUi.textMuted),
-      );
-    }
-    if (photoUrl != null && photoUrl!.isNotEmpty) {
-      return Container(
-        width: d,
-        height: d,
-        decoration: const BoxDecoration(shape: BoxShape.circle),
-        clipBehavior: Clip.antiAlias,
-        child: CachedNetworkImage(
-          imageUrl: photoUrl!,
-          fit: BoxFit.cover,
-          errorWidget: (_, _, _) => _initial(),
-        ),
-      );
-    }
-    return _initial();
-  }
-
-  Widget _initial() {
-    final t = label.trim();
-    final ch = t.isEmpty ? 'C' : t.substring(0, 1).toUpperCase();
-    return Container(
-      width: 32,
-      height: 32,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: StaffUi.accent.withValues(alpha: 0.12),
-        shape: BoxShape.circle,
-      ),
-      child: Text(ch,
-          style: const TextStyle(
-              color: StaffUi.accent, fontWeight: FontWeight.w700, fontSize: 13)),
     );
   }
 }

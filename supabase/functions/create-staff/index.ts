@@ -98,7 +98,9 @@ serve(async (req) => {
           organization: external ? cleanDept : "LGU Aparri",
           department: cleanDept,
           is_external: external,
-          is_online: false,
+          // No is_online: the on-duty flag was removed with the live staff
+          // chat (2026-10-12) and the column is dropped by the stage-B
+          // migration. Writing it would fail every staff creation after that.
         })
       if (aErr) throw aErr
     } catch (e) {

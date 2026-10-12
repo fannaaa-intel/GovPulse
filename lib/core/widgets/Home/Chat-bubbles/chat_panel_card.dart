@@ -3,10 +3,12 @@ import 'package:flutter/services.dart'
     show HardwareKeyboard, KeyDownEvent, LogicalKeyboardKey;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../services/chat_service.dart';
+import '../../../services/faq_catalog.dart';
 import '../../../theme/app_colors.dart';
 import 'chat_bubbles_model.dart';
 import 'chat_bubbles_widget.dart';
 import '../Chat-agent/chat_models.dart' as cm;
+import '../Chat-agent/faq_picker.dart';
 import '../Chat-agent/chat_models.dart' show ConversationStage;
 import '../../../../core/theme/citizen_ui.dart';
 
@@ -67,14 +69,6 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
 
   // ── Track agent-message arrivals so we can notify the bubble (unread badge)
   int _lastSeenMsgCount = 0;
-
-  /// Stars picked in the post-chat rating card, 0 = none yet.
-  int _ratingStars = 0;
-
-  /// Whether that card was showing on the previous rebuild, so a FRESH card
-  /// always starts empty instead of inheriting the last conversation's stars.
-  /// Same false→true edge ChatAgentScreen resets on.
-  bool _wasShowingRating = false;
 
   /// The citizen's own profile photo, for their outgoing bubbles.
   String? _myPhotoUrl;
@@ -138,12 +132,6 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
       if (!newest.isUser) widget.onAgentMessage();
     }
     _lastSeenMsgCount = messages.length;
-
-    // Reset the picked stars each time a fresh rating card appears, so a new
-    // conversation never inherits the previous chat's selection.
-    final showingRating = ChatService.I.showRatingBar;
-    if (showingRating && !_wasShowingRating) _ratingStars = 0;
-    _wasShowingRating = showingRating;
 
     setState(() {});
     _scrollDownSoon();
@@ -216,9 +204,8 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
                 ),
                 Expanded(child: _buildMessages()),
 
-                if (ChatService.I.showIntentChips) _buildIntentChips(),
+                if (ChatService.I.showFaqChips) _buildFaqChips(),
                 if (ChatService.I.showBackToMenu) _buildBackToMenu(),
-                if (ChatService.I.showCategoryChips) _buildCategoryChips(),
 
                 const Divider(
                   height: 1,
@@ -227,12 +214,8 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
                 ),
 
                 // ── Terminal stages show a card instead of the input bar, so
-                // the user has a clear next action. The rating card comes first:
-                // `ended` is a terminal stage too, and a citizen whose chat the
-                // staff just closed is being ASKED for something here.
-                if (ChatService.I.showRatingBar)
-                  _buildRatingCard()
-                else if (ChatService.I.isTerminal)
+                // the user has a clear next action.
+                if (ChatService.I.isTerminal)
                   _buildTerminalCard()
                 else
                   _buildInput(),
@@ -244,108 +227,11 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
     );
   }
 
-  // ── Post-chat rating card ────────────────────────────────────────────────
-  // The compact sibling of ChatAgentScreen's full-width card. It has to exist
-  // in BOTH places: this panel is the whole chat for anyone using the floating
-  // bubble or the web docked window, and without it a chat the staff ended left
-  // the panel with no composer and no card at all — a dead strip. The rating
-  // then only showed up if the citizen happened to open the full chat screen,
-  // which is what "the rating only appears after I move between screens" was.
-  //
-  // Trimmed, not redesigned: no hero icon, no "Need more help?" (the terminal
-  // card's "Start new conversation" covers it one tap later), because this card
-  // lives in a 360×520 window and has to fit under the thread, not replace it.
-  Widget _buildRatingCard() {
-    const tint = AppColors.primaryBlue;
-    final selected = _ratingStars;
-    return Container(
-      width: double.infinity,
-      color: Colors.white,
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Text(
-            'How was your chat?',
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: _kTextPri,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(5, (i) {
-              final star = i + 1;
-              final active = star <= selected;
-              return GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => setState(() => _ratingStars = star),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 3),
-                  child: Icon(
-                    active ? Icons.star_rounded : Icons.star_outline_rounded,
-                    size: 26,
-                    color: active ? const Color(0xFFF5A623) : AppColors.stroke,
-                  ),
-                ),
-              );
-            }),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: selected == 0
-                      ? null
-                      : () => ChatService.I.submitRating(selected),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: tint,
-                    foregroundColor: Colors.white,
-                    disabledBackgroundColor: tint.withValues(alpha: 0.35),
-                    disabledForegroundColor: Colors.white,
-                    elevation: 0,
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    textStyle: const TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  child: const Text('Submit rating'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              // Skip never blocks the citizen behind a rating they don't want
-              // to give — it dismisses the card and leaves the chat ended.
-              TextButton(
-                onPressed: () => ChatService.I.dismissRating(),
-                style: TextButton.styleFrom(
-                  foregroundColor: AppColors.hint,
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                ),
-                child: const Text(
-                  'Skip',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
   // ── Terminal-state card ──────────────────────────────────────────────────
-  // Shown when the conversation is in ticketCreated / connectedToAgent /
-  // ended / timedOut. Replaces the input bar with context + a clear CTA.
+  // Shown when the conversation has ended or timed out. Replaces the input bar
+  // with context + a clear CTA.
   Widget _buildTerminalCard() {
     final stage = ChatService.I.stage;
-    final reference = ChatService.I.lastTicketReference;
 
     // Stage-specific copy and icon
     late final IconData icon;
@@ -354,38 +240,17 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
     late final String subtitle;
 
     switch (stage) {
-      case ConversationStage.ticketCreated:
-        icon = Icons.check_circle_rounded;
-        tint = AppColors.green;
-        title = 'Ticket submitted';
-        subtitle = reference != null
-            ? 'Reference: $reference'
-            : 'Your concern has been logged.';
-        break;
-      case ConversationStage.connectedToAgent:
-        icon = Icons.support_agent_rounded;
-        tint = AppColors.primaryBlue;
-        title = 'Connected to staff';
-        subtitle = 'An LGU agent is handling your concern.';
-        break;
       case ConversationStage.timedOut:
         icon = Icons.timer_off_rounded;
         tint = AppColors.hint;
         title = 'Session ended';
         subtitle = 'No activity for 15 minutes.';
         break;
-      // `ended` fell through to the default below, so a chat the staff closed
-      // left this panel showing NOTHING where the composer had been: no notice,
-      // no rating, no way forward. It is a terminal stage like the three above
-      // and gets the same treatment. Reached once the citizen has rated or
-      // skipped — before that, _buildRatingCard has the slot.
       case ConversationStage.ended:
         icon = Icons.check_circle_outline_rounded;
         tint = AppColors.hint;
-        title = 'Chat ended';
-        subtitle = ChatService.I.submittedRating > 0
-            ? 'Thank you for your feedback.'
-            : 'The staff member has closed this conversation.';
+        title = 'Conversation ended';
+        subtitle = 'Thanks for chatting with Kuya Gov.';
         break;
       default:
         return const SizedBox.shrink();
@@ -431,29 +296,6 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
             ],
           ),
           const SizedBox(height: 12),
-          if (stage == ConversationStage.ticketCreated) ...[
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () => ChatService.I.requestLiveAgent(),
-                icon: const Icon(Icons.support_agent_rounded, size: 16),
-                label: const Text('Talk to a person'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.primaryBlue,
-                  side: const BorderSide(color: AppColors.primaryBlue),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  textStyle: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 10),
-          ],
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
@@ -483,46 +325,33 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
   // ── Header ───────────────────────────────────────────────────────────────
   Widget _buildHeader() {
     const double avatarSize = 38;
-    // Swap the bot identity for the live staff member once connected.
-    final connected = ChatService.I.isConnectedToStaff;
-    final staffName = ChatService.I.connectedStaffName;
-    final staffPhoto = ChatService.I.connectedStaffPhotoUrl;
-    final dept = ChatService.I.connectedDepartment;
-    final title = connected
-        ? ((staffName?.trim().isNotEmpty ?? false)
-              ? staffName!.trim()
-              : (dept != null ? '$dept staff' : 'LGU Staff'))
-        : 'LGU Aparri Agent';
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 14, 12, 12),
       child: Row(
         children: [
-          ChatAgentAvatar(
-            size: avatarSize,
-            photoUrl: connected ? staffPhoto : null,
-          ),
+          const ChatAgentAvatar(size: avatarSize),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
+                const Text(
+                  'Kuya Gov',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                     color: _kTextPri,
                     letterSpacing: -0.2,
                   ),
                 ),
-                Text(
-                  connected ? 'Online · Connected to a person' : 'Online',
+                const Text(
+                  'Online · Automated assistant',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11.5,
                     color: AppColors.green,
                     fontWeight: FontWeight.w500,
@@ -570,13 +399,9 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           if (!isUser)
-            Padding(
-              padding: const EdgeInsets.only(right: 7),
-              child: ChatAgentAvatar(
-                photoUrl: msg.fromStaff
-                    ? ChatService.I.connectedStaffPhotoUrl
-                    : null,
-              ),
+            const Padding(
+              padding: EdgeInsets.only(right: 7),
+              child: ChatAgentAvatar(),
             ),
           Flexible(
             child: Column(
@@ -667,42 +492,14 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
     );
   }
 
-  // ── Category chips ───────────────────────────────────────────────────────
-  // Shown only while ChatService.stage == awaitingCategory.
-  Widget _buildCategoryChips() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
-      decoration: const BoxDecoration(color: Colors.white),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'CHOOSE A CATEGORY',
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w700,
-              color: AppColors.hint,
-              letterSpacing: 0.8,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: cm.ConcernCategory.values.map((c) {
-              return _CategoryChip(
-                label: c.label,
-                onTap: () => ChatService.I.pickCategory(c),
-              );
-            }).toList(),
-          ),
-        ],
-      ),
-    );
+  Future<void> _openAllFaqs() async {
+    final faq = await showAllFaqs(context);
+    if (faq != null && mounted) await ChatService.I.askFaq(faq);
   }
 
-  Widget _buildIntentChips() {
+  /// Ready-made answers, no AI call. Only the top three fit this 520px-tall
+  /// window without squeezing the thread; the rest are one tap away.
+  Widget _buildFaqChips() {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
@@ -711,7 +508,7 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'WHAT CAN I DO FOR YOU PO?',
+            'COMMON QUESTIONS — OR TYPE YOUR OWN',
             style: TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.w700,
@@ -723,12 +520,14 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: cm.ChatIntent.values.map((i) {
-              return _CategoryChip(
-                label: i.label,
-                onTap: () => ChatService.I.pickIntent(i),
-              );
-            }).toList(),
+            children: [
+              for (final faq in featuredFaqs.take(3))
+                _CategoryChip(
+                  label: faq.question,
+                  onTap: () => ChatService.I.askFaq(faq),
+                ),
+              _CategoryChip(label: 'All questions…', onTap: _openAllFaqs),
+            ],
           ),
         ],
       ),
@@ -743,7 +542,7 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
       child: Align(
         alignment: Alignment.centerLeft,
         child: _CategoryChip(
-          label: '⬅ Main menu',
+          label: '← Common questions',
           onTap: () => ChatService.I.backToMenu(),
         ),
       ),

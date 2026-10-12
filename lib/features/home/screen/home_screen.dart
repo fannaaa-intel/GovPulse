@@ -556,7 +556,7 @@ class _HomePageState extends ConsumerState<HomePage>
         context,
         username: widget.username,
         message:
-            'Only verified Aparri citizens can chat with an agent. '
+            'Only verified Aparri citizens can chat with Kuya Gov. '
             'Please complete your identity verification first.',
       );
       return;

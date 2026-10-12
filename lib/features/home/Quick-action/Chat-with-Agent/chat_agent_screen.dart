@@ -3,26 +3,27 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/widgets/responsive_page.dart';
 import '../../../../core/services/chat_service.dart';
+import '../../../../core/services/faq_catalog.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/Home/Chat-agent/chat_agent_info_bar.dart';
 import '../../../../core/widgets/Home/Chat-agent/chat_input_bar.dart';
 import '../../../../core/widgets/Home/Chat-agent/chat_message.dart';
 import '../../../../core/widgets/Home/Chat-agent/chat_message_bubble.dart';
+import '../../../../core/widgets/Home/Chat-agent/faq_picker.dart';
 import '../../../../core/widgets/Home/Chat-agent/chat_models.dart' as cm;
 import '../../../../core/theme/citizen_ui.dart';
 import '../../../../core/theme/mobile_metrics.dart';
 import '../../../../core/widgets/app_back_chevron.dart';
 
-/// Full-screen chat with the LGU agent.
+/// Full-screen chat with Kuya Gov, the automated assistant.
 ///
 /// State lives in [ChatService.I]. This screen and the floating bubble panel
 /// both subscribe to the same service — anything typed in one appears in the
 /// other instantly.
 ///
-/// NOTE: "Report Issue" is no longer shown as an intent chip here.
-/// Citizens report issues via the Quick Action button on the Home screen.
-/// Free-text messages like "gusto ko mag-report" still route to the report
-/// flow automatically via AI intent detection ([ACTION:REPORT]).
+/// Questions only. There is no live staff chat (panel revision, 2026-10-12):
+/// a concern that needs action goes through Report / Suggestion / Feedback,
+/// which the assistant points to when asked.
 class ChatAgentScreen extends StatefulWidget {
   final String username;
   final ChatService service;
@@ -41,14 +42,6 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
   final ScrollController _scrollCtrl = ScrollController();
   final FocusNode _focusNode = FocusNode();
   ChatService get _svc => widget.service;
-
-  /// Locally-selected star count in the post-chat rating card (0 = none yet).
-  int _ratingStars = 0;
-
-  /// Whether the rating card was showing on the previous rebuild. Used to reset
-  /// [_ratingStars] each time a *fresh* rating card appears — otherwise a new
-  /// conversation's rating card inherits the stars picked for the previous one.
-  bool _wasShowingRating = false;
 
   /// The signed-in citizen's own profile photo, for their outgoing bubbles.
   String? _myPhotoUrl;
@@ -110,11 +103,6 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
 
   void _onChatChanged() {
     if (!mounted) return;
-    // Reset the picked stars each time a fresh rating card appears (false→true
-    // edge), so a new conversation never inherits the previous chat's rating.
-    final showingRating = _svc.showRatingBar;
-    if (showingRating && !_wasShowingRating) _ratingStars = 0;
-    _wasShowingRating = showingRating;
     setState(() {}); // ✅ immediate rebuild, no flicker frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -148,21 +136,6 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
     _svc.sendUserText(text);
   }
 
-  /// Returns the citizen to the bot for a fresh conversation (a NEW ticket if
-  /// they escalate again — never a reopen of the resolved one). If a message
-  /// lost the send/end race, it is carried into the new composer rather than
-  /// discarded, so the citizen can send it to the bot instead.
-  Future<void> _needMoreHelp() async {
-    final draft = _svc.consumeUndeliveredText();
-    await _svc.startNewConversation();
-    if (!mounted) return;
-    if (draft != null && draft.trim().isNotEmpty) {
-      _inputCtrl.text = draft;
-      _inputCtrl.selection = TextSelection.collapsed(offset: draft.length);
-      _focusNode.requestFocus();
-    }
-  }
-
   String _formatTime(DateTime t) {
     final h = t.hour % 12 == 0 ? 12 : t.hour % 12;
     final m = t.minute.toString().padLeft(2, '0');
@@ -177,14 +150,12 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
       time: m.time,
       status: MessageStatus.values[m.status.index],
       offline: m.offline,
-      fromStaff: m.fromStaff,
     );
   }
 
   // ── Terminal-state card ──────────────────────────────────────────────────
   Widget _buildTerminalCard(double width) {
     final stage = _svc.stage;
-    final reference = _svc.lastTicketReference;
 
     late final IconData icon;
     late final Color tint;
@@ -192,20 +163,6 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
     late final String subtitle;
 
     switch (stage) {
-      case cm.ConversationStage.ticketCreated:
-        icon = Icons.check_circle_rounded;
-        tint = AppColors.green;
-        title = 'Ticket submitted successfully';
-        subtitle = reference != null
-            ? 'Reference: $reference'
-            : 'Your concern has been logged.';
-        break;
-      case cm.ConversationStage.connectedToAgent:
-        icon = Icons.support_agent_rounded;
-        tint = AppColors.primaryBlue;
-        title = 'Connected to LGU staff';
-        subtitle = 'An agent is now handling your concern.';
-        break;
       case cm.ConversationStage.timedOut:
         icon = Icons.timer_off_rounded;
         tint = AppColors.hint;
@@ -286,34 +243,6 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
           ),
           SizedBox(height: width * 0.030),
 
-          // ── Talk to a person button (main chat only) ───────────────────
-          if (_svc == ChatService.I &&
-              stage == cm.ConversationStage.ticketCreated) ...[
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () => _svc.requestLiveAgent(),
-                icon: Icon(Icons.support_agent_rounded, size: width * 0.045),
-                label: Text(
-                  'Talk to a person',
-                  style: TextStyle(
-                    fontSize: width * 0.036,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.primaryBlue,
-                  side: BorderSide(color: AppColors.primaryBlue),
-                  padding: EdgeInsets.symmetric(vertical: width * 0.038),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(width * 0.028),
-                  ),
-                ),
-              ),
-            ),
-            SizedBox(height: width * 0.022),
-          ],
-
           // ── Start new conversation button (main chat only) ─────────────
           if (_svc == ChatService.I)
             SizedBox(
@@ -344,257 +273,6 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
     );
   }
 
-  // ── Post-chat rating card ─────────────────────────────────────────────────
-  static const List<String> _ratingLabels = [
-    'Tap a star to rate',
-    'Poor',
-    'Fair',
-    'Good',
-    'Great',
-    'Excellent',
-  ];
-
-  Widget _buildRatingCard(double width) {
-    final selected = _ratingStars;
-    final tint = AppColors.primaryBlue;
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(
-          top: BorderSide(color: CitizenUi.sharedStroke, width: 1),
-        ),
-      ),
-      padding: EdgeInsets.fromLTRB(
-        width * 0.05,
-        width * 0.045,
-        width * 0.05,
-        width * 0.05,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: width * 0.12,
-            height: width * 0.12,
-            decoration: BoxDecoration(
-              color: tint.withValues(alpha: 0.10),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              Icons.support_agent_rounded,
-              color: tint,
-              size: width * 0.062,
-            ),
-          ),
-          SizedBox(height: width * 0.03),
-          Text(
-            'How was your chat?',
-            style: TextStyle(
-              fontSize: width * 0.044,
-              fontWeight: FontWeight.w800,
-              color: const Color(0xFF111827),
-            ),
-          ),
-          SizedBox(height: width * 0.012),
-          Text(
-            'Your feedback helps our staff serve you better.',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: width * 0.031, color: AppColors.hint),
-          ),
-          SizedBox(height: width * 0.04),
-          // ── Stars ──────────────────────────────────────────────────────
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(5, (i) {
-              final starIndex = i + 1;
-              final active = starIndex <= selected;
-              return GestureDetector(
-                onTap: () => setState(() => _ratingStars = starIndex),
-                behavior: HitTestBehavior.opaque,
-                child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: width * 0.014),
-                  child: AnimatedScale(
-                    duration: const Duration(milliseconds: 180),
-                    curve: Curves.easeOutBack,
-                    scale: active ? 1.12 : 1.0,
-                    child: Icon(
-                      active ? Icons.star_rounded : Icons.star_outline_rounded,
-                      size: width * 0.095,
-                      color: active
-                          ? const Color(0xFFF5A623)
-                          : AppColors.stroke,
-                    ),
-                  ),
-                ),
-              );
-            }),
-          ),
-          SizedBox(height: width * 0.022),
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 200),
-            child: Text(
-              _ratingLabels[selected],
-              key: ValueKey(selected),
-              style: TextStyle(
-                fontSize: width * 0.033,
-                fontWeight: FontWeight.w700,
-                color: selected == 0 ? AppColors.hint : tint,
-              ),
-            ),
-          ),
-          SizedBox(height: width * 0.04),
-          // ── Submit ─────────────────────────────────────────────────────
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: selected == 0
-                  ? null
-                  : () => _svc.submitRating(selected),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: tint,
-                foregroundColor: Colors.white,
-                disabledBackgroundColor: tint.withValues(alpha: 0.35),
-                disabledForegroundColor: Colors.white,
-                elevation: 0,
-                padding: EdgeInsets.symmetric(vertical: width * 0.038),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(width * 0.028),
-                ),
-              ),
-              child: Text(
-                'Submit rating',
-                style: TextStyle(
-                  fontSize: width * 0.036,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ),
-          SizedBox(height: width * 0.01),
-          // Skip never blocks the citizen behind a rating they don't want to
-          // give — it just dismisses the card and leaves the chat ended.
-          TextButton(
-            onPressed: () => _svc.dismissRating(),
-            style: TextButton.styleFrom(foregroundColor: AppColors.hint),
-            child: Text(
-              'Skip',
-              style: TextStyle(
-                fontSize: width * 0.032,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          // A way back to the bot straight from the rating card, so a citizen
-          // who still needs help isn't forced to rate first (main chat only).
-          if (_svc == ChatService.I)
-            TextButton.icon(
-              onPressed: _needMoreHelp,
-              icon: Icon(Icons.support_agent_rounded, size: width * 0.042),
-              style: TextButton.styleFrom(foregroundColor: tint),
-              label: Text(
-                'Need more help?',
-                style: TextStyle(
-                  fontSize: width * 0.032,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  // ── Locked composer (chat ended) ──────────────────────────────────────────
-  /// Shown once the chat has ended and the citizen has rated or skipped. The
-  /// composer is locked with a clear notice — the database also rejects writes
-  /// to an ended ticket (migration 20260722000005 phase 3), so this is the UI
-  /// side of a control enforced on both ends, not the only guard. "Need more
-  /// help?" starts a fresh bot conversation (a new ticket if escalated, never a
-  /// reopen of this one).
-  Widget _buildEndedComposer(double width) {
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(
-          top: BorderSide(color: CitizenUi.sharedStroke, width: 1),
-        ),
-      ),
-      padding: EdgeInsets.fromLTRB(
-        width * 0.04,
-        width * 0.032,
-        width * 0.04,
-        width * 0.04,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: double.infinity,
-            padding: EdgeInsets.symmetric(
-              horizontal: width * 0.04,
-              vertical: width * 0.032,
-            ),
-            decoration: BoxDecoration(
-              color: AppColors.inputBg,
-              borderRadius: BorderRadius.circular(width * 0.055),
-              border: Border.all(color: CitizenUi.sharedStroke, width: 1),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.lock_outline_rounded,
-                  size: width * 0.044,
-                  color: AppColors.hint,
-                ),
-                SizedBox(width: width * 0.025),
-                Expanded(
-                  child: Text(
-                    'This conversation has ended',
-                    style: TextStyle(
-                      fontSize: width * 0.034,
-                      color: AppColors.hint,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // Main chat can start over; a follow-up chat panel cannot (it is
-          // scoped to one report and has no bot kickoff).
-          if (_svc == ChatService.I) ...[
-            SizedBox(height: width * 0.028),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _needMoreHelp,
-                icon: Icon(Icons.support_agent_rounded, size: width * 0.045),
-                label: Text(
-                  'Need more help?',
-                  style: TextStyle(
-                    fontSize: width * 0.036,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primaryBlue,
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  padding: EdgeInsets.symmetric(vertical: width * 0.038),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(width * 0.028),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
   // ── Build ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
@@ -608,46 +286,26 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
       backgroundColor: AppColors.inputBg,
       body: ResponsivePageBody(
         maxWidth: 600,
-        shellTitle: 'Chat with an Agent',
+        shellTitle: 'Ask Kuya Gov',
         shellSubtitle:
-            'Ask questions and get help from the Aparri support team.',
+            'Answers to common questions about Aparri services and offices.',
         shellIcon: Icons.support_agent_rounded,
         shellHighlights: const [
-          (Icons.chat_bubble_outline_rounded, 'Real-time answers'),
-          (Icons.schedule_rounded, 'Fast responses'),
-          (Icons.verified_user_outlined, 'Official support'),
+          (Icons.chat_bubble_outline_rounded, 'Instant answers'),
+          (Icons.menu_book_rounded, 'Services and requirements'),
+          (Icons.verified_user_outlined, 'Official LGU information'),
         ],
         shellContentWidth: 620,
         child: SafeArea(
           child: Column(
             children: [
               _buildHeader(width),
-              ChatAgentInfoBar(
-                width: width,
-                connected: _svc.isConnectedToStaff,
-                // Real staff name once fetched; department label until then.
-                staffLabel:
-                    _svc.connectedStaffName ??
-                    (_svc.connectedDepartment != null
-                        ? '${_svc.connectedDepartment} staff'
-                        : null),
-                staffPhotoUrl: _svc.connectedStaffPhotoUrl,
-              ),
+              ChatAgentInfoBar(width: width),
               Expanded(child: _buildMessageList(width)),
-              // AFTER
               if (_svc.showBackToMenu && _svc == ChatService.I)
                 _buildBackToMenu(width),
-              if (_svc.showIntentChips && _svc == ChatService.I)
-                _buildIntentChips(width),
-              if (_svc.showCategoryChips && _svc == ChatService.I)
-                _buildCategoryChips(width),
-              if (_svc.showRatingBar)
-                _buildRatingCard(width)
-              else if (_svc.stage == cm.ConversationStage.ended)
-                // Chat ended and the citizen has rated or skipped: lock the
-                // composer with a clear notice and a way back to the bot.
-                _buildEndedComposer(width)
-              else if (_svc.isTerminal)
+              if (_svc.showFaqChips) _buildFaqChips(width),
+              if (_svc.isTerminal)
                 _buildTerminalCard(width)
               else
                 ChatInputBar(
@@ -691,28 +349,12 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
             child: Column(
               children: [
                 _buildWebHeader(),
-                ChatAgentInfoBar(
-                  width: width,
-                  connected: _svc.isConnectedToStaff,
-                  staffLabel:
-                      _svc.connectedStaffName ??
-                      (_svc.connectedDepartment != null
-                          ? '${_svc.connectedDepartment} staff'
-                          : null),
-                  staffPhotoUrl: _svc.connectedStaffPhotoUrl,
-                ),
+                ChatAgentInfoBar(width: width),
                 Expanded(child: _buildMessageList(width)),
                 if (_svc.showBackToMenu && _svc == ChatService.I)
                   _buildBackToMenu(width),
-                if (_svc.showIntentChips && _svc == ChatService.I)
-                  _buildIntentChips(width),
-                if (_svc.showCategoryChips && _svc == ChatService.I)
-                  _buildCategoryChips(width),
-                if (_svc.showRatingBar)
-                  _buildRatingCard(width)
-                else if (_svc.stage == cm.ConversationStage.ended)
-                  _buildEndedComposer(width)
-                else if (_svc.isTerminal)
+                if (_svc.showFaqChips) _buildFaqChips(width),
+                if (_svc.isTerminal)
                   _buildTerminalCard(width)
                 else
                   ChatInputBar(
@@ -782,7 +424,7 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
           ),
           const SizedBox(width: 14),
           const Text(
-            'Chat with an Agent',
+            'Ask Kuya Gov',
             style: TextStyle(
               fontSize: 17,
               fontWeight: FontWeight.w700,
@@ -880,12 +522,7 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
           width: width,
           message: _toViewMsg(src),
           formatTime: _formatTime,
-          // Staff photo for the connected staffer's bubbles; the citizen's own
-          // photo for their outgoing bubbles.
-          agentPhotoUrl: _svc.connectedStaffPhotoUrl,
           citizenPhotoUrl: _myPhotoUrl,
-          onResend: () => _svc.resendMessage(src),
-          onDelete: () => _svc.deleteMessage(src),
         );
       },
     );
@@ -930,7 +567,7 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
       child: Align(
         alignment: Alignment.centerLeft,
         child: _CategoryChip(
-          label: '⬅ Main menu',
+          label: '← Common questions',
           width: width,
           onTap: () => _svc.backToMenu(),
         ),
@@ -938,48 +575,13 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
     );
   }
 
-  // ── Category chips (live agent flow only) ─────────────────────────────────
-  Widget _buildCategoryChips(double width) {
-    return Container(
-      width: double.infinity,
-      color: Colors.white,
-      padding: EdgeInsets.fromLTRB(
-        width * 0.04,
-        width * 0.025,
-        width * 0.04,
-        width * 0.03,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'CHOOSE A CATEGORY',
-            style: TextStyle(
-              fontSize: width * 0.026,
-              fontWeight: FontWeight.w700,
-              color: AppColors.hint,
-              letterSpacing: 0.8,
-            ),
-          ),
-          SizedBox(height: width * 0.022),
-          Wrap(
-            spacing: width * 0.022,
-            runSpacing: width * 0.022,
-            children: cm.ConcernCategory.values.map((c) {
-              return _CategoryChip(
-                label: c.label,
-                width: width,
-                onTap: () => _svc.pickCategory(c),
-              );
-            }).toList(),
-          ),
-        ],
-      ),
-    );
+  Future<void> _openAllFaqs() async {
+    final faq = await showAllFaqs(context);
+    if (faq != null && mounted) await _svc.askFaq(faq);
   }
 
-  // ── Intent chips — only "Ask a question" and "Talk to a person" ───────────
-  Widget _buildIntentChips(double width) {
+  // ── Common-question chips (ready-made answers, no AI call) ────────────────
+  Widget _buildFaqChips(double width) {
     return Container(
       width: double.infinity,
       color: Colors.white,
@@ -993,7 +595,7 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'WHAT CAN I DO FOR YOU PO?',
+            'COMMON QUESTIONS — OR TYPE YOUR OWN',
             style: TextStyle(
               fontSize: width * 0.026,
               fontWeight: FontWeight.w700,
@@ -1005,14 +607,19 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
           Wrap(
             spacing: width * 0.022,
             runSpacing: width * 0.022,
-            // ChatIntent.values now only contains: question, liveAgent
-            children: cm.ChatIntent.values.map((i) {
-              return _CategoryChip(
-                label: i.label,
+            children: [
+              for (final faq in featuredFaqs)
+                _CategoryChip(
+                  label: faq.question,
+                  width: width,
+                  onTap: () => _svc.askFaq(faq),
+                ),
+              _CategoryChip(
+                label: 'All questions…',
                 width: width,
-                onTap: () => _svc.pickIntent(i),
-              );
-            }).toList(),
+                onTap: _openAllFaqs,
+              ),
+            ],
           ),
         ],
       ),

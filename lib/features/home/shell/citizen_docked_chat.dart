@@ -87,7 +87,7 @@ const double _kSheetBubbleFraction = 0.70;
 const double _kBubbleFloor = 240;
 
 /// Open / minimised / closed, owned by the shell so the window survives tab
-/// switches and the "Chat with Agent" action can restore it.
+/// switches and the "Ask Kuya Gov" action can restore it.
 enum DockedChatState { closed, open, minimised }
 
 class CitizenDockedChat extends StatefulWidget {
@@ -930,12 +930,7 @@ class _CitizenDockedChatState extends State<CitizenDockedChat>
   }
 
   Widget _minimisedPill() {
-    final connected = ChatService.I.isConnectedToStaff;
-    final name = connected
-        ? (ChatService.I.connectedStaffName?.trim().isNotEmpty ?? false)
-              ? ChatService.I.connectedStaffName!.trim()
-              : 'LGU Staff'
-        : 'LGU Aparri Agent';
+    const name = 'Kuya Gov';
 
     return Material(
       color: CitizenUi.surface,
@@ -956,12 +951,7 @@ class _CitizenDockedChatState extends State<CitizenDockedChat>
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              ChatAgentAvatar(
-                size: 34,
-                photoUrl: connected
-                    ? ChatService.I.connectedStaffPhotoUrl
-                    : null,
-              ),
+              const ChatAgentAvatar(size: 34),
               const SizedBox(width: 10),
               Flexible(
                 child: Text(

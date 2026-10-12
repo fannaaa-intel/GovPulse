@@ -4,8 +4,9 @@
 //  WHAT THESE SHOW, AND WHAT THEY REFUSE TO SHOW
 //
 //  A scorecard is built only from actions the person took: reports they
-//  completed, chat conversations citizens rated THEM for, suggestion replies
-//  an admin published, and how often a draft came back.
+//  completed, suggestion replies an admin published, how quickly they replied,
+//  and how often a draft came back. (Chat ratings went with the live staff
+//  chat in the 2026-10-12 panel revision.)
 //
 //  Citizen OFFICE ratings are not in anyone's score. `feedbacks` carries no
 //  staff id — the citizen is rating a counter visit, often one no console user
@@ -56,16 +57,6 @@ class ScorecardPanel extends StatelessWidget {
         label: 'Reports completed',
         icon: Icons.task_alt_rounded,
         color: StaffUi.online,
-      ),
-      _Metric(
-        value: card.chatRating == null
-            ? '—'
-            : card.chatRating!.toStringAsFixed(1),
-        label: card.chatRatingCount == 0
-            ? 'Chat rating'
-            : 'Chat rating (${card.chatRatingCount})',
-        icon: Icons.forum_rounded,
-        color: const Color(0xFFF5A623),
       ),
       _Metric(
         value: '${card.repliesApproved}',
@@ -681,7 +672,6 @@ class StaffLeaderboardPanel extends StatelessWidget {
   double _value(StaffScorecard c) => switch (metric) {
         LeaderboardMetric.reportsResolved => c.reportsResolved.toDouble(),
         LeaderboardMetric.repliesPublished => c.repliesApproved.toDouble(),
-        LeaderboardMetric.chatRating => c.chatRating ?? 0,
         // Faster is better, so the bar is inverted: a short reply time must
         // produce a LONG bar or the chart ranks the slowest staff highest.
         LeaderboardMetric.responseTime =>
@@ -691,8 +681,6 @@ class StaffLeaderboardPanel extends StatelessWidget {
   String _display(StaffScorecard c) => switch (metric) {
         LeaderboardMetric.reportsResolved => '${c.reportsResolved}',
         LeaderboardMetric.repliesPublished => '${c.repliesApproved}',
-        LeaderboardMetric.chatRating =>
-          c.chatRating == null ? '—' : c.chatRating!.toStringAsFixed(1),
         LeaderboardMetric.responseTime => c.medianResponseHours == null
             ? '—'
             : _hours(c.medianResponseHours!),
@@ -702,18 +690,16 @@ class StaffLeaderboardPanel extends StatelessWidget {
 enum LeaderboardMetric {
   reportsResolved,
   repliesPublished,
-  chatRating,
   responseTime,
 }
 
-/// The chip label. Kept to one or two words so four chips fit a phone row —
+/// The chip label. Kept to one or two words so the chips fit a phone row —
 /// the sentence that explains each one lives in [leaderboardMetricHelp],
 /// directly under the header, because a bare noun like "Speed" does not say
 /// what is being counted or which direction is good.
 String leaderboardMetricLabel(LeaderboardMetric m) => switch (m) {
       LeaderboardMetric.reportsResolved => 'Reports',
       LeaderboardMetric.repliesPublished => 'Replies',
-      LeaderboardMetric.chatRating => 'Chat rating',
       LeaderboardMetric.responseTime => 'Speed',
     };
 
@@ -729,9 +715,6 @@ String leaderboardMetricHelp(LeaderboardMetric m) => switch (m) {
       LeaderboardMetric.repliesPublished =>
         'Suggestion replies they wrote that were approved and sent to the '
             'citizen. Higher is better.',
-      LeaderboardMetric.chatRating =>
-        'Average stars citizens gave them after a chat, out of 5. Higher is '
-            'better.',
       LeaderboardMetric.responseTime =>
         'How quickly they answer a suggestion, measured as the usual time from '
             'the citizen asking. FASTER is better, so a longer bar means a '
@@ -743,7 +726,6 @@ String leaderboardMetricUnit(LeaderboardMetric m, double value) =>
     switch (m) {
       LeaderboardMetric.reportsResolved => value == 1 ? 'report' : 'reports',
       LeaderboardMetric.repliesPublished => value == 1 ? 'reply' : 'replies',
-      LeaderboardMetric.chatRating => 'out of 5',
       LeaderboardMetric.responseTime => 'typical wait',
     };
 
@@ -913,7 +895,7 @@ class _Bar extends StatelessWidget {
 }
 
 
-/// The four metric tiles, as flex rows.
+/// The metric tiles, as flex rows.
 ///
 /// Deliberately not a Wrap sized by a LayoutBuilder: this card sits beside the
 /// rating chart in an IntrinsicHeight row, and a LayoutBuilder in the subtree
@@ -926,7 +908,10 @@ class _MetricGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const gap = 10.0;
-    final perRow = compact ? 2 : 4;
+    // Three tiles since chat rating was retired (2026-10-12). They sit in ONE
+    // row even when compact: a 2 + 1 split leaves a lone tile beside an empty
+    // slot, which reads as a missing card.
+    final perRow = metrics.length <= 3 ? metrics.length : (compact ? 2 : 4);
     final rows = <Widget>[];
     for (var i = 0; i < metrics.length; i += perRow) {
       final slice = metrics.skip(i).take(perRow).toList();

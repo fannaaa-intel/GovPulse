@@ -103,7 +103,7 @@ const List<({String key, IconData icon, String label})> _kQuickActions = [
     label: 'Share a Suggestion',
   ),
   (key: 'feedback', icon: Icons.rate_review_outlined, label: 'Send Feedback'),
-  (key: 'chat', icon: Icons.support_agent_rounded, label: 'Chat with an Agent'),
+  (key: 'chat', icon: Icons.support_agent_rounded, label: 'Ask Kuya Gov'),
   (key: 'events', icon: Icons.event_rounded, label: 'View Events'),
 ];
 
@@ -618,7 +618,7 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
       'report' => ('Report an Issue', Icons.report_gmailerrorred_rounded),
       'suggestion' => ('Share a Suggestion', Icons.lightbulb_outline_rounded),
       'feedback' => ('Send Feedback', Icons.rate_review_outlined),
-      'chat' => ('Chat with an Agent', Icons.support_agent_rounded),
+      'chat' => ('Ask Kuya Gov', Icons.support_agent_rounded),
       'events' => ('Events', Icons.event_rounded),
       _ => ('', Icons.help_outline_rounded),
     };
@@ -641,7 +641,7 @@ class _CitizenShellState extends ConsumerState<CitizenShell> {
         'Only verified Aparri citizens can submit feedback. '
             'Please complete your identity verification first.',
       'chat' =>
-        'Only verified Aparri citizens can chat with an agent. '
+        'Only verified Aparri citizens can chat with Kuya Gov. '
             'Please complete your identity verification first.',
       _ =>
         'Only verified Aparri citizens can browse community events. '

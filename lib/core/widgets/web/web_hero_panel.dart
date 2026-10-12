@@ -8,7 +8,7 @@ const List<(IconData, String)> _kDefaultFeatures = [
   (Icons.campaign_outlined, "Report community issues"),
   (Icons.event_outlined, "Discover local events"),
   (Icons.emergency_outlined, "Emergency SOS services"),
-  (Icons.chat_bubble_outline_rounded, "Live agent support"),
+  (Icons.chat_bubble_outline_rounded, "Instant answers from Kuya Gov"),
 ];
 
 const List<(String, String)> _kDefaultStats = [

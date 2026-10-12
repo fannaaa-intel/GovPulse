@@ -10,9 +10,10 @@ import '../../admin/providers/admin_reports_provider.dart'
 // ════════════════════════════════════════════════════════════════════════════
 //  Staff data layer — the ONLY place the staff console touches Supabase.
 //
-//  Reuses the citizen-side tables (concern_tickets, ticket_messages, reports)
-//  that already exist; the staff RLS in supabase/legacy/staff_portal.sql scopes every
-//  read/write to the signed-in staff member's department.
+//  Reuses the citizen-side tables (reports and friends) that already exist;
+//  staff RLS scopes every read/write to the signed-in staff member's
+//  department. The live-chat tables (concern_tickets, ticket_messages) were
+//  dropped from the console in the 2026-10-12 panel revision.
 // ════════════════════════════════════════════════════════════════════════════
 
 // ── Models ───────────────────────────────────────────────────────────────────
@@ -24,7 +25,6 @@ class StaffIdentity {
   final String title;
   final String department;
   final bool isExternal;
-  final bool isOnline;
   final String? photoUrl;
 
   const StaffIdentity({
@@ -34,7 +34,6 @@ class StaffIdentity {
     required this.title,
     required this.department,
     required this.isExternal,
-    required this.isOnline,
     required this.photoUrl,
   });
 
@@ -52,14 +51,13 @@ class StaffIdentity {
     return (parts.first.substring(0, 1) + parts[1].substring(0, 1)).toUpperCase();
   }
 
-  StaffIdentity copyWith({bool? isOnline, String? photoUrl}) => StaffIdentity(
+  StaffIdentity copyWith({String? photoUrl}) => StaffIdentity(
         userId: userId,
         email: email,
         fullName: fullName,
         title: title,
         department: department,
         isExternal: isExternal,
-        isOnline: isOnline ?? this.isOnline,
         photoUrl: photoUrl ?? this.photoUrl,
       );
 
@@ -81,115 +79,11 @@ class StaffIdentity {
           title == other.title &&
           department == other.department &&
           isExternal == other.isExternal &&
-          isOnline == other.isOnline &&
           photoUrl == other.photoUrl;
 
   @override
-  int get hashCode => Object.hash(userId, email, fullName, title, department,
-      isExternal, isOnline, photoUrl);
-}
-
-class StaffConversation {
-  final String id;
-  final String? referenceCode;
-  final String category;
-  final String department;
-  final String status; // open | resolved | closed
-  final String? assignedStaffId;
-  final String? contactName;
-  final String? contactNumber;
-  final bool isAnonymous;
-  final int? rating; // 1–5, set after the citizen rates a resolved chat
-  final DateTime? createdAt;
-  final DateTime? updatedAt;
-
-  /// The citizen's profile photo URL, attached after fetch (non-anonymous only).
-  /// Mutable so the batch photo lookup can fill it without rebuilding the row.
-  String? photoUrl;
-
-  StaffConversation({
-    required this.id,
-    required this.referenceCode,
-    required this.category,
-    required this.department,
-    required this.status,
-    required this.assignedStaffId,
-    required this.contactName,
-    required this.contactNumber,
-    required this.isAnonymous,
-    required this.rating,
-    required this.createdAt,
-    required this.updatedAt,
-  });
-
-  bool get isResolved => status == 'resolved' || status == 'closed';
-  bool assignedTo(String uid) => assignedStaffId == uid;
-  bool get isWaiting => assignedStaffId == null && !isResolved;
-
-  /// The citizen's name is NEVER shown for an anonymous chat.
-  String get citizenLabel {
-    if (isAnonymous) return 'Anonymous citizen';
-    final n = contactName?.trim();
-    if (n != null && n.isNotEmpty) return n;
-    return 'Citizen · ${referenceCode ?? id.substring(0, 6)}';
-  }
-
-  /// Contact number, hidden for anonymous chats.
-  String? get shownNumber => isAnonymous ? null : contactNumber;
-
-  factory StaffConversation.fromRow(Map<String, dynamic> r) {
-    final anon = (r['is_anonymous'] as bool?) ?? false;
-    return StaffConversation(
-      id: r['id'].toString(),
-      referenceCode: r['reference_code'] as String?,
-      category: (r['category'] as String?) ?? 'Concern',
-      department: (r['department'] as String?) ?? '',
-      status: (r['status'] as String?) ?? 'open',
-      assignedStaffId: r['assigned_staff_id']?.toString(),
-      // Defensively drop identity fields for anonymous rows even if present.
-      contactName: anon ? null : r['contact_name'] as String?,
-      contactNumber: anon ? null : r['contact_number'] as String?,
-      isAnonymous: anon,
-      rating: (r['rating'] as num?)?.toInt(),
-      createdAt: _ts(r['created_at']),
-      updatedAt: _ts(r['updated_at']),
-    );
-  }
-}
-
-/// Delivery state for an outgoing staff message — drives the optimistic UI:
-/// [sending] shows the moment it's typed, [sent] once the DB write lands,
-/// [failed] if the write errors (offering resend/delete).
-enum StaffMsgSend { sending, sent, failed }
-
-class StaffMessage {
-  final String id;
-  final String senderType; // citizen | bot | staff
-  final String message;
-  final DateTime? createdAt;
-
-  /// Mutable so an optimistic bubble can transition sending → sent/failed in
-  /// place. Rows loaded from the DB are always [StaffMsgSend.sent].
-  StaffMsgSend sendState;
-
-  StaffMessage({
-    required this.id,
-    required this.senderType,
-    required this.message,
-    required this.createdAt,
-    this.sendState = StaffMsgSend.sent,
-  });
-
-  bool get isStaff => senderType == 'staff';
-  bool get isBot => senderType == 'bot';
-
-  factory StaffMessage.fromRow(Map<String, dynamic> r) => StaffMessage(
-        id: r['id'].toString(),
-        senderType: (r['sender_type'] as String?) ?? 'citizen',
-        // ticket_messages content column is `text` (not `message`).
-        message: (r['text'] as String?) ?? '',
-        createdAt: _ts(r['created_at']),
-      );
+  int get hashCode =>
+      Object.hash(userId, email, fullName, title, department, isExternal, photoUrl);
 }
 
 class StaffReport {
@@ -391,7 +285,7 @@ class StaffRepository {
 
   String? get _uid => _db.auth.currentUser?.id;
 
-  // ── Identity + presence ────────────────────────────────────────────────────
+  // ── Identity ───────────────────────────────────────────────────────────────
   Future<StaffIdentity> fetchIdentity() async {
     final user = _db.auth.currentUser;
     final uid = user?.id ?? '';
@@ -403,7 +297,7 @@ class StaffRepository {
         row = await _db
             .from('admin_profiles')
             .select(
-              'full_name, title, department, is_external, is_online, photo_url',
+              'full_name, title, department, is_external, photo_url',
             )
             .eq('user_id', uid)
             .maybeSingle();
@@ -421,18 +315,8 @@ class StaffRepository {
           : 'Staff',
       department: (row?['department'] as String?)?.trim() ?? '',
       isExternal: (row?['is_external'] as bool?) ?? false,
-      isOnline: (row?['is_online'] as bool?) ?? false,
       photoUrl: row?['photo_url'] as String?,
     );
-  }
-
-  Future<void> setOnline(bool online) async {
-    final uid = _uid;
-    if (uid == null) return;
-    await _db.from('admin_profiles').update({
-      'is_online': online,
-      'last_seen_at': DateTime.now().toUtc().toIso8601String(),
-    }).eq('user_id', uid);
   }
 
   /// Uploads a new avatar to the public `admin-avatars` bucket (keyed under the
@@ -465,247 +349,6 @@ class StaffRepository {
       'updated_at': DateTime.now().toUtc().toIso8601String(),
     }).eq('user_id', uid);
     return url;
-  }
-
-  // ── Conversations (concern_tickets) ─────────────────────────────────────────
-  Future<List<StaffConversation>> fetchConversations(String department) async {
-    if (department.isEmpty) return const [];
-    // Reads through `staff_tickets_view`, NOT `concern_tickets` directly. The
-    // base table exposes five raw contact columns on every row; the view nulls
-    // all of them (and user_id) for anonymous tickets in the database, so the
-    // citizen's number never leaves Postgres for an anonymous chat. Staff have
-    // no SELECT policy on concern_tickets itself any more — see migration
-    // 20260721000007. The view is department-self-scoping, but the .eq() is
-    // kept as defence in depth and to match the ghost filter.
-    final rows = await _db
-        .from('staff_tickets_view')
-        .select(
-          'id, reference_code, category, department, status, assigned_staff_id, '
-          'contact_name, contact_number, is_anonymous, rating, '
-          'created_at, updated_at',
-        )
-        .eq('department', department)
-        .eq('is_ghost', false)
-        .order('updated_at', ascending: false)
-        .limit(200);
-    final convos = List<Map<String, dynamic>>.from(rows)
-        .map(StaffConversation.fromRow)
-        .toList();
-    // Attach citizen photos in one batch call (non-anonymous tickets only).
-    try {
-      final photoRows = await _db.rpc('department_ticket_citizens');
-      if (photoRows is List) {
-        final byId = <String, String>{};
-        for (final r in photoRows) {
-          final id = r['ticket_id']?.toString();
-          final path = (r['photo_path'] as String?)?.trim() ?? '';
-          if (id != null && path.isNotEmpty) {
-            byId[id] =
-                _db.storage.from('profile-photos').getPublicUrl(path);
-          }
-        }
-        for (final c in convos) {
-          if (!c.isAnonymous) c.photoUrl = byId[c.id];
-        }
-      }
-    } catch (_) {/* list keeps initial/default avatars */}
-    return convos;
-  }
-
-  /// ONE ticket's live row, for the open thread's targeted refresh.
-  ///
-  /// Same view and same column list as [fetchConversations] — a second reader of
-  /// `concern_tickets` would need a base-table SELECT policy that deliberately
-  /// does not exist (20260721000007 §4).
-  ///
-  /// WHY THIS EXISTS: the citizen's star rating lands minutes after the staff
-  /// ends the chat, and staff cannot subscribe to `concern_tickets` at all —
-  /// realtime authorises delivery through SELECT policies, so a subscription
-  /// would connect, report success and deliver nothing forever (see the long
-  /// note below `setConversationStatus`). The 30s inbox poll is therefore the
-  /// only thing that can notice a rating, and 30s of nothing on the screen you
-  /// are looking at reads as broken. The thread polls this instead while it is
-  /// waiting on a rating. Returns null if the ticket is outside the caller's
-  /// department, which the view enforces rather than this query.
-  Future<StaffConversation?> fetchConversation(String ticketId) async {
-    final row = await _db
-        .from('staff_tickets_view')
-        .select(
-          'id, reference_code, category, department, status, assigned_staff_id, '
-          'contact_name, contact_number, is_anonymous, rating, '
-          'created_at, updated_at',
-        )
-        .eq('id', ticketId)
-        .maybeSingle();
-    if (row == null) return null;
-    return StaffConversation.fromRow(row);
-  }
-
-  /// The ticket's citizen photo URL (public `profile-photos` bucket), for the
-  /// chat header + bubbles. Reads the `ticket_citizen` SECURITY DEFINER RPC
-  /// (staff can't read citizen_details directly). Returns null for anonymous
-  /// chats, when there's no photo, or on any error — the UI then shows a default
-  /// / initial avatar.
-  Future<String?> fetchCitizenPhoto(String ticketId) async {
-    try {
-      final res =
-          await _db.rpc('ticket_citizen', params: {'p_ticket': ticketId});
-      final row = (res is List && res.isNotEmpty)
-          ? res.first as Map<String, dynamic>
-          : (res is Map<String, dynamic> ? res : null);
-      final path = (row?['photo_path'] as String?)?.trim() ?? '';
-      if (path.isEmpty) return null;
-      return _db.storage.from('profile-photos').getPublicUrl(path);
-    } catch (e) {
-      return null;
-    }
-  }
-
-  /// Reads through `staff_messages_view`, NOT `ticket_messages` directly.
-  ///
-  /// The base table exposes `sender_id` on every row — the citizen's auth.users
-  /// id — including on tickets the citizen marked anonymous, which handed the
-  /// assigned officer the reporter's identity. The view is a definer view that
-  /// nulls `sender_id` when the PARENT ticket is anonymous and scopes itself to
-  /// the caller's department. Same discipline as `staff_tickets_view` /
-  /// `staff_reports_view`. See migration 20260731000003.
-  ///
-  /// Staff can no longer select `sender_id` from the base table at all (the
-  /// column was removed from the `authenticated` grant), so this cannot silently
-  /// regress to reading identity — it would 42501 instead.
-  Future<List<StaffMessage>> fetchMessages(String ticketId) async {
-    final rows = await _db
-        .from('staff_messages_view')
-        .select('id, sender_type, text, created_at')
-        .eq('ticket_id', ticketId)
-        .order('created_at', ascending: true);
-    return List<Map<String, dynamic>>.from(rows)
-        .map(StaffMessage.fromRow)
-        .toList();
-  }
-
-  /// Sends a staff reply and returns the inserted row so the thread can show it
-  /// immediately and de-dupe it against the realtime echo (matched by id).
-  Future<StaffMessage> sendMessage(String ticketId, String text) async {
-    final uid = _uid;
-    if (uid == null) throw 'Your session has expired. Please log in again.';
-    final row = await _db
-        .from('ticket_messages')
-        .insert({
-          'ticket_id': ticketId,
-          'sender_id': uid,
-          'sender_type': 'staff',
-          'text': text, // content column is `text`, not `message`
-          // created_at is deliberately NOT sent. The column defaults to now(),
-          // so every message in a thread is stamped by ONE clock — the
-          // database's. Sending DateTime.now().toIso8601String() from the client
-          // (as this did) is wrong twice over: it is local time with no offset,
-          // which Postgres reads as UTC and stores 8 hours off, and it makes
-          // message ORDER depend on whether the staff PC and the citizen's phone
-          // agree on the time. They did not, which is why the staff thread
-          // rendered all staff messages before all citizen replies while the
-          // citizen's Hive-backed view showed the true interleaving.
-        })
-        .select('id, sender_type, text, created_at')
-        .single();
-    // Bump the ticket so it floats to the top of the inbox — via RPC, because
-    // staff no longer hold a direct UPDATE policy on concern_tickets. A raw
-    // update here would silently affect 0 rows. Fire-and-forget: the reply is
-    // already sent, so a failed re-sort must not fail the send.
-    try {
-      await _db.rpc('staff_touch_ticket', params: {'p_ticket': ticketId});
-    } catch (_) {/* inbox ordering only — never block a sent message */}
-    return StaffMessage.fromRow(row);
-  }
-
-  /// Claims an unassigned ticket for the signed-in staff member.
-  ///
-  /// Goes through the `staff_claim_ticket` RPC rather than an UPDATE on
-  /// concern_tickets. Staff no longer hold an UPDATE (or SELECT) policy on that
-  /// table, and a WHERE-scoped UPDATE without a SELECT policy affects zero rows
-  /// and returns SUCCESS — the silent no-op this whole remediation kept finding.
-  /// The RPC re-checks department ownership and RAISES on denial, so a failed
-  /// claim throws here instead of pretending to work.
-  Future<void> claimConversation(String ticketId) async {
-    final uid = _uid;
-    if (uid == null) return;
-    await _db.rpc('staff_claim_ticket', params: {'p_ticket': ticketId});
-  }
-
-  Future<void> setConversationStatus(String ticketId, String status) async {
-    // See claimConversation: definer RPC, raises on denial, never a silent
-    // no-op. resolved_at is stamped server-side for terminal statuses.
-    await _db.rpc('staff_set_ticket_status',
-        params: {'p_ticket': ticketId, 'p_status': status});
-  }
-
-  // subscribeDepartmentTickets was REMOVED in migration 20260721000007. It
-  // subscribed to postgres_changes on concern_tickets, which shipped the raw
-  // row — five citizen contact columns — over the socket, defeating ticket
-  // anonymity.
-  //
-  // concern_tickets IS in the realtime publication again as of migration
-  // 20260722000004 (its removal broke the citizen's rating card and protected
-  // nothing). What keeps staff from receiving these rows is that staff hold no
-  // SELECT policy on concern_tickets: realtime authorizes every change against
-  // the subscriber's own SELECT policies — confirmed empirically on 2026-07-30
-  // with two live accounts, not inferred. So re-adding this subscription would
-  // not leak today — but it would the instant anyone grants staff a read
-  // policy. Do not reintroduce it.
-  //
-  // That assertion is checked by
-  // supabase/diagnostics/verify_20260722000004_ticket_realtime.sql AS OF THE
-  // COMMIT THAT ADDED THAT FILE (2026-07-30). This comment previously claimed
-  // the check already enforced it; it did not — the file did not exist, and
-  // for eight days the rule lived in this comment and the migration header and
-  // nothing verified either. Run the diagnostic before trusting the invariant,
-  // and do not restore a past-tense claim here.
-  //
-  // The staff inbox polls instead (see staff_conversations_page). Live push
-  // returns in 7c via Broadcast with a non-identifying payload.
-  //
-  // ── ticket_messages IS DIFFERENT, AND STAYS SUBSCRIBED DELIBERATELY ───────
-  // The subscription below is NOT an oversight and must not be "cleaned up" to
-  // match the concern_tickets treatment above. Removing ticket_messages from the
-  // publication would stop new messages appearing in the staff thread without a
-  // manual refresh — a feature outage, which the finding's acceptance criterion
-  // rejects by name (condition 4, "a regression wearing a fix's clothes").
-  //
-  // The row this subscription delivers no longer carries the citizen's identity.
-  // Migration 20260731000003 removed `sender_id` from the `authenticated` column
-  // grant, and realtime.apply_rls builds each payload only from columns the
-  // subscriber's role can SELECT — so the column is absent from the wire rather
-  // than merely unread. Measured on this project, not inferred: the delivered
-  // record's keys are exactly id, ticket_id, sender_type, text, created_at.
-  //
-  // Two consequences worth knowing before changing anything here:
-  //   * The masking is by GRANT, not by policy, and it is blanket — `sender_id`
-  //     is absent for attributed tickets too, and for the citizen's own
-  //     subscription. That is an accepted deviation (nothing reads the value),
-  //     recorded in the migration header.
-  //   * `p.newRecord` therefore has no `sender_id` key at all. StaffMessage
-  //     .fromRow already ignores it and threads on `sender_type`. Do not add a
-  //     dependency on `sender_id` to this callback — it would read as null in
-  //     production and there is no server-side path to get it back.
-
-  RealtimeChannel subscribeMessages(
-    String ticketId,
-    void Function(StaffMessage) onInsert,
-  ) {
-    return _db
-        .channel('staff_ticket_msgs:$ticketId')
-        .onPostgresChanges(
-          event: PostgresChangeEvent.insert,
-          schema: 'public',
-          table: 'ticket_messages',
-          filter: PostgresChangeFilter(
-            type: PostgresChangeFilterType.eq,
-            column: 'ticket_id',
-            value: ticketId,
-          ),
-          callback: (p) => onInsert(StaffMessage.fromRow(p.newRecord)),
-        )
-        .subscribe();
   }
 
   // ── Reports (department-scoped) ─────────────────────────────────────────────

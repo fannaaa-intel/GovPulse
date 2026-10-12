@@ -162,7 +162,7 @@ void main() {
 
     const expected = [
       'Report Issue',
-      'Chat with Agent',
+      'Ask Kuya Gov',
       'Events',
       'Suggestion',
       'Feedback',

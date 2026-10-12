@@ -26,8 +26,8 @@ class HomeQuickActionsSection extends StatelessWidget {
     {
       'key': 'chat',
       'iconPath': 'assets/images/customer.webp',
-      'title': 'Chat with Agent',
-      'subtitle': 'Talk to an LGU support agent',
+      'title': 'Ask Kuya Gov',
+      'subtitle': 'Answers to common questions',
       'accentColor': Color(0xFF3B82F6),
     },
     {

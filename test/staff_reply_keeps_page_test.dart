@@ -120,7 +120,6 @@ const _kIdentity = StaffIdentity(
   title: 'Officer',
   department: _kDept,
   isExternal: false,
-  isOnline: true,
   photoUrl: null,
 );
 

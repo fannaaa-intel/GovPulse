@@ -5,6 +5,10 @@
 // (0..2) stay stable.
 enum MessageStatus { sent, delivered, seen, failed }
 
+// Persisted to Hive BY INDEX — never reorder or delete a value. The live-staff
+// stages (awaitingCategory, awaitingDetails, submitting, ticketCreated,
+// connectedToAgent, confirmingContact, correctingContact) are retired since the
+// 2026-10-12 panel revision; ChatService._readStage maps a cached one out.
 enum ConversationStage {
   greeting,
   awaitingCategory,
@@ -21,54 +25,6 @@ enum ConversationStage {
   ended,
 }
 
-enum ConcernCategory {
-  roadInfrastructure,
-  wasteGarbage,
-  drainageFlooding,
-  streetlightOutage,
-  environmentPollution,
-  others;
-
-  String get label => switch (this) {
-    ConcernCategory.roadInfrastructure => 'Road & Infrastructure',
-    ConcernCategory.wasteGarbage => 'Waste & Garbage',
-    ConcernCategory.drainageFlooding => 'Drainage & Flooding',
-    ConcernCategory.streetlightOutage => 'Streetlight Outage',
-    ConcernCategory.environmentPollution => 'Environment & Pollution',
-    ConcernCategory.others => 'Others',
-  };
-
-  String get department => switch (this) {
-    ConcernCategory.roadInfrastructure => 'Engineering Office',
-    ConcernCategory.wasteGarbage => 'Sanitation Office',
-    ConcernCategory.drainageFlooding => 'Engineering Office',
-    ConcernCategory.streetlightOutage => 'Engineering Office',
-    ConcernCategory.environmentPollution => 'Environment Office',
-    ConcernCategory.others => "Mayor's Office",
-  };
-}
-
-// ── ChatIntent ────────────────────────────────────────────────────────────────
-// "Report Issue" is intentionally removed here.
-// Citizens report issues via the Quick Action button on the Home screen.
-// The chat menu only offers: Ask a question | Talk to a person.
-// Free-text detection (e.g. "gusto ko mag-report") still triggers
-// [ACTION:REPORT] from the AI and routes to the category picker automatically.
-enum ChatIntent {
-  question,
-  liveAgent;
-
-  String get label => switch (this) {
-    ChatIntent.question => 'Ask a question',
-    ChatIntent.liveAgent => 'Talk to a person',
-  };
-}
-
-class TicketException implements Exception {
-  final String message;
-  const TicketException(this.message);
-}
-
 class ChatMsg {
   final String text;
   final bool isUser;
@@ -80,10 +36,6 @@ class ChatMsg {
   /// (AI unavailable). The bubble shows an "answered on-device" chip.
   final bool offline;
 
-  /// True when this incoming message came from a live staff member (not the
-  /// bot) — so the bubble can show the staff member's photo instead of the bot.
-  final bool fromStaff;
-
   ChatMsg({
     required this.text,
     required this.isUser,
@@ -91,7 +43,6 @@ class ChatMsg {
     this.status = MessageStatus.sent,
     this.attachmentPath,
     this.offline = false,
-    this.fromStaff = false,
   });
 
   Map<String, dynamic> toJson() => {
@@ -101,9 +52,10 @@ class ChatMsg {
     'status': status.index,
     'attachmentPath': attachmentPath,
     'offline': offline,
-    'fromStaff': fromStaff,
   };
 
+  // A cached message from the live-chat era may still carry `fromStaff`; it is
+  // ignored, and the bubble renders as Kuya Gov's.
   factory ChatMsg.fromJson(Map<String, dynamic> j) => ChatMsg(
     text: j['text'] as String,
     isUser: j['isUser'] as bool,
@@ -111,6 +63,5 @@ class ChatMsg {
     status: MessageStatus.values[j['status'] as int],
     attachmentPath: j['attachmentPath'] as String?,
     offline: j['offline'] as bool? ?? false,
-    fromStaff: j['fromStaff'] as bool? ?? false,
   );
 }

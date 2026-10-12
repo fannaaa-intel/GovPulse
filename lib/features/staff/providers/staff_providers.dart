@@ -19,7 +19,7 @@ import '../data/staff_repository.dart';
 
 final staffRepoProvider = Provider<StaffRepository>((_) => StaffRepository.I);
 
-// ── Identity + presence ──────────────────────────────────────────────────────
+// ── Identity ─────────────────────────────────────────────────────────────────
 class StaffIdentityNotifier extends AsyncNotifier<StaffIdentity> {
   StaffRepository get _repo => ref.read(staffRepoProvider);
 
@@ -34,10 +34,6 @@ class StaffIdentityNotifier extends AsyncNotifier<StaffIdentity> {
   /// 'S' avatar and the name 'Staff' — so a staff member on a weak connection
   /// saw someone else's idea of who they are. Same class of bug as the citizen
   /// profile falling back to 'unverified'.
-  ///
-  /// The restored copy carries NO on-duty state: it comes back `isOnline:
-  /// false`, and the staff member turns it on themselves. See
-  /// [CachedStaffIdentity].
   Future<StaffIdentity> _fetchWithCache() async {
     final uid = Supabase.instance.client.auth.currentUser?.id;
     try {
@@ -70,9 +66,6 @@ class StaffIdentityNotifier extends AsyncNotifier<StaffIdentity> {
         title: cached.title,
         department: cached.department,
         isExternal: cached.isExternal,
-        // NOT restored, deliberately. See [CachedStaffIdentity]: a remembered
-        // on-duty state could route a live citizen request to an empty desk.
-        isOnline: false,
         photoUrl: cached.photoUrl,
       );
     }
@@ -97,21 +90,6 @@ class StaffIdentityNotifier extends AsyncNotifier<StaffIdentity> {
     state = next.hasValue ? next : previous;
   }
 
-  /// Flips the on-duty flag. Optimistic — reverts on failure. When a staff
-  /// member is online, the citizen chat's `findAvailableStaffId` can route a
-  /// live-agent request to them.
-  Future<void> setOnline(bool online) async {
-    final cur = state.valueOrNull;
-    if (cur == null) return;
-    state = AsyncData(cur.copyWith(isOnline: online));
-    try {
-      await _repo.setOnline(online);
-    } catch (_) {
-      state = AsyncData(cur); // revert
-      rethrow;
-    }
-  }
-
   /// Uploads + persists a new avatar, then patches identity so the UI updates
   /// without a full refetch.
   Future<void> setPhoto(Uint8List bytes, String ext) async {
@@ -131,14 +109,14 @@ final staffDepartmentProvider = Provider<String?>((ref) {
   return ref.watch(staffIdentityProvider).valueOrNull?.department;
 });
 
-/// Shared interval-poll plumbing for the three staff list notifiers.
+/// Shared interval-poll plumbing for the staff list notifiers.
 ///
 /// Each notifier arms its timer in `build()` and cancels it via `ref.onDispose`.
 /// The console pauses and resumes all three together on app lifecycle changes.
 ///
 /// One timer per notifier, owned by the notifier — never by a page. A
-/// page-owned timer only runs while that page is mounted, which is what left
-/// the dashboard's Live queue frozen until someone opened the inbox.
+/// page-owned timer only runs while that page is mounted, which once left a
+/// dashboard panel frozen until someone opened the matching page.
 ///
 /// UPGRADE PATH: when Broadcast lands (7c) it replaces all three timers in a
 /// single change — inbox and dashboard both become live-push, because both read
@@ -217,143 +195,6 @@ mixin StaffIntervalPoll {
   }
 }
 
-// ── Conversations ────────────────────────────────────────────────────────────
-class StaffConversationsNotifier extends AsyncNotifier<List<StaffConversation>>
-    with StaffIntervalPoll {
-  StaffRepository get _repo => ref.read(staffRepoProvider);
-
-  @override
-  Future<List<StaffConversation>> build() async {
-    // selectAsync, NOT watch(...future): this notifier must rebuild only when
-    // the DEPARTMENT changes, never on an unrelated identity emission (presence
-    // toggle, avatar change, a plain refetch). Rebuilding re-arms the interval
-    // timer below from zero, so identity churn could otherwise starve the poll
-    // indefinitely. See StaffIdentity's == for the diagnosis.
-    //
-    // Bound BEFORE the await — see [StaffIntervalPoll.bindPollLifecycle]. This
-    // is the line that makes disposal during the await safe.
-    bindPollLifecycle(ref);
-    final dept =
-        await ref.watch(staffIdentityProvider.selectAsync((i) => i.department));
-    startPolling();
-    return _repo.fetchConversations(dept);
-  }
-
-  /// Interval poll for the inbox, replacing the realtime subscription removed in
-  /// migration 20260721000007. It used postgres_changes on `concern_tickets`,
-  /// whose raw rows carry five citizen contact columns. The table is back in the
-  /// publication as of migration 20260722000004, but staff hold no SELECT policy
-  /// on it and realtime authorises delivery through SELECT policies — so a
-  /// postgres_changes subscription here would connect, report success, and
-  /// deliver nothing forever. Do not add one.
-  ///
-  /// The timer lives HERE rather than in the inbox page. It used to live in
-  /// StaffConversationsPage, which meant the list only refreshed while that page
-  /// was mounted — the dashboard's Waiting/Active counters and Live queue sat
-  /// frozen at their first fetch until someone opened the inbox. Reports and
-  /// endorsements already polled from their notifiers; conversations was the odd
-  /// one out. There must be exactly ONE timer per provider: two owners is the
-  /// redundancy trap, and whoever later deletes the "unused" one may delete the
-  /// live one.
-  ///
-  /// Timer mechanics — and the disposal contract — live in [StaffIntervalPoll].
-  /// This used to be a `_startPolling()` helper that armed the timer and THEN
-  /// registered `ref.onDispose(pausePolling)`; registering after the build's
-  /// await is what allowed the hook to be missed entirely. The registration now
-  /// happens up front via `bindPollLifecycle(ref)`.
-
-  Future<void> refresh() async {
-    final dept = ref.read(staffDepartmentProvider);
-    if (dept == null) return;
-    state = const AsyncLoading();
-    state = await AsyncValue.guard(() => _repo.fetchConversations(dept));
-  }
-
-  Future<void> _reload() async {
-    final dept = ref.read(staffDepartmentProvider);
-    if (dept == null) return;
-    final next = await AsyncValue.guard(() => _repo.fetchConversations(dept));
-    if (next.hasValue) state = next;
-  }
-
-  /// Background reload without a loading flash — used by the inbox's realtime
-  /// subscription so a new waiting chat slides in without blanking the list.
-  Future<void> silentRefresh() => _reload();
-
-  /// One tick of the inbox poll. Scheduled by [_startPolling]; also called
-  /// directly by the stale banner's retry.
-  ///
-  /// Unlike [_reload], a FAILED poll is not swallowed. Staleness is the failure
-  /// mode we accept in exchange for closing the leak, and a silently-failing
-  /// refresh showing old data as if it were fresh is the very silent-success
-  /// bug this whole engagement kept finding. On failure the last good list is
-  /// kept (so the screen does not blank) AND the stale flag is raised so the UI
-  /// can say so. Cleared on the next success.
-  @override
-  Future<void> poll() async {
-    final dept = ref.read(staffDepartmentProvider);
-    if (dept == null) return;
-    final next = await AsyncValue.guard(() => _repo.fetchConversations(dept));
-    if (next.hasValue) {
-      state = next;
-      ref.read(staffConversationsStaleProvider.notifier).state = false;
-    } else {
-      ref.read(staffConversationsStaleProvider.notifier).state = true;
-    }
-  }
-
-  /// Refetches ONE ticket and patches it into the cached list, leaving every
-  /// other row — and the list's order — exactly as it was.
-  ///
-  /// For the open chat thread, which needs the citizen's rating to appear while
-  /// the staff is looking at it rather than up to 30s later on the next
-  /// [poll]. It writes into the SAME list the thread already resolves from, so
-  /// there is still one source of truth: the inbox tile and the thread cannot
-  /// disagree about a ticket.
-  ///
-  /// Deliberately quiet: no loading state (the list must not flash), no stale
-  /// flag on failure (this is a targeted extra, not the poll whose failure the
-  /// banner reports), and a no-op if the ticket is not in the cached window —
-  /// the caller keeps whatever it had rather than losing the row.
-  Future<void> refreshOne(String ticketId) async {
-    final cur = state.valueOrNull;
-    if (cur == null) return;
-    final idx = cur.indexWhere((c) => c.id == ticketId);
-    if (idx < 0) return;
-    final fresh = await AsyncValue.guard(() => _repo.fetchConversation(ticketId));
-    final row = fresh.valueOrNull;
-    if (row == null) return;
-    // The batch photo lookup only runs in fetchConversations, so carry the
-    // avatar across or the header would drop to an initial on every tick.
-    row.photoUrl = cur[idx].photoUrl;
-    final next = List<StaffConversation>.of(cur);
-    next[idx] = row;
-    state = AsyncData(next);
-  }
-
-  Future<void> claim(String ticketId) async {
-    await _repo.claimConversation(ticketId);
-    await _reload();
-  }
-
-  Future<void> setStatus(String ticketId, String status) async {
-    await _repo.setConversationStatus(ticketId, status);
-    await _reload();
-  }
-}
-
-final staffConversationsProvider =
-    AsyncNotifierProvider<StaffConversationsNotifier, List<StaffConversation>>(
-  StaffConversationsNotifier.new,
-);
-
-/// True when the most recent background poll of the staff inbox FAILED, so the
-/// list on screen may be out of date. The conversations page watches this and
-/// shows a stale banner with a retry — because after migration 20260721000007
-/// the inbox polls instead of streaming, and a poll that fails silently is the
-/// silent-success failure mode in a new costume. Cleared on the next success.
-final staffConversationsStaleProvider = StateProvider<bool>((_) => false);
-
 // ── Reports (department-scoped) ───────────────────────────────────────────────
 
 /// The two report queues an officer works — their department's reports, and the
@@ -389,8 +230,11 @@ class StaffReportsNotifier extends AsyncNotifier<List<StaffReport>>
 
   @override
   Future<List<StaffReport>> build() async {
-    // selectAsync — see StaffConversationsNotifier.build for why watching the
-    // whole identity starves the timer.
+    // selectAsync, NOT watch(...future): this notifier must rebuild only when
+    // the DEPARTMENT changes, never on an unrelated identity emission (avatar
+    // change, a plain refetch). Rebuilding re-arms the interval timer from
+    // zero, so identity churn could otherwise starve the poll indefinitely.
+    // See StaffIdentity's == for the diagnosis.
     //
     // Bound BEFORE the await — see [StaffIntervalPoll.bindPollLifecycle].
     bindPollLifecycle(ref);
@@ -486,8 +330,7 @@ final staffReportsProvider =
 );
 
 /// True when the most recent background poll of the staff REPORTS list failed,
-/// so the list on screen may be out of date. Same rationale as
-/// [staffConversationsStaleProvider]: after migration 20260722000000 the
+/// so the list on screen may be out of date. After migration 20260722000000 the
 /// reports list polls instead of streaming, and a poll that fails silently is
 /// indistinguishable from success. Cleared on the next successful poll.
 final staffReportsStaleProvider = StateProvider<bool>((_) => false);
@@ -500,8 +343,8 @@ class StaffEndorsementsNotifier extends AsyncNotifier<List<StaffReport>>
 
   @override
   Future<List<StaffReport>> build() async {
-    // selectAsync — see StaffConversationsNotifier.build for why watching the
-    // whole identity starves the timer.
+    // selectAsync — see StaffReportsNotifier.build for why watching the whole
+    // identity starves the timer.
     // Bound BEFORE the await — see [StaffIntervalPoll.bindPollLifecycle].
     bindPollLifecycle(ref);
     final dept =
@@ -725,8 +568,6 @@ final staffCommunityProvider =
 final List<ProviderOrFamily> staffSessionProviders = <ProviderOrFamily>[
   staffIdentityProvider,
   staffDepartmentProvider,
-  staffConversationsProvider,
-  staffConversationsStaleProvider,
   staffReportsProvider,
   staffReportsStaleProvider,
   staffEndorsementsProvider,

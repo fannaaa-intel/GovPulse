@@ -1663,7 +1663,11 @@ class _PhotoThumb extends StatelessWidget {
       onTap: () => showAppDialog(
         context: context,
         barrierColor: Colors.black87,
-        builder: (_) => _FullscreenImageDialog(url: url),
+        builder: (_) => _FullscreenImageDialog(
+          url: url,
+          aiScore: aiScore,
+          aiStatus: aiStatus,
+        ),
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(10),
@@ -1690,11 +1694,11 @@ class _PhotoThumb extends StatelessWidget {
                 left: 5,
                 child: MediaSourceBadge(verified: verified),
               ),
-              // AI-generated-image flag (top-right, opposite the source badge).
-              // Compact on the small 92px thumb to avoid collision.
+              // AI likelihood, bottom-left: the top row of a 92px thumb is too
+              // narrow for it beside the source tag.
               Positioned(
-                top: 5,
-                right: 5,
+                left: 5,
+                bottom: 5,
                 child: AiDetectionBadge(
                   score: aiScore,
                   status: aiStatus,
@@ -1724,7 +1728,16 @@ class _PhotoThumb extends StatelessWidget {
 
 class _FullscreenImageDialog extends StatelessWidget {
   final String url;
-  const _FullscreenImageDialog({required this.url});
+
+  /// The photo's AI-likelihood, when it has been scored. Shown as a meter.
+  final double? aiScore;
+  final String? aiStatus;
+
+  const _FullscreenImageDialog({
+    required this.url,
+    this.aiScore,
+    this.aiStatus,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1766,6 +1779,20 @@ class _FullscreenImageDialog extends StatelessWidget {
               ),
             ),
           ),
+          // The AI score at full size, with its thresholds — the thumbnail
+          // only has room for the number.
+          if (AiDetectionBadge.shouldShow(aiScore, aiStatus))
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: 24,
+              child: SafeArea(
+                top: false,
+                child: Center(
+                  child: AiLikelihoodMeter(score: aiScore, status: aiStatus),
+                ),
+              ),
+            ),
         ],
       ),
     );

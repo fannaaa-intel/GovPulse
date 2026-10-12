@@ -279,11 +279,6 @@ class StaffScorecard {
   /// Reports this office resolved.
   final int reportsResolved;
 
-  /// Chat tickets: per-person and citizen-given. `concern_tickets` carries both
-  /// `assigned_staff_id` and `rating`, so this one IS attributable.
-  final double? chatRating;
-  final int chatRatingCount;
-
   /// Suggestion replies that an admin approved and published.
   final int repliesApproved;
 
@@ -300,8 +295,6 @@ class StaffScorecard {
     required this.photoUrl,
     required this.department,
     required this.reportsResolved,
-    required this.chatRating,
-    required this.chatRatingCount,
     required this.repliesApproved,
     required this.repliesRejected,
     required this.medianResponseHours,
@@ -320,8 +313,6 @@ class StaffScorecard {
         photoUrl: r['photo_url'] as String?,
         department: (r['department'] as String?) ?? '',
         reportsResolved: (r['reports_resolved'] as num?)?.toInt() ?? 0,
-        chatRating: (r['chat_rating'] as num?)?.toDouble(),
-        chatRatingCount: (r['chat_rating_count'] as num?)?.toInt() ?? 0,
         repliesApproved: (r['replies_approved'] as num?)?.toInt() ?? 0,
         repliesRejected: (r['replies_rejected'] as num?)?.toInt() ?? 0,
         medianResponseHours: (r['median_response_hours'] as num?)?.toDouble(),

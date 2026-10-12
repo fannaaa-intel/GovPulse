@@ -59,16 +59,9 @@ class SessionCache {
   // their own, because a failed identity fetch falls through to those
   // fallbacks.
   //
-  // ── isOnline is DELIBERATELY NOT STORED ──────────────────────────────────
-  // The on-duty switch is LIVE state, not identity, and it has a consequence:
-  // `findAvailableStaffId` routes a citizen's live-agent request to whoever is
-  // marked online. A cached 'true' would let a staff member open the app
-  // showing on-duty from a previous session while the server has them off —
-  // and a real citizen would be routed to someone who is not there.
-  //
-  // So it is never written and never restored. A staff member turns it on
-  // themselves, which is the only signal that actually means "I am here".
-  // There is a test asserting this stays true.
+  // Identity only, never live state. (Until 2026-10-12 this note guarded an
+  // on-duty flag that routed live citizen chats; the flag and the chat are
+  // both gone.)
   static const String _kStaffNameKey = 'session_cache_staff_name';
   static const String _kStaffEmailKey = 'session_cache_staff_email';
   static const String _kStaffTitleKey = 'session_cache_staff_title';
@@ -393,12 +386,6 @@ class CachedProfile {
 }
 
 /// The last known-good staff identity, minus anything live.
-///
-/// There is deliberately NO `isOnline` field. The on-duty switch decides
-/// whether a citizen's live-agent request is routed to this person, so a
-/// remembered value could send a real citizen to an empty desk. Staff turn it
-/// on themselves each session; that action is the only thing that honestly
-/// means "I am here".
 ///
 /// Do not add it. A test asserts this class has no such field.
 class CachedStaffIdentity {

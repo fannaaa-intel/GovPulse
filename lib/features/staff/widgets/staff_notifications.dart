@@ -95,7 +95,10 @@ class StaffNotif {
   /// Topics the staff console can route a tap to (staff_console_screen's
   /// _onNotifNavigate switch). Anything else dead-ends on 'general'.
   static const _routable = {
-    'report', 'report_update', 'endorsement', 'chat', 'ticket', 'message',
+    // 'chat' / 'ticket' / 'message' are gone with the live staff chat
+    // (2026-10-12): an old row of that kind still renders, but has no section
+    // to open.
+    'report', 'report_update', 'endorsement',
     'post_approved', 'post_rejected', 'community',
     // Two vocabularies for the SAME engagement events: the staff/admin
     // 'post_heart'/'comment_heart' names, and the citizen-side type values the
@@ -182,26 +185,16 @@ class StaffNotifCenter {
   final ValueNotifier<int> unread = ValueNotifier<int>(0);
   final ValueNotifier<int> revision = ValueNotifier<int>(0);
 
-  /// Bumped when a notification arrives whose topic means a staff LIST is now
-  /// out of date, so the console can refetch that list immediately instead of
-  /// waiting up to 30s for the next poll tick.
+  /// Bumped when a report or endorsement notification arrives, so the console
+  /// can refetch that list immediately instead of waiting up to 30s for the
+  /// next poll tick.
   ///
   /// This is the one realtime path staff legitimately hold: `notifications` is
   /// in the publication AND staff have a SELECT policy on rows where
-  /// `user_id = auth.uid()`. Subscribing to `concern_tickets` or `reports`
-  /// instead would connect, report success, and deliver nothing forever — staff
-  /// have no SELECT policy on either, and realtime authorises delivery through
-  /// SELECT policies.
-  ///
-  /// COVERAGE IS PARTIAL, deliberately. `trg_notify_staff_ticket_assigned`
-  /// fires only when `assigned_staff_id IS NOT NULL AND is_ghost = false`, so an
-  /// UNASSIGNED ticket — one that lands in the Waiting queue because nobody was
-  /// on duty — produces no notification and no bump. The interval poll remains
-  /// the mechanism that catches those. This is a latency improvement on top of
-  /// polling, not a replacement for it.
-  final ValueNotifier<int> ticketEvent = ValueNotifier<int>(0);
-
-  /// As [ticketEvent], for report and endorsement notifications.
+  /// `user_id = auth.uid()`. Subscribing to `reports` instead would connect,
+  /// report success, and deliver nothing forever — staff have no SELECT policy
+  /// on it, and realtime authorises delivery through SELECT policies. This is a
+  /// latency improvement on top of polling, not a replacement for it.
   final ValueNotifier<int> reportEvent = ValueNotifier<int>(0);
 
   /// Set to a notification's topic when a staff row is tapped; the console maps
@@ -250,15 +243,11 @@ class StaffNotifCenter {
           // explicitly so the routing below is never read as covering them.
           if (payload.eventType == PostgresChangeEvent.delete) return;
           // `topic` is the discriminator the console already routes on (see
-          // StaffConsoleScreen._onNotifNavigate); `type` carries the same value
-          // for ticket rows, so fall back to it if topic is absent.
+          // StaffConsoleScreen._onNotifNavigate); fall back to `type` when a
+          // row has no topic.
           final rec = payload.newRecord;
           final topic = (rec['topic'] ?? rec['type'])?.toString();
           switch (topic) {
-            case 'chat':
-            case 'ticket':
-            case 'message':
-              ticketEvent.value++;
             case 'report':
             case 'report_note':
             case 'report_decision':

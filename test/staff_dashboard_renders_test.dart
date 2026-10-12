@@ -32,7 +32,6 @@ const _identity = StaffIdentity(
   title: 'Engineer II',
   department: 'Engineering Office',
   isExternal: false,
-  isOnline: true,
   photoUrl: null,
 );
 
@@ -43,7 +42,6 @@ const _external = StaffIdentity(
   title: 'Liaison',
   department: 'DPWH',
   isExternal: true,
-  isOnline: true,
   photoUrl: null,
 );
 
@@ -53,8 +51,6 @@ const _card = StaffScorecard(
   photoUrl: null,
   department: 'Engineering Office',
   reportsResolved: 37,
-  chatRating: 4.6,
-  chatRatingCount: 52,
   repliesApproved: 18,
   repliesRejected: 3,
   medianResponseHours: 19.4,
@@ -75,11 +71,6 @@ class _Identity extends StaffIdentityNotifier {
   Future<StaffIdentity> build() async => value;
 }
 
-class _Convos extends StaffConversationsNotifier {
-  @override
-  Future<List<StaffConversation>> build() async => const [];
-}
-
 class _Reports extends StaffReportsNotifier {
   @override
   Future<List<StaffReport>> build() async => const [];
@@ -97,11 +88,6 @@ class _Endorsed extends StaffEndorsementsNotifier {
 // print a confident "0" on all six tiles and "You're all caught up" in the
 // panels while the fetches were still in flight. A Completer that is never
 // completed holds the page in that state for as long as the test wants.
-
-class _PendingConvos extends StaffConversationsNotifier {
-  @override
-  Future<List<StaffConversation>> build() => Completer<List<StaffConversation>>().future;
-}
 
 class _PendingReports extends StaffReportsNotifier {
   @override
@@ -148,7 +134,6 @@ Future<List<String>> _pumpDashboard(
     await tester.pumpWidget(ProviderScope(
       overrides: [
         staffIdentityProvider.overrideWith(() => _Identity(identity)),
-        staffConversationsProvider.overrideWith(_Convos.new),
         staffReportsProvider.overrideWith(_Reports.new),
         staffEndorsementsProvider.overrideWith(_Endorsed.new),
         staffHasFeedbackProvider.overrideWithValue(!identity.isExternal),
@@ -189,7 +174,6 @@ Future<List<String>> _pumpLoading(
     await tester.pumpWidget(ProviderScope(
       overrides: [
         staffIdentityProvider.overrideWith(() => _Identity(identity)),
-        staffConversationsProvider.overrideWith(_PendingConvos.new),
         staffReportsProvider.overrideWith(_PendingReports.new),
         staffEndorsementsProvider.overrideWith(_PendingEndorsed.new),
         staffSuggestionsProvider.overrideWith(_PendingSuggestions.new),
@@ -231,7 +215,7 @@ void main() {
       expect(errors, isEmpty, reason: errors.join('\n'));
 
       // The labels stay — a skeleton that blanks them looks like a lost card.
-      expect(find.text('Waiting'), findsOneWidget);
+      expect(find.text('Resolved'), findsOneWidget);
       expect(find.text('Open reports'), findsOneWidget);
 
       // ...but no COUNT is claimed for them yet.

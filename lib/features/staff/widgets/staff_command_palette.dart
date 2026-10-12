@@ -8,8 +8,8 @@ import '../theme/staff_ui.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  Staff command palette (⌘K / Ctrl-K, or the topbar search).
-//  Jumps to nav sections and finds department reports / conversations by
-//  keyword — selecting a hit opens the section that owns it.
+//  Jumps to nav sections and finds department reports by keyword —
+//  selecting a hit opens the section that owns it.
 // ════════════════════════════════════════════════════════════════════════════
 
 typedef StaffPaletteSection = ({IconData icon, String label});
@@ -129,26 +129,6 @@ class _PaletteState extends ConsumerState<_Palette> {
     ].take(6).toList();
   }
 
-  List<_Result> get _chatResults {
-    final q = _query.trim().toLowerCase();
-    if (q.isEmpty) return const [];
-    final idx = _indexForLabel('Conversations');
-    if (idx < 0) return const [];
-    final chats = ref.watch(staffConversationsProvider).valueOrNull ?? const [];
-    return [
-      for (final c in chats)
-        if (c.citizenLabel.toLowerCase().contains(q) ||
-            c.category.toLowerCase().contains(q) ||
-            (c.referenceCode ?? '').toLowerCase().contains(q))
-          _Result(
-            icon: Icons.forum_rounded,
-            title: c.citizenLabel,
-            subtitle: c.category,
-            navIndex: idx,
-          ),
-    ].take(6).toList();
-  }
-
   void _select(_Result r) {
     Navigator.of(context).pop();
     widget.onNavigate(r.navIndex);
@@ -163,14 +143,10 @@ class _PaletteState extends ConsumerState<_Palette> {
 
     final sections = _sectionResults;
     final reports = _reportResults;
-    final chats = _chatResults;
-    final hasAny =
-        sections.isNotEmpty || reports.isNotEmpty || chats.isNotEmpty;
+    final hasAny = sections.isNotEmpty || reports.isNotEmpty;
     final first = sections.isNotEmpty
         ? sections.first
-        : (chats.isNotEmpty
-            ? chats.first
-            : (reports.isNotEmpty ? reports.first : null));
+        : (reports.isNotEmpty ? reports.first : null);
 
     return Material(
       color: Colors.transparent,
@@ -208,7 +184,7 @@ class _PaletteState extends ConsumerState<_Palette> {
                       decoration: const InputDecoration(
                         isCollapsed: true,
                         border: InputBorder.none,
-                        hintText: 'Search sections, reports, chats…',
+                        hintText: 'Search sections and reports…',
                         hintStyle:
                             TextStyle(fontSize: 15, color: StaffUi.textMuted),
                       ),
@@ -236,11 +212,6 @@ class _PaletteState extends ConsumerState<_Palette> {
                         if (sections.isNotEmpty) ...[
                           const _GroupLabel('Go to'),
                           for (final r in sections)
-                            _Row(result: r, onTap: () => _select(r)),
-                        ],
-                        if (chats.isNotEmpty) ...[
-                          const _GroupLabel('Conversations'),
-                          for (final r in chats)
                             _Row(result: r, onTap: () => _select(r)),
                         ],
                         if (reports.isNotEmpty) ...[

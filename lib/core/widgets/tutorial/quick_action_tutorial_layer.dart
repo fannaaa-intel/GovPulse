@@ -15,10 +15,10 @@ const List<_Step> _kSteps = [
     accent: Color(0xFFEF4444),
   ),
   _Step(
-    title: 'Chat with Agent',
+    title: 'Ask Kuya Gov',
     body:
-        'Talk to an LGU support agent when you need help or have a question '
-        'that is not a report.',
+        'Get quick answers about Aparri services, requirements and offices. '
+        'For a problem that needs action, use Report Issue.',
     accent: Color(0xFF3B82F6),
   ),
   _Step(
@@ -765,7 +765,7 @@ class _Caption extends StatelessWidget {
                   Expanded(
                     child: Text(
                       step.title,
-                      // One line always. "Chat with Agent" wrapped to two on a
+                      // One line always. The old "Chat with Agent" wrapped to two on a
                       // narrow phone while the other four did not, which made
                       // that one step's caption 23pt taller than the rest.
                       maxLines: 1,

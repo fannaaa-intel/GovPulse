@@ -13,9 +13,7 @@ import '../../../core/widgets/Home/Chat-bubbles/home_chat_bubble.dart';
 import '../../../core/widgets/app_snackbar.dart';
 import '../../../core/widgets/logout_confirm_dialog.dart';
 import '../../admin/pages/admin_change_password.dart' show showAdminChangePassword;
-import '../data/staff_repository.dart';
 import '../pages/staff_community_page.dart';
-import '../pages/staff_conversations_page.dart';
 import '../pages/staff_feedback_page.dart';
 import '../pages/staff_history_page.dart';
 import '../pages/staff_overview_page.dart';
@@ -35,8 +33,11 @@ import '../../../core/widgets/app_dialog.dart';
 //  Staff console — the role_id 2 shell.
 //
 //  A helpdesk/inbox surface (teal), deliberately distinct from the blue admin
-//  console. Nav adapts to the account: internal offices get Conversations +
-//  Reports; external entities (DPWH, …) get Endorsements instead.
+//  console. Nav adapts to the account: internal offices get Reports (plus
+//  Suggestions/Feedback); external entities (DPWH, …) get Endorsements instead.
+//  There is no live-chat inbox and no on-duty toggle: both were removed in the
+//  2026-10-12 panel revision (citizens no longer chat with staff, and an
+//  official on duty cannot mark themselves unavailable to the public).
 // ════════════════════════════════════════════════════════════════════════════
 
 class _NavItem {
@@ -65,12 +66,7 @@ class _StaffConsoleScreenState extends ConsumerState<StaffConsoleScreen>
     // Tapping a notification row sets openTopic; map it to the owning section.
     StaffNotifCenter.I.openTopic.addListener(_onNotifNavigate);
     // A notification arriving means a list is already stale. Refetch it now
-    // rather than waiting up to 30s for the next poll tick — this is what makes
-    // a new citizen chat appear on the DASHBOARD (not just the inbox) within a
-    // second. See StaffNotifCenter.ticketEvent for why this is the only
-    // realtime route staff legitimately hold, and why it does not cover
-    // unassigned tickets.
-    StaffNotifCenter.I.ticketEvent.addListener(_onTicketEvent);
+    // rather than waiting up to 30s for the next poll tick.
     StaffNotifCenter.I.reportEvent.addListener(_onReportEvent);
   }
 
@@ -78,14 +74,8 @@ class _StaffConsoleScreenState extends ConsumerState<StaffConsoleScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     StaffNotifCenter.I.openTopic.removeListener(_onNotifNavigate);
-    StaffNotifCenter.I.ticketEvent.removeListener(_onTicketEvent);
     StaffNotifCenter.I.reportEvent.removeListener(_onReportEvent);
     super.dispose();
-  }
-
-  void _onTicketEvent() {
-    if (!mounted) return;
-    ref.read(staffConversationsProvider.notifier).silentRefresh();
   }
 
   void _onReportEvent() {
@@ -96,7 +86,7 @@ class _StaffConsoleScreenState extends ConsumerState<StaffConsoleScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Three 30s timers against a mobile connection are not free while the app
+    // 30s timers against a mobile connection are not free while the app
     // is backgrounded, and Android keeps firing them until the process is
     // frozen. Pause on background; on resume refresh IMMEDIATELY rather than
     // letting the user look at data up to 30s old while the next tick lands.
@@ -110,13 +100,11 @@ class _StaffConsoleScreenState extends ConsumerState<StaffConsoleScreen>
   }
 
   void _pausePolling() {
-    ref.read(staffConversationsProvider.notifier).pausePolling();
     ref.read(staffReportsProvider.notifier).pausePolling();
     ref.read(staffEndorsementsProvider.notifier).pausePolling();
   }
 
   void _resumePolling() {
-    ref.read(staffConversationsProvider.notifier).resumePolling();
     ref.read(staffReportsProvider.notifier).resumePolling();
     ref.read(staffEndorsementsProvider.notifier).resumePolling();
   }
@@ -142,7 +130,6 @@ class _StaffConsoleScreenState extends ConsumerState<StaffConsoleScreen>
     final key = switch (topic) {
       'report' => 'reports',
       'endorsement' => 'endorsements',
-      'chat' || 'ticket' || 'message' => 'conversations',
       // A returned reply draft: the author must land on the suggestion so they
       // can read the reason and revise it in place.
       'suggestion_reply_rejected' || 'suggestion' => 'suggestions',
@@ -201,8 +188,6 @@ class _StaffConsoleScreenState extends ConsumerState<StaffConsoleScreen>
   /// an admin endorses to them.
   List<_NavItem> _navFor(bool isExternal, {bool hasFeedback = false}) => [
         const _NavItem(Icons.dashboard_rounded, 'Dashboard', 'dashboard'),
-        if (!isExternal)
-          const _NavItem(Icons.forum_rounded, 'Conversations', 'conversations'),
         if (isExternal)
           const _NavItem(
               Icons.forward_to_inbox_rounded, 'Endorsements', 'endorsements')
@@ -240,9 +225,8 @@ class _StaffConsoleScreenState extends ConsumerState<StaffConsoleScreen>
   /// tap was being dropped. Mirrors the admin shell.
   int _deepLinkNonce = 0;
 
-  /// Switches to section [i] and silently refetches its data. The staff console
-  /// has no background poller (unlike admin), so refreshing on tab entry is what
-  /// makes a chat/report that landed while you were on another tab show up.
+  /// Switches to section [i] and silently refetches its data, so a report that
+  /// landed while you were on another tab shows up without waiting for a poll.
   void _select(int i, List<_NavItem> nav, {String? highlightId}) {
     if (i < 0 || i >= nav.length) return;
     setState(() {
@@ -256,11 +240,8 @@ class _StaffConsoleScreenState extends ConsumerState<StaffConsoleScreen>
   void _refreshSection(String key) {
     switch (key) {
       case 'dashboard':
-        ref.read(staffConversationsProvider.notifier).silentRefresh();
         ref.read(staffReportsProvider.notifier).silentRefresh();
         ref.read(staffEndorsementsProvider.notifier).silentRefresh();
-      case 'conversations':
-        ref.read(staffConversationsProvider.notifier).silentRefresh();
       case 'reports':
         ref.read(staffReportsProvider.notifier).silentRefresh();
       case 'endorsements':
@@ -287,10 +268,6 @@ class _StaffConsoleScreenState extends ConsumerState<StaffConsoleScreen>
     switch (key) {
       case 'dashboard':
         return StaffOverviewPage(onNavigate: (k) => _goToKey(nav, k));
-      case 'conversations':
-        // Chat/message notifications open the thread itself rather than
-        // flashing a list row — see StaffConversationsPage.openTicketId.
-        return StaffConversationsPage(openTicketId: highlightId);
       case 'reports':
         return StaffReportsPage(highlightId: highlightId);
       case 'endorsements':
@@ -343,10 +320,6 @@ class _StaffConsoleScreenState extends ConsumerState<StaffConsoleScreen>
     var signedOut = false;
 
     try {
-      // Go off duty so no chats route to a signed-out staff member.
-      try {
-        await StaffRepository.I.setOnline(false);
-      } catch (_) {}
       StaffNotifCenter.I.stop();
       await PushService.I.unregister();
       await Supabase.instance.client.auth.signOut();
@@ -354,8 +327,7 @@ class _StaffConsoleScreenState extends ConsumerState<StaffConsoleScreen>
       // Everything past this point is CLEANUP. The user is already signed out;
       // a chat cache that fails to clear is not a logout failure and must not
       // divert into the catch below — which pops a route, and by now the guard's
-      // sign-out redirect has begun moving off /staff. Mirrors how setOnline()
-      // above is already wrapped.
+      // sign-out redirect has begun moving off /staff.
       try {
         await ChatService.onUserSignedOut();
       } catch (_) {}
@@ -736,8 +708,6 @@ class _TopBar extends ConsumerWidget {
               tooltip: 'Search',
             ),
           ],
-          const _PresenceToggle(),
-          const SizedBox(width: 6),
           const StaffNotificationBell(),
           const SizedBox(width: 8),
           _AccountMenu(
@@ -783,62 +753,6 @@ class _SearchField extends StatelessWidget {
                       fontSize: 11,
                       fontWeight: FontWeight.w500,
                       color: StaffUi.textMuted)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// The on-duty toggle — the single most important staff control: only online
-/// staff receive live citizen chats (findAvailableStaffId reads is_online).
-class _PresenceToggle extends ConsumerWidget {
-  const _PresenceToggle();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final online = ref.watch(
-      staffIdentityProvider.select((s) => s.valueOrNull?.isOnline ?? false),
-    );
-    return Material(
-      color: online
-          ? StaffUi.online.withValues(alpha: 0.12)
-          : StaffUi.subtle,
-      borderRadius: BorderRadius.circular(20),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(20),
-        onTap: () async {
-          try {
-            await ref.read(staffIdentityProvider.notifier).setOnline(!online);
-          } catch (e) {
-            if (context.mounted) {
-              showAppSnackBar(context, '$e', type: AppSnackType.error);
-            }
-          }
-        },
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 9,
-                height: 9,
-                decoration: BoxDecoration(
-                  color: online ? StaffUi.online : StaffUi.offline,
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 7),
-              Text(
-                online ? 'Online' : 'Offline',
-                style: TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w700,
-                  color: online ? StaffUi.online : StaffUi.textMuted,
-                ),
-              ),
             ],
           ),
         ),

@@ -96,8 +96,6 @@ class StaffSettingsPage extends ConsumerWidget {
                   label: 'Change password',
                   onTap: () => showAdminChangePassword(context),
                 ),
-                const Divider(height: 1, color: StaffUi.border),
-                _PresenceTile(),
               ],
             ),
           ),
@@ -281,41 +279,6 @@ class _EditableAvatarState extends ConsumerState<_EditableAvatar> {
           ),
         ),
       );
-}
-
-class _PresenceTile extends ConsumerWidget {
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final online = ref.watch(
-      staffIdentityProvider.select((s) => s.valueOrNull?.isOnline ?? false),
-    );
-    return SwitchListTile(
-      value: online,
-      activeColor: StaffUi.online,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-      secondary: Icon(
-        online ? Icons.circle : Icons.circle_outlined,
-        color: online ? StaffUi.online : StaffUi.offline,
-        size: 18,
-      ),
-      title: Text(online ? 'On duty (Online)' : 'Off duty (Offline)',
-          style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: StaffUi.textPrimary)),
-      subtitle: const Text('Only online staff receive live citizen chats.',
-          style: TextStyle(fontSize: 11.5, color: StaffUi.textMuted)),
-      onChanged: (v) async {
-        try {
-          await ref.read(staffIdentityProvider.notifier).setOnline(v);
-        } catch (e) {
-          if (context.mounted) {
-            showAppSnackBar(context, '$e', type: AppSnackType.error);
-          }
-        }
-      },
-    );
-  }
 }
 
 /// An ordinary settings row. The `danger` arm went with the logout tile — the

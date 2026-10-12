@@ -2275,7 +2275,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
                 Text(
                   _report.rejectionNote?.trim().isNotEmpty == true
                       ? _report.rejectionNote!.trim()
-                      : 'This report did not meet the criteria for action. Please contact our office or chat with an agent for more details.',
+                      : 'This report did not meet the criteria for action. Please contact our office for more details.',
                   style: TextStyle(
                     fontSize: w * .028,
                     color: const Color(0xFF6B7280),
@@ -2354,7 +2354,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Need help with this report?',
+                        'Questions about this report?',
                         style: TextStyle(
                           fontSize: w * .030,
                           fontWeight: FontWeight.w600,
@@ -2362,7 +2362,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
                         ),
                       ),
                       Text(
-                        'Chat with an agent for follow-up.',
+                        'Ask Kuya Gov about its status.',
                         style: TextStyle(
                           fontSize: w * .026,
                           color: const Color(0xFF9CA3AF),
@@ -2377,8 +2377,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
                 SizedBox(width: kIsWeb ? 24 : w * .03),
                 // ── The button yields before the row breaks ──────────────────
                 // `ElevatedButton.icon` sizes to its label, and the label had no
-                // ceiling — so at Android's larger font settings "Chat with
-                // agent" grew past the space left by the copy column and the row
+                // ceiling — so at Android's larger font settings the old "Chat
+                // with agent" grew past the space left by the copy column and the row
                 // overflowed: 38px at 1.3x, 100px at 1.6x, 182px at 2.0x, in the
                 // one bar whose whole job is to be tappable.
                 //
@@ -2403,7 +2403,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
                             size: 16,
                           ),
                     label: Text(
-                      _openingChat ? 'Opening…' : 'Chat with agent',
+                      _openingChat ? 'Opening…' : 'Ask Kuya Gov',
                       // One line, ellipsised. A wrapped label would grow the
                       // bar's height instead of its width and push the content
                       // above it off-screen.
