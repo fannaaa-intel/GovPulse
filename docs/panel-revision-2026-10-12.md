@@ -1,8 +1,16 @@
-# Panel revision — system changes (2026-10-12)
+# Panel revision — system changes
+
+**Sessions merged: 2026-10-12 (build) + 2026-10-13 (release).**
+Last updated 2026-10-13.
 
 GovPulse passed its defense; the panel asked for five system revisions. This is
-the record of what was decided, what shipped, what is still open, and what the
-paper must now say. Read this before touching the manuscript or the figures.
+the single record of what was decided, what shipped, what is still open, and
+what the paper must now say. Read this before touching the manuscript or the
+figures — it is written to be the one source the paper is revised against.
+
+> **Working rule: WAIT FOR THE USER'S GO SIGNAL.** Investigate, verify and
+> propose, but do not start building any remaining item until the user says to
+> begin it. This applies to every open item below.
 
 ## The five panel items
 
@@ -11,8 +19,8 @@ paper must now say. Read this before touching the manuscript or the figures.
 | 1 | "Persona" for the verification submission | Use the Persona KYC service (withpersona.com) | **ON HOLD** by the user. Findings below. |
 | 2 | Avoid DoS | Cloudflare Turnstile + close the gaps | **NOT STARTED** — design verified, see below |
 | 3 | Citizen feedback on external agencies, recorded as agency performance | New rating table + admin "Agency performance" panel | **NOT STARTED** — design verified, see below |
-| 4 | Staff on/off duty toggle may violate public-service law | Delete it | **DONE** |
-| 5 | No direct citizen–staff conversation; FAQs only | Remove live staff chat; Kuya Gov answers questions only + FAQ chips | **DONE** |
+| 4 | Staff on/off duty toggle may violate public-service law | Delete it | **DONE — live on web** |
+| 5 | No direct citizen–staff conversation; FAQs only | Remove live staff chat; Kuya Gov answers questions only + FAQ chips | **DONE — live on web** |
 
 Extra, asked mid-session: the AI-image check showed only a red flag → now a
 percentage meter. **DONE.**
@@ -53,13 +61,19 @@ percentage meter. **DONE.**
   insert rules on `concern_tickets` / `ticket_messages` / `ticket_attachments`
   dropped; 7 chat write functions revoked from app users; all open tickets
   closed; everyone set offline. Verify: `supabase/diagnostics/verify_20261012000000.sql` — all PASS.
-- **Stage B — WRITTEN, NOT APPLIED** (`supabase/pending/drop_live_staff_chat.sql`):
-  drops the chat tables, 2 views, 19 functions, the hourly ghost-ticket cron
-  job, `admin_profiles.is_online` + `last_seen_at`; rebuilds
-  `staff_performance_view` and `admin_spam_watch()` without chat. Run only
-  after the new app build is live on web AND Play Store (see
-  `supabase/pending/README.md`). Then delete the `ticket-attachments` storage
-  bucket by hand.
+- **Stage B — WRITTEN + AUDITED, NOT APPLIED. BLOCKED.**
+  (`supabase/pending/drop_live_staff_chat.sql`) drops the chat tables, 2
+  views, 19 functions, the hourly ghost-ticket cron job,
+  `admin_profiles.is_online` + `last_seen_at`; rebuilds
+  `staff_performance_view` and `admin_spam_watch()` without chat.
+  **Blocked on the Play Store release, which is pending on the user's side and
+  has no date.** An installed older APK still selects these tables and
+  `is_online` and would error rather than degrade, so stage B must not run
+  while old builds are in use. Web being live is NOT sufficient.
+  Re-audited live 2026-10-13 and ready to apply the moment that clears — see
+  `supabase/pending/README.md` for the audit and
+  `supabase/diagnostics/verify_drop_live_staff_chat.sql` for the 9 checks.
+  Afterwards, delete the `ticket-attachments` storage bucket by hand.
 - Edge Functions deployed and verified byte-identical to the repo:
   `chat-agent` v67, `create-staff` v12 (no longer writes `is_online`).
 
@@ -93,6 +107,21 @@ percentage meter. **DONE.**
   uncommitted edits from BEFORE this session — reconcile first.
 - **Staff performance metrics** in the results chapter: chat rating is gone.
 - **AI image detection**: describe the percentage display and the three bands.
+- **Write in the present tense only about what is LIVE.** As of 2026-10-13
+  the chat removal, the FAQ assistant and the AI percentage meter are live on
+  the website. The Android build exists and is signed but is NOT yet on the
+  Play Store, and the Aparri-hosted copy has not been updated yet. The old
+  chat tables still physically exist in the database (stage B is written but
+  deliberately not applied) — but they are unreachable: every insert policy is
+  dropped and every write function revoked, so no new chat can be created.
+  If the paper needs one sentence: *the live-chat feature has been removed
+  from the system and its remaining tables are closed to all writes pending
+  final cleanup.*
+- **Do NOT claim Turnstile, Persona, or agency performance ratings** anywhere
+  in the paper as implemented. Items 2 and 3 are designed and verified but not
+  built; item 1 is on hold. Describe them as future work if they are mentioned
+  at all.
+
 - **Security / DoS section**: existing protections are real and citable —
   per-account database limits (reports 5/day, suggestions 3/day, feedback
   5/day, comments 10/min, likes 60/min, verification 3/day), login/OTP
@@ -114,48 +143,89 @@ percentage meter. **DONE.**
   Vercel's bundle differs from a local build in exactly 3 bytes:
   `flutter.channel` is `[user-branch]` because `vercel.json` clones Flutter at
   a detached tag. Same version, same app code.
-- **Aparri zip — REBUILT, awaiting upload.** `release/govpulse-web.zip`,
+- **Aparri zip — REBUILT, not yet uploaded.** `release/govpulse-web.zip`,
   23.3 MB, 233 files, 644/755 permissions. Verified the zipped
-  `main.dart.js` itself carries the new strings.
-- **Play Store — BUILT and signed, awaiting upload.**
+  `main.dart.js` itself carries the new strings. **The user is sending this to
+  the adviser first**, so the Aparri host still serves the old build until
+  they do. This is the user's step, not a pending task for Claude.
+- **Play Store — BUILT and signed, UPLOAD PENDING ON THE USER'S SIDE.**
   `build/app/outputs/bundle/release/app-release.aab`, 96.4 MB, versionName
   1.0.1 (versionCode 3), package `com.govpulse.app`. `jarsigner -verify`
   reports `jar verified`, `CN="Mark George  Reduca"` — the upload key, not
-  debug. NOTE: `apksigner` and `aapt2 dump badging` both reject `.aab`; use
+  debug. **The user stated on 2026-10-13 that the Play Store listing is still
+  pending and the upload cannot happen yet; there is no date.** Treat the
+  phone side as unreleased for planning purposes. The user will test the build
+  on their own handset directly instead.
+  NOTE: `apksigner` and `aapt2 dump badging` both reject `.aab`; use
   `jarsigner` and read the manifest out of the zip.
 - Fixed on the way: `tool/preview_staff_engagement.dart` still called the
   deleted chat API (`StaffConversation`, `chatRating`, `isOnline`), so
   `flutter analyze` was red on main. Dev-only harness, no build affected.
 
-## Open work for the next session (in order)
+## Open work (in order) — WAIT FOR THE USER'S GO SIGNAL ON EACH
 
-1. ~~Release the app~~ **web DONE**; upload the Aparri zip and the `.aab`.
-2. Stage B migration (after step 1), then delete the `ticket-attachments` bucket.
-3. **Item 3 — agency feedback.** Verified design: new table keyed to the
+Nothing below should be started until the user says to begin it. Investigate,
+verify and propose first; show the plan and wait.
+
+### Not blocked — can start as soon as the user says so
+
+1. **Item 3 — agency feedback.** Verified design: new table keyed to the
    report that snapshots the agency NAME (`report_endorsements` is
    UNIQUE(report_id) and re-endorsing overwrites the agency); citizens cannot
    read `report_endorsements`, so rating goes through a SECURITY DEFINER RPC
    that checks `owns_report()` and that the endorsement is not withdrawn,
    and records agency + state server-side. Report owner only (anonymous
-   reports included), any stage, editable, rate-limited, admin-only reads.
+   reports included — see the anonymity-is-not-disownership memory), any
+   stage, editable, rate-limited, admin-only reads.
    Admin "Agency performance" panel: endorsements, % received, % completed,
    avg days to receive/complete (from `report_endorsement_events`, which admin
    can read), avg stars, recent comments.
-4. **Item 2 — DoS.** Do NOT enable Supabase's built-in CAPTCHA: sign-up,
+   A new staff/agency write needs its own INSERT policy — see the
+   staff-rls-write-gap memory.
+
+2. **Item 2 — DoS.** Do NOT enable Supabase's built-in CAPTCHA: sign-up,
    login and forgot-password run server-side in `send-email-otp`,
    `username-login`, `reset-send-otp`, and native CAPTCHA would break all
    three. Verify the Turnstile token inside those functions (Cloudflare
    siteverify). Guests use Firebase anonymous auth — unaffected. Mobile needs
-   `webview_flutter` + a `web/turnstile.html` on Vercel. Ship the app first,
-   then switch enforcement on via a secret (old builds send no token). Also:
-   limiter on `check-ai-image`; upload count/size limits on
-   `verification-assets`, `profile-photos` (writable by unverified accounts).
-   Needs a free Cloudflare account from the user.
-5. **Item 1 — Persona**, only if the user lifts the hold: Startup Program is
-   500 free/month for one year then $1 each, by application; `persona_flutter`
-   is unofficial and Android/iOS only (web needs the hosted flow); keep the
-   in-house flow as fallback; ID photos go to a US processor → RA 10173 consent.
-6. Paper + figures per the checklist above.
+   `webview_flutter` + a `web/turnstile.html` on Vercel. Enforcement goes
+   behind a secret that is flipped only after a build ships (old builds send
+   no token and would be locked out of login). Also: limiter on
+   `check-ai-image`; upload count/size limits on `verification-assets`,
+   `profile-photos` (writable by unverified accounts).
+   **Needs a free Cloudflare account from the user before starting.**
+
+3. **Paper + figures** per the alignment checklist above. `docs/figures/` has
+   PRE-EXISTING uncommitted edits from before 2026-10-12 — reconcile those
+   FIRST, before regenerating anything. Workflow is in the
+   manuscript-figures-workflow memory (one artifact URL for all six figures,
+   the `url` param that stops it forking, drawio-last ordering).
+
+### Blocked — do not start
+
+4. **Stage B migration** (`supabase/pending/drop_live_staff_chat.sql`), then
+   delete the `ticket-attachments` bucket by hand.
+   **BLOCKED on the Play Store release being live to users**, which is pending
+   on the user's side with no date. Written, audited live 2026-10-13, and
+   ready; the verification script exists. Do not run it early — old installed
+   builds still read these objects.
+
+5. **Item 1 — Persona.** ON HOLD by the user. Only if the hold is lifted:
+   Startup Program is 500 free/month for one year then $1 each, by
+   application; `persona_flutter` is unofficial and Android/iOS only (web
+   needs the hosted flow); keep the in-house flow as fallback; ID photos go to
+   a US processor → RA 10173 consent.
+
+### The user's own steps (not Claude's tasks)
+
+- Send `release/govpulse-web.zip` to the adviser, then upload to the Aparri
+  Apache host.
+- Test the new build on their handset and on `gov-pulse-rose.vercel.app`.
+- Resolve the pending Play Store listing. When the rollout is LIVE TO USERS,
+  that unblocks stage B.
+- Confirm the upload keystore actually synced off this machine
+  (`C:\Users\DELL\keys\govpulse-upload.jks`; OneDrive was not running when the
+  backup was made). Losing it means this listing can never be updated.
 
 ## Environment notes for whoever continues
 - Auto-mode blocks writing migrations that drop things and blocks
