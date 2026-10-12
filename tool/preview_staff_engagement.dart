@@ -210,8 +210,6 @@ final _card = StaffScorecard(
   photoUrl: null,
   department: 'Engineering Office',
   reportsResolved: 37,
-  chatRating: 4.6,
-  chatRatingCount: 52,
   repliesApproved: 18,
   repliesRejected: 3,
   medianResponseHours: 19.4,
@@ -235,7 +233,7 @@ List<RatingPoint> _trend() {
 
 // ── Provider stand-ins ──────────────────────────────────────────────────────
 
-// The dashboard reads identity + three list providers; all four are stubbed so
+// The dashboard reads identity + two list providers; all three are stubbed so
 // the tabbed / full layouts can be compared without a session.
 class _FakeIdentity extends StaffIdentityNotifier {
   @override
@@ -246,14 +244,8 @@ class _FakeIdentity extends StaffIdentityNotifier {
         title: 'Engineer II',
         department: 'Engineering Office',
         isExternal: false,
-        isOnline: true,
         photoUrl: null,
       );
-}
-
-class _FakeConversations extends StaffConversationsNotifier {
-  @override
-  Future<List<StaffConversation>> build() async => const [];
 }
 
 class _FakeReports extends StaffReportsNotifier {
@@ -323,7 +315,6 @@ void main() {
     ProviderScope(
       overrides: [
         staffIdentityProvider.overrideWith(_FakeIdentity.new),
-        staffConversationsProvider.overrideWith(_FakeConversations.new),
         staffReportsProvider.overrideWith(_FakeReports.new),
         staffEndorsementsProvider.overrideWith(_FakeEndorsements.new),
         adminStaffRepliesProvider.overrideWith(_FakeReplies.new),
@@ -466,8 +457,6 @@ class _PerformanceTabState extends State<_PerformanceTab> {
         photoUrl: null,
         department: 'Sanitation Office',
         reportsResolved: 51,
-        chatRating: 4.2,
-        chatRatingCount: 30,
         repliesApproved: 12,
         repliesRejected: 6,
         medianResponseHours: 40,
@@ -478,8 +467,6 @@ class _PerformanceTabState extends State<_PerformanceTab> {
         photoUrl: null,
         department: "Mayor's Office",
         reportsResolved: 9,
-        chatRating: 3.4,
-        chatRatingCount: 11,
         repliesApproved: 22,
         repliesRejected: 1,
         medianResponseHours: 6.2,
