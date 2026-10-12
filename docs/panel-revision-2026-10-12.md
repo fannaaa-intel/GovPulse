@@ -99,10 +99,37 @@ percentage meter. **DONE.**
   brute-force limits, AI-chat per-user limit, all citizen writes require an
   admin-verified account. Turnstile is planned (item 2), not yet built.
 
+## Release (2026-10-13)
+
+`4949c5d` on main. `flutter analyze` clean, 2256 tests pass.
+
+- **Web — LIVE and verified.** `gov-pulse-rose.vercel.app` serves the new
+  bundle: "Ask Kuya Gov" renders in the features ring, "Talk to a person" and
+  "Chat with Agent" are absent from `main.dart.js`, Sentry DSN present.
+  The FIRST production deploy after the push **failed with no logs**
+  (`readyState: ERROR`, `buildingAt: NEVER STARTED` — rejected before a build
+  container was allocated). `vercel redeploy` of the same commit succeeded in
+  3m. If a push ever appears to deploy nothing, check for this silent state;
+  it is transient and a redeploy clears it.
+  Vercel's bundle differs from a local build in exactly 3 bytes:
+  `flutter.channel` is `[user-branch]` because `vercel.json` clones Flutter at
+  a detached tag. Same version, same app code.
+- **Aparri zip — REBUILT, awaiting upload.** `release/govpulse-web.zip`,
+  23.3 MB, 233 files, 644/755 permissions. Verified the zipped
+  `main.dart.js` itself carries the new strings.
+- **Play Store — BUILT and signed, awaiting upload.**
+  `build/app/outputs/bundle/release/app-release.aab`, 96.4 MB, versionName
+  1.0.1 (versionCode 3), package `com.govpulse.app`. `jarsigner -verify`
+  reports `jar verified`, `CN="Mark George  Reduca"` — the upload key, not
+  debug. NOTE: `apksigner` and `aapt2 dump badging` both reject `.aab`; use
+  `jarsigner` and read the manifest out of the zip.
+- Fixed on the way: `tool/preview_staff_engagement.dart` still called the
+  deleted chat API (`StaffConversation`, `chatRating`, `isOnline`), so
+  `flutter analyze` was red on main. Dev-only harness, no build affected.
+
 ## Open work for the next session (in order)
 
-1. Release the app (Vercel push, Aparri zip via `tool/make_release_zip.py`,
-   Play Store) — the web and phone still run the old chat UI until then.
+1. ~~Release the app~~ **web DONE**; upload the Aparri zip and the `.aab`.
 2. Stage B migration (after step 1), then delete the `ticket-attachments` bucket.
 3. **Item 3 — agency feedback.** Verified design: new table keyed to the
    report that snapshots the agency NAME (`report_endorsements` is
