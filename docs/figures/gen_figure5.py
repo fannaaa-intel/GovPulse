@@ -26,9 +26,12 @@ ENTITIES = {
 # path, label, (label cx, label y, anchor)
 FLOWS = [
     # ---- System -> Citizen -------------------------------------------------
-    ("M645,390 H420 V285 H204", "Authentication Status & OTP Code", (532, 384, "middle")),
-    ("M598,430 H370 V300 H204", "Submission Status & Reference Code", (484, 424, "middle")),
-    ("M571,470 H320 V315 H204", "Notifications, Feed & Assistant Reply", (445, 464, "middle")),
+    ("M645,390 H420 V282 H204", "Authentication Status & OTP Code", (532, 384, "middle")),
+    ("M598,430 H370 V296 H204", "Submission Status & Reference Code", (484, 424, "middle")),
+    ("M571,470 H320 V310 H204", "Notifications, Feed & Assistant Reply", (445, 464, "middle")),
+    # The running account under the four status milestones, with its
+    # photographs. Lands on 6.0 at level 1 (Figure 6, via D11).
+    ("M556,505 H270 V324 H204", "Progress Updates & Completion Photos", (300, 344, "start")),
     # ---- Citizen -> System -------------------------------------------------
     ("M160,330 V510 H552", "Login Credentials & Registration Data", (358, 504, "middle")),
     ("M120,330 V550 H546", "Identity Verification Data", (335, 544, "middle")),
@@ -40,15 +43,24 @@ FLOWS = [
     ("M40,330 V630 H558", "Comments, Likes & Support Messages", (300, 624, "middle")),
     # ---- System -> External Agency ----------------------------------------
     ("M571,650 H110 V816", "Endorsement Letter (PDF + QR)", (340, 644, "middle")),
-    ("M598,690 H150 V816", "Endorsed Report Details", (374, 684, "middle")),
+    ("M598,690 H150 V816", "Endorsed Report Details & Citizen Media", (374, 684, "middle")),
     # ---- External Agency -> System ----------------------------------------
-    ("M200,850 H400 V730 H641", "Scan Token, PIN & Acknowledgement", (522, 724, "middle")),
+    # Since 20260831000000 the agency also sends work: field updates, photos and
+    # the account of the work it must give when marking a report completed.
+    ("M200,850 H400 V730 H641", "Scan Token, PIN, Field Updates & Work Photos", (522, 724, "middle")),
     # ---- System -> Municipal Staff -----------------------------------------
     ("M855,390 H1080 V285 H1296", "Assigned Reports (Identity Withheld)", (967, 384, "middle")),
     ("M902,430 H1130 V300 H1296", "Citizen Messages & Notifications", (1016, 424, "middle")),
     # ---- Municipal Staff -> System -----------------------------------------
     ("M1400,330 V470 H933", "Login Credentials", (1166, 464, "middle")),
-    ("M1440,330 V510 H948", "Status Updates, Notes & Replies", (1194, 504, "middle")),
+    ("M1440,330 V510 H948", "Status, Progress Updates & Completion Report", (1194, 504, "middle")),
+    # 20260922000000. Suggestions and Feedback now route to the owning office,
+    # so the staff boundary carries two flows it did not before. Identity is
+    # masked on the way out exactly as it is for an anonymous report, and the
+    # reply coming back is a DRAFT -- it reaches no citizen until an admin
+    # approves it, which is a level-1 concern (Figure 6, D12).
+    ("M1480,330 V550 H962", "Routed Suggestions & Feedback (Identity Withheld)", (1221, 544, "middle")),
+    ("M1300,330 V360 H872", "Suggestion & Feedback Reply Drafts", (1086, 354, "middle")),
     # ---- System -> Administrator -------------------------------------------
     ("M948,590 H1440 V816", "Dashboard Analytics & Predictive Outlook", (1194, 584, "middle")),
     ("M937,630 H1390 V816", "Sentiment, Urgency & Theme Results", (1163, 624, "middle")),
@@ -60,8 +72,8 @@ FLOWS = [
     ("M710,364 V166", "Authorization Request", (700, 270, "end")),
     ("M790,160 V356", "OAuth Token & Profile Name", (800, 270, "start")),
     # ---- AI services -------------------------------------------------------
-    ("M700,754 V980 H440 V1044", "Report, Feedback & Content Text; Media URLs", (570, 974, "middle")),
-    ("M520,1048 V1010 H730 V763", "Urgency, Sentiment, Flags & Image Scores", (625, 1004, "middle")),
+    ("M700,754 V980 H440 V1044", "Report, Suggestion, Feedback & Content Text; Media URLs", (570, 974, "middle")),
+    ("M520,1048 V1010 H730 V763", "Urgency, Category, Sentiment, Flags & Image Scores", (625, 1004, "middle")),
     # ---- Push delivery -----------------------------------------------------
     ("M800,754 V990 H1020 V1044", "Push Payload & Device Token", (910, 984, "middle")),
 ]

@@ -5,12 +5,36 @@
 #     client against the project URL with a publishable key; the Flutter client
 #     speaks to PostgREST/Realtime/Storage directly and row-level security is
 #     the authorisation layer.
-#   - 16 edge functions exist (supabase/functions/). Twelve are invoked by the
-#     client; classify-report, classify-feedback, moderate-content,
-#     send-push and check-ai-image are fired by database triggers -- never by a
-#     request the client waits on. That asymmetry is drawn, because it is what
+#   - 20 edge functions exist (supabase/functions/). Fifteen are invoked by
+#     the client; classify-report, classify-suggestion, classify-feedback,
+#     moderate-content and send-push are fired by database triggers -- never by
+#     a request the client waits on. That asymmetry is drawn, because it is what
 #     keeps a slow model from blocking a citizen's submission.
+#   - check-ai-image is CLIENT-invoked, fire-and-forget: the three submission
+#     screens call it with .ignore() after the row is written, so a failure
+#     never disturbs the submission. supabase/legacy/ai_image_detection.sql
+#     only adds the columns and an update RPC -- it installs no trigger.
 #   - Six platform targets are built; the three that ship are Android, iOS, Web.
+#   - Counts re-verified against the LIVE database on 2026-09-22 (pg_class for
+#     relations; `supabase storage ls ss:///` for buckets, since the CLI login
+#     role cannot read the `storage` schema): **46 tables + 9 views** in
+#     `public`, and **10 storage buckets**, whose names are the ten drawn below.
+#     20260922000000 is what moved the first two: +1 table (suggestion_replies)
+#     and +2 views (staff_suggestions_view, staff_feedbacks_view) over the
+#     45 + 7 counted on 2026-09-11.
+#     The "client uses 31 + 5" qualifier was REMOVED rather than updated. It
+#     came from grepping the Dart source for table names, which is not a
+#     measurement anyone can reproduce from the database -- unlike the two
+#     counts beside it, which are one query. A figure should not mix a verified
+#     number with an unverifiable one in the same line.
+#   - The Public Landing Page (b35438b) is drawn dashed and with no gateway
+#     arrow because it genuinely has none: it is static content at '/' that
+#     reads no table and holds no session. It is an entry point, not a client.
+#   - classify-report now answers TWO questions in the one call it already
+#     made: urgency, and which office should own the report. The department is
+#     ADVISORY -- it pre-selects in the admin's Accept dialog and the admin's
+#     choice is what is written. RLS still routes on report_department(category),
+#     so a bad classification cannot move a report out of a staffer's inbox.
 import io
 
 W, H = 1680, 1220
@@ -85,9 +109,16 @@ box(400, 110, 250, 92, ["Municipal Staff Console", "Flutter Web — role_id 2",
 box(730, 110, 250, 92, ["Administrator Console", "Flutter Web — role_id 1",
                         "analytics, adjudication"], fs=10)
 box(1060, 110, 250, 92, ["Public Scan Page", "/scan/&lt;token&gt; — no session",
-                         "QR token + 4-digit PIN"], fs=10)
+                         "QR + PIN · updates, photos"], fs=10)
 box(1390, 110, 250, 92, ["Guest Browsing", "no account",
                          "read-only feed and events"], fs=10)
+# The public front door (b35438b). Dashed because it is the odd one out in this
+# tier: static marketing content that reads no table and holds no session, so
+# unlike every box beside it nothing runs from here to the gateway. It is an
+# ENTRY POINT — to sign-up, to log in, and to guest browsing.
+box(70, 20, 1570, 30,
+    ["Public Landing Page   ·   /   ·   no session, no data reads   ·   "
+     "the way in to sign-up, log in and guest browsing"], fs=10, dash="4 3")
 
 # ── API tier ──────────────────────────────────────────────────────────────
 box(300, 360, 1080, 100,
@@ -112,13 +143,15 @@ chip(45, 300, "Realtime", italic=True, wid=62)
 # ── data tier ─────────────────────────────────────────────────────────────
 box(300, 600, 640, 150,
     ["PostgreSQL  (Supabase)",
-     "28 tables  ·  5 views: staff_reports_view, community_feed, …",
+     "46 tables  ·  9 views",
      "ROW-LEVEL SECURITY — the authorisation layer",
      "SECURITY DEFINER RPCs · triggers · pg_cron · Vault"], sw="1.4", fs=11)
 
 box(1010, 600, 370, 150,
-    ["Storage Buckets", "12 buckets — report-media,",
-     "verification, ticket-attachments,", "community-posts, profile-photos"], fs=10)
+    ["Storage Buckets", "10 buckets — report-media, profile-photos,",
+     "community-posts, suggestion-media, event-media,",
+     "resolution-media, verification-assets,",
+     "ticket-attachments, feedback-assets, admin-avatars"], fs=9)
 
 arrow("M620,460 V600", both=True)
 chip(620, 535, "SQL over PostgREST · RLS enforced", wid=232)
@@ -127,23 +160,26 @@ chip(1180, 535, "signed upload / download", wid=150)
 
 # ── serverless compute tier ───────────────────────────────────────────────
 box(70, 870, 470, 190,
-    ["Edge Functions — client-invoked  (11)",
+    ["Edge Functions — client-invoked  (15)",
      "", "username-login · send-email-otp · verify-email-otp",
      "reset-send-otp · reset-verify-otp · check-email-exists",
      "check-username-exists · create-staff · chat-agent",
-     "recommend-actions · sync-verification-avatar"], fs=10)
+     "recommend-actions · sync-verification-avatar · verify-id",
+     "scan-endorsement-media · post-endorsement-media",
+     "check-ai-image  (fire-and-forget)"], fs=10)
 
 box(600, 870, 470, 190,
     ["Edge Functions — trigger-fired  (5)",
-     "", "classify-report        (reports INSERT)",
+     "", "classify-report        (reports INSERT — urgency",
+     "                                 + advisory department routing)",
+     "classify-suggestion   (INSERT + cron catch-up)",
      "classify-feedback      (INSERT + cron catch-up)",
      "moderate-content       (posts / comments INSERT)",
-     "send-push              (notifications INSERT)",
-     "check-ai-image         (ai_image_detection.sql)"], fs=10)
+     "send-push              (notifications INSERT)"], fs=10)
 
 box(1130, 870, 250, 190,
     ["Deno Runtime", "", "supabase/functions/",
-     "16 functions total", "", "service-role key held", "server-side only"], fs=10)
+     "20 functions total", "", "service-role key held", "server-side only"], fs=10)
 
 # client -> client-invoked functions
 arrow("M300,440 H210 V870")
@@ -160,7 +196,7 @@ chip(900, 815, "write results back", wid=112)
 # ── external services ─────────────────────────────────────────────────────
 box(70, 1105, 340, 84,
     ["Groq  —  api.groq.com", "gpt-oss-20b  ·  gpt-oss-120b",
-     "urgency, sentiment, outlook, assistant"], fs=10)
+     "urgency, routing, sentiment, outlook, assistant"], fs=9)
 box(470, 1105, 300, 84,
     ["Sightengine", "api.sightengine.com",
      "genai — AI-image likelihood"], fs=10)
@@ -171,9 +207,10 @@ box(1190, 1105, 300, 84,
     ["Facebook OAuth", "social sign-in",
      "token → GoTrue exchange"], fs=10)
 
-arrow("M240,1060 V1105")
-arrow("M620,1060 V1105")
-arrow("M980,1060 V1105")
+arrow("M240,1060 V1105")          # Groq  <- client box (chat-agent, recommend-actions)
+arrow("M760,1060 V1085 H300 V1105")  # Groq  <- trigger box (classify-report/-feedback)
+arrow("M440,1060 V1075 H620 V1105")  # Sightengine <- check-ai-image (CLIENT-invoked)
+arrow("M980,1060 V1105")          # FCM   <- send-push (trigger-fired)
 arrow("M1380,430 H1620 V1147 H1490")
 chip(1620, 700, "OAuth", wid=52)
 

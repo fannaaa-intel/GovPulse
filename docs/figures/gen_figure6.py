@@ -6,11 +6,23 @@
 # boundary flow in Figure 5 reappears here on exactly one child process.
 #
 # Traced from:
-#   supabase/functions/*        - 18 edge functions. chat-agent, classify-report,
-#                                 classify-feedback, moderate-content and
+#   supabase/functions/*        - 20 edge functions. chat-agent, classify-report,
+#                                 classify-suggestion, classify-feedback,
+#                                 moderate-content and
 #                                 recommend-actions call api.groq.com;
 #                                 check-ai-image calls api.sightengine.com;
 #                                 send-push calls fcm.googleapis.com.
+#
+# Revised 2026-09-14. No process, store or entity changed; two FLOW NAMES did.
+# 20260914000000 lets classify-report answer "which office should own this?" in
+# the call it already made for urgency, so what 4.0 returns -- and what it
+# writes back into D3 -- now carries a department recommendation as well. It is
+# ADVISORY: it pre-selects in the admin's Accept dialog and the admin's choice
+# is what is written, and RLS still routes on report_department(category).
+#
+# The public landing page (b35438b) is deliberately NOT drawn. It is static
+# content at '/' that reads no table and holds no session, so nothing crosses
+# the system boundary -- the same reason emergency hotline dialling is absent.
 #   lib/features/home/*         - citizen surfaces (Quick-action Report /
 #                                 Suggestion / Feedback / Events / Chat-with-Agent,
 #                                 newsfeed, my_report, settings/contact-support)
@@ -46,7 +58,12 @@ P = {
     5: (880, 1210, ["5.0", "ANALYTICS &", "INSIGHT REPORTING"]),
     6: (880, 1420, ["6.0", "REPORT LIFECYCLE", "& ASSIGNMENT"]),
     7: (880, 1620, ["7.0", "ENDORSEMENT", "MANAGEMENT"]),
-    8: (880, 1830, ["8.0", "COMMUNITY ENGAGEMENT", "& SUPPORT MESSAGING"]),
+    # Renamed 2026-09-22 (20260922000000). 8.0 already owned every
+    # citizen<->office conversation that is not a report; the staff Suggestion
+    # and Feedback inboxes are the same shape of work, so they are absorbed
+    # here rather than opening a tenth process. Renumbering would have
+    # invalidated every flow number in Figures 5 and 6 to no benefit.
+    8: (880, 1830, ["8.0", "COMMUNITY ENGAGEMENT,", "SUPPORT & CITIZEN REPLIES"]),
     9: (880, 2060, ["9.0", "NOTIFICATION", "& PUSH DELIVERY"]),
 }
 
@@ -61,9 +78,21 @@ S = {
     "d2":  (1300,  690, ["D2", "VERIFICATION STORE"]),
     "d4":  (1300,  890, ["D4", "SUGGESTION & FEEDBACK"]),
     "d5":  (1300, 1075, ["D5", "AI INSIGHT STORE"]),
+    # D11 was added 2026-09-03. The progress-update loop (migrations
+    # 20260829000001 / 20260831000000 / 20260901000001) is a store of its own:
+    # every office, admin and agency update lands here as pending_approval and
+    # only an admin decision moves it to approved, which is what the citizen
+    # reads. It sits beside 6.0 because that is the process that writes it.
+    "d11": (1300, 1310, ["D11", "PROGRESS UPDATE STORE"]),
     "d6":  (1300, 1520, ["D6", "ENDORSEMENT STORE"]),
     "d7":  (1300, 1720, ["D7", "COMMUNITY STORE"]),
     "d8":  (1300, 1940, ["D8", "SUPPORT TICKET STORE"]),
+    # D12 added 2026-09-22 (20260922000000). Its own store for the same reason
+    # D11 is: public.suggestion_replies is a real table with its own lifecycle
+    # (pending_approval | approved | rejected) and its own partial unique index
+    # (one live reply per suggestion). Folding it into D4 would have hidden an
+    # approval gate inside a store labelled as the submissions themselves.
+    "d12": (1300, 2100, ["D12", "STAFF REPLY DRAFTS"]),
 }
 
 # ----------------------------------------------------------------- entities --
@@ -122,6 +151,10 @@ FLOWS = [
      "AI Assistant Reply", (300, 1038, "start")),
     ([pl(9, 0), (50, 2060), (50, 150), el("citizen", 0)],
      "Notifications & Alerts", (64, 2076, "start")),
+    # The citizen reads the approved half of D11 back through 6.0 -- the
+    # running account under the four status milestones, with its photographs.
+    ([pl(6, -50), (74, 1370), (74, 178)],
+     "Progress Updates & Completion Photos", (88, 1362, "start")),
 
     # ================= FACEBOOK ============================================
     ([pr(1, -22), (1950, 378), (1950, 182)],
@@ -133,13 +166,25 @@ FLOWS = [
     ([(780, 178), (780, 300), (880, 300), pt(1, 0)],
      "Login Credentials", (892, 292, "start")),
     ([(740, 178), (740, 300), (568, 300), (568, 1420), pl(6, 0)],
-     "Status Updates & Resolution Notes", (578, 1300, "start")),
+     "Status, Progress Updates & Completion Report", (578, 1300, "start")),
     ([(710, 178), (710, 330), (540, 330), (540, 1848), pl(8, 18)],
      "Replies to Citizen Messages", (550, 1700, "start")),
     ([pl(6, 22), (596, 1442), (596, 246), (742, 246), (742, 178)],
      "Assigned Reports (Identity Withheld)", (606, 1345, "start")),
     ([pl(8, -22), (624, 1808), (624, 222), (818, 222), (818, 178)],
      "Citizen Messages & Notifications", (634, 1130, "start")),
+    # 20260922000000. The two routed inboxes, and the drafts the office writes
+    # into them. Identity-masked exactly as assigned reports are: staff read
+    # through staff_suggestions_view / staff_feedbacks_view, never the tables.
+    ([(676, 178), (676, 360), (508, 360), (508, 1878), pl(8, 48)],
+     "Suggestion & Feedback Replies", (518, 1760, "start")),
+    # The label MUST sit beside 8.0, not up the riser. Parked at y=1330 to
+    # dodge an ellipse it read as one of 6.0's inbound flows -- it landed right
+    # under "Assigned Reports (Identity Withheld)", so the diagram appeared to
+    # say Report Lifecycle serves the suggestion inboxes. Dodging a collision
+    # is not worth attaching a flow to the wrong process.
+    ([pl(8, -52), (652, 1778), (652, 198), (794, 198), (794, 178)],
+     "Routed Suggestions & Feedback (Identity Withheld)", (662, 1762, "start")),
 
     # ================= ADMINISTRATOR =======================================
     ([(1230, 178), (1230, 300), (950, 300), pt(1, 70)],
@@ -157,21 +202,31 @@ FLOWS = [
     ([pr(5, 34), (1535, 1244), (1535, 268), (1290, 268), (1290, 178)],
      "Sentiment, Urgency & Theme Results", (1060, 1258, "start")),
     ([(1140, 178), (1140, 370), (1570, 370), (1570, 1400), pr(6, -20)],
-     "Lifecycle & Assignment Decisions", (1060, 1392, "start")),
+     "Lifecycle, Assignment & Update Approvals", (1060, 1392, "start")),
+    # The admin half of the reply loop: approve & publish, or send back with a
+    # reason. Nothing an office writes reaches the citizen without this pass.
+    # This label has been moved twice. It sits on a crowded entry side of 8.0:
+    # "Feed Content" (y=1872) and "Store Post & Comment" (y=1792) are both
+    # within a line-height of the obvious placements. Parked on its own riser
+    # well right of both, where the vertical run is clear.
+    ([(1110, 178), (1110, 400), (1605, 400), (1605, 1806), pr(8, -24)],
+     "Staff Reply Approvals & Return Reasons", (1616, 1700, "start")),
 
     # ================= EXTERNAL AGENCY =====================================
     ([pr(7, -20), (1625, 1600), (1625, 178)],
      "Endorsement Letter (PDF + QR)", (1060, 1584, "start")),
     ([pr(7, 8), (1700, 1628), (1700, 178)],
-     "Endorsed Report Details", (1060, 1612, "start")),
+     "Endorsed Report Details & Citizen Media", (1060, 1612, "start")),
+    # Since 20260831000000 the agency sends work, not just an acknowledgement:
+    # field updates and work photographs, via post-endorsement-media.
     ([(1775, 178), (1775, 1668), pr(7, 48)],
-     "Scan Token, PIN & Acknowledgement", (1060, 1678, "start")),
+     "Scan Token, PIN, Field Updates & Work Photos", (1060, 1678, "start")),
 
     # ================= AI SERVICES =========================================
     ([pr(4, 8), (1850, 1008), (1850, 1085), el("ai", -20)],
      "Report, Feedback & Content Text; Media URLs", (1060, 1000, "start")),
     ([el("ai", 4), (1820, 1109), (1820, 1042), pr(4, 42)],
-     "Urgency, Sentiment, Flags & Image Scores", (1430, 1034, "start")),
+     "Urgency, Department, Sentiment, Flags & Image Scores", (1430, 1034, "start")),
     ([pr(5, -50), (1790, 1160), (1790, 1125), el("ai", 20)],
      "Aggregated Submission Text", (1440, 1152, "start")),
     ([(1960, 1137), (1960, 1230), pr(5, 20)],
@@ -196,10 +251,19 @@ FLOWS = [
      "Store Suggestion & Feedback", (960, 852, "start")),
     ([sr("d3", 10), (760, 900), pt(4, -120)],
      "Report Text", (560, 892, "start")),
+    # 20260914000000: the same call that labels urgency now also returns the
+    # office the report should be routed to. ADVISORY -- it pre-selects in the
+    # admin's Accept dialog (6.0) and the admin's choice is what is written.
     ([pl(4, -34), (500, 966), sbt("d3", 80)],
-     "Urgency Score & Reason", (512, 962, "start")),
+     "Urgency & Department Recommendation", (512, 962, "start")),
     ([sl("d4", 10), (1000, 900), pt(4, 120)],
      "Feedback & Suggestion Text", (1010, 892, "start")),
+    # 20260917000000 + classify-suggestion: the classifier re-reads `details`
+    # and writes ai_category / ai_theme back onto the suggestion row, exactly
+    # as classify-report writes urgency back onto D3. ADVISORY -- the citizen's
+    # chosen category stays authoritative and no citizen surface reads these.
+    ([pr(4, -30), (1080, P[4][1] - 30), (1080, 930), sbt("d4", -60)],
+     "Suggestion Category & Theme", (1092, 922, "end")),
     ([pr(4, -8), (1240, 992), stp("d5", -60)],
      "Store Analysis Results", (1058, 984, "start")),
     ([pl(4, 34), (500, 1034), stp("d10", 80)],
@@ -214,6 +278,18 @@ FLOWS = [
      "Assignment, Status & Notes", (362, 1382, "start")),
     ([stp("d3b", 20), (440, 1452), pl(6, 32)],
      "Report Details", (452, 1470, "start")),
+    # ---- the progress-update loop (D11) ----------------------------------
+    # 6.0 writes every office update as pending_approval; the admin decision
+    # comes back down the same store, and only approved rows are read out to
+    # the citizen. 7.0 writes the agency's field updates into the same store.
+    ([pr(6, -34), (1340, P[6][1] - 34), sbt("d11", 40)],
+     "Post Update (Pending Approval)", (1060, 1300, "end")),
+    ([sbt("d11", -60), (1240, P[6][1] - 8), pr(6, -8)],
+     "Approved Updates", (1120, 1428, "start")),
+    # 7.0 writes the agency's field updates into the same store: no account,
+    # but the same pending_approval gate (post_endorsement_update).
+    ([pr(7, -60), (1445, 1560), (1445, 1310), sr("d11", 0)],
+     "Agency Field Update & Work Photo", (1457, 1440, "start")),
     ([pr(7, -48), (1240, 1572), sbt("d6", -60)],
      "Store Token & PIN Hash", (980, 1564, "start")),
     ([sbt("d6", 40), (1340, 1648), pr(7, 28)],
@@ -228,6 +304,34 @@ FLOWS = [
      "Store Ticket & Message", (980, 1896, "start")),
     ([sl("d8", 20), (1120, 1960), (1120, 1846), pr(8, 16)],
      "Ticket Thread", (1000, 1976, "start")),
+    # ---- the staff reply loop (D12) --------------------------------------
+    # Same shape as the community-post and progress-update loops: 8.0 writes
+    # the office's reply as pending_approval, the admin's decision comes back
+    # down the same store, and only an approved row is published onto the
+    # suggestion in D4 and raises the citizen's notification through 9.0.
+    # Routed out to the right of 8.0 and down the 1105 riser, NOT straight
+    # down from 8.0: a vertical drop at x=920 runs clean through process 9.0,
+    # which the horizontal/vertical guard cannot see and only rendering shows.
+    # The label sits BELOW its own horizontal run, in the gap above D12: the
+    # corridor between 9.0 and D12 already carries "Endorsement Progress Event"
+    # and "Push Payload & Device Token", and every placement level with the
+    # line itself overprinted one of them.
+    ([pr(8, 66), (1105, 1896), (1105, 2080), sl("d12", -20)],
+     "Draft Reply (Pending Approval)", (1115, 2098, "start")),
+    ([sl("d12", 20), (1160, 2120), (1160, 1906), pr(8, 76)],
+     "Draft State & Return Reason", (1170, 2160, "start")),
+    # The published half. This was drawn D12 -> D4, which is invalid: a DFD
+    # never connects one store straight to another, because a store is passive
+    # -- it cannot move its own data. It was factually wrong too. The write is
+    # performed by publish_approved_suggestion_reply(), so 8.0 is the actor:
+    # it reads the approved draft out of D12 and writes the reply onto D4.
+    ([pr(8, 30), (1660, 1860), (1660, 910), sr("d4", 20)],
+     "Published Reply", (1672, 1380, "start")),
+    # 8.0 must also READ the suggestion it is replying to -- staff_suggestions_
+    # view / staff_feedbacks_view. Without this the diagram showed an office
+    # answering a suggestion it had no way to see.
+    ([sbt("d4", 60), (1360, 1790), pr(8, -40)],
+     "Routed Suggestion & Feedback Detail", (1372, 1640, "start")),
     ([pl(9, -30), (350, 2030), sbt("d9", -70)],
      "Store Notification", (362, 2046, "start")),
     ([sbt("d9", 20), (440, 2078), pl(9, 18)],

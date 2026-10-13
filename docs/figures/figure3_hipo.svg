@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1276 1296" width="1276" height="1296"
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1276 1629" width="1276" height="1629"
            aria-label="Hierarchical input-process-output diagram: User Login branching into Citizen, Municipal Staff, Administrator, Guest and Log Out, each decomposed into its functions and sub-functions.">
-        <rect x="0" y="0" width="1276" height="1296" fill="#ffffff"/>
+        <rect x="0" y="0" width="1276" height="1629" fill="#ffffff"/>
         <g fill="none" stroke="#111" stroke-width="1">
           <rect x="508" y="16" width="200" height="30" fill="#fff"/>
           <path d="M608,46 V72"/>
@@ -10,108 +10,146 @@
           <path d="M608.0,72 V90"/>
           <path d="M860.0,72 V90"/>
           <path d="M1112.0,72 V90"/>
-          <path d="M33.0,124.0 V1146.5"/>
+          <path d="M33.0,124.0 V1365.5"/>
           <path d="M33.0,146.5 H50.0"/>
-          <path d="M33.0,367.5 H50.0"/>
-          <path d="M33.0,599.5 H50.0"/>
-          <path d="M33.0,634.5 H50.0"/>
-          <path d="M33.0,791.0 H50.0"/>
-          <path d="M33.0,866.5 H50.0"/>
-          <path d="M33.0,936.5 H50.0"/>
-          <path d="M33.0,1041.5 H50.0"/>
-          <path d="M33.0,1076.5 H50.0"/>
-          <path d="M33.0,1111.5 H50.0"/>
-          <path d="M33.0,1146.5 H50.0"/>
-          <path d="M63.0,161.0 V332.5"/>
+          <path d="M33.0,384.0 H50.0"/>
+          <path d="M33.0,494.5 H50.0"/>
+          <path d="M33.0,726.5 H50.0"/>
+          <path d="M33.0,761.5 H50.0"/>
+          <path d="M33.0,918.0 H50.0"/>
+          <path d="M33.0,993.5 H50.0"/>
+          <path d="M33.0,1155.5 H50.0"/>
+          <path d="M33.0,1260.5 H50.0"/>
+          <path d="M33.0,1295.5 H50.0"/>
+          <path d="M33.0,1330.5 H50.0"/>
+          <path d="M33.0,1365.5 H50.0"/>
+          <path d="M63.0,161.0 V343.5"/>
           <path d="M63.0,181.5 H80.0"/>
           <path d="M63.0,222.0 H80.0"/>
-          <path d="M63.0,262.5 H80.0"/>
-          <path d="M63.0,297.5 H80.0"/>
-          <path d="M63.0,332.5 H80.0"/>
-          <path d="M63.0,382.0 V559.0"/>
-          <path d="M63.0,402.5 H80.0"/>
-          <path d="M63.0,443.0 H80.0"/>
-          <path d="M63.0,483.5 H80.0"/>
-          <path d="M63.0,518.5 H80.0"/>
-          <path d="M63.0,559.0 H80.0"/>
-          <path d="M63.0,649.0 V745.0"/>
-          <path d="M63.0,669.5 H80.0"/>
-          <path d="M63.0,704.5 H80.0"/>
-          <path d="M63.0,745.0 H80.0"/>
-          <path d="M63.0,811.0 V831.5"/>
+          <path d="M63.0,268.0 H80.0"/>
+          <path d="M63.0,308.5 H80.0"/>
+          <path d="M63.0,343.5 H80.0"/>
+          <path d="M63.0,404.0 V459.5"/>
+          <path d="M63.0,424.5 H80.0"/>
+          <path d="M63.0,459.5 H80.0"/>
+          <path d="M63.0,509.0 V686.0"/>
+          <path d="M63.0,529.5 H80.0"/>
+          <path d="M63.0,570.0 H80.0"/>
+          <path d="M63.0,610.5 H80.0"/>
+          <path d="M63.0,645.5 H80.0"/>
+          <path d="M63.0,686.0 H80.0"/>
+          <path d="M63.0,776.0 V872.0"/>
+          <path d="M63.0,796.5 H80.0"/>
           <path d="M63.0,831.5 H80.0"/>
-          <path d="M63.0,881.0 V901.5"/>
-          <path d="M63.0,901.5 H80.0"/>
-          <path d="M63.0,951.0 V1006.5"/>
-          <path d="M63.0,971.5 H80.0"/>
-          <path d="M63.0,1006.5 H80.0"/>
-          <path d="M63.0,1161.0 V1251.5"/>
-          <path d="M63.0,1181.5 H80.0"/>
-          <path d="M63.0,1216.5 H80.0"/>
-          <path d="M63.0,1251.5 H80.0"/>
-          <path d="M285.0,124.0 V693.5"/>
+          <path d="M63.0,872.0 H80.0"/>
+          <path d="M63.0,938.0 V958.5"/>
+          <path d="M63.0,958.5 H80.0"/>
+          <path d="M63.0,1008.0 V1115.0"/>
+          <path d="M63.0,1028.5 H80.0"/>
+          <path d="M63.0,1069.0 H80.0"/>
+          <path d="M63.0,1115.0 H80.0"/>
+          <path d="M63.0,1170.0 V1225.5"/>
+          <path d="M63.0,1190.5 H80.0"/>
+          <path d="M63.0,1225.5 H80.0"/>
+          <path d="M63.0,1380.0 V1470.5"/>
+          <path d="M63.0,1400.5 H80.0"/>
+          <path d="M63.0,1435.5 H80.0"/>
+          <path d="M63.0,1470.5 H80.0"/>
+          <path d="M285.0,124.0 V1098.5"/>
           <path d="M285.0,146.5 H302.0"/>
           <path d="M285.0,181.5 H302.0"/>
-          <path d="M285.0,413.5 H302.0"/>
-          <path d="M285.0,553.5 H302.0"/>
-          <path d="M285.0,658.5 H302.0"/>
-          <path d="M285.0,693.5 H302.0"/>
-          <path d="M315.0,196.0 V378.5"/>
+          <path d="M285.0,516.5 H302.0"/>
+          <path d="M285.0,662.0 H302.0"/>
+          <path d="M285.0,813.0 H302.0"/>
+          <path d="M285.0,958.5 H302.0"/>
+          <path d="M285.0,1063.5 H302.0"/>
+          <path d="M285.0,1098.5 H302.0"/>
+          <path d="M315.0,196.0 V481.5"/>
           <path d="M315.0,216.5 H332.0"/>
           <path d="M315.0,251.5 H332.0"/>
           <path d="M315.0,297.5 H332.0"/>
-          <path d="M315.0,343.5 H332.0"/>
-          <path d="M315.0,378.5 H332.0"/>
-          <path d="M315.0,428.0 V518.5"/>
-          <path d="M315.0,448.5 H332.0"/>
-          <path d="M315.0,483.5 H332.0"/>
-          <path d="M315.0,518.5 H332.0"/>
-          <path d="M315.0,568.0 V623.5"/>
-          <path d="M315.0,588.5 H332.0"/>
-          <path d="M315.0,623.5 H332.0"/>
-          <path d="M537.0,124.0 V1214.5"/>
+          <path d="M315.0,349.0 H332.0"/>
+          <path d="M315.0,395.0 H332.0"/>
+          <path d="M315.0,441.0 H332.0"/>
+          <path d="M315.0,481.5 H332.0"/>
+          <path d="M315.0,531.0 V621.5"/>
+          <path d="M315.0,551.5 H332.0"/>
+          <path d="M315.0,586.5 H332.0"/>
+          <path d="M315.0,621.5 H332.0"/>
+          <path d="M315.0,682.0 V772.5"/>
+          <path d="M315.0,702.5 H332.0"/>
+          <path d="M315.0,737.5 H332.0"/>
+          <path d="M315.0,772.5 H332.0"/>
+          <path d="M315.0,833.0 V923.5"/>
+          <path d="M315.0,853.5 H332.0"/>
+          <path d="M315.0,888.5 H332.0"/>
+          <path d="M315.0,923.5 H332.0"/>
+          <path d="M315.0,973.0 V1028.5"/>
+          <path d="M315.0,993.5 H332.0"/>
+          <path d="M315.0,1028.5 H332.0"/>
+          <path d="M537.0,124.0 V1584.5"/>
           <path d="M537.0,146.5 H554.0"/>
           <path d="M537.0,343.5 H554.0"/>
-          <path d="M537.0,529.5 H554.0"/>
-          <path d="M537.0,564.5 H554.0"/>
-          <path d="M537.0,599.5 H554.0"/>
-          <path d="M537.0,704.5 H554.0"/>
-          <path d="M537.0,815.0 H554.0"/>
-          <path d="M537.0,855.5 H554.0"/>
-          <path d="M537.0,890.5 H554.0"/>
-          <path d="M537.0,1001.0 H554.0"/>
-          <path d="M537.0,1047.0 H554.0"/>
-          <path d="M537.0,1174.0 H554.0"/>
+          <path d="M537.0,575.5 H554.0"/>
+          <path d="M537.0,656.5 H554.0"/>
+          <path d="M537.0,691.5 H554.0"/>
+          <path d="M537.0,796.5 H554.0"/>
+          <path d="M537.0,901.5 H554.0"/>
+          <path d="M537.0,1012.0 H554.0"/>
+          <path d="M537.0,1058.0 H554.0"/>
+          <path d="M537.0,1179.5 H554.0"/>
           <path d="M537.0,1214.5 H554.0"/>
+          <path d="M537.0,1325.0 H554.0"/>
+          <path d="M537.0,1371.0 H554.0"/>
+          <path d="M537.0,1544.0 H554.0"/>
+          <path d="M537.0,1584.5 H554.0"/>
           <path d="M567.0,161.0 V303.0"/>
           <path d="M567.0,187.0 H584.0"/>
           <path d="M567.0,227.5 H584.0"/>
           <path d="M567.0,262.5 H584.0"/>
           <path d="M567.0,303.0 H584.0"/>
-          <path d="M567.0,358.0 V489.0"/>
+          <path d="M597.0,463.0 V489.0"/>
+          <path d="M597.0,489.0 H614.0"/>
+          <path d="M567.0,358.0 V535.0"/>
           <path d="M567.0,378.5 H584.0"/>
           <path d="M567.0,413.5 H584.0"/>
           <path d="M567.0,448.5 H584.0"/>
-          <path d="M567.0,489.0 H584.0"/>
-          <path d="M567.0,614.0 V669.5"/>
-          <path d="M567.0,634.5 H584.0"/>
-          <path d="M567.0,669.5 H584.0"/>
-          <path d="M567.0,719.0 V774.5"/>
-          <path d="M567.0,739.5 H584.0"/>
-          <path d="M567.0,774.5 H584.0"/>
-          <path d="M567.0,905.0 V960.5"/>
-          <path d="M567.0,925.5 H584.0"/>
-          <path d="M567.0,960.5 H584.0"/>
-          <path d="M567.0,1067.0 V1133.5"/>
-          <path d="M567.0,1093.0 H584.0"/>
-          <path d="M567.0,1133.5 H584.0"/>
-          <path d="M789.0,124.0 V222.0"/>
-          <path d="M789.0,146.5 H806.0"/>
-          <path d="M789.0,181.5 H806.0"/>
-          <path d="M789.0,222.0 H806.0"/>
-          <path d="M819.0,242.0 V314.0"/>
-          <path d="M819.0,268.0 H836.0"/>
-          <path d="M819.0,314.0 H836.0"/>
+          <path d="M567.0,535.0 H584.0"/>
+          <path d="M567.0,590.0 V616.0"/>
+          <path d="M567.0,616.0 H584.0"/>
+          <path d="M567.0,706.0 V761.5"/>
+          <path d="M567.0,726.5 H584.0"/>
+          <path d="M567.0,761.5 H584.0"/>
+          <path d="M567.0,811.0 V866.5"/>
+          <path d="M567.0,831.5 H584.0"/>
+          <path d="M567.0,866.5 H584.0"/>
+          <path d="M567.0,916.0 V971.5"/>
+          <path d="M567.0,936.5 H584.0"/>
+          <path d="M567.0,971.5 H584.0"/>
+          <path d="M567.0,1078.0 V1139.0"/>
+          <path d="M567.0,1098.5 H584.0"/>
+          <path d="M567.0,1139.0 H584.0"/>
+          <path d="M567.0,1229.0 V1284.5"/>
+          <path d="M567.0,1249.5 H584.0"/>
+          <path d="M567.0,1284.5 H584.0"/>
+          <path d="M567.0,1391.0 V1498.0"/>
+          <path d="M567.0,1417.0 H584.0"/>
+          <path d="M567.0,1457.5 H584.0"/>
+          <path d="M567.0,1498.0 H584.0"/>
+          <path d="M789.0,124.0 V360.0"/>
+          <path d="M789.0,152.0 H806.0"/>
+          <path d="M789.0,284.5 H806.0"/>
+          <path d="M789.0,319.5 H806.0"/>
+          <path d="M789.0,360.0 H806.0"/>
+          <path d="M819.0,172.0 V244.0"/>
+          <path d="M819.0,198.0 H836.0"/>
+          <path d="M819.0,244.0 H836.0"/>
+          <path d="M819.0,380.0 V590.0"/>
+          <path d="M819.0,406.0 H836.0"/>
+          <path d="M819.0,452.0 H836.0"/>
+          <path d="M819.0,498.0 H836.0"/>
+          <path d="M819.0,544.0 H836.0"/>
+          <path d="M819.0,590.0 H836.0"/>
           <path d="M1041.0,124.0 V181.5"/>
           <path d="M1041.0,146.5 H1058.0"/>
           <path d="M1041.0,181.5 H1058.0"/>
@@ -126,66 +164,80 @@
         <rect x="80.0" y="202.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
         <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="220.1" text-anchor="middle">Capture ID</text>
         <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="231.1" text-anchor="middle">(Front / Back)</text>
-        <rect x="80.0" y="248.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="266.1" text-anchor="middle">On-Device OCR Check</text>
-        <rect x="80.0" y="283.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="301.1" text-anchor="middle">Face Scan</text>
-        <rect x="80.0" y="318.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="336.1" text-anchor="middle">Submit for Review</text>
-        <rect x="50.0" y="353.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="134.0" y="371.1" text-anchor="middle">Submit Report</text>
-        <rect x="80.0" y="388.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="406.1" text-anchor="middle">Select Category</text>
-        <rect x="80.0" y="423.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="441.1" text-anchor="middle">Set Location</text>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="452.1" text-anchor="middle">(Map Pin / GPS)</text>
-        <rect x="80.0" y="469.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="487.1" text-anchor="middle">Enter Remarks</text>
-        <rect x="80.0" y="504.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="522.1" text-anchor="middle">Attach Photo / Video</text>
-        <rect x="80.0" y="539.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="557.1" text-anchor="middle">Submit Anonymously</text>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="568.1" text-anchor="middle">(Optional)</text>
-        <rect x="50.0" y="585.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="134.0" y="603.1" text-anchor="middle">Submit Suggestion</text>
-        <rect x="50.0" y="620.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="134.0" y="638.1" text-anchor="middle">Send Feedback</text>
-        <rect x="80.0" y="655.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="673.1" text-anchor="middle">Rate Service</text>
-        <rect x="80.0" y="690.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="708.1" text-anchor="middle">Enter Comment</text>
-        <rect x="80.0" y="725.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="743.1" text-anchor="middle">Attach Photo</text>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="754.1" text-anchor="middle">(Optional)</text>
-        <rect x="50.0" y="771.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="134.0" y="789.1" text-anchor="middle">Chat with Kuya Gov</text>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="134.0" y="800.1" text-anchor="middle">(AI Assistant)</text>
+        <rect x="80.0" y="248.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="266.1" text-anchor="middle">Automated ID Check</text>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="277.1" text-anchor="middle">(On-Device / Server)</text>
+        <rect x="80.0" y="294.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="312.1" text-anchor="middle">Face Scan</text>
+        <rect x="80.0" y="329.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="347.1" text-anchor="middle">Submit for Review</text>
+        <rect x="50.0" y="364.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="134.0" y="382.1" text-anchor="middle">Quick Action Tutorial</text>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="134.0" y="393.1" text-anchor="middle">(First Run)</text>
+        <rect x="80.0" y="410.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="428.1" text-anchor="middle">View Guided Steps</text>
+        <rect x="80.0" y="445.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="463.1" text-anchor="middle">Skip Tutorial</text>
+        <rect x="50.0" y="480.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="134.0" y="498.1" text-anchor="middle">Submit Report</text>
+        <rect x="80.0" y="515.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="533.1" text-anchor="middle">Select Category</text>
+        <rect x="80.0" y="550.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="568.1" text-anchor="middle">Set Location</text>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="579.1" text-anchor="middle">(Map Pin / GPS)</text>
+        <rect x="80.0" y="596.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="614.1" text-anchor="middle">Enter Remarks</text>
+        <rect x="80.0" y="631.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="649.1" text-anchor="middle">Attach Photo / Video</text>
+        <rect x="80.0" y="666.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="684.1" text-anchor="middle">Submit Anonymously</text>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="695.1" text-anchor="middle">(Optional)</text>
+        <rect x="50.0" y="712.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="134.0" y="730.1" text-anchor="middle">Submit Suggestion</text>
+        <rect x="50.0" y="747.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="134.0" y="765.1" text-anchor="middle">Send Feedback</text>
+        <rect x="80.0" y="782.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="800.1" text-anchor="middle">Rate Service</text>
         <rect x="80.0" y="817.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="835.1" text-anchor="middle">Create Concern Ticket</text>
-        <rect x="50.0" y="852.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="134.0" y="870.1" text-anchor="middle">View My Submissions</text>
-        <rect x="80.0" y="887.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="905.1" text-anchor="middle">Track Report Status</text>
-        <rect x="50.0" y="922.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="134.0" y="940.1" text-anchor="middle">Community News Feed</text>
-        <rect x="80.0" y="957.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="975.1" text-anchor="middle">React to Post</text>
-        <rect x="80.0" y="992.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="1010.1" text-anchor="middle">Comment on Post</text>
-        <rect x="50.0" y="1027.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="134.0" y="1045.1" text-anchor="middle">View Events</text>
-        <rect x="50.0" y="1062.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="134.0" y="1080.1" text-anchor="middle">Emergency Hotlines</text>
-        <rect x="50.0" y="1097.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="134.0" y="1115.1" text-anchor="middle">View Notifications</text>
-        <rect x="50.0" y="1132.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="134.0" y="1150.1" text-anchor="middle">Manage Profile</text>
-        <rect x="80.0" y="1167.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="1185.1" text-anchor="middle">Edit Profile</text>
-        <rect x="80.0" y="1202.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="1220.1" text-anchor="middle">Change Password</text>
-        <rect x="80.0" y="1237.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="1255.1" text-anchor="middle">Notification Settings</text>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="835.1" text-anchor="middle">Enter Comment</text>
+        <rect x="80.0" y="852.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="870.1" text-anchor="middle">Attach Photo</text>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="881.1" text-anchor="middle">(Optional)</text>
+        <rect x="50.0" y="898.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="134.0" y="916.1" text-anchor="middle">Chat with Kuya Gov</text>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="134.0" y="927.1" text-anchor="middle">(AI Assistant)</text>
+        <rect x="80.0" y="944.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="962.1" text-anchor="middle">Create Concern Ticket</text>
+        <rect x="50.0" y="979.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="134.0" y="997.1" text-anchor="middle">View My Submissions</text>
+        <rect x="80.0" y="1014.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="1032.1" text-anchor="middle">Track Report Status</text>
+        <rect x="80.0" y="1049.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="1067.1" text-anchor="middle">Follow Progress</text>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="1078.1" text-anchor="middle">Updates</text>
+        <rect x="80.0" y="1095.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="1113.1" text-anchor="middle">View Completion</text>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="1124.1" text-anchor="middle">Photos</text>
+        <rect x="50.0" y="1141.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="134.0" y="1159.1" text-anchor="middle">Community News Feed</text>
+        <rect x="80.0" y="1176.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="1194.1" text-anchor="middle">React to Post</text>
+        <rect x="80.0" y="1211.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="1229.1" text-anchor="middle">Comment on Post</text>
+        <rect x="50.0" y="1246.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="134.0" y="1264.1" text-anchor="middle">View Events</text>
+        <rect x="50.0" y="1281.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="134.0" y="1299.1" text-anchor="middle">Emergency Hotlines</text>
+        <rect x="50.0" y="1316.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="134.0" y="1334.1" text-anchor="middle">View Notifications</text>
+        <rect x="50.0" y="1351.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="134.0" y="1369.1" text-anchor="middle">Manage Profile</text>
+        <rect x="80.0" y="1386.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="1404.1" text-anchor="middle">Edit Profile</text>
+        <rect x="80.0" y="1421.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="1439.1" text-anchor="middle">Change Password</text>
+        <rect x="80.0" y="1456.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="164.0" y="1474.1" text-anchor="middle">Notification Settings</text>
         <rect x="272.0" y="90.0" width="168" height="34.0" fill="#fff" stroke="#111" stroke-width="1.4"/>
         <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="356.0" y="105.1" text-anchor="middle" font-weight="600">Municipal Staff</text>
         <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="356.0" y="116.1" text-anchor="middle" font-weight="600">(Department)</text>
@@ -201,28 +253,53 @@
         <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="416.0" y="290.1" text-anchor="middle">Update Status</text>
         <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="416.0" y="301.1" text-anchor="middle">(Pending / In Progress /</text>
         <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="416.0" y="312.1" text-anchor="middle">Resolved)</text>
-        <rect x="332.0" y="329.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="416.0" y="347.1" text-anchor="middle">Add Report Note</text>
-        <rect x="332.0" y="364.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="416.0" y="382.1" text-anchor="middle">Upload Resolution Photo</text>
-        <rect x="302.0" y="399.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="386.0" y="417.1" text-anchor="middle">Citizen Conversations</text>
-        <rect x="332.0" y="434.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="416.0" y="452.1" text-anchor="middle">Reply to Ticket</text>
-        <rect x="332.0" y="469.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="416.0" y="487.1" text-anchor="middle">Attach File</text>
-        <rect x="332.0" y="504.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="416.0" y="522.1" text-anchor="middle">Close Ticket</text>
-        <rect x="302.0" y="539.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="386.0" y="557.1" text-anchor="middle">Post Community Update</text>
-        <rect x="332.0" y="574.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="416.0" y="592.1" text-anchor="middle">Submit for Approval</text>
-        <rect x="332.0" y="609.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="416.0" y="627.1" text-anchor="middle">Retract if Pending</text>
-        <rect x="302.0" y="644.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="386.0" y="662.1" text-anchor="middle">Resolution History</text>
-        <rect x="302.0" y="679.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="386.0" y="697.1" text-anchor="middle">Settings &amp; Password</text>
+        <rect x="332.0" y="329.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="416.0" y="347.1" text-anchor="middle">Post Progress Update</text>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="416.0" y="358.1" text-anchor="middle">(Citizen-Facing)</text>
+        <rect x="332.0" y="375.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="416.0" y="393.1" text-anchor="middle">Internal Work Log</text>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="416.0" y="404.1" text-anchor="middle">(Private)</text>
+        <rect x="332.0" y="421.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="416.0" y="439.1" text-anchor="middle">Resolve with</text>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="416.0" y="450.1" text-anchor="middle">Completion Report</text>
+        <rect x="332.0" y="467.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="416.0" y="485.1" text-anchor="middle">Upload Resolution Photo</text>
+        <rect x="302.0" y="502.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="386.0" y="520.1" text-anchor="middle">Citizen Conversations</text>
+        <rect x="332.0" y="537.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="416.0" y="555.1" text-anchor="middle">Reply to Ticket</text>
+        <rect x="332.0" y="572.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="416.0" y="590.1" text-anchor="middle">Attach File</text>
+        <rect x="332.0" y="607.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="416.0" y="625.1" text-anchor="middle">Close Ticket</text>
+        <rect x="302.0" y="642.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="386.0" y="660.1" text-anchor="middle">Respond to Suggestions</text>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="386.0" y="671.1" text-anchor="middle">(Routed to Office)</text>
+        <rect x="332.0" y="688.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="416.0" y="706.1" text-anchor="middle">Write Reply Draft</text>
+        <rect x="332.0" y="723.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="416.0" y="741.1" text-anchor="middle">Submit for Approval</text>
+        <rect x="332.0" y="758.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="416.0" y="776.1" text-anchor="middle">Revise if Returned</text>
+        <rect x="302.0" y="793.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="386.0" y="811.1" text-anchor="middle">Respond to Feedback</text>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="386.0" y="822.1" text-anchor="middle">(Routed to Office)</text>
+        <rect x="332.0" y="839.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="416.0" y="857.1" text-anchor="middle">Write Reply Draft</text>
+        <rect x="332.0" y="874.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="416.0" y="892.1" text-anchor="middle">Submit for Approval</text>
+        <rect x="332.0" y="909.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="416.0" y="927.1" text-anchor="middle">Revise if Returned</text>
+        <rect x="302.0" y="944.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="386.0" y="962.1" text-anchor="middle">Post Community Update</text>
+        <rect x="332.0" y="979.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="416.0" y="997.1" text-anchor="middle">Submit for Approval</text>
+        <rect x="332.0" y="1014.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="416.0" y="1032.1" text-anchor="middle">Retract if Pending</text>
+        <rect x="302.0" y="1049.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="386.0" y="1067.1" text-anchor="middle">Resolution History</text>
+        <rect x="302.0" y="1084.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="386.0" y="1102.1" text-anchor="middle">Settings &amp; Password</text>
         <rect x="524.0" y="90.0" width="168" height="34.0" fill="#fff" stroke="#111" stroke-width="1.4"/>
         <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="608.0" y="105.1" text-anchor="middle" font-weight="600">Administrator</text>
         <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="608.0" y="116.1" text-anchor="middle" font-weight="600">(Department Head)</text>
@@ -246,68 +323,109 @@
         <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="668.0" y="417.1" text-anchor="middle">Update Status</text>
         <rect x="584.0" y="434.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
         <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="668.0" y="452.1" text-anchor="middle">Assign to Department</text>
-        <rect x="584.0" y="469.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="668.0" y="487.1" text-anchor="middle">Reveal Submitter</text>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="668.0" y="498.1" text-anchor="middle">Identity</text>
-        <rect x="554.0" y="515.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="638.0" y="533.1" text-anchor="middle">Review Suggestions</text>
-        <rect x="554.0" y="550.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="638.0" y="568.1" text-anchor="middle">Review Feedback</text>
-        <rect x="554.0" y="585.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="638.0" y="603.1" text-anchor="middle">Verify Citizen Identity</text>
-        <rect x="584.0" y="620.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="668.0" y="638.1" text-anchor="middle">Inspect ID and Face</text>
-        <rect x="584.0" y="655.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="668.0" y="673.1" text-anchor="middle">Approve / Reject</text>
-        <rect x="554.0" y="690.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="638.0" y="708.1" text-anchor="middle">Content Moderation</text>
-        <rect x="584.0" y="725.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="668.0" y="743.1" text-anchor="middle">Flagged Comments</text>
-        <rect x="584.0" y="760.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="668.0" y="778.1" text-anchor="middle">Spam Watch</text>
-        <rect x="554.0" y="795.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="638.0" y="813.1" text-anchor="middle">Approve Community</text>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="638.0" y="824.1" text-anchor="middle">Updates</text>
-        <rect x="554.0" y="841.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="638.0" y="859.1" text-anchor="middle">Manage Events</text>
-        <rect x="554.0" y="876.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="638.0" y="894.1" text-anchor="middle">Manage User Accounts</text>
-        <rect x="584.0" y="911.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="668.0" y="929.1" text-anchor="middle">Restrict Features</text>
-        <rect x="584.0" y="946.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="668.0" y="964.1" text-anchor="middle">Suspend Account</text>
-        <rect x="554.0" y="981.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="638.0" y="999.1" text-anchor="middle">Manage Staff Accounts</text>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="638.0" y="1010.1" text-anchor="middle">(Create / Assign Dept.)</text>
-        <rect x="554.0" y="1027.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="638.0" y="1045.1" text-anchor="middle">Endorse to External</text>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="638.0" y="1056.1" text-anchor="middle">Agency</text>
-        <rect x="584.0" y="1073.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="668.0" y="1091.1" text-anchor="middle">Generate Endorsement</text>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="668.0" y="1102.1" text-anchor="middle">Letter (PDF + QR)</text>
-        <rect x="584.0" y="1119.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="668.0" y="1137.1" text-anchor="middle">Track Endorsement</text>
-        <rect x="554.0" y="1154.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="638.0" y="1172.1" text-anchor="middle">Generate Reports</text>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="638.0" y="1183.1" text-anchor="middle">(PDF / Excel)</text>
+        <rect x="614.0" y="469.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="698.0" y="487.1" text-anchor="middle">AI Department</text>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="698.0" y="498.1" text-anchor="middle">Recommendation (Advisory)</text>
+        <rect x="584.0" y="515.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="668.0" y="533.1" text-anchor="middle">Reveal Submitter</text>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="668.0" y="544.1" text-anchor="middle">Identity</text>
+        <rect x="554.0" y="561.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="638.0" y="579.1" text-anchor="middle">Review Suggestions</text>
+        <rect x="584.0" y="596.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="668.0" y="614.1" text-anchor="middle">AI Mis-filed Category</text>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="668.0" y="625.1" text-anchor="middle">Hint (Advisory)</text>
+        <rect x="554.0" y="642.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="638.0" y="660.1" text-anchor="middle">Review Feedback</text>
+        <rect x="554.0" y="677.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="638.0" y="695.1" text-anchor="middle">Approve Staff Replies</text>
+        <rect x="584.0" y="712.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="668.0" y="730.1" text-anchor="middle">Approve &amp; Publish</text>
+        <rect x="584.0" y="747.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="668.0" y="765.1" text-anchor="middle">Return with Reason</text>
+        <rect x="554.0" y="782.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="638.0" y="800.1" text-anchor="middle">Verify Citizen Identity</text>
+        <rect x="584.0" y="817.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="668.0" y="835.1" text-anchor="middle">Inspect ID and Face</text>
+        <rect x="584.0" y="852.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="668.0" y="870.1" text-anchor="middle">Approve / Reject</text>
+        <rect x="554.0" y="887.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="638.0" y="905.1" text-anchor="middle">Content Moderation</text>
+        <rect x="584.0" y="922.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="668.0" y="940.1" text-anchor="middle">Flagged Comments</text>
+        <rect x="584.0" y="957.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="668.0" y="975.1" text-anchor="middle">Spam Watch</text>
+        <rect x="554.0" y="992.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="638.0" y="1010.1" text-anchor="middle">Approve Community</text>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="638.0" y="1021.1" text-anchor="middle">Updates</text>
+        <rect x="554.0" y="1038.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="638.0" y="1056.1" text-anchor="middle">Approve Progress</text>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="638.0" y="1067.1" text-anchor="middle">Updates</text>
+        <rect x="584.0" y="1084.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="668.0" y="1102.1" text-anchor="middle">Approve / Return</text>
+        <rect x="584.0" y="1119.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="668.0" y="1137.1" text-anchor="middle">Give Reason</text>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="668.0" y="1148.1" text-anchor="middle">on Return</text>
+        <rect x="554.0" y="1165.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="638.0" y="1183.1" text-anchor="middle">Manage Events</text>
         <rect x="554.0" y="1200.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="638.0" y="1218.1" text-anchor="middle">View Activity Log</text>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="638.0" y="1218.1" text-anchor="middle">Manage User Accounts</text>
+        <rect x="584.0" y="1235.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="668.0" y="1253.1" text-anchor="middle">Restrict Features</text>
+        <rect x="584.0" y="1270.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="668.0" y="1288.1" text-anchor="middle">Suspend Account</text>
+        <rect x="554.0" y="1305.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="638.0" y="1323.1" text-anchor="middle">Manage Staff Accounts</text>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="638.0" y="1334.1" text-anchor="middle">(Create / Assign Dept.)</text>
+        <rect x="554.0" y="1351.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="638.0" y="1369.1" text-anchor="middle">Endorse to External</text>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="638.0" y="1380.1" text-anchor="middle">Agency</text>
+        <rect x="584.0" y="1397.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="668.0" y="1415.1" text-anchor="middle">Generate Endorsement</text>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="668.0" y="1426.1" text-anchor="middle">Letter (PDF + QR)</text>
+        <rect x="584.0" y="1443.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="668.0" y="1461.1" text-anchor="middle">Track Endorsement</text>
+        <rect x="584.0" y="1478.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="668.0" y="1496.1" text-anchor="middle">Withdraw with Reason</text>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="668.0" y="1507.1" text-anchor="middle">(Revokes Token)</text>
+        <rect x="554.0" y="1524.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="638.0" y="1542.1" text-anchor="middle">Generate Reports</text>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="638.0" y="1553.1" text-anchor="middle">(PDF)</text>
+        <rect x="554.0" y="1570.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="638.0" y="1588.1" text-anchor="middle">View Activity Log</text>
         <rect x="776.0" y="90.0" width="168" height="34.0" fill="#fff" stroke="#111" stroke-width="1.4"/>
         <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="860.0" y="105.1" text-anchor="middle" font-weight="600">Guest / Public</text>
         <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="860.0" y="116.1" text-anchor="middle" font-weight="600">(No Account)</text>
-        <rect x="806.0" y="132.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="890.0" y="150.1" text-anchor="middle">Browse News Feed</text>
-        <rect x="806.0" y="167.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="890.0" y="185.1" text-anchor="middle">View Events</text>
-        <rect x="806.0" y="202.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="890.0" y="220.1" text-anchor="middle">Scan Endorsement QR</text>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="890.0" y="231.1" text-anchor="middle">(No Login Required)</text>
-        <rect x="836.0" y="248.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="920.0" y="266.1" text-anchor="middle">View Endorsement</text>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="920.0" y="277.1" text-anchor="middle">Details</text>
-        <rect x="836.0" y="294.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="920.0" y="312.1" text-anchor="middle">Confirm Receipt</text>
-        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="920.0" y="323.1" text-anchor="middle">with PIN</text>
+        <rect x="806.0" y="132.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="890.0" y="150.1" text-anchor="middle">View Public Landing</text>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="890.0" y="161.1" text-anchor="middle">Page</text>
+        <rect x="836.0" y="178.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="920.0" y="196.1" text-anchor="middle">Features, How It</text>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="920.0" y="207.1" text-anchor="middle">Works, FAQ</text>
+        <rect x="836.0" y="224.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="920.0" y="242.1" text-anchor="middle">Sign Up / Log In /</text>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="920.0" y="253.1" text-anchor="middle">Browse as Guest</text>
+        <rect x="806.0" y="270.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="890.0" y="288.1" text-anchor="middle">Browse News Feed</text>
+        <rect x="806.0" y="305.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="890.0" y="323.1" text-anchor="middle">View Events</text>
+        <rect x="806.0" y="340.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="890.0" y="358.1" text-anchor="middle">Scan Endorsement QR</text>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="890.0" y="369.1" text-anchor="middle">(No Login Required)</text>
+        <rect x="836.0" y="386.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="920.0" y="404.1" text-anchor="middle">View Endorsement</text>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="920.0" y="415.1" text-anchor="middle">Details</text>
+        <rect x="836.0" y="432.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="920.0" y="450.1" text-anchor="middle">View Citizen's</text>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="920.0" y="461.1" text-anchor="middle">Photos / Video</text>
+        <rect x="836.0" y="478.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="920.0" y="496.1" text-anchor="middle">Confirm Receipt</text>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="920.0" y="507.1" text-anchor="middle">with PIN</text>
+        <rect x="836.0" y="524.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="920.0" y="542.1" text-anchor="middle">Post Field Update</text>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="920.0" y="553.1" text-anchor="middle">+ Work Photo</text>
+        <rect x="836.0" y="570.0" width="168" height="40.0" fill="#fff" stroke="#111" stroke-width="1"/>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="920.0" y="588.1" text-anchor="middle">Mark Completed</text>
+        <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="920.0" y="599.1" text-anchor="middle">with Account of Work</text>
         <rect x="1028.0" y="90.0" width="168" height="34.0" fill="#fff" stroke="#111" stroke-width="1.4"/>
         <text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9.5" fill="#111" x="1112.0" y="110.6" text-anchor="middle" font-weight="600">Log Out</text>
         <rect x="1058.0" y="132.0" width="168" height="29.0" fill="#fff" stroke="#111" stroke-width="1"/>

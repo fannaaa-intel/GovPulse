@@ -10,9 +10,20 @@ TREE = [
         N("Verify Identity", [
             N("Select ID Type"),
             N(["Capture ID", "(Front / Back)"]),
-            N("On-Device OCR Check"),
+            # Mobile runs ML Kit on-device; web has no ML Kit, so it calls the
+            # `verify-id` Edge Function, which applies the SAME rules
+            # (_shared/id_rules.ts) server-side. Both platforms are checked.
+            N(["Automated ID Check", "(On-Device / Server)"]),
             N("Face Scan"),
             N("Submit for Review"),
+        ]),
+        # First-run only, and device-local: the seen flag lives in
+        # SharedPreferences, so it is a client behaviour rather than a stored
+        # function. Listed because it is the citizen's first interaction with
+        # the Quick Action set, and it teaches the five entries below it.
+        N(["Quick Action Tutorial", "(First Run)"], [
+            N("View Guided Steps"),
+            N("Skip Tutorial"),
         ]),
         N("Submit Report", [
             N("Select Category"),
@@ -32,6 +43,8 @@ TREE = [
         ]),
         N("View My Submissions", [
             N("Track Report Status"),
+            N(["Follow Progress", "Updates"]),
+            N(["View Completion", "Photos"]),
         ]),
         N("Community News Feed", [
             N("React to Post"),
@@ -52,13 +65,35 @@ TREE = [
             N("Filter by Status"),
             N("Accept / Assign"),
             N(["Update Status", "(Pending / In Progress /", "Resolved)"]),
-            N("Add Report Note"),
+            N(["Post Progress Update", "(Citizen-Facing)"]),
+            N(["Internal Work Log", "(Private)"]),
+            N(["Resolve with", "Completion Report"]),
             N("Upload Resolution Photo"),
         ]),
         N("Citizen Conversations", [
             N("Reply to Ticket"),
             N("Attach File"),
             N("Close Ticket"),
+        ]),
+        # 20260922000000. Suggestions and Feedback are routed to the owning
+        # office by trigger (suggestion_department / feedback_department), so
+        # each existing office gained two inboxes -- no new role, no new
+        # department. A staff reply is a DRAFT: it is written into
+        # suggestion_replies as 'pending_approval' and the citizen sees nothing
+        # until an admin approves it, which is why "Submit for Approval" sits
+        # under both, exactly as it does under Post Community Update below.
+        N(["Respond to Suggestions", "(Routed to Office)"], [
+            N("Write Reply Draft"),
+            N("Submit for Approval"),
+            N(["Revise if Returned"]),
+        ]),
+        # Omitted for Environment Office, which no feedback form office maps
+        # to; the console hides the tab rather than render one that can never
+        # fill. External agencies get neither inbox.
+        N(["Respond to Feedback", "(Routed to Office)"], [
+            N("Write Reply Draft"),
+            N("Submit for Approval"),
+            N(["Revise if Returned"]),
         ]),
         N("Post Community Update", [
             N("Submit for Approval"),
@@ -77,11 +112,32 @@ TREE = [
         N("Manage Reports", [
             N("Review Report Details"),
             N("Update Status"),
-            N("Assign to Department"),
+            # 20260914000000. classify-report recommends the owning office and
+            # pre-selects it here; the admin overrides freely and their choice
+            # is what is written. RLS still routes on report_department().
+            N("Assign to Department", [
+                N(["AI Department", "Recommendation (Advisory)"]),
+            ]),
             N(["Reveal Submitter", "Identity"]),
         ]),
-        N("Review Suggestions"),
+        # 20260917000000 + classify-suggestion. Advisory in exactly the way the
+        # department recommendation above is: the citizen's chosen category
+        # stays authoritative and the console only raises a "mis-filed" chip.
+        N("Review Suggestions", [
+            N(["AI Mis-filed Category", "Hint (Advisory)"]),
+        ]),
         N("Review Feedback"),
+        # 20260922000000. The other half of the two staff inboxes above.
+        # Nothing an office writes reaches the citizen unreviewed: the reply
+        # sits at 'pending_approval' and only this act publishes it. Returning
+        # requires a reason, and the author revises the draft in place.
+        # "&amp;" not "&": these strings are written straight into the SVG, so a
+        # bare ampersand is invalid XML. A browser renders it anyway, which is
+        # why it survived the PNG pass -- svg_to_drawio.py is what refuses it.
+        N(["Approve Staff Replies"], [
+            N(["Approve &amp; Publish"]),
+            N(["Return with Reason"]),
+        ]),
         N("Verify Citizen Identity", [
             N("Inspect ID and Face"),
             N("Approve / Reject"),
@@ -91,6 +147,10 @@ TREE = [
             N("Spam Watch"),
         ]),
         N(["Approve Community", "Updates"]),
+        N(["Approve Progress", "Updates"], [
+            N("Approve / Return"),
+            N(["Give Reason", "on Return"]),
+        ]),
         N("Manage Events"),
         N("Manage User Accounts", [
             N("Restrict Features"),
@@ -100,16 +160,25 @@ TREE = [
         N(["Endorse to External", "Agency"], [
             N(["Generate Endorsement", "Letter (PDF + QR)"]),
             N("Track Endorsement"),
+            N(["Withdraw with Reason", "(Revokes Token)"]),
         ]),
-        N(["Generate Reports", "(PDF / Excel)"]),
+        N(["Generate Reports", "(PDF)"]),
         N("View Activity Log"),
     ]),
     (["Guest / Public", "(No Account)"], [
+        # b35438b. The public front door at '/', reachable in every auth state.
+        N(["View Public Landing", "Page"], [
+            N(["Features, How It", "Works, FAQ"]),
+            N(["Sign Up / Log In /", "Browse as Guest"]),
+        ]),
         N("Browse News Feed"),
         N("View Events"),
         N(["Scan Endorsement QR", "(No Login Required)"], [
             N(["View Endorsement", "Details"]),
+            N(["View Citizen's", "Photos / Video"]),
             N(["Confirm Receipt", "with PIN"]),
+            N(["Post Field Update", "+ Work Photo"]),
+            N(["Mark Completed", "with Account of Work"]),
         ]),
     ]),
     (["Log Out"], [

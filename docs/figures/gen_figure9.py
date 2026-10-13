@@ -6,22 +6,48 @@
 #   - Citizen / Municipal Staff / Administrator are user_roles.role_id null/2/1.
 #   - External Agency has NO account: lib/features/scan/scan_page.dart resolves
 #     a QR token via scan_endorsement (read) and advance_endorsement (write,
-#     4-digit PIN). That is why it touches exactly two ovals and neither is
-#     Log In.
+#     4-digit PIN). Revised 2026-09-03: it now touches FOUR ovals, none of
+#     which is Log In -- since 20260831000000 the agency also posts progress
+#     updates with photographs and must narrate the work when completing it.
 #   - Guest is an unauthenticated visitor (lib/features/guest/screen/guest.dart)
 #     and shares the public browse cases with the Citizen.
+# Revised 2026-09-14 for two commits:
+#   - b35438b gives '/' a real public landing page, reachable in EVERY auth
+#     state, so `View Public Landing Page` is a case rather than a step inside
+#     Register / Log In.
+#   - 20260914000000 lets classify-report recommend the owning office.
+#     `Accept and Assign Report` -- the admin's triage act, and the hinge every
+#     staff case hangs off -- was missing entirely and is now drawn, with the
+#     AI recommendation «extend»ing it because accepting completes without it.
+# Revised 2026-09-17 for e0b9d10 / 20260917000000:
+#   - `Review Citizen Suggestions` is the admin's suggestion console
+#     (admin_suggestions_page.dart). It was absent, which is the same class of
+#     hole `Accept and Assign Report` was: a whole console screen that no other
+#     case depends on, so nothing pointed at its absence.
+#   - classify-suggestion «extend»s it with the mis-filed category hint, for
+#     the same reason airoute «extend»s accept -- advisory, and the page
+#     renders identically when the classifier has not reached a row.
 # <<include>> is used only where the base case cannot complete without the
 # included one; <<extend>> only where the code makes the step optional.
 import io
 import math
 
-W, H = 1650, 1270
+W, H = 2130, 1434
 FONT = "Segoe UI, Calibri, Arial, sans-serif"
 INCL = "«" + "include" + "»"
 EXTD = "«" + "extend" + "»"
 
-# System boundary
-BX, BY, BW, BH = 430, 40, 800, 1190
+# System boundary. Widened by one column (245px) in the 2026-09-03 revision to
+# carry the progress-update loop, which did not exist when this was first drawn.
+# Deepened by one ROW (82px) on 2026-09-17 for the suggestion-console pair.
+# A row rather than a column because the sixth column would have collided with
+# the right-hand actors, and an «extend» target drawn outside the boundary
+# would claim the hint is not part of the system.
+# Deepened by one further row (82px) on 2026-09-22 for 20260922000000. The two
+# staff inboxes took free slots on the 1252 row, but the approval gate they
+# both «include» needs a row of its own: sharing 1252 ran its arrows through
+# the two ovals between it and them.
+BX, BY, BW, BH = 430, 40, 1280, 1354
 
 # ---------------------------------------------------------------------------
 # Actors.  name: (x, y, label lines, side)  -- x,y is the centre of the head
@@ -30,8 +56,8 @@ ACTORS = {
     "citizen": (150, 292, ["Citizen"], "L"),
     "guest":   (150, 682, ["Guest", "(No Account)"], "L"),
     "staff":   (150, 922, ["Municipal Staff", "(Department)"], "L"),
-    "admin":   (1490, 942, ["Administrator", "(Department Head)"], "R"),
-    "agency":  (1490, 602, ["External Agency", "(No Account)"], "R"),
+    "admin":   (1970, 942, ["Administrator", "(Department Head)"], "R"),
+    "agency":  (1970, 602, ["External Agency", "(No Account)"], "R"),
 }
 
 # ---------------------------------------------------------------------------
@@ -52,12 +78,20 @@ UC = {
     "suggest":  (860, 314, 96, 30, ["Submit", "Suggestion"]),
     "feedback": (860, 396, 96, 30, ["Send Feedback"]),
     "track":    (600, 372, 96, 30, ["Track My", "Submissions"]),
+    # The citizen-facing half of the progress-update loop (report_progress_updates
+    # .dart, ReportUpdatesMode.citizen): approved updates only, newest first.
+    "follow":   (1350, 372, 92, 30, ["Follow Report", "Progress"]),
     "chat":     (600, 454, 96, 30, ["Chat with", "Kuya Gov (AI)"]),
     "ticket":   (860, 478, 96, 30, ["Raise Concern", "Ticket"]),
     "notif":    (600, 536, 96, 30, ["View", "Notifications"]),
     "profile":  (860, 560, 96, 30, ["Manage Profile"]),
 
     # -- public band (guest + citizen) --------------------------------------
+    # The public front door (b35438b). A use case in its own right rather than
+    # a step inside Register/Log In: it is reachable in EVERY auth state, and
+    # it is where a visitor who has never heard of GovPulse decides whether to
+    # make an account at all -- which is a goal, not a screen transition.
+    "landing":  (600, 781, 96, 30, ["View Public", "Landing Page"]),
     "feed":     (600, 638, 96, 30, ["Browse", "News Feed"]),
     "engage":   (860, 642, 96, 30, ["React and", "Comment"]),
     "events":   (600, 720, 96, 30, ["View Events"]),
@@ -66,6 +100,12 @@ UC = {
     # -- external agency band (no account) ----------------------------------
     "scanqr":   (1105, 642, 92, 30, ["Scan", "Endorsement QR"]),
     "confirm":  (1105, 724, 92, 30, ["Confirm Receipt", "with PIN"]),
+    # Since 20260831000000 the agency is no longer read-only: it posts progress
+    # updates (post_endorsement_update) with photos, and completing the work
+    # REQUIRES a written account of it in the same transaction.
+    "agupdate": (1350, 642, 92, 30, ["Post Field", "Update"]),
+    "agphoto":  (1350, 560, 92, 30, ["Attach Work", "Photo"]),
+    "agdone":   (1350, 724, 92, 30, ["Mark Work", "Completed"]),
 
     # -- staff band ----------------------------------------------------------
     "assigned": (600, 842, 96, 30, ["View Assigned", "Reports"]),
@@ -74,6 +114,25 @@ UC = {
     "convo":    (600, 924, 96, 30, ["Answer Citizen", "Conversations"]),
     "post":     (600, 1006, 96, 30, ["Post Community", "Update"]),
     "avail":    (600, 1088, 96, 30, ["View Resolution", "History"]),
+    # The office half of the loop. Resolving is no longer a bare status change:
+    # 20260901000001 makes the state change and the completion update one act.
+    "progress": (1350, 842, 92, 30, ["Post Office", "Progress Update"]),
+    "complete": (1350, 924, 92, 30, ["Resolve with", "Completion Report"]),
+    "worklog":  (1350, 1006, 92, 30, ["Keep Internal", "Work Log"]),
+    # 20260922000000. Suggestions and Feedback now route to the owning office
+    # by trigger, so each office answers two citizen inboxes it did not have
+    # before. Drawn as TWO cases rather than one because they are two console
+    # sections fed by two different routing functions -- suggestion_department
+    # (the citizen's category) and feedback_department (the office the citizen
+    # picked in the form) -- and Environment Office gets the first but never
+    # the second.
+    # Both in COLUMN 1, stacked. `repfb` was at x=860 and its association from
+    # the staff actor ran straight through the `Export Report (PDF)` ellipse --
+    # which reads as "staff can export", a permission staff do not have. A
+    # crossing that asserts something false is worth moving a case for; the
+    # column-1 slot on the row below was free.
+    "repsug":   (600, 1252, 96, 30, ["Reply to Citizen", "Suggestion"]),
+    "repfb":    (528, 1334, 88, 30, ["Reply to Citizen", "Feedback"]),
 
     # -- administrator band --------------------------------------------------
     "approve":  (860, 1006, 96, 30, ["Approve", "Community Post"]),
@@ -82,22 +141,64 @@ UC = {
     "moderate": (860, 924, 96, 30, ["Moderate", "Content"]),
     "accounts": (1105, 924, 92, 30, ["Manage User", "Accounts"]),
     "review":   (1105, 1006, 92, 30, ["Review Citizen", "Verification"]),
+    # The admin's TRIAGE act -- accepting a submitted report and assigning it to
+    # the office that will own it. Was missing from the first draft even though
+    # it is the hinge every staff case hangs off: a report reaches a staff queue
+    # only once an admin has assigned it.
+    "accept":   (1350, 1088, 92, 30, ["Accept and", "Assign Report"]),
+    # 20260914000000. ADVISORY: classify-report pre-selects a department in the
+    # Accept dialog and the admin overrides freely. «extend» rather than
+    # «include» precisely because accepting completes perfectly well without it
+    # -- when the model has not reached the row, the dialog falls back to the
+    # deterministic report_department(category) lookup.
+    "airoute":  (1600, 1088, 92, 30, ["Use AI Department", "Recommendation"]),
+    # The admin's suggestion console (admin_suggestions_page.dart, routed from
+    # admin_dashboard_screen.dart:287). Missing from the first draft for the
+    # same reason `Accept and Assign Report` was: it is a whole console screen
+    # that no other case happens to depend on, so nothing pointed at the hole.
+    "revsug":   (1105, 1252, 92, 30, ["Review Citizen", "Suggestions"]),
+    # 20260917000000 + classify-suggestion. ADVISORY and «extend», for exactly
+    # the reason airoute is: the page renders without it. `ai_category` only
+    # raises a "mis-filed" chip and its one-sentence reason next to a row whose
+    # citizen-chosen `category` remains authoritative.
+    "aisug":    (1350, 1252, 92, 30, ["See AI Mis-filed", "Category Hint"]),
     "endorse":  (860, 1170, 96, 30, ["Endorse to", "External Agency"]),
     "letter":   (1105, 1170, 92, 30, ["Generate", "Endorsement QR"]),
-    "export":   (600, 1170, 96, 30, ["Export Report", "(PDF / Excel)"]),
+    # Nothing an office or agency writes reaches the citizen unreviewed.
+    # Sits BETWEEN the agency band above and the office band below, because both
+    # of them «include» it: every update from either source is gated on it, and
+    # placing it in the admin band would run a 450px line back up through three
+    # unrelated ovals.
+    "apprupd":  (1600, 783, 92, 30, ["Approve Progress", "Update"]),
+    "withdraw": (1350, 1170, 92, 30, ["Withdraw", "Endorsement"]),
+    # The gate both staff cases above hang on. «include», not «extend»: the RLS
+    # INSERT policy pins a staff draft to 'pending_approval' and the citizen's
+    # read binds on 'approved', so replying CANNOT complete without this act.
+    # Exactly the shape post -> approve and progress -> apprupd already have.
+    # Its own row, in the far column beside the admin. Two placements were
+    # tried and both were wrong in a way only rendering showed: under `Review
+    # Citizen Suggestions` (x=1105) it read as part of that console and dragged
+    # an association the full width of the boundary; on the 1252 row at x=1600
+    # its two «include» arrows ran straight THROUGH the two ovals between,
+    # turning the whole bottom row into one continuous dashed chain. A row of
+    # its own lets both arrows descend into clear space.
+    "apprrep":  (1600, 1334, 92, 30, ["Approve Staff", "Reply"]),
+    "export":   (600, 1170, 96, 30, ["Export Report", "(PDF)"]),
 }
 
 # actor -> use cases
 LINKS = {
     "citizen": ["register", "login", "logout", "verify", "report", "suggest",
-                "feedback", "track", "chat", "notif", "profile", "feed",
-                "engage", "events", "hotline"],
-    "guest":   ["register", "login", "feed", "events", "hotline"],
+                "feedback", "track", "follow", "chat", "notif", "profile",
+                "feed", "engage", "events", "hotline"],
+    "guest":   ["register", "login", "landing", "feed", "events", "hotline"],
     "staff":   ["login", "logout", "assigned", "status", "resolve", "convo",
-                "post", "avail"],
-    "admin":   ["login", "logout", "dash", "moderate", "approve",
-                "accounts", "review", "endorse", "export"],
-    "agency":  ["scanqr", "confirm"],
+                "post", "avail", "progress", "complete", "worklog",
+                "repsug", "repfb"],
+    "admin":   ["login", "logout", "dash", "moderate", "approve", "apprupd",
+                "accounts", "review", "revsug", "accept", "endorse", "withdraw",
+                "export", "apprrep"],
+    "agency":  ["scanqr", "confirm", "agupdate", "agdone"],
 }
 
 # (from, to, kind) -- kind is "include" or "extend"
@@ -108,9 +209,39 @@ RELS = [
     ("chat",     "ticket",  "extend"),
     ("status",   "resolve", "extend"),
     ("endorse",  "letter",  "include"),
+    # ADVISORY, never authoritative -- and «extend» is what says so. Accepting
+    # completes without it: where the model has not reached the row (or the
+    # columns are absent), the dialog falls back to report_department(category),
+    # which is also what RLS routes on. The admin's choice is what is written.
+    ("accept",   "airoute", "extend"),
+    # Same shape, same reason: the console lists every suggestion whether or not
+    # the classifier has reached it, so the hint is an optional addition.
+    ("revsug",   "aisug",   "extend"),
     ("confirm",  "scanqr",  "include"),
     ("post",     "approve", "include"),
+    # 20260922000000. Both staff inboxes gate on the same admin act, and both
+    # are «include» for the reason above: suggestion_replies is INSERTed as
+    # 'pending_approval' by policy, so nothing a staff member writes can reach
+    # the citizen -- or raise a notification -- until an admin approves it.
+    ("repsug",   "apprrep", "include"),
+    ("repfb",    "apprrep", "include"),
     ("dash",     "predict", "extend"),
+
+    # ── the progress-update loop (20260829000001 / …0831000000 / …0901000001) ──
+    # An office update is INSERTed as pending_approval by policy and the
+    # citizen's SELECT binds on status = 'approved', so publishing one cannot
+    # complete without the admin's decision. Same shape as post -> approve.
+    ("progress", "apprupd", "include"),
+    ("agupdate", "apprupd", "include"),
+    # Resolving and accounting for the work are ONE act: staff_resolve_with_
+    # completion makes the state change and writes the completion update in the
+    # same transaction, so the base case cannot complete without it.
+    ("complete", "progress", "include"),
+    # The photo is optional; the words never are ("an update is words").
+    ("agupdate", "agphoto", "extend"),
+    # advance_endorsement's received -> completed transition REQUIRES p_body,
+    # which posts a completion update in the same transaction.
+    ("agdone",   "agupdate", "include"),
 ]
 
 o = io.StringIO()
