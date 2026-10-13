@@ -5,11 +5,18 @@
 #     client against the project URL with a publishable key; the Flutter client
 #     speaks to PostgREST/Realtime/Storage directly and row-level security is
 #     the authorisation layer.
-#   - 20 edge functions exist (supabase/functions/). Fifteen are invoked by
-#     the client; classify-report, classify-suggestion, classify-feedback,
-#     moderate-content and send-push are fired by database triggers -- never by
-#     a request the client waits on. That asymmetry is drawn, because it is what
-#     keeps a slow model from blocking a citizen's submission.
+#   - 21 edge functions exist (supabase/functions/, minus _shared; the
+#     CATCHUP_CRON.sql beside them is a script, not a function). Sixteen are
+#     invoked by the client; classify-report, classify-suggestion,
+#     classify-feedback, moderate-content and send-push are fired by database
+#     triggers -- never by a request the client waits on. That asymmetry is
+#     drawn, because it is what keeps a slow model from blocking a citizen's
+#     submission.
+#     Re-counted 2026-10-13: the figure had said 20 total / 15 client-invoked
+#     and had never drawn `reveal-identity` at all -- the same class of hole
+#     Figure 9 had twice before (a whole unit nothing else points at, so
+#     nothing flags its absence). reveal-identity is the admin's two-step
+#     identity reveal (20260927000000), client-invoked like the rest.
 #   - check-ai-image is CLIENT-invoked, fire-and-forget: the three submission
 #     screens call it with .ignore() after the row is written, so a failure
 #     never disturbs the submission. supabase/legacy/ai_image_detection.sql
@@ -19,6 +26,12 @@
 #     relations; `supabase storage ls ss:///` for buckets, since the CLI login
 #     role cannot read the `storage` schema): **46 tables + 9 views** in
 #     `public`, and **10 storage buckets**, whose names are the ten drawn below.
+#     Updated 2026-10-13 to **49 tables + 9 views**. This one is derived from
+#     the migrations, not from a live query (the Management API token was not
+#     reachable in that session): three migrations since the 09-22 count each
+#     add exactly one table and no view -- kuya_gov_knowledge_gaps
+#     (20261006000000), id_check_results (20261010000002) and agency_feedback
+#     (20261013000000). Re-query before the final submission if you can.
 #     20260922000000 is what moved the first two: +1 table (suggestion_replies)
 #     and +2 views (staff_suggestions_view, staff_feedbacks_view) over the
 #     45 + 7 counted on 2026-09-11.
@@ -40,24 +53,40 @@ import io
 W, H = 1680, 1220
 FONT = "Segoe UI, Calibri, Arial, sans-serif"
 
+# ── PRINT FIT (2026-10-13) ──────────────────────────────────────────────────
+# Read on SHORT BOND PAPER, LANDSCAPE. This figure is the lucky one: its own
+# aspect (1680/1220 = 1.38) is exactly the usable page's (9/6.5 = 1.38), so the
+# page wastes nothing on it and every point of type growth reaches the paper.
+# At the old 10px the body printed at 3.8pt; TYPE 1.8 puts it near 6.9pt.
+#
+# The cap is the boxes, not the page: the function lists inside them are long
+# single lines ("check-username-exists / create-staff / chat-agent"), so past
+# about 1.8 the text runs out of its own rectangle. Every text here goes
+# through box()/lbl()/chip(), so one constant covers the figure.
+TYPE = 1.8
+
 o = io.StringIO()
 w = o.write
 
 
 def box(x, y, bw, bh, lines, bold_first=True, sw="1", dash=None, fs=10):
+    fs = fs * TYPE
     d = ' stroke-dasharray="%s"' % dash if dash else ""
     w('<rect x="%g" y="%g" width="%g" height="%g" fill="#ffffff" stroke="#111" '
       'stroke-width="%s"%s/>\n' % (x, y, bw, bh, sw, d))
     n = len(lines)
-    first = y + bh / 2 - (n - 1) * 12 / 2 + 4
+    lh = 12 * TYPE
+    first = y + bh / 2 - (n - 1) * lh / 2 + 4 * TYPE
     for j, ln in enumerate(lines):
         b = ' font-weight="600"' if (j == 0 and bold_first) else ''
         w('<text x="%g" y="%g" font-family="%s" font-size="%g" fill="#111" '
           'text-anchor="middle"%s>%s</text>\n'
-          % (x + bw / 2, first + j * 12, FONT, fs, b, ln))
+          % (x + bw / 2, first + j * lh, FONT, fs, b, ln))
 
 
-def lbl(x, y, text, anchor="middle", fs=9, italic=False):
+def lbl(x, y, text, anchor="middle", fs=9, italic=False, scaled=False):
+    if not scaled:
+        fs = fs * TYPE
     it = ' font-style="italic"' if italic else ''
     w('<text x="%g" y="%g" font-family="%s" font-size="%g" fill="#111" '
       'text-anchor="%s"%s>%s</text>\n' % (x, y, FONT, fs, anchor, it, text))
@@ -103,7 +132,8 @@ for y, name in BANDS:
 
 # ── presentation tier ─────────────────────────────────────────────────────
 box(70,  110, 250, 92, ["Citizen App", "Flutter — Android · iOS · Web",
-                        "citizen shell, guest session"], fs=10)
+                        "citizen shell, guest session",
+                        "Kuya Gov FAQ — on-device"], fs=10)
 box(400, 110, 250, 92, ["Municipal Staff Console", "Flutter Web — role_id 2",
                         "department-scoped queue"], fs=10)
 box(730, 110, 250, 92, ["Administrator Console", "Flutter Web — role_id 1",
@@ -143,15 +173,20 @@ chip(45, 300, "Realtime", italic=True, wid=62)
 # ── data tier ─────────────────────────────────────────────────────────────
 box(300, 600, 640, 150,
     ["PostgreSQL  (Supabase)",
-     "46 tables  ·  9 views",
+     "49 tables  ·  9 views",
      "ROW-LEVEL SECURITY — the authorisation layer",
      "SECURITY DEFINER RPCs · triggers · pg_cron · Vault"], sw="1.4", fs=11)
 
-box(1010, 600, 370, 150,
+# ticket-attachments is drawn, and marked retired, rather than dropped: the
+# bucket still physically exists (the final cleanup waits on the Play Store
+# release), but panel item 5 removed its upload policy, so nothing can write to
+# it. Showing it as a live bucket would overstate the system; omitting it would
+# understate what is actually deployed.
+box(975, 600, 420, 150,
     ["Storage Buckets", "10 buckets — report-media, profile-photos,",
      "community-posts, suggestion-media, event-media,",
-     "resolution-media, verification-assets,",
-     "ticket-attachments, feedback-assets, admin-avatars"], fs=9)
+     "resolution-media, verification-assets, feedback-assets,",
+     "admin-avatars, ticket-attachments (retired, no writes)"], fs=9)
 
 arrow("M620,460 V600", both=True)
 chip(620, 535, "SQL over PostgREST · RLS enforced", wid=232)
@@ -160,13 +195,13 @@ chip(1180, 535, "signed upload / download", wid=150)
 
 # ── serverless compute tier ───────────────────────────────────────────────
 box(70, 870, 470, 190,
-    ["Edge Functions — client-invoked  (15)",
+    ["Edge Functions — client-invoked  (16)",
      "", "username-login · send-email-otp · verify-email-otp",
      "reset-send-otp · reset-verify-otp · check-email-exists",
      "check-username-exists · create-staff · chat-agent",
      "recommend-actions · sync-verification-avatar · verify-id",
      "scan-endorsement-media · post-endorsement-media",
-     "check-ai-image  (fire-and-forget)"], fs=10)
+     "reveal-identity · check-ai-image  (fire-and-forget)"], fs=10)
 
 box(600, 870, 470, 190,
     ["Edge Functions — trigger-fired  (5)",
@@ -179,7 +214,7 @@ box(600, 870, 470, 190,
 
 box(1130, 870, 250, 190,
     ["Deno Runtime", "", "supabase/functions/",
-     "20 functions total", "", "service-role key held", "server-side only"], fs=10)
+     "21 functions total", "", "service-role key held", "server-side only"], fs=10)
 
 # client -> client-invoked functions
 arrow("M300,440 H210 V870")
@@ -194,9 +229,14 @@ arrow("M900,870 V750")
 chip(900, 815, "write results back", wid=112)
 
 # ── external services ─────────────────────────────────────────────────────
-box(70, 1105, 340, 84,
+# Panel item 5 changed what reaches Groq from this box. Kuya Gov's 16 ready
+# made answers are served by the CLIENT (faq_catalog.dart) and grounded on the
+# lgu_facts table, so the common path now costs no model call at all; only a
+# typed question reaches chat-agent. That is an architectural fact, not a copy
+# change -- it is why the assistant works offline and carries no daily limit.
+box(55, 1105, 375, 84,
     ["Groq  —  api.groq.com", "gpt-oss-20b  ·  gpt-oss-120b",
-     "urgency, routing, sentiment, outlook, assistant"], fs=9)
+     "urgency · routing · sentiment · outlook · typed Qs"], fs=9)
 box(470, 1105, 300, 84,
     ["Sightengine", "api.sightengine.com",
      "genai — AI-image likelihood"], fs=10)

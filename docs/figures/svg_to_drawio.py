@@ -12,13 +12,24 @@ import glob
 import html
 import xml.etree.ElementTree as ET
 
+# The whole-figure sheets first, then the per-page sheets added 2026-10-13 for
+# short bond paper (see PRINT FIT in gen_figure3.py / gen_figure4.py). Both are
+# carried so the one .drawio file holds every figure the manuscript might use:
+# the overview to read on screen, and the split sheets that are legible in
+# print. Pages are in figure order, so the file opens the way the paper reads.
 FIGURES = [
-    ("figure3_hipo.svg",         "Fig 3 - HIPO Role Tree"),
-    ("figure4_flowchart.svg",    "Fig 4 - System Flowchart"),
-    ("figure5_context.svg",      "Fig 5 - Context Diagram"),
-    ("figure6_dfd1.svg",         "Fig 6 - DFD Level 1"),
-    ("figure8_architecture.svg", "Fig 8 - System Architecture"),
-    ("figure9_usecase.svg",      "Fig 9 - UML Use Case Diagram"),
+    ("figure3_hipo.svg",          "Fig 3 - HIPO Role Tree"),
+    ("figure3a_hipo_citizen.svg", "Fig 3a - HIPO Citizen"),
+    ("figure3b_hipo_staff.svg",   "Fig 3b - HIPO Municipal Staff"),
+    ("figure3c_hipo_admin.svg",   "Fig 3c - HIPO Administrator"),
+    ("figure3d_hipo_guest.svg",   "Fig 3d - HIPO Guest / Public"),
+    ("figure4_flowchart.svg",     "Fig 4 - System Flowchart"),
+    ("figure4a_flowchart.svg",    "Fig 4a - Authentication and Role Routing"),
+    ("figure4b_flowchart.svg",    "Fig 4b - Session, Sanctions and Logout"),
+    ("figure5_context.svg",       "Fig 5 - Context Diagram"),
+    ("figure6_dfd1.svg",          "Fig 6 - DFD Level 1"),
+    ("figure8_architecture.svg",  "Fig 8 - System Architecture"),
+    ("figure9_usecase.svg",       "Fig 9 - UML Use Case Diagram"),
 ]
 
 NS = "{http://www.w3.org/2000/svg}"

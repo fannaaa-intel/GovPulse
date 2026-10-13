@@ -38,13 +38,24 @@ TREE = [
             N("Enter Comment"),
             N(["Attach Photo", "(Optional)"]),
         ]),
-        N(["Chat with Kuya Gov", "(AI Assistant)"], [
-            N("Create Concern Ticket"),
+        # Revised 2026-10-13, panel item 5. The live-staff hand-off is gone, so
+        # `Create Concern Ticket` is deleted rather than renamed. What replaces
+        # it is the FAQ half: 16 ready-made answers the app serves itself
+        # (faq_catalog.dart) with no model call, beside the typed question that
+        # still reaches chat-agent.
+        N(["Ask Kuya Gov", "(AI Assistant / FAQ)"], [
+            N(["Tap a Common", "Question"]),
+            N("Type a Question"),
         ]),
+        # Panel item 3 adds `Rate Endorsed Agency` HERE rather than as a branch
+        # of its own: agency_rating_card.dart renders inside the owner's report
+        # detail, which is the screen this function stands for, and the card is
+        # present only while that report carries a live endorsement.
         N("View My Submissions", [
             N("Track Report Status"),
             N(["Follow Progress", "Updates"]),
             N(["View Completion", "Photos"]),
+            N(["Rate Endorsed", "Agency"]),
         ]),
         N("Community News Feed", [
             N("React to Post"),
@@ -70,11 +81,11 @@ TREE = [
             N(["Resolve with", "Completion Report"]),
             N("Upload Resolution Photo"),
         ]),
-        N("Citizen Conversations", [
-            N("Reply to Ticket"),
-            N("Attach File"),
-            N("Close Ticket"),
-        ]),
+        # `Citizen Conversations` (Reply to Ticket / Attach File / Close Ticket)
+        # was removed 2026-10-13, panel item 5: the staff Conversations page,
+        # the live queue and chat notifications are gone from the console, and
+        # every INSERT policy behind the ticket tables is dropped. The office
+        # now answers citizens only through the two routed inboxes below.
         # 20260922000000. Suggestions and Feedback are routed to the owning
         # office by trigger (suggestion_department / feedback_department), so
         # each existing office gained two inboxes -- no new role, no new
@@ -119,6 +130,14 @@ TREE = [
                 N(["AI Department", "Recommendation (Advisory)"]),
             ]),
             N(["Reveal Submitter", "Identity"]),
+            # Panel item 2 (report-flood hardening, 20261014000000/...1). The
+            # queue marks look-alike reports with an "N similar" chip and raises
+            # a banner at 5+ of one issue in 24h, but NOTHING merges by itself
+            # -- "Merge all N into one ticket" is an act the admin invokes.
+            N(["Merge Duplicate", "Reports"], [
+                N(["Review Similar", "Group"]),
+                N(["Merge into One", "Ticket"]),
+            ]),
         ]),
         # 20260917000000 + classify-suggestion. Advisory in exactly the way the
         # department recommendation above is: the citizen's chosen category
@@ -161,6 +180,10 @@ TREE = [
             N(["Generate Endorsement", "Letter (PDF + QR)"]),
             N("Track Endorsement"),
             N(["Withdraw with Reason", "(Revokes Token)"]),
+            # Panel item 3, admin half (20261013000000). The Team page's
+            # "Agency performance" section: endorsed / received / completed
+            # counts, the two average waits, and the citizens' star average.
+            N(["View Agency", "Performance"]),
         ]),
         N(["Generate Reports", "(PDF)"]),
         N("View Activity Log"),
@@ -187,9 +210,24 @@ TREE = [
     ]),
 ]
 
+# ── PRINT FIT (2026-10-13) ──────────────────────────────────────────────────
+# Read on SHORT BOND PAPER (8.5x11in), portrait: usable area about 6.5 x 9in.
+#
+# What decides whether a label is legible in print is NOT the font constant --
+# it is the ratio of the drawing to the page, because Word scales the whole SVG
+# to fit. Enlarging the grid and the type together therefore changes nothing:
+# the figure is simply scaled back down. (Measured: multiplying every constant
+# below by 2.35 left the printed size at 3.4pt, exactly where it started.)
+#
+# The whole five-role tree is 1276x1813 and the page fits it on HEIGHT, which
+# pins its labels near 3.4pt whatever font is set. So the tree is emitted twice:
+# once whole, as the reference sheet and as the source svg_to_drawio.py reads,
+# and once as one sheet PER ROLE, where the leftover page is taken up by
+# `scale` and the text reaches a readable size. See SHEETS at the foot.
 BOXW, INDENT, SPINE = 168, 30, 13
 LH, PAD, GAP = 11, 9, 6
 COL0, COLW, TOP = 20, 252, 132
+FONT_PX = 9.5
 
 def bh(lines):
     return len(lines) * LH + PAD * 2
@@ -214,83 +252,182 @@ def place(node, x, ctx, out):
             out.append(("stub", sx, cy, x + INDENT))
     return y + h / 2
 
-o = io.StringIO()
-boxes, wires, heights = [], [], []
-
-for i, (role, kids) in enumerate(TREE):
-    cx = COL0 + i * COLW
-    ctx = Ctx()
-    out = []
-    rh = bh(role)
-    boxes.append((cx, 90, 34, role))
-    ctx.y = TOP
-    childs = []
-    for k in kids:
-        childs.append((ctx.y, place(k, cx + INDENT, ctx, out)))
-    sx = cx + SPINE
-    wires.append(("spine", sx, 124, childs[-1][1]))
-    for _, cy in childs:
-        wires.append(("stub", sx, cy, cx + INDENT))
-    for item in out:
-        (wires if isinstance(item[0], str) else boxes).append(item)
-    heights.append(ctx.y)
-
-H = int(max(heights)) + 24
-W = COL0 * 2 + COLW * len(TREE) - (COLW - BOXW - 2 * INDENT)
-centers = [COL0 + i * COLW + BOXW / 2 for i in range(len(TREE))]
-mid = (centers[0] + centers[-1]) / 2
-
-w = o.write
-w('      <svg viewBox="0 0 %d %d" style="min-width:1180px;max-width:100%%" role="img"\n' % (W, H))
-w('           aria-label="Hierarchical input-process-output diagram: User Login branching into '
-  'Citizen, Municipal Staff, Administrator, Guest and Log Out, each decomposed into its functions '
-  'and sub-functions.">\n')
-w('        <g fill="none" stroke="#111" stroke-width="1">\n')
-w('          <rect x="%d" y="16" width="200" height="30" fill="#fff"/>\n' % (mid - 100))
-w('          <path d="M%d,46 V72"/>\n' % mid)
-w('          <path d="M%.1f,72 H%.1f"/>\n' % (centers[0], centers[-1]))
-for c in centers:
-    w('          <path d="M%.1f,72 V90"/>\n' % c)
-for it in wires:
-    if it[0] == "spine":
-        w('          <path d="M%.1f,%.1f V%.1f"/>\n' % (it[1], it[2], it[3]))
-    else:
-        w('          <path d="M%.1f,%.1f H%.1f"/>\n' % (it[1], it[2], it[3]))
-w('        </g>\n')
-w('        <text class="tt" x="%.1f" y="35" text-anchor="middle" font-weight="600">User Login</text>\n' % mid)
-
-for x, y, h, lines in boxes:
-    role = y == 90
-    w('        <rect x="%.1f" y="%.1f" width="%d" height="%.1f" fill="#fff" stroke="#111" stroke-width="%s"/>\n'
-      % (x, y, BOXW, h, "1.4" if role else "1"))
-    n = len(lines)
-    first = y + h / 2 - (n - 1) * LH / 2 + 3.6
-    for j, ln in enumerate(lines):
-        w('        <text class="tt" x="%.1f" y="%.1f" text-anchor="middle"%s>%s</text>\n'
-          % (x + BOXW / 2, first + j * LH, ' font-weight="600"' if role else '', ln))
-
-w('      </svg>\n')
-open("tree.svg", "w", encoding="utf-8").write(o.getvalue())  # artifact copy
-
-# ── Standalone copy for Word / print ────────────────────────────────────────
-# Word's SVG renderer ignores <style> blocks and CSS classes, so every text
-# node carries its own presentation attributes. An opaque white background rect
-# keeps it readable if it lands on a coloured slide.
 FONT = "Segoe UI, Calibri, Arial, sans-serif"
-s = o.getvalue()
-s = s.replace('      <svg viewBox="0 0 %d %d" style="min-width:1180px;max-width:100%%" role="img"' % (W, H),
-              '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d" width="%d" height="%d"' % (W, H, W, H))
-s = s.replace('class="tt" ', '')
-s = s.replace('<text ', '<text font-family="%s" font-size="9.5" fill="#111" ' % FONT)
-# white ground behind everything
-s = s.replace('<g fill="none" stroke="#111" stroke-width="1">',
-              '<rect x="0" y="0" width="%d" height="%d" fill="#ffffff"/>\n'
-              '        <g fill="none" stroke="#111" stroke-width="1">' % (W, H))
-open("figure3_hipo.svg", "w", encoding="utf-8").write(s.strip() + "\n")
 
-# exact-size HTML wrapper so headless Chrome can raster it at high DPI
+
+def render(tree, title, scale=1.0):
+    """Lay out and emit one sheet.
+
+    `tree` is a list of (role, kids) -- the whole TREE for the reference sheet,
+    or a single role for a per-page sheet.  `scale` multiplies the authoring
+    grid AND the type together.  On a sheet that carries fewer columns there is
+    page left over, and taking up that slack is the ONLY thing that buys
+    printed point size (see PRINT FIT at the head of this file).
+    """
+    bw, ind, sp = BOXW * scale, INDENT * scale, SPINE * scale
+    lh, pad, gap = LH * scale, PAD * scale, GAP * scale
+    col0, colw, top = COL0 * scale, COLW * scale, TOP * scale
+    fpx = FONT_PX * scale
+    roley = 90 * scale
+
+    def bh_(lines):
+        return len(lines) * lh + pad * 2
+
+    class C:
+        def __init__(self):
+            self.y = top
+
+    def place_(node, x, ctx, out):
+        lines, kids = node
+        h = bh_(lines)
+        y = ctx.y
+        out.append((x, y, h, lines))
+        ctx.y += h + gap
+        if not kids:
+            return y + h / 2
+        childs = []
+        for k in kids:
+            childs.append((ctx.y, place_(k, x + ind, ctx, out)))
+        sx = x + sp
+        out.append(("spine", sx, y + h, childs[-1][1]))
+        for _, cy in childs:
+            out.append(("stub", sx, cy, x + ind))
+        return y + h / 2
+
+    o = io.StringIO()
+    boxes, wires, heights = [], [], []
+    for i, (role, kids) in enumerate(tree):
+        cx = col0 + i * colw
+        ctx = C()
+        out = []
+        boxes.append((cx, roley, 34 * scale, role))
+        childs = []
+        for k in kids:
+            childs.append((ctx.y, place_(k, cx + ind, ctx, out)))
+        sx = cx + sp
+        wires.append(("spine", sx, 124 * scale, childs[-1][1]))
+        for _, cy in childs:
+            wires.append(("stub", sx, cy, cx + ind))
+        for item in out:
+            (wires if isinstance(item[0], str) else boxes).append(item)
+        heights.append(ctx.y)
+
+    H = int(max(heights)) + int(24 * scale)
+    W = int(col0 * 2 + colw * len(tree) - (colw - bw - 2 * ind))
+    centers = [col0 + i * colw + bw / 2 for i in range(len(tree))]
+    mid = (centers[0] + centers[-1]) / 2
+
+    w = o.write
+    w('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d" width="%d" height="%d">\n'
+      % (W, H, W, H))
+    w('<rect x="0" y="0" width="%d" height="%d" fill="#ffffff"/>\n' % (W, H))
+    w('<g fill="none" stroke="#111" stroke-width="%.2f">\n' % max(1.0, scale * 0.9))
+    w('  <rect x="%.1f" y="%.1f" width="%.1f" height="%.1f" fill="#fff"/>\n'
+      % (mid - 100 * scale, 16 * scale, 200 * scale, 30 * scale))
+    w('  <path d="M%.1f,%.1f V%.1f"/>\n' % (mid, 46 * scale, 72 * scale))
+    if len(centers) > 1:
+        w('  <path d="M%.1f,%.1f H%.1f"/>\n' % (centers[0], 72 * scale, centers[-1]))
+    for c in centers:
+        w('  <path d="M%.1f,%.1f V%.1f"/>\n' % (c, 72 * scale, roley))
+    for it in wires:
+        if it[0] == "spine":
+            w('  <path d="M%.1f,%.1f V%.1f"/>\n' % (it[1], it[2], it[3]))
+        else:
+            w('  <path d="M%.1f,%.1f H%.1f"/>\n' % (it[1], it[2], it[3]))
+    w('</g>\n')
+    w('<text font-family="%s" font-size="%.1f" fill="#111" x="%.1f" y="%.1f" '
+      'text-anchor="middle" font-weight="600">%s</text>\n'
+      % (FONT, fpx, mid, 35 * scale, title))
+
+    for x, y, h, lines in boxes:
+        isrole = abs(y - roley) < 0.01
+        w('<rect x="%.1f" y="%.1f" width="%.1f" height="%.1f" fill="#fff" stroke="#111" '
+          'stroke-width="%s"/>\n' % (x, y, bw, h, "1.4" if isrole else "1"))
+        n = len(lines)
+        first = y + h / 2 - (n - 1) * lh / 2 + 3.6 * scale
+        for j, ln in enumerate(lines):
+            w('<text font-family="%s" font-size="%.1f" fill="#111" x="%.1f" y="%.1f" '
+              'text-anchor="middle"%s>%s</text>\n'
+              % (FONT, fpx, x + bw / 2, first + j * lh,
+                 ' font-weight="600"' if isrole else '', ln))
+    w('</svg>\n')
+    return o.getvalue(), W, H, len(boxes)
+
+
+def pt_at(w_, h_, fpx):
+    """Printed point size of `fpx` text on a 6.5 x 9in portrait area."""
+    return fpx * min(6.5 / w_, 9.0 / h_) * 72
+
+
+def flow(role, kids, ncols):
+    """Split ONE role's functions across `ncols` columns of the same role.
+
+    A single role drawn as one column comes out tall and thin (the Administrator
+    is 589x3987), and a portrait page fits that on height -- which is exactly
+    what crushes the type. Dealing the functions into several columns brings the
+    sheet back toward the page's own 0.72 aspect, so the scale-to-fit stops
+    throwing width away. The role box is repeated at the head of each column,
+    with "(cont.)" after the first, because each column is still that role's
+    tree and the reader needs to know whose it is.
+    """
+    # balance by subtree size, not by count: one 6-node function outweighs
+    # three leaves, and dealing by count alone leaves one column twice as long.
+    def size(node):
+        lines, ks = node
+        return 1 + sum(size(k) for k in ks)
+
+    sizes = [size(k) for k in kids]
+    target = sum(sizes) / ncols
+    cols, cur, run = [], [], 0.0
+    for k, sz in zip(kids, sizes):
+        if cur and run + sz / 2.0 > target and len(cols) < ncols - 1:
+            cols.append(cur)
+            cur, run = [], 0.0
+        cur.append(k)
+        run += sz
+    cols.append(cur)
+    out = []
+    for j, part in enumerate(cols):
+        head = list(role)
+        if j:
+            head = head + ["(cont.)"]
+        out.append((head, part))
+    return out
+
+
+# ── the reference sheet: the whole tree, exactly as before ──────────────────
+body, W, H, nb = render(TREE, "User Login")
+open("figure3_hipo.svg", "w", encoding="utf-8").write(body)
+open("tree.svg", "w", encoding="utf-8").write(body)          # artifact copy
 open("raster.html", "w", encoding="utf-8").write(
     '<!doctype html><meta charset="utf-8">'
-    '<style>html,body{margin:0;padding:0;background:#fff}svg{display:block}</style>' + s)
+    '<style>html,body{margin:0;padding:0;background:#fff}svg{display:block}</style>' + body)
+print("viewBox %dx%d  boxes=%d  body prints at %.1fpt  -> figure3_hipo.svg"
+      % (W, H, nb, pt_at(W, H, FONT_PX)))
 
-print("viewBox %dx%d  boxes=%d  -> tree.svg, figure3_hipo.svg, raster.html" % (W, H, len(boxes)))
+# ── per-role sheets, each sized to be READ on short bond paper ──────────────
+# The whole tree is 1276x1813 and the page scales it to fit on height, which
+# pins its 9.5px labels at 3.4pt however large the font constant is made. One
+# role to a page leaves slack in both directions, and `scale` takes it up.
+SHEETS = [
+    ("3a", "citizen", 0, "User Login - Citizen", 2),
+    ("3b", "staff",   1, "User Login - Municipal Staff", 2),
+    ("3c", "admin",   2, "User Login - Administrator", 2),
+    ("3d", "guest",   3, "User Login - Guest / Public", 1),
+]
+for tag, slug, idx, title, ncols in SHEETS:
+    role, kids = TREE[idx]
+    sub = flow(role, kids, ncols) if ncols > 1 else [TREE[idx]]
+    # Scale is deliberately a constant: multiplying the grid and the type
+    # together cannot change the printed point size (the page scales the result
+    # back down), so it only sets how big the emitted file is. What actually
+    # buys legibility here is `ncols` -- it changes the sheet's ASPECT, and a
+    # sheet shaped like the page stops losing width to scale-to-fit.
+    body, w_, h_, n_ = render(sub, title, scale=2.2)
+    fn = "figure%s_hipo_%s.svg" % (tag, slug)
+    open(fn, "w", encoding="utf-8").write(body)
+    open("raster_%s.html" % tag, "w", encoding="utf-8").write(
+        '<!doctype html><meta charset="utf-8">'
+        '<style>html,body{margin:0;padding:0;background:#fff}svg{display:block}</style>' + body)
+    print("  %-30s %4dx%-5d boxes=%-3d body prints at %.1fpt"
+          % (fn, w_, h_, n_, pt_at(w_, h_, FONT_PX * 2.2)))

@@ -68,6 +68,40 @@ P = {
 }
 
 # ------------------------------------------------------------------- stores --
+# ── PRINT FIT (2026-10-13) ──────────────────────────────────────────────────
+# Read on SHORT BOND PAPER, LANDSCAPE (its README already says to put this one
+# in landscape and NOT to split it: cutting a level-1 DFD breaks the flows that
+# run between processes, which is the thing the diagram exists to show).
+#
+# This is the densest of the six -- 75 flows, 9 processes, 13 stores, 7
+# entities, in 2160x2180 -- and it is the one that fits a page worst, because
+# it is nearly square (0.99) while the page is 1.38. At the old 9px its labels
+# printed at 1.9pt. Enlarging the type against the fixed canvas is the only
+# lever (the flow paths are hand-laid absolute coordinates, and the generator
+# asserts every segment is axis-aligned, so the drawing cannot be reflowed).
+#
+# TYPE is capped by the longest label (52 characters): past ~2x it starts
+# running into the flows stacked beside it, and 75 crossing labels make that
+# fail fast. 9px -> 18px lands at 3.9pt, twice what it was.
+#
+# SPLITTING WAS TESTED AND REJECTED, with a number: a horizontal cut at y=1200
+# (the natural seam, processes 1-4 above and 5-9 below) severs 20 of the 75
+# flows. The README's rule -- never split a level-1 DFD, because cutting it
+# breaks the flows that run between processes -- is exactly right here, and the
+# flows between processes are what a level-1 DFD is FOR.
+#
+# So this figure is landscape, whole, and still the densest of the six. In the
+# manuscript it wants a full landscape page of its own; at A4/short-bond width
+# its flow labels are legible on screen and in a zoomed PDF rather than in a
+# printed copy, and that is a property of the system's size, not of the
+# drawing. Figure 5 is the one to read for the boundary at a glance.
+TYPE = 2.0
+
+# NOTE: SW/SH are NOT scaled. Flow endpoints are derived from them (sl/sr/stp/
+# sbt), and the paths are hand-laid absolute coordinates, so widening a store
+# moves one end of a flow while the other stays put -- the generator's own
+# axis-alignment assertion caught exactly that ("diagonal segment in
+# 'Suggestion Category & Theme'"). Only the TYPE grows here.
 SW, SH = 215, 80
 S = {
     "d1":  (420,  500, ["D1", "USER & ROLE STORE"]),
@@ -86,7 +120,20 @@ S = {
     "d11": (1300, 1310, ["D11", "PROGRESS UPDATE STORE"]),
     "d6":  (1300, 1520, ["D6", "ENDORSEMENT STORE"]),
     "d7":  (1300, 1720, ["D7", "COMMUNITY STORE"]),
-    "d8":  (1300, 1940, ["D8", "SUPPORT TICKET STORE"]),
+    # D8 was the SUPPORT TICKET STORE (concern_tickets / ticket_messages /
+    # ticket_attachments). Panel item 5 closed every way of writing to it --
+    # the INSERT policies are dropped, the seven write functions revoked, the
+    # attachment bucket shut -- so it is no longer a store this system reads or
+    # writes and it leaves the diagram. The tables still physically exist,
+    # pending the final cleanup that waits on the Play Store release, but a DFD
+    # describes dataflow, and there is none.
+    #
+    # D8 is REUSED for the agency-feedback store rather than left as a gap:
+    # public.agency_feedback (20261013000000) is a real store with its own
+    # lifecycle -- one row per report, the agency NAME snapshotted at save time
+    # so a re-endorsement cannot rewrite history, written by the citizen through
+    # rate_agency() and read only by the admin.
+    "d8":  (1300, 1940, ["D8", "AGENCY FEEDBACK STORE"]),
     # D12 added 2026-09-22 (20260922000000). Its own store for the same reason
     # D11 is: public.suggestion_replies is a real table with its own lifecycle
     # (pending_approval | approved | rejected) and its own partial unique index
@@ -144,7 +191,7 @@ FLOWS = [
     ([pl(3, 22), (146, 802), (146, 178)],
      "Submission Status & Reference Code", (160, 818, "start")),
     ([(230, 178), (230, 1812), pl(8, -18)],
-     "Comments, Likes & Support Messages", (244, 1804, "start")),
+     "Comments, Likes & Agency Ratings", (244, 1804, "start")),
     ([pl(8, 22), (258, 1852), (258, 178)],
      "Community Feed & Event Updates", (272, 1868, "start")),
     ([pl(4, 22), (286, 1022), (286, 178)],
@@ -167,12 +214,16 @@ FLOWS = [
      "Login Credentials", (892, 292, "start")),
     ([(740, 178), (740, 300), (568, 300), (568, 1420), pl(6, 0)],
      "Status, Progress Updates & Completion Report", (578, 1300, "start")),
-    ([(710, 178), (710, 330), (540, 330), (540, 1848), pl(8, 18)],
-     "Replies to Citizen Messages", (550, 1700, "start")),
+    # The staff->8.0 flow that used to run here carried "Replies to Citizen
+    # Messages" -- the office's side of the live chat. Panel item 5 removed the
+    # Conversations page and every ticket INSERT policy, so the flow is DELETED
+    # rather than relabelled: the office's replies to Suggestions and Feedback
+    # already have their own flow into 8.0 below, and reusing this one would
+    # have drawn the same traffic twice.
     ([pl(6, 22), (596, 1442), (596, 246), (742, 246), (742, 178)],
      "Assigned Reports (Identity Withheld)", (606, 1345, "start")),
     ([pl(8, -22), (624, 1808), (624, 222), (818, 222), (818, 178)],
-     "Citizen Messages & Notifications", (634, 1130, "start")),
+     "Console Notifications", (634, 1130, "start")),
     # 20260922000000. The two routed inboxes, and the drafts the office writes
     # into them. Identity-masked exactly as assigned reports are: staff read
     # through staff_suggestions_view / staff_feedbacks_view, never the tables.
@@ -300,10 +351,14 @@ FLOWS = [
      "Store Post & Comment", (1034, 1792, "start")),
     ([sbt("d7", 40), (1340, 1858), pr(8, 28)],
      "Feed Content", (1060, 1872, "start")),
+    # Panel item 3 (20261013000000). rate_agency() writes the stars, the
+    # comment, and the agency NAME and state taken from the server at save
+    # time; my_agency_rating() reads the row back so the citizen can edit it.
+    # Replaces the ticket pair that used to run to this store.
     ([pr(8, 48), (1150, 1878), (1150, 1912), sl("d8", -28)],
-     "Store Ticket & Message", (980, 1896, "start")),
+     "Store Agency Rating & Comment", (980, 1896, "start")),
     ([sl("d8", 20), (1120, 1960), (1120, 1846), pr(8, 16)],
-     "Ticket Thread", (1000, 1976, "start")),
+     "Rating Already Given", (1000, 1976, "start")),
     # ---- the staff reply loop (D12) --------------------------------------
     # Same shape as the community-post and progress-update loops: 8.0 writes
     # the office's reply as pending_approval, the admin's decision comes back
@@ -343,7 +398,7 @@ FLOWS = [
     ([pb(6, 0), pt(7, 0)],
      "Endorsement Request", (892, 1522, "start")),
     ([pb(8, 0), pt(9, 0)],
-     "Message & Engagement Event", (892, 1948, "start")),
+     "Engagement & Rating Event", (892, 1948, "start")),
     ([pr(2, 44), (1065, 634), (1065, 2005), pr(9, -55)],
      "Verification Decision Event", (1077, 1350, "start")),
     ([pr(6, 30), (1095, 1450), (1095, 2032), pr(9, -28)],

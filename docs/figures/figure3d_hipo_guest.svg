@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 589 1407" width="589" height="1407">
+<rect x="0" y="0" width="589" height="1407" fill="#ffffff"/>
+<g fill="none" stroke="#111" stroke-width="1.98">
+  <rect x="8.8" y="35.2" width="440.0" height="66.0" fill="#fff"/>
+  <path d="M228.8,101.2 V158.4"/>
+  <path d="M228.8,158.4 V198.0"/>
+  <path d="M72.6,272.8 V792.0"/>
+  <path d="M72.6,334.4 H110.0"/>
+  <path d="M72.6,625.9 H110.0"/>
+  <path d="M72.6,702.9 H110.0"/>
+  <path d="M72.6,792.0 H110.0"/>
+  <path d="M138.6,378.4 V536.8"/>
+  <path d="M138.6,435.6 H176.0"/>
+  <path d="M138.6,536.8 H176.0"/>
+  <path d="M138.6,836.0 V1298.0"/>
+  <path d="M138.6,893.2 H176.0"/>
+  <path d="M138.6,994.4 H176.0"/>
+  <path d="M138.6,1095.6 H176.0"/>
+  <path d="M138.6,1196.8 H176.0"/>
+  <path d="M138.6,1298.0 H176.0"/>
+</g>
+<text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="20.9" fill="#111" x="228.8" y="77.0" text-anchor="middle" font-weight="600">User Login - Guest / Public</text>
+<rect x="44.0" y="198.0" width="369.6" height="74.8" fill="#fff" stroke="#111" stroke-width="1.4"/>
+<text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="20.9" fill="#111" x="228.8" y="231.2" text-anchor="middle" font-weight="600">Guest / Public</text>
+<text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="20.9" fill="#111" x="228.8" y="255.4" text-anchor="middle" font-weight="600">(No Account)</text>
+<rect x="110.0" y="290.4" width="369.6" height="88.0" fill="#fff" stroke="#111" stroke-width="1"/>
+<text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="20.9" fill="#111" x="294.8" y="330.2" text-anchor="middle">View Public Landing</text>
+<text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="20.9" fill="#111" x="294.8" y="354.4" text-anchor="middle">Page</text>
+<rect x="176.0" y="391.6" width="369.6" height="88.0" fill="#fff" stroke="#111" stroke-width="1"/>
+<text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="20.9" fill="#111" x="360.8" y="431.4" text-anchor="middle">Features, How It</text>
+<text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="20.9" fill="#111" x="360.8" y="455.6" text-anchor="middle">Works, FAQ</text>
+<rect x="176.0" y="492.8" width="369.6" height="88.0" fill="#fff" stroke="#111" stroke-width="1"/>
+<text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="20.9" fill="#111" x="360.8" y="532.6" text-anchor="middle">Sign Up / Log In /</text>
+<text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="20.9" fill="#111" x="360.8" y="556.8" text-anchor="middle">Browse as Guest</text>
+<rect x="110.0" y="594.0" width="369.6" height="63.8" fill="#fff" stroke="#111" stroke-width="1"/>
+<text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="20.9" fill="#111" x="294.8" y="633.8" text-anchor="middle">Browse News Feed</text>
+<rect x="110.0" y="671.0" width="369.6" height="63.8" fill="#fff" stroke="#111" stroke-width="1"/>
+<text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="20.9" fill="#111" x="294.8" y="710.8" text-anchor="middle">View Events</text>
+<rect x="110.0" y="748.0" width="369.6" height="88.0" fill="#fff" stroke="#111" stroke-width="1"/>
+<text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="20.9" fill="#111" x="294.8" y="787.8" text-anchor="middle">Scan Endorsement QR</text>
+<text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="20.9" fill="#111" x="294.8" y="812.0" text-anchor="middle">(No Login Required)</text>
+<rect x="176.0" y="849.2" width="369.6" height="88.0" fill="#fff" stroke="#111" stroke-width="1"/>
+<text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="20.9" fill="#111" x="360.8" y="889.0" text-anchor="middle">View Endorsement</text>
+<text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="20.9" fill="#111" x="360.8" y="913.2" text-anchor="middle">Details</text>
+<rect x="176.0" y="950.4" width="369.6" height="88.0" fill="#fff" stroke="#111" stroke-width="1"/>
+<text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="20.9" fill="#111" x="360.8" y="990.2" text-anchor="middle">View Citizen's</text>
+<text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="20.9" fill="#111" x="360.8" y="1014.4" text-anchor="middle">Photos / Video</text>
+<rect x="176.0" y="1051.6" width="369.6" height="88.0" fill="#fff" stroke="#111" stroke-width="1"/>
+<text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="20.9" fill="#111" x="360.8" y="1091.4" text-anchor="middle">Confirm Receipt</text>
+<text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="20.9" fill="#111" x="360.8" y="1115.6" text-anchor="middle">with PIN</text>
+<rect x="176.0" y="1152.8" width="369.6" height="88.0" fill="#fff" stroke="#111" stroke-width="1"/>
+<text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="20.9" fill="#111" x="360.8" y="1192.6" text-anchor="middle">Post Field Update</text>
+<text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="20.9" fill="#111" x="360.8" y="1216.8" text-anchor="middle">+ Work Photo</text>
+<rect x="176.0" y="1254.0" width="369.6" height="88.0" fill="#fff" stroke="#111" stroke-width="1"/>
+<text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="20.9" fill="#111" x="360.8" y="1293.8" text-anchor="middle">Mark Completed</text>
+<text font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="20.9" fill="#111" x="360.8" y="1318.0" text-anchor="middle">with Account of Work</text>
+</svg>

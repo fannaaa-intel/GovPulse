@@ -27,12 +27,40 @@
 #   - classify-suggestion «extend»s it with the mis-filed category hint, for
 #     the same reason airoute «extend»s accept -- advisory, and the page
 #     renders identically when the classifier has not reached a row.
+# Revised 2026-10-13 for the post-defense panel revision (items 2, 3 and 5):
+#   - item 5 removes the live staff chat. `Raise Concern Ticket` and the staff
+#     `Answer Citizen Conversations` are DELETED, not relabelled -- the console
+#     page, the routing function and every INSERT policy behind them are gone.
+#     `Chat with Kuya Gov (AI)` becomes `Ask Kuya Gov / FAQ`.
+#   - item 3 adds `Rate Endorsed Agency` (citizen) and `View Agency
+#     Performance` (admin).
+#   - item 2 adds `Merge Duplicate Reports` (admin).
+# Both new «extend»s hang off the act that makes them reachable (endorse,
+# accept) rather than off the console page that displays them.
 # <<include>> is used only where the base case cannot complete without the
 # included one; <<extend>> only where the code makes the step optional.
 import io
 import math
 
 W, H = 2130, 1434
+
+# ---------------------------------------------------------------------------
+# PRINT FIT (2026-10-13).  The figure is read on SHORT BOND PAPER (8.5x11in),
+# landscape, so the usable width is about 9in.  A label's printed size is
+#     pt = px * 9 / W * 72
+# which put the old 9.5px oval text at 2.6pt -- measured, and confirmed by
+# rendering the sheet at 1350x975 and looking at it.  Nothing about the layout
+# was wrong; it was simply drawn for a screen.
+#
+# So the geometry is kept EXACTLY as it was reasoned out (every column, row and
+# hand-checked clearance below is still in these coordinates) and the whole
+# drawing is scaled up by SCALE at write time, while the type is scaled a
+# little harder than the shapes (TYPE_BOOST) -- ovals that grow as fast as
+# their labels would just reproduce the same too-small text on a bigger sheet.
+# Net effect at 9in wide: oval text lands near 8.5pt, actors and the title
+# above that.
+SCALE = 1.55
+TYPE_BOOST = 1.85
 FONT = "Segoe UI, Calibri, Arial, sans-serif"
 INCL = "«" + "include" + "»"
 EXTD = "«" + "extend" + "»"
@@ -81,8 +109,17 @@ UC = {
     # The citizen-facing half of the progress-update loop (report_progress_updates
     # .dart, ReportUpdatesMode.citizen): approved updates only, newest first.
     "follow":   (1350, 372, 92, 30, ["Follow Report", "Progress"]),
-    "chat":     (600, 454, 96, 30, ["Chat with", "Kuya Gov (AI)"]),
-    "ticket":   (860, 478, 96, 30, ["Raise Concern", "Ticket"]),
+    # Revised 2026-10-13 (panel item 5). The assistant answers questions only:
+    # `Raise Concern Ticket` is gone with the live-staff hand-off, and the label
+    # now names the FAQ half, which is what a citizen actually reaches first --
+    # 16 ready-made answers served by the app with no model call at all
+    # (faq_catalog.dart). A typed question still reaches chat-agent, so this is
+    # one case with two answer paths, not two cases.
+    "chat":     (600, 454, 96, 30, ["Ask Kuya Gov", "/ FAQ"]),
+    # Panel item 3. Rating the agency a report was endorsed to. Takes the slot
+    # `Raise Concern Ticket` vacated: still the citizen band, directly under
+    # `Send Feedback`, which is the case it reads as a sibling of.
+    "rateag":   (860, 478, 96, 30, ["Rate Endorsed", "Agency"]),
     "notif":    (600, 536, 96, 30, ["View", "Notifications"]),
     "profile":  (860, 560, 96, 30, ["Manage Profile"]),
 
@@ -111,7 +148,10 @@ UC = {
     "assigned": (600, 842, 96, 30, ["View Assigned", "Reports"]),
     "status":   (860, 842, 96, 30, ["Update Report", "Status"]),
     "resolve":  (1105, 842, 92, 30, ["Upload", "Resolution Photo"]),
-    "convo":    (600, 924, 96, 30, ["Answer Citizen", "Conversations"]),
+    # `Answer Citizen Conversations` was removed 2026-10-13 (panel item 5): the
+    # staff Conversations page, the live queue and chat notifications are all
+    # gone from the console, so the office answers citizens only through the
+    # routed Suggestion and Feedback inboxes below.
     "post":     (600, 1006, 96, 30, ["Post Community", "Update"]),
     "avail":    (600, 1088, 96, 30, ["View Resolution", "History"]),
     # The office half of the loop. Resolving is no longer a bare status change:
@@ -141,6 +181,13 @@ UC = {
     "moderate": (860, 924, 96, 30, ["Moderate", "Content"]),
     "accounts": (1105, 924, 92, 30, ["Manage User", "Accounts"]),
     "review":   (1105, 1006, 92, 30, ["Review Citizen", "Verification"]),
+    # Panel item 3, admin half: the "Agency performance" section of the Team
+    # page -- endorsed / received / completed counts, the two average waits, and
+    # the citizen star average. Far column, on the admin actor's own row, which
+    # is what keeps its association short: placed one row lower (1006) it sat
+    # between the actor and five of its other cases and every one of those lines
+    # ran through it.
+    "agperf":   (1600, 924, 92, 30, ["View Agency", "Performance"]),
     # The admin's TRIAGE act -- accepting a submitted report and assigning it to
     # the office that will own it. Was missing from the first draft even though
     # it is the hinge every staff case hangs off: a report reaches a staff queue
@@ -171,6 +218,14 @@ UC = {
     # unrelated ovals.
     "apprupd":  (1600, 783, 92, 30, ["Approve Progress", "Update"]),
     "withdraw": (1350, 1170, 92, 30, ["Withdraw", "Endorsement"]),
+    # Panel item 2 (report-flood hardening). The admin's own act on a flooded
+    # queue: "Merge all N into one ticket" folds a group of look-alike reports
+    # into the one most citizens already support. Nothing merges automatically
+    # -- the banner and the "N similar" chips only mark the group -- so this is
+    # a use case the admin invokes, not a system reaction. In the far column
+    # rather than the 1252 row: at (860,1252) the `repsug`->`apprrep` «include»
+    # ran straight through it.
+    "merge":    (1600, 1170, 92, 30, ["Merge Duplicate", "Reports"]),
     # The gate both staff cases above hang on. «include», not «extend»: the RLS
     # INSERT policy pins a staff draft to 'pending_approval' and the citizen's
     # read binds on 'approved', so replying CANNOT complete without this act.
@@ -189,15 +244,15 @@ UC = {
 # actor -> use cases
 LINKS = {
     "citizen": ["register", "login", "logout", "verify", "report", "suggest",
-                "feedback", "track", "follow", "chat", "notif", "profile",
-                "feed", "engage", "events", "hotline"],
+                "feedback", "track", "follow", "chat", "rateag", "notif",
+                "profile", "feed", "engage", "events", "hotline"],
     "guest":   ["register", "login", "landing", "feed", "events", "hotline"],
-    "staff":   ["login", "logout", "assigned", "status", "resolve", "convo",
+    "staff":   ["login", "logout", "assigned", "status", "resolve",
                 "post", "avail", "progress", "complete", "worklog",
                 "repsug", "repfb"],
     "admin":   ["login", "logout", "dash", "moderate", "approve", "apprupd",
-                "accounts", "review", "revsug", "accept", "endorse", "withdraw",
-                "export", "apprrep"],
+                "accounts", "review", "revsug", "accept", "merge", "endorse",
+                "withdraw", "agperf", "export", "apprrep"],
     "agency":  ["scanqr", "confirm", "agupdate", "agdone"],
 }
 
@@ -206,7 +261,20 @@ RELS = [
     ("verify",   "ocr",     "include"),
     ("report",   "anon",    "extend"),
     ("report",   "media",   "extend"),
-    ("chat",     "ticket",  "extend"),
+    # Panel item 3. «extend» on `Track My Submissions`, not on the admin's
+    # `Endorse to External Agency`, and the distinction is factual rather than
+    # cosmetic. agency_rating_card.dart renders INSIDE the owner's own report
+    # detail -- the screen `track` stands for -- and my_agency_rating() simply
+    # reports the card ineligible when the report carries no live endorsement.
+    # So the citizen reaches it by tracking their own report; the endorsement is
+    # the precondition that makes it eligible, not the act that invokes it.
+    # Tracking also completes perfectly well when nobody ever rates, which is
+    # what «extend» asserts.
+    ("track",    "rateag",  "extend"),
+    # Panel item 2. «extend» on the triage act: accepting a report completes
+    # without merging anything, and the admin merges only when a group of
+    # look-alikes has actually arrived.
+    ("accept",   "merge",   "extend"),
     ("status",   "resolve", "extend"),
     ("endorse",  "letter",  "include"),
     # ADVISORY, never authoritative -- and «extend» is what says so. Accepting
@@ -247,8 +315,17 @@ RELS = [
 o = io.StringIO()
 w = o.write
 
-w('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d" width="%d" height="%d">\n' % (W, H, W, H))
-w('<rect x="0" y="0" width="%d" height="%d" fill="#ffffff"/>\n' % (W, H))
+SW, SH = int(round(W * SCALE)), int(round(H * SCALE))
+w('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d" width="%d" height="%d">\n' % (SW, SH, SW, SH))
+w('<rect x="0" y="0" width="%d" height="%d" fill="#ffffff"/>\n' % (SW, SH))
+# Everything below is authored in the original coordinate system and scaled
+# once, here, so no layout constant in this file has to be re-derived.
+w('<g transform="scale(%g)">\n' % SCALE)
+
+
+def fs(px):
+    """A font size in authoring px, enlarged for print (see PRINT FIT)."""
+    return px * TYPE_BOOST
 
 # ---- system boundary ------------------------------------------------------
 w('<rect x="%d" y="%d" width="%d" height="%d" rx="26" fill="none" stroke="#111" stroke-width="1.4"/>\n'
@@ -258,8 +335,8 @@ w('<rect x="%d" y="%d" width="%d" height="%d" rx="26" fill="none" stroke="#111" 
 TITLE = ["GovPulse: AI-Driven Mobile Analytics for Public",
          "Service Quality Prediction System"]
 for i, ln in enumerate(TITLE):
-    w('<text x="%d" y="%d" font-family="%s" font-size="15" font-weight="600" fill="#111" '
-      'text-anchor="middle">%s</text>\n' % (BX + BW / 2, BY + 32 + i * 20, FONT, ln))
+    w('<text x="%d" y="%d" font-family="%s" font-size="%.1f" font-weight="600" fill="#111" '
+      'text-anchor="middle">%s</text>\n' % (BX + BW / 2, BY + 34 + i * 32, FONT, fs(15), ln))
 w('<path d="M%d,%d H%d" fill="none" stroke="#111" stroke-width="0.8"/>\n'
   % (BX + 130, BY + 74, BX + BW - 130))
 
@@ -305,24 +382,27 @@ w('</g>\n')
 # through the text
 for mx, my, kind, horiz in lab:
     txt = INCL if kind == "include" else EXTD
-    ww = 50 if kind == "include" else 46
+    ww = (50 if kind == "include" else 46) * 1.5
     # a near-horizontal relationship leaves no room for a chip on the line
     # itself, so the label rides just above it instead of interrupting it
     if horiz:
         my -= 12
-    w('<rect x="%.1f" y="%.1f" width="%d" height="12" fill="#ffffff"/>\n' % (mx - ww / 2, my - 6, ww))
-    w('<text x="%.1f" y="%.1f" font-family="%s" font-size="8.5" fill="#111" '
-      'text-anchor="middle" font-style="italic">%s</text>\n' % (mx, my + 3, FONT, txt))
+    w('<rect x="%.1f" y="%.1f" width="%.1f" height="17" fill="#ffffff"/>\n' % (mx - ww / 2, my - 8.5, ww))
+    w('<text x="%.1f" y="%.1f" font-family="%s" font-size="%.1f" fill="#111" '
+      'text-anchor="middle" font-style="italic">%s</text>\n' % (mx, my + 4, FONT, fs(8.5), txt))
 
 # ---- use case ovals -------------------------------------------------------
 for name, (cx, cy, rx, ry, lines) in UC.items():
     w('<ellipse cx="%d" cy="%d" rx="%d" ry="%d" fill="#ffffff" stroke="#111" stroke-width="1"/>\n'
       % (cx, cy, rx, ry))
     n = len(lines)
-    first = cy - (n - 1) * 11 / 2 + 3.6
+    # line spacing tracks the enlarged type, or the two lines of a label would
+    # sit on top of each other once the text grew
+    lh = 11 * TYPE_BOOST
+    first = cy - (n - 1) * lh / 2 + 3.6 * TYPE_BOOST
     for j, ln in enumerate(lines):
-        w('<text x="%d" y="%.1f" font-family="%s" font-size="9.5" fill="#111" '
-          'text-anchor="middle">%s</text>\n' % (cx, first + j * 11, FONT, ln))
+        w('<text x="%d" y="%.1f" font-family="%s" font-size="%.1f" fill="#111" '
+          'text-anchor="middle">%s</text>\n' % (cx, first + j * lh, FONT, fs(9.5), ln))
 
 # ---- actors ---------------------------------------------------------------
 for name, (ax, ay, lines, side) in ACTORS.items():
@@ -334,10 +414,12 @@ for name, (ax, ay, lines, side) in ACTORS.items():
     w('  <path d="M%d,%d L%d,%d"/>\n' % (ax, ay + 58, ax + 24, ay + 96))
     w('</g>\n')
     for j, ln in enumerate(lines):
-        w('<text x="%d" y="%d" font-family="%s" font-size="11" fill="#111" '
+        w('<text x="%d" y="%.1f" font-family="%s" font-size="%.1f" fill="#111" '
           'text-anchor="middle"%s>%s</text>\n'
-          % (ax, ay + 118 + j * 14, FONT, ' font-weight="600"' if j == 0 else '', ln))
+          % (ax, ay + 122 + j * 14 * TYPE_BOOST, FONT, fs(11),
+             ' font-weight="600"' if j == 0 else '', ln))
 
+w('</g>\n')
 w('</svg>\n')
 
 s = o.getvalue()

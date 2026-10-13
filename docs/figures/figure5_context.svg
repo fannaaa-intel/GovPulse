@@ -9,6 +9,7 @@
   <path d="M120,330 V550 H546" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
   <path d="M80,330 V590 H548" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
   <path d="M40,330 V630 H558" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
+  <path d="M40,340 V665 H566" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
   <path d="M571,650 H110 V816" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
   <path d="M598,690 H150 V816" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
   <path d="M200,850 H400 V730 H641" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
@@ -18,62 +19,65 @@
   <path d="M1440,330 V510 H948" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
   <path d="M1480,330 V550 H962" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
   <path d="M1300,330 V360 H872" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
-  <path d="M948,590 H1440 V816" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
-  <path d="M937,630 H1390 V816" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
-  <path d="M917,670 H1340 V816" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
-  <path d="M1300,850 H1240 V710 H886" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
-  <path d="M1300,860 H1200 V750 H816" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
+  <path d="M948,576 H1440 V816" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
+  <path d="M937,608 H1390 V816" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
+  <path d="M917,640 H1340 V816" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
+  <path d="M899,672 H1290 V816" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
+  <path d="M1300,850 H1240 V712 H886" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
+  <path d="M1300,862 H1200 V752 H816" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
   <path d="M710,364 V166" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
   <path d="M790,160 V356" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
   <path d="M700,754 V980 H440 V1044" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
   <path d="M520,1048 V1010 H730 V763" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
   <path d="M800,754 V990 H1020 V1044" fill="none" stroke="#111" stroke-width="1" marker-end="url(#ca)"/>
   <circle cx="750" cy="560" r="200" fill="#fff" stroke="#111" stroke-width="1.4"/>
-  <text x="750" y="526" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="13" fill="#111">0</text>
-  <text x="750" y="558" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="18" font-weight="600" fill="#111">GovPulse</text>
-  <text x="750" y="582" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="18" font-weight="600" fill="#111">System</text>
-  <rect x="20.0" y="270.0" width="180" height="60" fill="#fff" stroke="#111" stroke-width="1.2"/>
-  <text x="110.0" y="304.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="11" font-weight="600" fill="#111">Citizen</text>
-  <rect x="20.0" y="820.0" width="180" height="60" fill="#fff" stroke="#111" stroke-width="1.2"/>
-  <text x="110.0" y="854.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="11" font-weight="600" fill="#111">External Agency</text>
-  <rect x="1300.0" y="270.0" width="180" height="60" fill="#fff" stroke="#111" stroke-width="1.2"/>
-  <text x="1390.0" y="304.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="11" font-weight="600" fill="#111">Municipal Staff</text>
-  <rect x="1300.0" y="820.0" width="180" height="60" fill="#fff" stroke="#111" stroke-width="1.2"/>
-  <text x="1390.0" y="854.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="11" font-weight="600" fill="#111">Administrator</text>
-  <rect x="650.0" y="100.0" width="200" height="60" fill="#fff" stroke="#111" stroke-width="1.2"/>
-  <text x="750.0" y="127.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="11" font-weight="600" fill="#111">Facebook</text>
-  <text x="750.0" y="141.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="11" font-weight="600" fill="#111">(Social Sign-In)</text>
-  <rect x="365.0" y="1048.0" width="230" height="64" fill="#fff" stroke="#111" stroke-width="1.2"/>
-  <text x="480.0" y="1077.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="11" font-weight="600" fill="#111">AI Services</text>
-  <text x="480.0" y="1091.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="11" font-weight="600" fill="#111">(Groq / Sightengine)</text>
-  <rect x="905.0" y="1048.0" width="230" height="64" fill="#fff" stroke="#111" stroke-width="1.2"/>
-  <text x="1020.0" y="1077.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="11" font-weight="600" fill="#111">Firebase Cloud</text>
-  <text x="1020.0" y="1091.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="11" font-weight="600" fill="#111">Messaging</text>
-  <text x="532.0" y="384.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Authentication Status &amp; OTP Code</text>
-  <text x="484.0" y="424.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Submission Status &amp; Reference Code</text>
-  <text x="445.0" y="464.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Notifications, Feed &amp; Assistant Reply</text>
-  <text x="300.0" y="344.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Progress Updates &amp; Completion Photos</text>
-  <text x="358.0" y="504.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Login Credentials &amp; Registration Data</text>
-  <text x="335.0" y="544.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Identity Verification Data</text>
-  <text x="316.0" y="584.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Report, Suggestion &amp; Feedback Data</text>
-  <text x="300.0" y="624.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Comments, Likes &amp; Support Messages</text>
-  <text x="340.0" y="644.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Endorsement Letter (PDF + QR)</text>
-  <text x="374.0" y="684.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Endorsed Report Details &amp; Citizen Media</text>
-  <text x="522.0" y="724.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Scan Token, PIN, Field Updates &amp; Work Photos</text>
-  <text x="967.0" y="384.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Assigned Reports (Identity Withheld)</text>
-  <text x="1016.0" y="424.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Citizen Messages &amp; Notifications</text>
-  <text x="1166.0" y="464.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Login Credentials</text>
-  <text x="1194.0" y="504.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Status, Progress Updates &amp; Completion Report</text>
-  <text x="1221.0" y="544.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Routed Suggestions &amp; Feedback (Identity Withheld)</text>
-  <text x="1086.0" y="354.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Suggestion &amp; Feedback Reply Drafts</text>
-  <text x="1194.0" y="584.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Dashboard Analytics &amp; Predictive Outlook</text>
-  <text x="1163.0" y="624.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Sentiment, Urgency &amp; Theme Results</text>
-  <text x="1128.0" y="664.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Flagged Content &amp; Verification Queue</text>
-  <text x="1063.0" y="704.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Login Credentials</text>
-  <text x="1008.0" y="744.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Lifecycle, Approval &amp; Sanction Decisions</text>
-  <text x="700.0" y="270.0" text-anchor="end" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Authorization Request</text>
-  <text x="800.0" y="270.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">OAuth Token &amp; Profile Name</text>
-  <text x="570.0" y="974.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Report, Suggestion, Feedback &amp; Content Text; Media URLs</text>
-  <text x="625.0" y="1004.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Urgency, Category, Sentiment, Flags &amp; Image Scores</text>
-  <text x="910.0" y="984.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="9" fill="#111">Push Payload &amp; Device Token</text>
+  <text x="750" y="507" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="20.2" fill="#111">0</text>
+  <text x="750" y="558" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="28.0" font-weight="600" fill="#111">GovPulse</text>
+  <text x="750" y="595" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="28.0" font-weight="600" fill="#111">System</text>
+  <rect x="-5.0" y="262.0" width="230" height="76" fill="#fff" stroke="#111" stroke-width="1.2"/>
+  <text x="110.0" y="306.2" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="17.1" font-weight="600" fill="#111">Citizen</text>
+  <rect x="-5.0" y="812.0" width="230" height="76" fill="#fff" stroke="#111" stroke-width="1.2"/>
+  <text x="110.0" y="856.2" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="17.1" font-weight="600" fill="#111">External Agency</text>
+  <rect x="1275.0" y="262.0" width="230" height="76" fill="#fff" stroke="#111" stroke-width="1.2"/>
+  <text x="1390.0" y="306.2" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="17.1" font-weight="600" fill="#111">Municipal Staff</text>
+  <rect x="1275.0" y="812.0" width="230" height="76" fill="#fff" stroke="#111" stroke-width="1.2"/>
+  <text x="1390.0" y="856.2" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="17.1" font-weight="600" fill="#111">Administrator</text>
+  <rect x="620.0" y="89.0" width="260" height="82" fill="#fff" stroke="#111" stroke-width="1.2"/>
+  <text x="750.0" y="125.3" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="17.1" font-weight="600" fill="#111">Facebook</text>
+  <text x="750.0" y="147.1" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="17.1" font-weight="600" fill="#111">(Social Sign-In)</text>
+  <rect x="330.0" y="1037.0" width="300" height="86" fill="#fff" stroke="#111" stroke-width="1.2"/>
+  <text x="480.0" y="1075.3" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="17.1" font-weight="600" fill="#111">AI Services</text>
+  <text x="480.0" y="1097.1" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="17.1" font-weight="600" fill="#111">(Groq / Sightengine)</text>
+  <rect x="870.0" y="1037.0" width="300" height="86" fill="#fff" stroke="#111" stroke-width="1.2"/>
+  <text x="1020.0" y="1075.3" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="17.1" font-weight="600" fill="#111">Firebase Cloud</text>
+  <text x="1020.0" y="1097.1" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="17.1" font-weight="600" fill="#111">Messaging</text>
+  <text x="532.0" y="384.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="14.0" fill="#111">Authentication Status &amp; OTP Code</text>
+  <text x="484.0" y="424.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="14.0" fill="#111">Submission Status &amp; Reference Code</text>
+  <text x="445.0" y="464.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="14.0" fill="#111">Notifications, Feed &amp; Assistant Reply</text>
+  <text x="300.0" y="344.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="14.0" fill="#111">Progress Updates &amp; Completion Photos</text>
+  <text x="358.0" y="504.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="14.0" fill="#111">Login Credentials &amp; Registration Data</text>
+  <text x="335.0" y="544.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="14.0" fill="#111">Identity Verification Data</text>
+  <text x="316.0" y="584.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="14.0" fill="#111">Report, Suggestion &amp; Feedback Data</text>
+  <text x="300.0" y="624.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="14.0" fill="#111">Comments &amp; Likes</text>
+  <text x="300.0" y="659.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="14.0" fill="#111">Agency Rating &amp; Comment</text>
+  <text x="340.0" y="644.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="14.0" fill="#111">Endorsement Letter (PDF + QR)</text>
+  <text x="374.0" y="684.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="14.0" fill="#111">Endorsed Report Details &amp; Citizen Media</text>
+  <text x="522.0" y="724.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="14.0" fill="#111">Scan Token, PIN, Field Updates &amp; Work Photos</text>
+  <text x="967.0" y="384.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="14.0" fill="#111">Assigned Reports (Identity Withheld)</text>
+  <text x="1016.0" y="424.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="14.0" fill="#111">Console Notifications</text>
+  <text x="1166.0" y="464.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="14.0" fill="#111">Login Credentials</text>
+  <text x="1194.0" y="504.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="14.0" fill="#111">Status, Progress Updates &amp; Completion Report</text>
+  <text x="1221.0" y="544.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="14.0" fill="#111">Routed Suggestions &amp; Feedback (Identity Withheld)</text>
+  <text x="1086.0" y="354.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="14.0" fill="#111">Suggestion &amp; Feedback Reply Drafts</text>
+  <text x="1194.0" y="570.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="14.0" fill="#111">Dashboard Analytics &amp; Predictive Outlook</text>
+  <text x="1163.0" y="602.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="14.0" fill="#111">Sentiment, Urgency &amp; Theme Results</text>
+  <text x="1128.0" y="634.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="14.0" fill="#111">Flagged Content &amp; Verification Queue</text>
+  <text x="1082.0" y="666.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="14.0" fill="#111">Agency Performance &amp; Citizen Ratings</text>
+  <text x="1063.0" y="706.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="14.0" fill="#111">Login Credentials</text>
+  <text x="1008.0" y="746.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="14.0" fill="#111">Lifecycle, Approval &amp; Sanction Decisions</text>
+  <text x="700.0" y="270.0" text-anchor="end" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="14.0" fill="#111">Authorization Request</text>
+  <text x="800.0" y="270.0" text-anchor="start" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="14.0" fill="#111">OAuth Token &amp; Profile Name</text>
+  <text x="570.0" y="974.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="14.0" fill="#111">Report, Suggestion, Feedback &amp; Content Text; Media URLs</text>
+  <text x="625.0" y="1004.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="14.0" fill="#111">Urgency, Category, Sentiment, Flags &amp; Image Scores</text>
+  <text x="910.0" y="984.0" text-anchor="middle" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="14.0" fill="#111">Push Payload &amp; Device Token</text>
 </svg>

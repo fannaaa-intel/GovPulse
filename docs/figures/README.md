@@ -1,7 +1,10 @@
 # Manuscript figures
 
-Generated from the built system, and **re-verified against the code on
-22 September 2026** after staff Suggestions and Feedback routing landed. The
+Generated from the built system, and **revised on 13 October 2026 for the
+post-defense panel revision** (the live staff chat removed, the agency rating
+and performance panel added, the report-flood tools added) and **re-fitted for
+short bond paper** at the same time. The pass before it was the re-verification
+of 22 September 2026, after staff Suggestions and Feedback routing landed. The
 pass before it was 17 September (the suggestion classifier), then 14 September
 (the public landing page and the AI department-routing work), 11 September
 (live-database counts) and 7 September 2026 (the first-run Quick Action
@@ -10,10 +13,12 @@ fallback, plus the script that produced it.
 
 | Figure | Files | What it shows |
 |---|---|---|
-| **3 — Hierarchical Input-Process-Output Diagram** | `figure3_hipo.svg` / `.png` / `gen_figure3.py` | `User Login` decomposed by role into the functions each actor can perform. 118 boxes, 5 branches. |
-| **5 — Context Diagram** | `figure5_context.svg` / `.png` / `gen_figure5.py` | The system as one numbered process exchanging named data flows with the seven external entities outside it. 7 entities, 27 flows. |
-| **4 — System Flowchart** | `figure4_flowchart.svg` / `.png` / `gen_figure4.py` | Start to End: launch, the web/mobile fork, the public landing page and its one-shot post-auth handoff, session restore (including the offline cached-role fast path), the five entries the login screen offers (including Facebook, and the username a Facebook account arrives without), role routing, live sanction enforcement, the first-run Quick Action tutorial, logout, with the tables each step reads or writes. 69 symbols. |
-| **6 — Data Flow Diagram, Level 1** | `figure6_dfd1.svg` / `.png` / `gen_figure6.py` | Process `0` of Figure 5 opened up: the nine processes the system is organised into, the thirteen stores they read and write, and the same seven entities on the boundary. 76 flows. |
+| **3 — Hierarchical Input-Process-Output Diagram** | `figure3_hipo.svg` / `.png` / `gen_figure3.py` | `User Login` decomposed by role into the functions each actor can perform. 120 boxes, 5 branches. Also emitted as four per-role sheets for print — `figure3a_hipo_citizen` / `3b_staff` / `3c_admin` / `3d_guest`. |
+| **5 — Context Diagram** | `figure5_context.svg` / `.png` / `gen_figure5.py` | The system as one numbered process exchanging named data flows with the seven external entities outside it. 7 entities, 29 flows. |
+| **4 — System Flowchart** | `figure4_flowchart.svg` / `.png` / `gen_figure4.py` | Start to End: launch, the web/mobile fork, the public landing page and its one-shot post-auth handoff, session restore (including the offline cached-role fast path), the five entries the login screen offers (including Facebook, and the username a Facebook account arrives without), role routing, live sanction enforcement, the first-run Quick Action tutorial, logout, with the tables each step reads or writes. 69 symbols. Also emitted as `figure4a_flowchart` (authentication and role routing) and `figure4b_flowchart` (session, sanctions and logout) for print. |
+| **8 — System Architecture** | `figure8_architecture.svg` / `.png` / `gen_figure8.py` | The five tiers, with no application server: the Flutter clients, the Supabase gateway, PostgreSQL under row-level security, the 21 edge functions split into client-invoked and trigger-fired, and the four external services. |
+| **9 — UML Use Case Diagram** | `figure9_usecase.svg` / `.png` / `gen_figure9.py` | Five actors and 54 use cases inside the system boundary, with «include» and «extend» used only where the code makes them true. |
+| **6 — Data Flow Diagram, Level 1** | `figure6_dfd1.svg` / `.png` / `gen_figure6.py` | Process `0` of Figure 5 opened up: the nine processes the system is organised into, the thirteen stores they read and write, and the same seven entities on the boundary. 75 flows. |
 
 `.svg` is preferred — vector, stays sharp at any size. Word 2016 and
 Microsoft 365 insert it natively. Use the `.png` only if your Word build
@@ -216,14 +221,147 @@ The third role branch is labelled `= 3 or null` because the routing condition is
 `role_id != 1 && role_id != 2` — 3 is a citizen, null is an unverified account,
 and both land in the Citizen Shell.
 
+## Panel revision (2026-10-13)
+
+The post-defense panel revision changed the system, so it changed these
+figures. The alignment source is Part 4 of `GOVPULSE_FIGURE_NOTES.md`; the
+engineering record is `docs/panel-revision-2026-10-12.md`. Figure 4 needed no
+content change (there was never any chat in it).
+
+**What was removed, and why it is a deletion rather than a rename.** Panel item
+5 removed the live staff chat outright: the staff Conversations page, the live
+queue, chat notifications and the post-chat rating are gone from the console,
+every INSERT policy on the ticket tables is dropped and the seven chat write
+functions are revoked. So:
+
+- **Fig 9** lost `Raise Concern Ticket` and the staff `Answer Citizen
+  Conversations`, and `Chat with Kuya Gov (AI)` became `Ask Kuya Gov / FAQ`.
+- **Fig 3** lost `Create Concern Ticket` and the whole `Citizen Conversations`
+  staff branch; `Ask Kuya Gov` gained `Tap a Common Question` / `Type a
+  Question`, which is the actual split in the code (16 FAQ answers served by
+  the client with no model call, beside a typed question that reaches
+  `chat-agent`).
+- **Fig 6** lost store **D8 SUPPORT TICKET STORE** and the staff chat flow. The
+  tables still physically exist, pending the cleanup that waits on the Play
+  Store release, but a DFD describes dataflow and there is none.
+- **Fig 5** had two labels *reworded rather than deleted*, because they carried
+  non-chat traffic too: "Comments, Likes & Support Messages" became "Comments &
+  Likes", and "Citizen Messages & Notifications" became "Console
+  Notifications".
+
+**What was added.**
+
+- **Agency rating** (item 3): `Rate Endorsed Agency` in Figs 9 and 3, the
+  `Agency Rating & Comment` inflow in Fig 5, and store **D8**, reused for
+  `AGENCY FEEDBACK STORE` in Fig 6.
+- **Agency performance** (item 3, admin half): `View Agency Performance` in
+  Figs 9 and 3, and the `Agency Performance & Citizen Ratings` outflow in
+  Fig 5.
+- **Report-flood tools** (item 2): `Merge Duplicate Reports` in Figs 9 and 3.
+
+**Two relationships are factual claims, and both were checked against the
+code rather than guessed:**
+
+- `Rate Endorsed Agency` «extend»s **`Track My Submissions`**, not the admin's
+  `Endorse to External Agency`. `agency_rating_card.dart` renders inside the
+  owner's own report detail — the screen `track` stands for — and
+  `my_agency_rating()` simply reports the card ineligible when there is no live
+  endorsement. The citizen reaches it by tracking their own report; the
+  endorsement is the precondition that makes it eligible, not the act that
+  invokes it. Drawing it off `endorse` also dragged a dashed line across seven
+  unrelated ovals, which is how the error first showed.
+- `Merge Duplicate Reports` «extend»s `Accept and Assign Report`: accepting
+  completes without merging anything, and nothing merges automatically — the
+  banner and the "N similar" chips only mark the group.
+
+**Drift found while revising, which Part 4.8 did not ask for.** Figure 8 had
+gone stale on three counts and carried one outright hole:
+
+- "20 functions total" -> **21**; "client-invoked (15)" -> **16**.
+- **`reveal-identity` was never drawn at all** — the same class of hole Fig 9
+  had twice before (a whole unit nothing else points at, so nothing flags its
+  absence). It is the admin's two-step identity reveal (20260927000000).
+- "46 tables" -> **49**, from three migrations since the 09-22 count that each
+  add one table and no view: `kuya_gov_knowledge_gaps` (20261006000000),
+  `id_check_results` (20261010000002), `agency_feedback` (20261013000000).
+  **This one is derived from the migrations, not from a live query** — re-query
+  before final submission if you can.
+- `ticket-attachments` is drawn and *marked retired* rather than dropped: the
+  bucket still exists but its upload policy is gone, so it accepts no writes.
+
+**Checks run on this pass.** The September baseline was committed first, after
+confirming all six generators reproduce their saved SVGs byte-for-byte
+(`cmp`, 6/6), so the revision diff shows only what the revision changed. Fig 9
+was re-checked for relation and association lines crossing unrelated ovals: the
+baseline had 52 such crossings and the revised figure has **51**, so the new
+cases cost nothing net. A label-overlap checker was run over every emitted SVG;
+the only two it reports in Fig 6 are present in the September baseline too.
+Every figure was also rendered at true print size and looked at — which is what
+caught the one defect no geometry check saw: in Fig 5 the new
+`Agency Performance & Citizen Ratings` label landed exactly on
+`Login Credentials`, so the admin band was respaced.
+
+## Printing on short bond paper — read this before placing a figure
+
+Short bond paper is 8.5 x 11in, so with 1in margins the usable area is about
+**6.5 x 9in portrait** or **9 x 6.5in landscape**.
+
+**The font constant in a generator does not decide how big the text prints.**
+Word scales the whole SVG to fit the space you give it, so enlarging the grid
+and the type together changes nothing — the figure is simply scaled back down.
+This was measured, not assumed: multiplying every constant in `gen_figure3.py`
+by 2.35 left the printed text at 3.4pt, exactly where it started. What decides
+the printed size is the **ratio of the drawing to the page**:
+
+```
+printed_pt = font_px * min(page_w_in / figure_w_px, page_h_in / figure_h_px) * 72
+```
+
+So there are only two real levers: make the sheet's **aspect** match the page's
+(stop losing one axis to scale-to-fit), or put **less content on each sheet**.
+
+Where each figure ended up, measured on the emitted SVGs:
+
+| Figure | Before | After | How |
+|---|---|---|---|
+| **3** HIPO | 3.4pt | **6.0 - 9.6pt** | one sheet per role (3a-3d), each flowed into 2 columns so the sheet is page-shaped |
+| **4** Flowchart | 1.9pt | **4.6 / 6.2pt** | split into 4a / 4b at y=1690, cropped to content, type +43% |
+| **5** Context | 3.7pt | **5.7pt** | type +56% against a fixed canvas |
+| **6** DFD 1 | 1.9pt | **3.9pt** | type x2; cannot do better — see below |
+| **8** Architecture | 3.8pt | **6.9pt** | type +80%; its aspect already matches the page exactly |
+| **9** Use case | 2.6pt | **8.5pt** | whole drawing scaled x1.55 with the type scaled harder (x1.85) |
+
+**Figure 4's split point was computed, not chosen by eye.** Every y from 500 to
+2800 was tested for how many edges it severs and whether any node straddles it;
+**y=1690** is the only cut that severs nothing, splits no node, and still falls
+near the middle (44 nodes above, 25 below). A connector circle already sits on
+each side of it, which is what the connectors are for.
+
+**Figure 6 is the one that cannot be fixed, and the number says why.** It is the
+densest of the six (75 flows, 9 processes, 13 stores, 7 entities) and nearly
+square (0.99) against a landscape page's 1.38, so it loses space whichever way
+it is turned. Splitting it was tested and rejected: a horizontal cut at the
+natural seam (y=1200, processes 1-4 above and 5-9 below) **severs 20 of the 75
+flows**, and the flows between processes are what a level-1 DFD exists to show.
+Give it a full landscape page of its own; its flow labels are meant to be read
+on screen or in a zoomed PDF. Figure 5 is the one that shows the boundary at a
+glance.
+
+**Use the per-page sheets in the manuscript** (3a-3d, 4a, 4b) and keep the
+whole-figure versions as the on-screen overview. Both are in the .drawio file.
+
 ## Regenerating
 
 ```
-python gen_figure3.py      # writes figure3_hipo.svg      + raster.html
-python gen_figure4.py      # writes figure4_flowchart.svg + raster4.html
-python gen_figure5.py      # writes figure5_context.svg   + raster5.html
-python gen_figure6.py      # writes figure6_dfd1.svg      + raster6.html
+python gen_figure3.py      # figure3_hipo.svg + the four per-role sheets
+python gen_figure4.py      # figure4_flowchart.svg + figure4a / figure4b
+python gen_figure5.py      # figure5_context.svg
+python gen_figure6.py      # figure6_dfd1.svg
+python gen_figure8.py      # figure8_architecture.svg
+python gen_figure9.py      # figure9_usecase.svg
 ```
+
+Each writes its own `raster*.html` beside the SVG.
 
 Edit the `TREE` list in `gen_figure3.py`, the `NODES` / `EDGES` tables in
 `gen_figure4.py`, the `ENTITIES` / `FLOWS` tables in `gen_figure5.py`, or the
@@ -254,14 +392,22 @@ once the PNG is written.
 
 ## The editable draw.io file
 
-`govpulse_figures.drawio` is the importable copy — six pages, one per figure,
-with every box, oval and connector as a real editable shape rather than a
-locked image. **It is generated from the SVGs, so regenerate it last**, after
-every `gen_figure*.py` has run:
+`govpulse_figures.drawio` is the importable copy — **12 pages**: the six whole
+figures plus the per-page sheets added for print (3a-3d, 4a, 4b), with every
+box, oval and connector as a real editable shape rather than a locked image.
+Open it at app.diagrams.net (File > Open From > Device) or in the VS Code
+draw.io extension; each figure is a tab along the bottom.
+
+**It is generated from the SVGs, so regenerate it last**, after every
+`gen_figure*.py` has run — building it mid-pass silently ships the previous
+geometry:
 
 ```
-python svg_to_drawio.py     # reads the six SVGs -> govpulse_figures.drawio
+python svg_to_drawio.py     # reads the SVGs -> govpulse_figures.drawio
 ```
+
+Verify afterwards with a grep for a label you just changed. Multi-line labels
+join with `&#10;`, so grep a single line, not the full string.
 
 Editing it by hand is fine for a one-off tweak in draw.io, but anything you
 change there is lost the next time the script runs. A change that should

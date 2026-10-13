@@ -19,6 +19,7 @@
 # longer is: on web a stranger now meets a page that explains the product,
 # and only a RETURNING visitor is handed straight to their console.
 import io
+import re
 
 W, H = 1500, 3100
 FONT = "Segoe UI, Calibri, Arial, sans-serif"
@@ -277,36 +278,125 @@ def shape(k, cx, cy, w, h):
     return out
 
 
-o = io.StringIO()
-w = o.write
-w('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d" width="%d" height="%d">\n' % (W, H, W, H))
-w('  <rect x="0" y="0" width="%d" height="%d" fill="#ffffff"/>\n' % (W, H))
-w('  <defs><marker id="fa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" '
-  'markerHeight="8" orient="auto"><polygon points="0,1 10,5 0,9" fill="#111"/></marker></defs>\n')
+# ── PRINT FIT (2026-10-13) ──────────────────────────────────────────────────
+# Read on SHORT BOND PAPER. At 1500x3100 this is the tallest of the six (aspect
+# 0.48 against a portrait page's 0.72), so the page fits it on HEIGHT and
+# throws away a third of the width: its labels printed at 1.9pt, the worst of
+# the set.
+#
+# The README has recommended splitting this one at the connectors since the web
+# branch landed, and that is what happens here. The seam was not chosen by eye:
+# every y from 500 to 2800 was tested for (a) how many edges it severs and
+# (b) whether any node straddles it. y=1690 is the only cut that is clean on
+# both counts AND near the middle -- 0 edges crossed, no node split, 44 nodes
+# above and 25 below. A connector circle already sits on each side of it, which
+# is what the connectors are for.
+#
+# The whole chart is still emitted (figure4_flowchart.svg) as the reference and
+# as the source svg_to_drawio.py reads; 4a and 4b are what go in the manuscript.
+SPLIT_Y = 1690
+SPLIT_PAD = 60
 
-for d, lab, at in EDGES:
-    w('  <path d="%s" fill="none" stroke="#111" stroke-width="1" marker-end="url(#fa)"/>\n' % d)
 
-for k, cx, cy, bw, bh, lines in NODES.values():
-    w('  ' + shape(k, cx, cy, bw, bh) + '\n')
-    n = len(lines)
-    first = cy - (n - 1) * LH / 2 + 3.6 + (5 if k == "store" else 0)
-    bold = ' font-weight="600"' if k in ("term", "pre", "conn") else ''
-    fs = 11 if k == "conn" else FS
-    for j, ln in enumerate(lines):
-        w('  <text x="%.1f" y="%.1f" text-anchor="middle" font-family="%s" '
-          'font-size="%s" fill="#111"%s>%s</text>\n' % (cx, first + j * LH, FONT, fs, bold, ln))
+def emit(nodes, edges, title, w_, h_, ox=0.0, oy=0.0, scale=1.0, tb=1.0):
+    """Write one sheet.
 
-for d, lab, at in EDGES:
-    if lab:
-        x, y, a = at
-        w('  <text x="%.1f" y="%.1f" text-anchor="%s" font-family="%s" font-size="9" '
-          'fill="#111">%s</text>\n' % (x, y, a, FONT, lab))
+    `ox`/`oy` crop to the content and `scale` grows grid+type together (which
+    only sets the emitted file size -- see PRINT FIT). `tb` grows the TYPE
+    against the fixed grid, which is the part that actually reaches the paper.
+    It is capped at 1.43: measured, that is where the longest label
+    ("deactivated, too many attempts,") fills its own box.
+    """
+    fs_body = FS * tb
+    lh = LH * tb
+    o = io.StringIO()
+    w = o.write
+    sw_, sh_ = int(w_ * scale), int(h_ * scale)
+    w('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d" width="%d" '
+      'height="%d">\n' % (sw_, sh_, sw_, sh_))
+    w('  <rect x="0" y="0" width="%d" height="%d" fill="#ffffff"/>\n' % (sw_, sh_))
+    w('  <defs><marker id="fa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" '
+      'markerHeight="8" orient="auto"><polygon points="0,1 10,5 0,9" fill="#111"/>'
+      '</marker></defs>\n')
+    w('  <g transform="scale(%g) translate(0,%g)">\n' % (scale, -oy))
 
-w('</svg>\n')
-svg = o.getvalue()
+    for d, lab, at in edges:
+        w('    <path d="%s" fill="none" stroke="#111" stroke-width="1" '
+          'marker-end="url(#fa)"/>\n' % d)
+
+    for k, cx, cy, bw, bh, lines in nodes:
+        w('    ' + shape(k, cx, cy, bw, bh) + '\n')
+        n = len(lines)
+        first = cy - (n - 1) * lh / 2 + 3.6 * tb + (5 if k == "store" else 0)
+        bold = ' font-weight="600"' if k in ("term", "pre", "conn") else ''
+        fs = (11 * tb) if k == "conn" else fs_body
+        for j, ln in enumerate(lines):
+            w('    <text x="%.1f" y="%.1f" text-anchor="middle" font-family="%s" '
+              'font-size="%s" fill="#111"%s>%s</text>\n'
+              % (cx, first + j * lh, FONT, fs, bold, ln))
+
+    for d, lab, at in edges:
+        if lab:
+            x, y, a = at
+            w('    <text x="%.1f" y="%.1f" text-anchor="%s" font-family="%s" '
+              'font-size="9" fill="#111">%s</text>\n' % (x, y, a, FONT, lab))
+    w('  </g>\n</svg>\n')
+    return o.getvalue()
+
+
+def edge_xs(d):
+    out = []
+    for m in re.finditer(r'M([\d.]+),([\d.]+)|H([\d.]+)', d):
+        out.append(float(m.group(1) or m.group(3)))
+    return out
+
+
+def edge_ys(d):
+    out = []
+    for m in re.finditer(r'M([\d.]+),([\d.]+)|V([\d.]+)', d):
+        out.append(float(m.group(2) or m.group(3)))
+    return out
+
+
+ALL_NODES = list(NODES.values())
+
+svg = emit(ALL_NODES, EDGES, "Figure 4", W, H)
 open("figure4_flowchart.svg", "w", encoding="utf-8").write(svg)
 open("raster4.html", "w", encoding="utf-8").write(
     '<!doctype html><meta charset="utf-8">'
     '<style>html,body{margin:0;padding:0;background:#fff}svg{display:block}</style>' + svg)
 print("Figure 4: %dx%d, %d nodes, %d edges" % (W, H, len(NODES), len(EDGES)))
+
+# ── 4a (above the seam) and 4b (below it) ──────────────────────────────────
+top_nodes = [v for v in ALL_NODES if v[2] < SPLIT_Y]
+bot_nodes = [v for v in ALL_NODES if v[2] > SPLIT_Y]
+top_edges, bot_edges = [], []
+for item in EDGES:
+    ys = edge_ys(item[0])
+    (top_edges if ys and max(ys) <= SPLIT_Y else bot_edges).append(item)
+
+SPLIT_SCALE = 2.0
+TYPE_BOOST = 1.43
+for tag, nodes, edges in (("4a", top_nodes, top_edges), ("4b", bot_nodes, bot_edges)):
+    # crop to the content on BOTH axes: emitting the full 1500 width around a
+    # half that only spans 960 throws the saved page width straight back away.
+    ys = [v[2] - v[4] / 2 for v in nodes] + [v[2] + v[4] / 2 for v in nodes]
+    xs = [v[1] - v[3] / 2 for v in nodes] + [v[1] + v[3] / 2 for v in nodes]
+    for d, lab, at in edges:
+        ys += edge_ys(d)
+        xs += edge_xs(d)
+        if lab:
+            ys.append(at[1])
+            xs.append(at[0])
+    oy = max(0.0, min(ys) - SPLIT_PAD)
+    ox = max(0.0, min(xs) - SPLIT_PAD)
+    h_ = max(ys) - oy + SPLIT_PAD
+    w_ = max(xs) - ox + SPLIT_PAD
+    body = emit(nodes, edges, tag, w_, h_, ox=ox, oy=oy, scale=SPLIT_SCALE, tb=TYPE_BOOST)
+    open("figure%s_flowchart.svg" % tag, "w", encoding="utf-8").write(body)
+    open("raster_%s.html" % tag, "w", encoding="utf-8").write(
+        '<!doctype html><meta charset="utf-8">'
+        '<style>html,body{margin:0;padding:0;background:#fff}svg{display:block}</style>' + body)
+    pt = FS * TYPE_BOOST * min(6.5 / w_, 9.0 / h_) * 72
+    print("  figure%s_flowchart.svg  %dx%-5d nodes=%-3d edges=%-3d body prints at %.1fpt"
+          % (tag, w_ * SPLIT_SCALE, h_ * SPLIT_SCALE, len(nodes), len(edges), pt))
