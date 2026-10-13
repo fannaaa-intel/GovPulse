@@ -31,6 +31,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import '../../../../core/theme/mobile_metrics.dart';
 import '../../../../core/widgets/app_back_chevron.dart';
 import '../../../../core/router/legacy_nav.dart' show goToSubmissionList;
+import 'already_reported_dialog.dart';
 
 /// The split panel's SQUARE "Add file" tile — the first cell of the panel's
 /// 4-column attachment grid, sized to match the file tiles beside it.
@@ -73,6 +74,10 @@ class _NearbyReport {
   final int distanceM;
   final DateTime? createdAt;
 
+  /// The caller filed this report, or already confirmed it. Only ever about
+  /// the caller — the RPC computes it from auth.uid().
+  final bool isMine;
+
   const _NearbyReport({
     required this.id,
     required this.shortRef,
@@ -81,6 +86,7 @@ class _NearbyReport {
     required this.confirmCount,
     required this.distanceM,
     required this.createdAt,
+    this.isMine = false,
   });
 
   factory _NearbyReport.fromRow(Map<String, dynamic> r) => _NearbyReport(
@@ -91,6 +97,7 @@ class _NearbyReport {
     confirmCount: (r['confirm_count'] as int?) ?? 0,
     distanceM: (r['distance_m'] as num?)?.round() ?? 0,
     createdAt: DateTime.tryParse(r['created_at']?.toString() ?? '')?.toLocal(),
+    isMine: r['is_mine'] == true,
   );
 
   /// The original reporter plus everyone who has confirmed since.
@@ -3657,7 +3664,32 @@ class _ReportIssueScreenState extends State<ReportIssueForm>
     // their own record and their own status notifications, and their photos ride
     // along as extra evidence on the same issue.
     String? duplicateOf;
-    final nearby = await _fetchNearbyReports();
+    final found = await _fetchNearbyReports();
+
+    // Your OWN open report of this category is here. The server refuses a
+    // second one (20261014000000), so say it now — before the upload — and
+    // offer the report they already have instead of an error afterwards.
+    // "Others" is exempt here: two different "others" problems at one spot
+    // are normal, and the server tells those apart by their typed category.
+    final mine = _selectedCategory == 'others'
+        ? null
+        : found.where((n) => n.isMine).firstOrNull;
+    if (mine != null) {
+      if (!mounted) return;
+      setState(() => _isSubmitting = false);
+      final choice = await showAlreadyReportedDialog(
+        context,
+        shortRef: mine.shortRef,
+        filedAt: mine.createdAt,
+      );
+      if (choice == AlreadyReportedChoice.viewMine && mounted) {
+        goToSubmissionList(context, tab: 0, username: widget.username);
+      }
+      return;
+    }
+
+    // Never offer your own report to confirm: the server refuses that too.
+    final nearby = found.where((n) => !n.isMine).toList();
     if (nearby.isNotEmpty) {
       if (!mounted) return;
       final choice = await _showNearbyReportsDialog(nearby);
@@ -3858,6 +3890,16 @@ class _ReportIssueScreenState extends State<ReportIssueForm>
           showAppSnackBar(
             context,
             "You've reached your daily limit of 5 reports. Please come back tomorrow.",
+            type: AppSnackType.error,
+          );
+        } else if ((e.hint ?? '') == 'duplicate_own_report') {
+          // Reached only when the pre-check above could not see it (an
+          // "others" report with the same typed category, or a lookup that
+          // failed). Same message, as a toast.
+          showAppSnackBar(
+            context,
+            'You already reported this issue, and it is still open. '
+            'Follow its progress in My Reports.',
             type: AppSnackType.error,
           );
         } else {

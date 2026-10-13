@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -75,6 +76,77 @@ String reportStatusLabel(ReportStatus s) {
 }
 
 // ── Model ────────────────────────────────────────────────────────────────────
+
+/// What admin_merge_similar() did.
+class MergeSimilarResult {
+  final String? targetId;
+  final String targetShortId;
+  final int merged;
+  final int skipped;
+
+  /// Server code when nothing was merged (not_open_ticket, nothing_to_merge).
+  final String? error;
+
+  const MergeSimilarResult({
+    required this.targetId,
+    required this.targetShortId,
+    required this.merged,
+    required this.skipped,
+  }) : error = null;
+
+  const MergeSimilarResult.failed(this.error)
+    : targetId = null,
+      targetShortId = '',
+      merged = 0,
+      skipped = 0;
+
+  bool get ok => error == null;
+}
+
+/// Open tickets flagged as part of a surge, one entry per group.
+///
+/// Every member of a surge carries the flag, so the groups are rebuilt here:
+/// same category and barangay is the grouping an admin reads ("6 drainage
+/// reports in Centro 1"). Each group is represented by the ticket to open
+/// — one still on the triage desk if there is one, since that is where the
+/// merge controls live — and sorted biggest first.
+List<ReportSurge> groupSurges(Iterable<AdminReport> all) {
+  final groups = <String, List<AdminReport>>{};
+  for (final r in all) {
+    if (!r.isSurge || r.isDuplicate || r.isDismissed) continue;
+    final key = '${r.categoryKey}|${r.barangay ?? ''}';
+    (groups[key] ??= []).add(r);
+  }
+  final out = <ReportSurge>[];
+  for (final members in groups.values) {
+    members.sort((a, b) {
+      if (a.needsTriage != b.needsTriage) return a.needsTriage ? -1 : 1;
+      final at = a.createdAt?.millisecondsSinceEpoch ?? 0;
+      final bt = b.createdAt?.millisecondsSinceEpoch ?? 0;
+      return at.compareTo(bt);
+    });
+    final recent = members
+        .map((r) => r.recentSimilarCount)
+        .fold<int>(0, (a, b) => a > b ? a : b);
+    out.add(
+      ReportSurge(
+        representative: members.first,
+        recentCount: recent > members.length ? recent : members.length,
+      ),
+    );
+  }
+  out.sort((a, b) => b.recentCount.compareTo(a.recentCount));
+  return out;
+}
+
+/// One likely flood: many open tickets about one issue in a short window.
+class ReportSurge {
+  final AdminReport representative;
+
+  /// Tickets in the group that arrived within the surge window.
+  final int recentCount;
+  const ReportSurge({required this.representative, required this.recentCount});
+}
 
 class AdminReport {
   final String id; // full uuid
@@ -157,6 +229,19 @@ class AdminReport {
   /// is an informed decision rather than a coin-flip against an opaque label.
   final String? aiCategoryReason;
 
+  /// ── Report-flood hardening (20261014000000) ───────────────────────────────
+  /// Other OPEN, unmerged tickets that look like the same issue: same category,
+  /// close by, filed within the duplicate window (admin_report_similar(), the
+  /// same rule as the candidate list in the detail pane). 0 when none, or when
+  /// the function is not deployed.
+  final int similarCount;
+
+  /// How many of this group (counting this ticket) arrived in the surge window.
+  final int recentSimilarCount;
+
+  /// The group crossed the surge threshold — likely a flood of one issue.
+  final bool isSurge;
+
   const AdminReport({
     required this.id,
     required this.shortId,
@@ -186,16 +271,21 @@ class AdminReport {
     this.aiDepartment,
     this.aiEndorseHint,
     this.aiCategoryReason,
+    this.similarCount = 0,
+    this.recentSimilarCount = 0,
+    this.isSurge = false,
   });
 
   bool get isDismissed => dismissedAt != null;
+
+  /// Looks like the same issue as other open tickets — worth merging.
+  bool get hasSimilar => similarCount > 0;
 
   /// The office to pre-select at triage: the model's recommendation when it has
   /// one, else the deterministic category lookup. This is the ONLY place that
   /// choice is made — every surface showing a suggested office reads it, so the
   /// dialog and the detail page can never disagree.
-  String get suggestedDepartment =>
-      aiDepartment?.trim().isNotEmpty == true
+  String get suggestedDepartment => aiDepartment?.trim().isNotEmpty == true
       ? aiDepartment!.trim()
       : StaffDepartments.forReportCategory(categoryKey);
 
@@ -627,9 +717,10 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
     final signed = <String, String>{};
     if (paths.isNotEmpty) {
       try {
-        for (final res in await _db.storage
-            .from(_bucket)
-            .createSignedUrlsResult(paths, _signedUrlSeconds)) {
+        for (final res
+            in await _db.storage
+                .from(_bucket)
+                .createSignedUrlsResult(paths, _signedUrlSeconds)) {
           if (res is SignedUrlSuccess) signed[res.path] = res.signedUrl;
         }
       } catch (_) {
@@ -653,8 +744,7 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
       final path = r['storage_path'] as String;
       // best-effort: a public URL 400s on this private bucket, but it is a
       // better broken-image src than an empty string and matches prior behaviour
-      final url =
-          signed[path] ?? _db.storage.from(_bucket).getPublicUrl(path);
+      final url = signed[path] ?? _db.storage.from(_bucket).getPublicUrl(path);
       out.add(
         ReportMedia(
           url: url,
@@ -713,9 +803,14 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
   int get totalCount => _tickets.length;
   int get anonymousCount => _tickets.where((r) => r.isAnonymous).length;
 
+  /// Rows to serve instead of querying Supabase — for widget tests and
+  /// preview targets that pump the real reports page. Null in the app.
+  @visibleForTesting
+  static List<AdminReport>? debugRows;
+
   @override
   Future<List<AdminReport>> build() async {
-    _all = await _fetchAll();
+    _all = debugRows ?? await _fetchAll();
     return _view();
   }
 
@@ -813,12 +908,11 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
   /// they stay reachable here. This is the only way into a merged report, since
   /// by design it has no row of its own in any queue.
   List<AdminReport> confirmationsOf(String canonicalId) =>
-      _all.where((r) => r.duplicateOf == canonicalId).toList()
-        ..sort((a, b) {
-          final at = a.createdAt?.millisecondsSinceEpoch ?? 0;
-          final bt = b.createdAt?.millisecondsSinceEpoch ?? 0;
-          return at.compareTo(bt);
-        });
+      _all.where((r) => r.duplicateOf == canonicalId).toList()..sort((a, b) {
+        final at = a.createdAt?.millisecondsSinceEpoch ?? 0;
+        final bt = b.createdAt?.millisecondsSinceEpoch ?? 0;
+        return at.compareTo(bt);
+      });
 
   /// Active reports (not spam, not endorsed out) that have aged past their SLA.
   /// [_tickets] already drops dismissed spam, so only the endorsed cut is left.
@@ -877,11 +971,7 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
   ) async {
     final res = await _db.rpc(
       'endorse_report_to_agency',
-      params: {
-        'p_report': id,
-        'p_agency': department,
-        'p_reason': reason,
-      },
+      params: {'p_report': id, 'p_agency': department, 'p_reason': reason},
     );
     final row = Map<String, dynamic>.from(res as Map);
     await _reload();
@@ -911,10 +1001,10 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
   /// written justification; taking one back is the same decision in reverse and
   /// was leaving no trace of who or why.
   Future<void> clearEndorsement(String id, {String? reason}) async {
-    await _db.rpc('clear_report_endorsement', params: {
-      'p_report': id,
-      'p_reason': reason,
-    });
+    await _db.rpc(
+      'clear_report_endorsement',
+      params: {'p_report': id, 'p_reason': reason},
+    );
     await _reload();
   }
 
@@ -934,11 +1024,11 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
       'endorsed_by': null,
       'status': reportStatusToDb(ReportStatus.underReview),
     };
-    await _tryUpdate(
-      id,
-      update,
-      ['assigned_to_department', 'assigned_at', 'assigned_by'],
-    );
+    await _tryUpdate(id, update, [
+      'assigned_to_department',
+      'assigned_at',
+      'assigned_by',
+    ]);
   }
 
   /// Admin REJECTS a report with a citizen-facing reason. Terminal — a DB
@@ -1092,17 +1182,23 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
   /// Open reports that might be the same real-world issue as [reportId].
   /// Empty when report_duplicates.sql hasn't been applied — the suggestion is
   /// an aid, so its absence must never break the detail view.
+  /// Candidates to serve instead of calling report_duplicate_candidates —
+  /// for preview targets. Null in the app.
+  @visibleForTesting
+  static List<DuplicateCandidate>? debugCandidates;
+
   Future<List<DuplicateCandidate>> fetchDuplicateCandidates(
     String reportId,
   ) async {
+    if (debugCandidates != null) return debugCandidates!;
     try {
       final rows = await _db.rpc(
         'report_duplicate_candidates',
         params: {'p_report_id': reportId},
       );
-      return List<Map<String, dynamic>>.from(rows as List)
-          .map(DuplicateCandidate.fromRow)
-          .toList();
+      return List<Map<String, dynamic>>.from(
+        rows as List,
+      ).map(DuplicateCandidate.fromRow).toList();
     } catch (_) {
       return const [];
     }
@@ -1183,6 +1279,55 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
     return out;
   }
 
+  /// report id → its similar-ticket group (admin_report_similar()).
+  ///
+  /// An advisory layer on top of the list: when the function is missing or
+  /// fails, every report simply shows no "similar" chip and the queue still
+  /// loads. That is the one place an empty answer is acceptable — the merge
+  /// itself still goes through the per-report candidate list, which reports
+  /// its own failures.
+  Future<Map<String, ({int count, int recent, bool surge})>>
+  _fetchSimilar() async {
+    try {
+      final rows = await _db.rpc('admin_report_similar');
+      return {
+        for (final r in List<Map<String, dynamic>>.from(rows as List))
+          '${r['report_id']}': (
+            count: (r['similar_count'] as num?)?.toInt() ?? 0,
+            recent: (r['recent_count'] as num?)?.toInt() ?? 0,
+            surge: r['is_surge'] == true,
+          ),
+      };
+    } catch (e) {
+      debugPrint('admin_report_similar unavailable: $e');
+      return const {};
+    }
+  }
+
+  /// Merges [id] and every similar open ticket into ONE (admin_merge_similar).
+  /// The server picks the target — the best-backed, then the earliest — and
+  /// skips anything already in progress or endorsed to an agency.
+  Future<MergeSimilarResult> mergeSimilar(String id) async {
+    final res = await _db.rpc('admin_merge_similar', params: {'p_report': id});
+    final j = Map<String, dynamic>.from(res as Map);
+    await _reload();
+    if (j['ok'] != true) {
+      return MergeSimilarResult.failed('${j['error'] ?? 'unknown'}');
+    }
+    final target = '${j['target']}';
+    return MergeSimilarResult(
+      targetId: target,
+      targetShortId: target.length >= 8
+          ? target.substring(0, 8).toUpperCase()
+          : target.toUpperCase(),
+      merged: (j['merged'] as num?)?.toInt() ?? 0,
+      skipped: (j['skipped'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  /// Open tickets flagged as part of a surge, one entry per group.
+  List<ReportSurge> get surges => groupSurges(_all);
+
   Future<List<AdminReport>> _fetchAll() async {
     // NOTE: user_id is deliberately NOT selected here. Anonymous rows must never
     // carry their submitter's id in this response payload; named rows get their
@@ -1223,7 +1368,9 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
               .from('reports')
               .select(cols)
               .order('created_at', ascending: false)
-              .limit(200), // barangay scale; range-based paging is the scale path.
+              .limit(
+                200,
+              ), // barangay scale; range-based paging is the scale path.
         );
         break;
       } catch (_) {
@@ -1259,6 +1406,7 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
       {...identifiedIds, ...acceptorIds}.toList(),
     );
     final roles = await _fetchRoles(identifiedIds);
+    final similar = await _fetchSimilar();
 
     return list.map((r) {
       final id = r['id'] as String;
@@ -1302,6 +1450,9 @@ class AdminReportsNotifier extends AsyncNotifier<List<AdminReport>> {
         aiDepartment: _nullIfBlank(r['ai_department']),
         aiEndorseHint: _nullIfBlank(r['ai_endorse_hint']),
         aiCategoryReason: _nullIfBlank(r['ai_category_reason']),
+        similarCount: similar[id]?.count ?? 0,
+        recentSimilarCount: similar[id]?.recent ?? 0,
+        isSurge: similar[id]?.surge ?? false,
       );
     }).toList();
   }

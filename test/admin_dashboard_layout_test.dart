@@ -157,9 +157,10 @@ void main() {
       expect(find.text('Resolution rate'), findsOneWidget);
 
       // Left column + right rail are both on screen simultaneously.
-      expect(find.text('Reports over time'), findsOneWidget);
+      expect(find.text('Reports by category'), findsOneWidget);
       expect(find.text('Recent activity'), findsOneWidget);
-      expect(find.text('Top reported categories'), findsOneWidget);
+      // Categories now live inside "Reports by category" — no separate card.
+      expect(find.text('Top reported categories'), findsNothing);
       expect(find.text('AI & NLP insights'), findsOneWidget);
       expect(find.text('Needs your attention'), findsOneWidget);
     });
@@ -186,14 +187,14 @@ void main() {
       // The rail starts to the RIGHT of the left column — that is what makes
       // this a grid rather than a stack.
       final railX = tester.getTopLeft(find.text('AI & NLP insights')).dx;
-      final mainX = tester.getTopLeft(find.text('Reports over time')).dx;
+      final mainX = tester.getTopLeft(find.text('Reports by category')).dx;
       expect(railX, greaterThan(mainX));
 
       // And it starts level with it, near the top — not pushed below the
       // whole left column.
       expect(
         _top(tester, find.text('AI & NLP insights')),
-        lessThan(_top(tester, find.text('Top reported categories'))),
+        lessThan(_top(tester, find.text('Citizen satisfaction'))),
       );
     });
   });
@@ -209,7 +210,7 @@ void main() {
       // Overview = stat cards + recent activity, and nothing from other tabs.
       expect(find.text('Total reports'), findsOneWidget);
       expect(find.text('Recent activity'), findsOneWidget);
-      expect(find.text('Reports over time'), findsNothing);
+      expect(find.text('Reports by category'), findsNothing);
       expect(find.text('Needs your attention'), findsNothing);
       expect(find.text('Citizen satisfaction'), findsNothing);
     });
@@ -219,8 +220,9 @@ void main() {
 
       await tester.tap(find.text('Reports'));
       await tester.pumpAndSettle();
-      expect(find.text('Reports over time'), findsOneWidget);
-      expect(find.text('Top reported categories'), findsOneWidget);
+      expect(find.text('Reports by category'), findsOneWidget);
+      // Categories now live inside "Reports by category" — no separate card.
+      expect(find.text('Top reported categories'), findsNothing);
       expect(find.text('Total reports'), findsNothing);
 
       await tester.tap(find.text('AI'));
@@ -244,7 +246,7 @@ void main() {
 
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
       await tester.pumpAndSettle();
-      expect(find.text('Reports over time'), findsOneWidget);
+      expect(find.text('Reports by category'), findsOneWidget);
 
       // Wraps backwards off the first tab onto the last.
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);

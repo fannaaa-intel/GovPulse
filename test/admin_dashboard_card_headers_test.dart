@@ -1,5 +1,5 @@
 // Card headers on the admin dashboard pair a title with a small right-aligned
-// caption — "Reports over time · last 30 days", "Urgency triage · 3 reports".
+// caption — "Reports by category · last 30 days", "Urgency triage · 3 reports".
 // Both halves were rigid Text with a Spacer between them, so a narrow card had
 // no way to give: the pair ran 78px past the card on a 390px phone and 50px on
 // a 320px one, and the caption was pushed clean off the edge.

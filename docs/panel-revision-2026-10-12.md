@@ -18,7 +18,7 @@ figures — it is written to be the one source the paper is revised against.
 |---|---|---|---|
 | 1 | "Persona" for the verification submission | Use the Persona KYC service (withpersona.com) | **ON HOLD** by the user. Findings below. |
 | 2 | Avoid DoS | Cloudflare Turnstile + close the gaps | **NOT STARTED** — design verified, see below |
-| 3 | Citizen feedback on external agencies, recorded as agency performance | New rating table + admin "Agency performance" panel | **DATABASE LIVE 2026-10-13; app code uncommitted, not released** |
+| 3 | Citizen feedback on external agencies, recorded as agency performance | New rating table + admin "Agency performance" panel | **LIVE ON WEB 2026-10-13** (`757104d`, Vercel deploy Ready, strings verified in the live bundle). Android build held. |
 | 4 | Staff on/off duty toggle may violate public-service law | Delete it | **DONE — live on web** |
 | 5 | No direct citizen–staff conversation; FAQs only | Remove live staff chat; Kuya Gov answers questions only + FAQ chips | **DONE — live on web** |
 
@@ -117,10 +117,12 @@ percentage meter. **DONE.**
   If the paper needs one sentence: *the live-chat feature has been removed
   from the system and its remaining tables are closed to all writes pending
   final cleanup.*
-- **Do NOT claim Turnstile, Persona, or agency performance ratings** anywhere
-  in the paper as implemented. Items 2 and 3 are designed and verified but not
-  built; item 1 is on hold. Describe them as future work if they are mentioned
-  at all.
+- **Agency feedback (item 3) is LIVE on the website** since 2026-10-13 and
+  may be described as implemented: citizens rate the agency their report was
+  endorsed to; admins see agency performance. (Not on the Play Store app yet.)
+- **Do NOT claim Turnstile, the report-flooding hardening, the category trend
+  chart, or Persona** as implemented. Item 2 is planned, not built; item 1 is
+  on hold. Describe them as future work if they are mentioned at all.
 
 - **Security / DoS section**: existing protections are real and citable —
   per-account database limits (reports 5/day, suggestions 3/day, feedback
@@ -167,9 +169,9 @@ percentage meter. **DONE.**
 Nothing below should be started until the user says to begin it. Investigate,
 verify and propose first; show the plan and wait.
 
-### Not blocked — can start as soon as the user says so
+### Done
 
-1. **Item 3 — agency feedback. DATABASE LIVE (2026-10-13); APP NOT RELEASED.**
+- **Item 3 — agency feedback. LIVE ON WEB 2026-10-13 (`757104d`). Android held by the user.**
    - Migration applied by the user; verify script ran in the SQL editor:
      **30 of 30 PASS**. Confirmed live read-only: table, 3 functions, the one
      admin-only SELECT policy, RLS on.
@@ -213,34 +215,121 @@ verify and propose first; show the plan and wait.
    A new staff/agency write needs its own INSERT policy — see the
    staff-rls-write-gap memory.
 
-2. **Item 2 — DoS.** Do NOT enable Supabase's built-in CAPTCHA: sign-up,
-   login and forgot-password run server-side in `send-email-otp`,
-   `username-login`, `reset-send-otp`, and native CAPTCHA would break all
-   three. Verify the Turnstile token inside those functions (Cloudflare
-   siteverify). Guests use Firebase anonymous auth — unaffected. Mobile needs
-   `webview_flutter` + a `web/turnstile.html` on Vercel. Enforcement goes
-   behind a secret that is flipped only after a build ships (old builds send
-   no token and would be locked out of login). Also: limiter on
-   `check-ai-image`; upload count/size limits on `verification-assets`,
-   `profile-photos` (writable by unverified accounts).
-   **Needs a free Cloudflare account from the user before starting.**
+### Work order (updated 2026-10-13) — each waits for the user's "go"
 
-3. **Paper + figures** per the alignment checklist above. `docs/figures/` has
-   PRE-EXISTING uncommitted edits from before 2026-10-12 — reconcile those
-   FIRST, before regenerating anything. Workflow is in the
-   manuscript-figures-workflow memory (one artifact URL for all six figures,
-   the `url` param that stops it forking, drawio-last ordering).
+1. **Item 2a — DoS: report-flooding hardening. DATABASE LIVE 2026-10-14
+   (`20261014000000` + fix `20261014000001`, verify_20261014000001: 34/34 PASS;
+   confirmed live: guard is invoker, helper present, nothing pending).
+   App code uncommitted / not released.** The first push's guard never fired
+   (SECURITY DEFINER hid the caller) — 27/32 — fixed by 000001.
+   User applies with `! supabase db push`, then pastes
+   `supabase/diagnostics/verify_20261014000000.sql` (32 rollback-only probes;
+   break-tested where noted). App code tolerates the migration being absent
+   (no is_mine → no pre-check; no admin_report_similar → no chips/banner).
+   Built: A (trg_ac_block_repeat_report, fires before the daily limiter so a
+   refused repeat costs nothing; "others" compared by typed category), B
+   (recount = distinct people, own-report and second confirmations refused),
+   C (admin_report_similar + admin_merge_similar: "N similar" chip under the
+   category, red surge banner above the queue, "Merge all N into one ticket"
+   in the triage strip; skips in-progress/endorsed tickets and re-points
+   children). Citizen: "You already reported this" dialog before upload.
+   Tests: test/report_flood_and_category_chart_test.dart,
+   test/admin_reports_flood_layout_test.dart (no-regression check, proven to
+   fail when the chip is put back in the status column). Previews:
+   tool/preview_report_flood.dart, tool/preview_admin_reports_flood.dart.
+   NOT done in this pass: check-ai-image limiter, upload count limits, the
+   ticket-attachments storage policy — still open.
+
+   Original plan:
+   The panel's DoS concern is the WORK QUEUE being flooded, not only bots.
+   Already in place (keep, cite in the paper): admin-verified ID required to
+   report, 5 reports/account/day (atomic limiter), the "Already reported
+   here?" check (`nearby_open_reports`, same category within
+   `dup_radius_m` = 60 m, `dup_max_age_days` = 30), admin duplicate
+   candidates + merge, Spam Watch. Gaps to close:
+   - **A — one person repeating the same issue.** "Mine is different" is only
+     advisory, so one citizen can refile the same spot with new wording up to
+     5×/day. Block a new report from the same account, same category, within
+     60 m of their own still-open report; message points them to add photos or
+     details to the existing one.
+   - **B — inflated confirmations.** `recount_report_confirms` counts ROWS
+     with `duplicate_of = X`, not people. One account can confirm the same
+     report repeatedly, or confirm its own. Allow one confirmation per person
+     per report and none on your own report.
+   - **C — many accounts, same issue.** Each "Mine is different" lands as a
+     separate admin item. Auto-link new reports to an open same-category
+     report within 60 m as probable duplicates; the queue shows one item with
+     "N similar reports" and a Merge-all button; alert the admin when reports
+     pile up at one spot within 24 h. Nothing merges without an admin click.
+   - Small ones in the same pass: per-user limit on `check-ai-image` (burns
+     Sightengine credits); upload count limits on `verification-assets` /
+     `profile-photos` (writable by UNVERIFIED accounts); drop the leftover
+     storage INSERT policy "Users upload to own folder" on
+     `ticket-attachments`. Stage A closed the table but not the bucket — any
+     signed-in account can still upload there (found live 2026-10-13).
+   Suggested order: A + B first (small), then C (touches the admin reports
+   screen).
+
+2. **Admin dashboard — reports by category over time. BUILT 2026-10-14 —
+   uncommitted.** `lib/features/admin/widgets/report_category_trend.dart`;
+   replaced "Reports over time" + "Top reported categories". Six lines in the
+   validated dataviz palette (CVD ΔE ≥ 9.1), straight segments, weekly points
+   for 90 days, tooltip = the line under the pointer only (browser-verified:
+   "5 reports · Drainage & Flooding · 3 Oct"), tappable legend with totals,
+   short-name 2-column legend on phones, tie-aware "Most reported" line.
+   No DB change.
+
+   Original request: Asked by
+   the user 2026-10-13. Replaces the two separate cards "Reports over time"
+   and "Top reported categories" (`admin_overview_page.dart`,
+   `_buildTrendCard` / `_buildCategoriesCard`) with ONE line chart:
+   - **one coloured line per category**: Road & Infrastructure, Waste &
+     Garbage, Drainage & Flooding, Streetlight Outage, Environment &
+     Pollution, Others;
+   - **hover (web) / tap (phone) a line → it shows that line's count**
+     directly, e.g. "Drainage & Flooding · Oct 3 · 4 reports";
+   - **a legend**: colour + category name (+ its total for the period);
+   - follows the existing 7 / 30 / 90-day selector. Today the category card
+     counts ALL TIME while the trend uses the selected range, so the two can
+     disagree; the merged chart uses one range for everything.
+   - No database change: `reportRows` already carries `category` +
+     `created_at`. Responsive at phone, tablet and desktop widths, 1.0x and
+     1.3x text; checked in a real browser render, not only tests.
+   - Decide at build time: daily points for 7/30 days, weekly for 90 (90 daily
+     points × 6 lines is unreadable); colour-blind-safe palette (see the
+     dataviz skill).
+
+3. **Item 2b — CAPTCHA (Cloudflare Turnstile) on sign-up / login / forgot
+   password.** **Needs the user's free Cloudflare account** (site key +
+   secret key). CORRECTION found 2026-10-13: `enable_signup = true` and the
+   anon key ships in the bundle, so anyone can call GoTrue `/auth/v1/otp` and
+   `/auth/v1/token` directly and skip our Edge Functions — Turnstile checked
+   only inside the functions would leave that side door open. Likely right
+   design: turn Supabase's native captcha ON and have the functions FORWARD
+   the client's token (a token verifies only once, so never both).
+   `send-email-otp` / `reset-send-otp` call GoTrue with the service key,
+   `username-login` with the ANON key — confirm how native captcha treats
+   each before locking the design. Mobile needs `webview_flutter` +
+   `web/turnstile.html` on Vercel; enforcement flips only after a build that
+   sends tokens has shipped.
+
+4. **Paper + figures** per the alignment checklist above. `docs/figures/` has
+   PRE-EXISTING uncommitted edits (re-verification passes of 7–22 Sep 2026,
+   recorded in its README) — commit those as the baseline FIRST, then redraw
+   for the chat removal (chat references in Figures 3, 5, 6, 8, 9; none in 4).
+   Workflow is in the manuscript-figures-workflow memory. Agency feedback
+   (item 3) is now live on the web and may be described.
 
 ### Blocked — do not start
 
-4. **Stage B migration** (`supabase/pending/drop_live_staff_chat.sql`), then
+- **Stage B migration** (`supabase/pending/drop_live_staff_chat.sql`), then
    delete the `ticket-attachments` bucket by hand.
    **BLOCKED on the Play Store release being live to users**, which is pending
    on the user's side with no date. Written, audited live 2026-10-13, and
    ready; the verification script exists. Do not run it early — old installed
    builds still read these objects.
 
-5. **Item 1 — Persona.** ON HOLD by the user. Only if the hold is lifted:
+- **Item 1 — Persona.** ON HOLD by the user. Only if the hold is lifted:
    Startup Program is 500 free/month for one year then $1 each, by
    application; `persona_flutter` is unofficial and Android/iOS only (web
    needs the hosted flow); keep the in-house flow as fallback; ID photos go to

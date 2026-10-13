@@ -20,6 +20,7 @@ import '../widgets/admin_moderation.dart';
 import '../providers/admin_identity_reveal_provider.dart';
 import '../widgets/admin_submission_ui.dart';
 import '../widgets/report_detail_kit.dart';
+import '../widgets/report_flood_widgets.dart';
 import '../widgets/report_status_tracker.dart';
 import '../widgets/revealable_submitter.dart';
 import '../widgets/admin_snackbar.dart';
@@ -58,11 +59,7 @@ class AdminReportsPage extends ConsumerStatefulWidget {
   /// see DeepLinkHighlightMixin.rearmHighlight.
   final int deepLinkNonce;
 
-  const AdminReportsPage({
-    super.key,
-    this.highlightId,
-    this.deepLinkNonce = 0,
-  });
+  const AdminReportsPage({super.key, this.highlightId, this.deepLinkNonce = 0});
 
   @override
   ConsumerState<AdminReportsPage> createState() => _AdminReportsPageState();
@@ -225,6 +222,13 @@ class _AdminReportsPageState extends ConsumerState<AdminReportsPage>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _Header(async: async, notifier: notifier),
+                if (async.hasValue && notifier.surges.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  ReportSurgeBanner(
+                    surges: notifier.surges,
+                    onReview: (r) => _openDetail(r),
+                  ),
+                ],
                 const SizedBox(height: 14),
                 // Buckets first: they answer "which pile am I looking at",
                 // which the search and filters then narrow.
@@ -743,6 +747,14 @@ class _TableRow extends StatelessWidget {
                           const SizedBox(height: 4),
                           _EndorsedBadge(r.endorsedToDepartment!),
                         ],
+                        // Under the category, not in the status column: it
+                        // says what the issue IS (one of several reports of
+                        // it), and the status column is already full with
+                        // the overdue and confirmed chips.
+                        if (r.hasSimilar && !r.isDuplicate) ...[
+                          const SizedBox(height: 4),
+                          SimilarReportsChip(r.similarCount, surge: r.isSurge),
+                        ],
                       ],
                     ),
                   ),
@@ -972,51 +984,51 @@ class _RejectReasonDialogState extends State<_RejectReasonDialog> {
     final keyboardUp = full && AdminDialogKeyboard.of(context);
 
     final body = Column(
-          mainAxisSize: full ? MainAxisSize.max : MainAxisSize.min,
-          children: [
-            _header(full),
-            const Divider(height: 1, color: AdminUi.border),
-            // Only the middle scrolls, so the actions stay reachable and the
-            // heading stays put while picking a reason.
-            // Expanded on the screen form so the action bar sits on the
-            // bottom edge whatever the body's height — see AdminDialogFlex.
-            AdminDialogFlex(
-              expand: full,
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const _FieldLabel('Select a reason (optional)'),
-                    const SizedBox(height: 10),
-                    _presetGrid(),
-                    const SizedBox(height: 18),
-                    const _FieldLabel('Or provide another reason'),
-                    const SizedBox(height: 10),
-                    _reasonField(),
-                    const SizedBox(height: 8),
-                    _fieldFooter(),
-                  ],
-                ),
-              ),
+      mainAxisSize: full ? MainAxisSize.max : MainAxisSize.min,
+      children: [
+        _header(full),
+        const Divider(height: 1, color: AdminUi.border),
+        // Only the middle scrolls, so the actions stay reachable and the
+        // heading stays put while picking a reason.
+        // Expanded on the screen form so the action bar sits on the
+        // bottom edge whatever the body's height — see AdminDialogFlex.
+        AdminDialogFlex(
+          expand: full,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const _FieldLabel('Select a reason (optional)'),
+                const SizedBox(height: 10),
+                _presetGrid(),
+                const SizedBox(height: 18),
+                const _FieldLabel('Or provide another reason'),
+                const SizedBox(height: 10),
+                _reasonField(),
+                const SizedBox(height: 8),
+                _fieldFooter(),
+              ],
             ),
-            // "Or provide another reason" is a 3-line textarea, so the
-            // keyboard is up for most of the time this dialog is open. The
-            // request describes exactly what that cost: the field stayed
-            // visible (the framework scrolls it into view) but the buttons rode
-            // up with it and sat on the keyboard. Under it they are unreachable
-            // anyway, so the bar stands down and the body takes the height.
-            AdminKeyboardCollapse(
-              keyboardUp: keyboardUp,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Divider(height: 1, color: AdminUi.border),
-                  _actions(),
-                ],
-              ),
-            ),
-          ],
+          ),
+        ),
+        // "Or provide another reason" is a 3-line textarea, so the
+        // keyboard is up for most of the time this dialog is open. The
+        // request describes exactly what that cost: the field stayed
+        // visible (the framework scrolls it into view) but the buttons rode
+        // up with it and sat on the keyboard. Under it they are unreachable
+        // anyway, so the bar stands down and the body takes the height.
+        AdminKeyboardCollapse(
+          keyboardUp: keyboardUp,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Divider(height: 1, color: AdminUi.border),
+              _actions(),
+            ],
+          ),
+        ),
+      ],
     );
 
     if (full) {
@@ -1090,15 +1102,13 @@ class _RejectReasonDialogState extends State<_RejectReasonDialog> {
         ),
         children: [
           TextSpan(
-            text: 'The report will be closed and the citizen will be '
+            text:
+                'The report will be closed and the citizen will be '
                 'notified. This action ',
           ),
           TextSpan(
             text: 'cannot be undone',
-            style: TextStyle(
-              color: AppColors.red,
-              fontWeight: FontWeight.w700,
-            ),
+            style: TextStyle(color: AppColors.red, fontWeight: FontWeight.w700),
           ),
           TextSpan(text: '.'),
         ],
@@ -1579,7 +1589,10 @@ class _Card extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           ReportProgressLabel(stages: buildReportStages(r, r.status)),
-          if (r.isEndorsed || r.isOverdue || r.isCorroborated) ...[
+          if (r.isEndorsed ||
+              r.isOverdue ||
+              r.isCorroborated ||
+              (r.hasSimilar && !r.isDuplicate)) ...[
             const SizedBox(height: 8),
             Wrap(
               spacing: 6,
@@ -1588,6 +1601,8 @@ class _Card extends StatelessWidget {
                 if (r.isEndorsed) _EndorsedBadge(r.endorsedToDepartment!),
                 if (r.isOverdue) DetailOverdueChip(r.ageDays),
                 if (r.isCorroborated) _ConfirmedChip(r.reporterCount),
+                if (r.hasSimilar && !r.isDuplicate)
+                  SimilarReportsChip(r.similarCount, surge: r.isSurge),
               ],
             ),
           ],
@@ -1640,6 +1655,7 @@ enum _ReportAction {
   dismiss,
   restore,
   merge,
+  mergeAll,
   unmerge,
 }
 
@@ -2172,7 +2188,9 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
       (
         // Reads the same [suggestedDepartment] the Accept dialog pre-selects,
         // so the detail page and the dialog can never name different offices.
-        label: r.hasAiSuggestion ? 'Suggested department (AI)' : 'Suggested department',
+        label: r.hasAiSuggestion
+            ? 'Suggested department (AI)'
+            : 'Suggested department',
         value: r.suggestedDepartment,
       ),
     ];
@@ -2462,11 +2480,143 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
               ),
               const SizedBox(height: 10),
               for (final c in list) _duplicateCandidateRow(c),
+              if (_groupSize(list) > 2) ...[
+                if (report.similarCount > list.length)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      '+${report.similarCount - list.length} more not shown.',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: AdminUi.textMuted,
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 2),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: FilledButton.icon(
+                    onPressed: _busy ? null : () => _mergeAll(list),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.orange,
+                      minimumSize: const Size(0, 40),
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    icon: _running == _ReportAction.mergeAll
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.merge_type_rounded, size: 17),
+                    label: Text(
+                      'Merge all ${_groupSize(list)} into one ticket',
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         );
       },
     );
+  }
+
+  /// This report plus every similar open ticket the server will consider.
+  int _groupSize(List<DuplicateCandidate> shown) =>
+      1 +
+      (report.similarCount > shown.length ? report.similarCount : shown.length);
+
+  /// One step for a whole group: every similar open ticket becomes a
+  /// confirmation of the one the community already backs. Asks first, and
+  /// says plainly what will NOT move, so a skipped ticket is not a surprise.
+  Future<void> _mergeAll(List<DuplicateCandidate> shown) async {
+    final n = _groupSize(shown);
+    final ok = await showAppDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Merge $n reports into one?',
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+        ),
+        content: const SingleChildScrollView(
+          child: Text(
+            'They become one ticket: the one most citizens already back, or '
+            'the earliest. The others leave the queue as confirmations. Each '
+            'citizen keeps their report and is told it was linked.\n\n'
+            'Reports already in progress or endorsed to an agency are left as '
+            'they are. You can undo any single link from the ticket.',
+            style: TextStyle(
+              fontSize: 13,
+              height: 1.5,
+              color: AdminUi.textSecondary,
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.orange),
+            child: Text('Merge $n reports'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    if (!_beginAction(_ReportAction.mergeAll)) return;
+    try {
+      final r = await ref
+          .read(adminReportsProvider.notifier)
+          .mergeSimilar(widget.report.id);
+      if (!mounted) return;
+      if (!r.ok) {
+        _endAction();
+        showAdminSnackBar(
+          context,
+          r.error == 'nothing_to_merge'
+              ? 'Nothing left to merge. The others were already linked or '
+                    'closed.'
+              : 'This report is no longer an open ticket, so it cannot be '
+                    'merged.',
+          type: AdminSnackType.info,
+        );
+        return;
+      }
+      Navigator.pop(context);
+      final plural = r.merged == 1 ? '' : 's';
+      final skipped = r.skipped == 0
+          ? ''
+          : ' ${r.skipped} left as is (already in progress or endorsed).';
+      showAdminSnackBar(
+        context,
+        'Merged ${r.merged} report$plural into RPT-${r.targetShortId}.$skipped',
+        type: AdminSnackType.success,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      _endAction();
+      showAdminSnackBar(
+        context,
+        'Could not merge: $e',
+        type: AdminSnackType.error,
+      );
+    }
   }
 
   Widget _duplicateCandidateRow(DuplicateCandidate c) {
@@ -2512,8 +2662,9 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
             onPressed: _busy ? null : () => _merge(c),
             style: TextButton.styleFrom(
               foregroundColor: AppColors.orange,
-              disabledForegroundColor:
-                  _runningRowId == c.id ? AppColors.orange : null,
+              disabledForegroundColor: _runningRowId == c.id
+                  ? AppColors.orange
+                  : null,
               padding: const EdgeInsets.symmetric(horizontal: 10),
               minimumSize: const Size(0, 32),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -2579,8 +2730,9 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
                   onPressed: _busy ? null : () => _unmerge(d),
                   style: TextButton.styleFrom(
                     foregroundColor: AppColors.red,
-                    disabledForegroundColor:
-                        _runningRowId == d.id ? AppColors.red : null,
+                    disabledForegroundColor: _runningRowId == d.id
+                        ? AppColors.red
+                        : null,
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                     minimumSize: const Size(0, 28),
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -2644,7 +2796,8 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
             isDismissed: r.isDismissed,
             reason: r.dismissedReason,
             busy: _busy,
-            running: _running == _ReportAction.dismiss ||
+            running:
+                _running == _ReportAction.dismiss ||
                 _running == _ReportAction.restore,
             onDismiss: _dismiss,
             onRestore: _restore,
@@ -2708,7 +2861,10 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
           DetailIconSection(
             icon: Icons.location_on_rounded,
             title: 'Location',
-            child: DetailLocationBlock(barangay: r.barangay, address: r.address),
+            child: DetailLocationBlock(
+              barangay: r.barangay,
+              address: r.address,
+            ),
           ),
           DetailIconSection(
             icon: Icons.person_rounded,
@@ -2883,10 +3039,7 @@ class _ReportDetailDialogState extends ConsumerState<_ReportDetailDialog> {
     Widget activePane() {
       final fills = _paneTab == 1 && _tabFills;
       if (fills) {
-        return Padding(
-          padding: const EdgeInsets.all(14),
-          child: _statusPane(),
-        );
+        return Padding(padding: const EdgeInsets.all(14), child: _statusPane());
       }
       return SingleChildScrollView(
         padding: const EdgeInsets.all(14),

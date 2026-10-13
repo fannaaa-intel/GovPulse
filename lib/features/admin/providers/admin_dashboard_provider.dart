@@ -419,6 +419,11 @@ class AdminDashboardData {
   /// works without a refetch.
   final List<DateTime> reportDates;
 
+  /// Every report's creation time WITH its category key, for the
+  /// reports-by-category chart. Same rows as [reportDates]; empty when built
+  /// by a caller that does not need the chart.
+  final List<ReportPoint> reportPoints;
+
   final SatisfactionStats satisfaction;
   final NlpInsights nlp;
   final List<ActivityItem> recentActivity;
@@ -433,6 +438,7 @@ class AdminDashboardData {
     required this.statusCounts,
     required this.topCategories,
     required this.reportDates,
+    this.reportPoints = const [],
     required this.satisfaction,
     required this.nlp,
     required this.recentActivity,
@@ -554,6 +560,15 @@ class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
       statusCounts: statusCounts,
       topCategories: topCategories,
       reportDates: reportDates,
+      reportPoints: [
+        for (final r in reportRows)
+          if (_parseTs(r['created_at']) != null)
+            (
+              at: _parseTs(r['created_at'])!,
+              category:
+                  (r['category'] as String?)?.trim().toLowerCase() ?? 'others',
+            ),
+      ],
       satisfaction: _satisfaction(feedbackRows),
       nlp: _nlp(feedbackRows, reportRows, suggestionRows, aiInsight, now),
       // Ten, not six: with four sources merged, six rows could be a single
@@ -1944,3 +1959,7 @@ final adminDashboardProvider =
     AsyncNotifierProvider<AdminDashboardNotifier, AdminDashboardData>(
       AdminDashboardNotifier.new,
     );
+
+/// One report on the reports-by-category chart: when it was filed and its
+/// category key (road, waste, drainage, streetlight, environment, others).
+typedef ReportPoint = ({DateTime at, String category});

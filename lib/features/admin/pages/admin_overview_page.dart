@@ -14,6 +14,7 @@ import '../providers/admin_reports_provider.dart'
 import '../providers/admin_suggestions_provider.dart'
     show AdminSuggestion, adminSuggestionsProvider;
 import '../theme/admin_ui.dart';
+import '../widgets/report_category_trend.dart';
 import '../utils/analytics_pdf.dart';
 import '../widgets/activity_visuals.dart';
 import '../widgets/admin_skeleton.dart';
@@ -179,7 +180,6 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
     _buildTrendCard(async),
     _buildStatusCard(async),
     _buildActivityCard(async),
-    _buildCategoriesCard(async),
     _buildSatisfactionCard(async),
   ];
 
@@ -258,11 +258,7 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
   List<Widget> _buildTabSections(AsyncValue<AdminDashboardData> async) {
     switch (_tab) {
       case 1:
-        return _gap([
-          _buildTrendCard(async),
-          _buildStatusCard(async),
-          _buildCategoriesCard(async),
-        ]);
+        return _gap([_buildTrendCard(async), _buildStatusCard(async)]);
       case 2:
         return _gap(_buildAiRail(async));
       case 3:
@@ -641,7 +637,7 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
               // slack the old Spacer provided, so the caption still sits hard
               // right. The caption is short and fixed, so the title is the
               // half that should give.
-              const Expanded(child: _CardTitle('Reports over time')),
+              const Expanded(child: _CardTitle('Reports by category')),
               const SizedBox(width: 12),
               Text(
                 'last $_rangeDays days',
@@ -651,18 +647,26 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
               ),
             ],
           ),
-          const SizedBox(height: 18),
-          SizedBox(
-            height: 200,
-            child: loading
-                ? const AdminShimmer(child: _TrendSkeleton())
-                : (data == null
-                      ? const _EmptyHint(
-                          'Trend unavailable.',
-                          icon: Icons.show_chart_rounded,
-                        )
-                      : _TrendChart(dates: data.reportDates, days: _rangeDays)),
-          ),
+          const SizedBox(height: 14),
+          // How many AND what kind, in one place and over one range. This
+          // replaced two cards — a single trend line and an all-time category
+          // bar list — which the admin had to read separately and which could
+          // disagree, because only one of them followed the range toggle.
+          if (loading)
+            const SizedBox(
+              height: 200,
+              child: AdminShimmer(child: _TrendSkeleton()),
+            )
+          else if (data == null)
+            const SizedBox(
+              height: 200,
+              child: _EmptyHint(
+                'Trend unavailable.',
+                icon: Icons.show_chart_rounded,
+              ),
+            )
+          else
+            ReportCategoryTrend(points: data.reportPoints, days: _rangeDays),
         ],
       ),
     );
@@ -817,60 +821,6 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
               ),
             ),
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCategoriesCard(AsyncValue<AdminDashboardData> async) {
-    final data = async.valueOrNull;
-    final loading = async.isLoading && data == null;
-
-    Widget body;
-    if (loading) {
-      body = AdminShimmer(
-        child: Column(
-          children: List.generate(4, (_) => const _CategorySkeletonRow()),
-        ),
-      );
-    } else if (data == null) {
-      body = const _EmptyHint(
-        'Categories unavailable.',
-        icon: Icons.donut_small_rounded,
-      );
-    } else if (data.topCategories.isEmpty) {
-      body = const _EmptyHint(
-        'No reports yet.',
-        icon: Icons.donut_small_rounded,
-      );
-    } else {
-      const palette = <Color>[
-        AppColors.red,
-        AppColors.orange,
-        AppColors.primaryBlue,
-        AppColors.green,
-      ];
-      final cats = data.topCategories;
-      body = Column(
-        children: [
-          for (int i = 0; i < cats.length; i++)
-            _CategoryBar(
-              stat: cats[i],
-              color: cats[i].isAggregate
-                  ? AppColors.grey
-                  : palette[i % palette.length],
-            ),
-        ],
-      );
-    }
-
-    return _Card(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const _CardTitle('Top reported categories'),
-          const SizedBox(height: 16),
-          body,
         ],
       ),
     );
@@ -1190,146 +1140,6 @@ class _AdminOverviewPageState extends ConsumerState<AdminOverviewPage> {
 
 // ── Charts ─────────────────────────────────────────────────────────────────
 
-class _TrendChart extends StatelessWidget {
-  final List<DateTime> dates;
-  final int days;
-  const _TrendChart({required this.dates, required this.days});
-
-  @override
-  Widget build(BuildContext context) {
-    final now = DateTime.now();
-    final start = DateTime(
-      now.year,
-      now.month,
-      now.day,
-    ).subtract(Duration(days: days - 1));
-
-    // Daily buckets across the window (zero-filled).
-    final buckets = List<int>.filled(days, 0);
-    for (final d in dates) {
-      final day = DateTime(d.year, d.month, d.day);
-      final idx = day.difference(start).inDays;
-      if (idx >= 0 && idx < days) buckets[idx]++;
-    }
-
-    final spots = <FlSpot>[
-      for (int i = 0; i < days; i++)
-        FlSpot(i.toDouble(), buckets[i].toDouble()),
-    ];
-    final maxVal = buckets.fold<int>(0, (a, b) => a > b ? a : b);
-    final maxY = (maxVal <= 4 ? 4.0 : (maxVal * 1.25).ceilToDouble());
-    final yInterval = (maxY / 4).ceilToDouble().clamp(1.0, double.infinity);
-    final xInterval = (days / 5).ceilToDouble();
-
-    return LineChart(
-      LineChartData(
-        minX: 0,
-        maxX: (days - 1).toDouble(),
-        minY: 0,
-        maxY: maxY,
-        // Hard-clip everything to the plot area so a curved spline can never
-        // draw the line/fill outside the card (the overshoot bug on filtering).
-        clipData: const FlClipData.all(),
-        gridData: FlGridData(
-          show: true,
-          drawVerticalLine: false,
-          horizontalInterval: yInterval,
-          getDrawingHorizontalLine: (v) =>
-              const FlLine(color: AdminUi.border, strokeWidth: 1),
-        ),
-        borderData: FlBorderData(show: false),
-        titlesData: FlTitlesData(
-          topTitles: const AxisTitles(
-            sideTitles: SideTitles(showTitles: false),
-          ),
-          rightTitles: const AxisTitles(
-            sideTitles: SideTitles(showTitles: false),
-          ),
-          leftTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 30,
-              interval: yInterval,
-              getTitlesWidget: (value, meta) {
-                if (value % yInterval != 0) return const SizedBox.shrink();
-                return Padding(
-                  padding: const EdgeInsets.only(right: 6),
-                  child: Text(
-                    value.toInt().toString(),
-                    style: const TextStyle(
-                      fontSize: 10,
-                      color: AdminUi.textMuted,
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-          bottomTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 24,
-              interval: xInterval,
-              getTitlesWidget: (value, meta) {
-                final i = value.round();
-                if (i < 0 || i >= days) return const SizedBox.shrink();
-                final d = start.add(Duration(days: i));
-                return Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Text(
-                    _short(d),
-                    style: const TextStyle(
-                      fontSize: 10,
-                      color: AdminUi.textMuted,
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ),
-        lineTouchData: LineTouchData(enabled: true),
-        lineBarsData: [
-          LineChartBarData(
-            spots: spots,
-            isCurved: true,
-            curveSmoothness: 0.25,
-            // Keep the spline from bulging past its data points (below 0 / above
-            // the peak), which is what pushed the line outside the container.
-            preventCurveOverShooting: true,
-            color: AppColors.primaryBlue,
-            barWidth: 2.5,
-            isStrokeCapRound: true,
-            dotData: const FlDotData(show: false),
-            belowBarData: BarAreaData(
-              show: true,
-              color: AppColors.primaryBlue.withValues(alpha: 0.10),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  static String _short(DateTime d) {
-    const m = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    return '${d.day} ${m[d.month - 1]}';
-  }
-}
-
 class _StatusDonut extends StatelessWidget {
   final Map<ReportStatus, int> counts;
   final int total;
@@ -1602,69 +1412,6 @@ class _DeltaChip extends StatelessWidget {
               fontSize: 11,
               fontWeight: FontWeight.w600,
               color: color,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ── Category bar ─────────────────────────────────────────────────────────────
-
-class _CategoryBar extends StatelessWidget {
-  final CategoryStat stat;
-  final Color color;
-  const _CategoryBar({required this.stat, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    final pct = '${(stat.share * 100).round()}%';
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 130,
-            child: Text(
-              stat.label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 12,
-                color: AdminUi.textSecondary,
-                fontStyle: stat.isAggregate
-                    ? FontStyle.italic
-                    : FontStyle.normal,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: Container(
-                height: 8,
-                color: AdminUi.subtle,
-                child: FractionallySizedBox(
-                  alignment: Alignment.centerLeft,
-                  widthFactor: stat.share.clamp(0.0, 1.0),
-                  child: Container(color: color),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          SizedBox(
-            width: 36,
-            child: Text(
-              pct,
-              textAlign: TextAlign.right,
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: AdminUi.textSecondary,
-              ),
             ),
           ),
         ],
