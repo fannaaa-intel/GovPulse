@@ -26,12 +26,24 @@
 #     relations; `supabase storage ls ss:///` for buckets, since the CLI login
 #     role cannot read the `storage` schema): **46 tables + 9 views** in
 #     `public`, and **10 storage buckets**, whose names are the ten drawn below.
-#     Updated 2026-10-13 to **49 tables + 9 views**. This one is derived from
-#     the migrations, not from a live query (the Management API token was not
-#     reachable in that session): three migrations since the 09-22 count each
-#     add exactly one table and no view -- kuya_gov_knowledge_gaps
-#     (20261006000000), id_check_results (20261010000002) and agency_feedback
-#     (20261013000000). Re-query before the final submission if you can.
+#     Updated 2026-10-13 to **49 tables + 8 views**, and this time VERIFIED
+#     against the live database, not derived from the migrations:
+#       - tables: `supabase inspect db table-stats --linked` lists exactly 49
+#         relations in `public`, including the three added since the 09-22
+#         count -- kuya_gov_knowledge_gaps (20261006000000), id_check_results
+#         (20261010000002) and agency_feedback (20261013000000).
+#       - views: probed one by one over PostgREST with the publishable key. A
+#         view that exists answers 200 or 401 (RLS refusing the anon read); one
+#         that does not answers 404. Eight answer: community_feed,
+#         public_user_profiles, staff_reports_view, staff_suggestions_view,
+#         staff_feedbacks_view, staff_performance_view, staff_messages_view and
+#         staff_tickets_view.
+#     The figure said NINE views before. Only eight can be named and confirmed,
+#     so it now says eight. If a ninth exists it is one no migration creates, no
+#     Dart file reads and no probe here guessed -- re-check with a direct
+#     `pg_class` query if that matters for the defense. The last two in the list
+#     are the retired chat views: they still exist because stage B (the final
+#     chat cleanup) waits on the Play Store release.
 #     20260922000000 is what moved the first two: +1 table (suggestion_replies)
 #     and +2 views (staff_suggestions_view, staff_feedbacks_view) over the
 #     45 + 7 counted on 2026-09-11.
@@ -173,7 +185,7 @@ chip(45, 300, "Realtime", italic=True, wid=62)
 # ── data tier ─────────────────────────────────────────────────────────────
 box(300, 600, 640, 150,
     ["PostgreSQL  (Supabase)",
-     "49 tables  ·  9 views",
+     "49 tables  ·  8 views",
      "ROW-LEVEL SECURITY — the authorisation layer",
      "SECURITY DEFINER RPCs · triggers · pg_cron · Vault"], sw="1.4", fs=11)
 

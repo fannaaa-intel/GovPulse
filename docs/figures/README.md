@@ -281,11 +281,24 @@ gone stale on three counts and carried one outright hole:
 - **`reveal-identity` was never drawn at all** — the same class of hole Fig 9
   had twice before (a whole unit nothing else points at, so nothing flags its
   absence). It is the admin's two-step identity reveal (20260927000000).
-- "46 tables" -> **49**, from three migrations since the 09-22 count that each
-  add one table and no view: `kuya_gov_knowledge_gaps` (20261006000000),
-  `id_check_results` (20261010000002), `agency_feedback` (20261013000000).
-  **This one is derived from the migrations, not from a live query** — re-query
-  before final submission if you can.
+- "46 tables · 9 views" -> **49 tables · 8 views**, verified against the LIVE
+  database (not derived from the migrations):
+  - **Tables**: `supabase inspect db table-stats --linked` lists exactly 49
+    relations in `public`, including the three added since the 09-22 count —
+    `kuya_gov_knowledge_gaps` (20261006000000), `id_check_results`
+    (20261010000002) and `agency_feedback` (20261013000000).
+  - **Views**: probed one at a time over PostgREST with the publishable key.
+    A view that exists answers 200 or 401 (RLS refusing the anonymous read);
+    one that does not answers **404** — that difference is what makes the probe
+    a real test. Eight answer: `community_feed`, `public_user_profiles`,
+    `staff_reports_view`, `staff_suggestions_view`, `staff_feedbacks_view`,
+    `staff_performance_view`, `staff_messages_view`, `staff_tickets_view`.
+  - The figure had said **nine** views. Only eight can be named and confirmed,
+    so it now says eight. If a ninth exists, no migration creates it, no Dart
+    file reads it and no probe here guessed it; settle it with a direct
+    `pg_class` query if the defense needs the number exactly.
+  - The last two are the retired chat views. They still exist because stage B,
+    the final chat cleanup, waits on the Play Store release.
 - `ticket-attachments` is drawn and *marked retired* rather than dropped: the
   bucket still exists but its upload policy is gone, so it accepts no writes.
 
@@ -450,9 +463,10 @@ one; `«extend»` only where the code makes the step optional.
 
 `figure8_architecture.svg` · `figure8_architecture.png` · `gen_figure8.py`
 
-Five tiers, 20 edge functions (15 client-invoked, 5 trigger-fired), **46 tables +
-9 views**, 10 storage buckets, 4 external services. Relation and bucket counts
-re-verified against the live database on **2026-09-22**.
+Five tiers, 21 edge functions (16 client-invoked, 5 trigger-fired), **49 tables +
+8 views**, 10 storage buckets, 4 external services. Relation counts re-verified
+against the live database on **2026-10-13**; the bucket count dates from
+**2026-09-22**.
 
 **The one structural correction to the pre-build draft.** The draft had
 clients → secure API → application server → database. **There is no application

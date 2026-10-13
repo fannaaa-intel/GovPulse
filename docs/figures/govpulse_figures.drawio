@@ -5940,7 +5940,7 @@
         <mxCell id="n8" value="Supabase API Gateway&#10;PostgREST (REST)   ·   Realtime (WebSocket)   ·   Storage   ·   GoTrue (Auth)&#10;publishable anon key — carries no privilege of its own" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#111111;strokeWidth=1.4;" vertex="1" parent="1">
           <mxGeometry x="300.0" y="360.0" width="1080.0" height="100.0" as="geometry"/>
         </mxCell>
-        <mxCell id="n9" value="PostgreSQL  (Supabase)&#10;49 tables  ·  9 views&#10;ROW-LEVEL SECURITY — the authorisation layer&#10;SECURITY DEFINER RPCs · triggers · pg_cron · Vault" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#111111;strokeWidth=1.4;" vertex="1" parent="1">
+        <mxCell id="n9" value="PostgreSQL  (Supabase)&#10;49 tables  ·  8 views&#10;ROW-LEVEL SECURITY — the authorisation layer&#10;SECURITY DEFINER RPCs · triggers · pg_cron · Vault" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#111111;strokeWidth=1.4;" vertex="1" parent="1">
           <mxGeometry x="300.0" y="600.0" width="640.0" height="150.0" as="geometry"/>
         </mxCell>
         <mxCell id="n10" value="Storage Buckets&#10;10 buckets — report-media, profile-photos,&#10;community-posts, suggestion-media, event-media,&#10;resolution-media, verification-assets, feedback-assets,&#10;admin-avatars, ticket-attachments (retired, no writes)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#111111;strokeWidth=1;" vertex="1" parent="1">

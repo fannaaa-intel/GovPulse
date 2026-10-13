@@ -58,7 +58,7 @@
 <text x="45" y="300" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="16.2" fill="#111" text-anchor="middle" font-style="italic">Realtime</text>
 <rect x="300" y="600" width="640" height="150" fill="#ffffff" stroke="#111" stroke-width="1.4"/>
 <text x="620" y="649.8" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="19.8" fill="#111" text-anchor="middle" font-weight="600">PostgreSQL  (Supabase)</text>
-<text x="620" y="671.4" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="19.8" fill="#111" text-anchor="middle">49 tables  ·  9 views</text>
+<text x="620" y="671.4" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="19.8" fill="#111" text-anchor="middle">49 tables  ·  8 views</text>
 <text x="620" y="693" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="19.8" fill="#111" text-anchor="middle">ROW-LEVEL SECURITY — the authorisation layer</text>
 <text x="620" y="714.6" font-family="Segoe UI, Calibri, Arial, sans-serif" font-size="19.8" fill="#111" text-anchor="middle">SECURITY DEFINER RPCs · triggers · pg_cron · Vault</text>
 <rect x="975" y="600" width="420" height="150" fill="#ffffff" stroke="#111" stroke-width="1"/>
