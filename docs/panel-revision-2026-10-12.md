@@ -18,7 +18,7 @@ figures — it is written to be the one source the paper is revised against.
 |---|---|---|---|
 | 1 | "Persona" for the verification submission | Use the Persona KYC service (withpersona.com) | **ON HOLD** by the user. Findings below. |
 | 2 | Avoid DoS | Cloudflare Turnstile + close the gaps | **NOT STARTED** — design verified, see below |
-| 3 | Citizen feedback on external agencies, recorded as agency performance | New rating table + admin "Agency performance" panel | **NOT STARTED** — design verified, see below |
+| 3 | Citizen feedback on external agencies, recorded as agency performance | New rating table + admin "Agency performance" panel | **DATABASE LIVE 2026-10-13; app code uncommitted, not released** |
 | 4 | Staff on/off duty toggle may violate public-service law | Delete it | **DONE — live on web** |
 | 5 | No direct citizen–staff conversation; FAQs only | Remove live staff chat; Kuya Gov answers questions only + FAQ chips | **DONE — live on web** |
 
@@ -169,7 +169,37 @@ verify and propose first; show the plan and wait.
 
 ### Not blocked — can start as soon as the user says so
 
-1. **Item 3 — agency feedback.** Verified design: new table keyed to the
+1. **Item 3 — agency feedback. DATABASE LIVE (2026-10-13); APP NOT RELEASED.**
+   - Migration applied by the user; verify script ran in the SQL editor:
+     **30 of 30 PASS**. Confirmed live read-only: table, 3 functions, the one
+     admin-only SELECT policy, RLS on.
+   - UI pass done: saved ratings fold into a summary with Edit/Cancel; footer
+     stacks with a full-width button below 440px card width; type has
+     readable floors on 320px phones; stars are 44px targets. Admin table from
+     700px, cards below. `test/agency_feedback_responsive_test.dart` sweeps 8
+     phone sizes (both orientations), tablet both ways and 4 desktop widths at
+     1.0x and 1.3x with hostile content — it caught a real overflow (long
+     agency name in the comments list). Suite: 2285 pass, analyze clean.
+   - Migration `supabase/migrations/20261013000000_agency_feedback.sql`
+     (additive: `agency_feedback` table, `rate_agency`, `my_agency_rating`,
+     `admin_agency_performance`). The user applies it, then runs
+     `supabase/diagnostics/verify_20261013000000.sql` (30 rollback-only probes)
+     and `supabase migration repair --status applied 20261013000000`.
+   - Citizen: `lib/features/home/my_report/agency_rating_card.dart`, on the
+     report detail screen while the report is endorsed. Admin:
+     `lib/features/admin/widgets/admin_agency_performance.dart`, Team page,
+     section "Agency performance". Tests: `test/agency_feedback_test.dart`.
+     Preview: `tool/preview_agency_feedback.dart`.
+   - Release order does not matter for citizens: until the migration is
+     applied, `my_agency_rating` answers PGRST202 and the card simply does not
+     appear. The admin panel shows its error card (deliberately — an admin
+     must be able to tell "not deployed" from "no data"). Apply first anyway.
+   - Performance counts each report's CURRENT endorsement (the event log has
+     no agency column, so a re-endorsed report's earlier agency cannot be
+     reconstructed). Ratings snapshot the agency, so they never move.
+   - The paper may describe it only once it is live (applied + released).
+
+   Original verified design: new table keyed to the
    report that snapshots the agency NAME (`report_endorsements` is
    UNIQUE(report_id) and re-endorsing overwrites the agency); citizens cannot
    read `report_endorsements`, so rating goes through a SECURITY DEFINER RPC

@@ -10,6 +10,7 @@ import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/widgets/report_progress_updates.dart';
 import '../../../../core/widgets/resolution_media.dart';
 import '../my_report/my_reports_screen.dart';
+import 'agency_rating_card.dart';
 import '../Quick-action/Report/location_picker_screen.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../../../core/services/chat_service.dart';
@@ -558,6 +559,25 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
                       _fadeSlide(3, _buildSectionLabel(w, 'Report details')),
                       SizedBox(height: w * .03),
                       _fadeSlide(4, _buildDetailsCard(w)),
+                      // Keyed on the agency and status so a re-endorsement or
+                      // an agency's progress (both arrive on the reports
+                      // channel) reloads what may be rated. The card takes no
+                      // space when there is nothing to rate.
+                      if (_isEndorsed)
+                        _fadeSlide(
+                          5,
+                          Padding(
+                            padding: EdgeInsets.only(top: w * .04),
+                            child: AgencyRatingCard(
+                              key: ValueKey(
+                                'agency-rating:$_forwardedDepartment:'
+                                '${_report.status}',
+                              ),
+                              reportId: _report.fullId,
+                              w: w,
+                            ),
+                          ),
+                        ),
                       if (_isResolved) ...[
                         SizedBox(height: w * .04),
                         _fadeSlide(

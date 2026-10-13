@@ -15,6 +15,7 @@ import '../widgets/admin_submission_ui.dart'
         AdminListSkeleton,
         StatusPill,
         adminShortDate;
+import '../widgets/admin_agency_performance.dart';
 import '../widgets/admin_staff_leaderboard.dart';
 import '../widgets/admin_user_actions.dart';
 
@@ -110,6 +111,12 @@ class _AdminTeamPageState extends ConsumerState<AdminTeamPage> {
                   const _SectionLabel('Performance'),
                   const SizedBox(height: 10),
                   const AdminStaffLeaderboard(),
+                  const SizedBox(height: 22),
+                  // External agencies are not team members, but "how are the
+                  // reports we hand off being handled" is the same question.
+                  const _SectionLabel('Agency performance'),
+                  const SizedBox(height: 10),
+                  const AdminAgencyPerformance(),
                   const SizedBox(height: 22),
                   const _SectionLabel('Directory'),
                   const SizedBox(height: 10),

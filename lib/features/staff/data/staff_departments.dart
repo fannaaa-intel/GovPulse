@@ -12,7 +12,10 @@
 class StaffDept {
   final String name;
   final bool isExternal;
-  const StaffDept(this.name, {this.isExternal = false});
+
+  /// The spelled-out agency name, for external agencies only.
+  final String? fullName;
+  const StaffDept(this.name, {this.isExternal = false, this.fullName});
 }
 
 class StaffDepartments {
@@ -28,17 +31,45 @@ class StaffDepartments {
 
   /// External national agencies that receive endorsed, out-of-scope reports.
   static const List<StaffDept> external = [
-    StaffDept('DPWH', isExternal: true), // Public Works & Highways
-    StaffDept('DENR', isExternal: true), // Environment & Natural Resources
-    StaffDept('DOH', isExternal: true), //  Health
-    StaffDept('BFP', isExternal: true), //  Bureau of Fire Protection
-    StaffDept('PNP', isExternal: true), //  Philippine National Police
+    StaffDept(
+      'DPWH',
+      isExternal: true,
+      fullName: 'Public Works and Highways',
+    ),
+    StaffDept(
+      'DENR',
+      isExternal: true,
+      fullName: 'Environment and Natural Resources',
+    ),
+    StaffDept(
+      'DOH',
+      isExternal: true,
+      fullName: 'Department of Health',
+    ),
+    StaffDept(
+      'BFP',
+      isExternal: true,
+      fullName: 'Bureau of Fire Protection',
+    ),
+    StaffDept(
+      'PNP',
+      isExternal: true,
+      fullName: 'Philippine National Police',
+    ),
   ];
 
   static List<StaffDept> get all => [...internal, ...external];
 
   static bool isExternalName(String? name) =>
       external.any((d) => d.name == name);
+
+  /// "Public Works and Highways" for "DPWH"; null for anything unknown.
+  static String? externalFullName(String? name) {
+    for (final d in external) {
+      if (d.name == name) return d.fullName;
+    }
+    return null;
+  }
 
   /// The internal office that owns a report [category] key. Mirrors the SQL
   /// `report_department()` function and ConcernCategory.department.
