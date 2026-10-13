@@ -237,8 +237,19 @@ verify and propose first; show the plan and wait.
    test/admin_reports_flood_layout_test.dart (no-regression check, proven to
    fail when the chip is put back in the status column). Previews:
    tool/preview_report_flood.dart, tool/preview_admin_reports_flood.dart.
-   NOT done in this pass: check-ai-image limiter, upload count limits, the
-   ticket-attachments storage policy — still open.
+   **WEB RELEASED 2026-10-13: `aa34ff4`, Vercel Ready, strings verified in
+   the live bundle (the chart too).**
+   Remaining pieces LIVE 2026-10-13 (migration pushed, verify_20261014000002
+   14/14, confirmed live; check-ai-image v10 downloaded = repo byte-for-byte):
+   - `check-ai-image`: already-scored photos return the stored score (no
+     Sightengine call, no limit slot); 70 checks/person/day (legit max 63);
+     limiter down → 503, row left retryable. Needs
+     `supabase functions deploy check-ai-image` (user).
+   - `20261014000002_upload_limits.sql`: verification-assets only accepts
+     id-front/id-back/face.jpg in your own folder (≤3 files/account), 8 MB JPEG;
+     profile-photos ≤10 new files per 24 h (my_recent_uploads), 8 MB images;
+     ticket-attachments upload policy dropped. Verify:
+     `verify_20261014000002.sql` (14 probes).
 
    Original plan:
    The panel's DoS concern is the WORK QUEUE being flooded, not only bots.

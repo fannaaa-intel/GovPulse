@@ -32,6 +32,17 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { callerUserId } from "../_shared/caller.ts";
+import {
+  checkRateLimit,
+  limiterUnavailableResponse,
+  rateLimitResponse,
+} from "../_shared/rate-limit.ts";
+
+// Per person per day. The most a citizen can legitimately upload in a day is
+// 63 photos (5 reports × 6, 3 suggestions × 6, 5 feedbacks × 3, each capped
+// by its own rl_* trigger), so 70 never refuses a real submission and stops
+// anyone re-running the check in a loop to burn Sightengine credits.
+const AI_IMAGE_DAILY_LIMIT = 70;
 
 // Sightengine AI-generated-image detection. `models=genai` enables the model;
 // the score lives at response.type.ai_generated (0..1). Auth is api_user +
@@ -222,6 +233,52 @@ serve(async (req: Request) => {
     return new Response(JSON.stringify({ status: "failed", reason }), {
       headers: { "Content-Type": "application/json", ...corsHeaders },
     });
+  }
+
+  // ── 0. Already scored? Never pay twice for one photo ───────────────────────
+  // The owner can call this as often as they like; only the first call reaches
+  // Sightengine. A repeat returns the stored score and costs nothing — not even
+  // a slot in the daily limit below.
+  const cached = (score: unknown) =>
+    new Response(
+      JSON.stringify({ status: "completed", score: Number(score), cached: true }),
+      { headers: { "Content-Type": "application/json", ...corsHeaders } },
+    );
+  if (isMedia) {
+    const { data: done } = await supabase.from(table)
+      .select("ai_score, ai_status").eq("id", String(payload.id)).maybeSingle();
+    if (done?.ai_status === "completed" && done.ai_score != null) {
+      return cached(done.ai_score);
+    }
+  } else {
+    const idx = Number((payload as unknown as FeedbackPayload).index);
+    const { data: done } = await supabase.from("feedbacks")
+      .select("photo_ai_scores, photo_ai_status")
+      .eq("id", String((payload as unknown as FeedbackPayload).feedbackId))
+      .maybeSingle();
+    const status = (done?.photo_ai_status as unknown[] | null)?.[idx - 1];
+    const prior = (done?.photo_ai_scores as unknown[] | null)?.[idx - 1];
+    if (Number.isInteger(idx) && status === "completed" && prior != null) {
+      return cached(prior);
+    }
+  }
+
+  // ── Per-person daily limit ─────────────────────────────────────────────────
+  // Checked after ownership and the cache, so it only ever counts calls that
+  // would really be sent to the detector. When the limiter itself is down the
+  // answer is 503, not a failed row: the photo stays unscored and retryable.
+  const rl = await checkRateLimit(
+    supabase,
+    `ai-image:${callerId}`,
+    AI_IMAGE_DAILY_LIMIT,
+    86400,
+  );
+  if (rl.unavailable) return limiterUnavailableResponse(rl.retryAfter);
+  if (!rl.allowed) {
+    return rateLimitResponse(
+      rl.retryAfter,
+      "Too many image checks today. Please try again tomorrow.",
+    );
   }
 
   if (!apiUser || !apiSecret) {
