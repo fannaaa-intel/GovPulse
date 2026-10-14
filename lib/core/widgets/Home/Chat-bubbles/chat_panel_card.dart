@@ -499,37 +499,47 @@ class _HomeChatPanelCardState extends State<HomeChatPanelCard> {
 
   /// Ready-made answers, no AI call. Only the top three fit this 520px-tall
   /// window without squeezing the thread; the rest are one tap away.
+  ///
+  /// Flexible for the same reason as the full screen's copy: this is a rigid
+  /// sibling of an Expanded thread, so if it ever outgrows the room left it
+  /// would push the composer out of the panel rather than shrink. Three chips
+  /// at 10px rarely reach that point — this is the cheap guarantee, not a fix
+  /// for an observed defect.
   Widget _buildFaqChips() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
-      decoration: const BoxDecoration(color: Colors.white),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'COMMON QUESTIONS — OR TYPE YOUR OWN',
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w700,
-              color: AppColors.hint,
-              letterSpacing: 0.8,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
+    return Flexible(
+      child: SingleChildScrollView(
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+          decoration: const BoxDecoration(color: Colors.white),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              for (final faq in featuredFaqs.take(3))
-                _CategoryChip(
-                  label: faq.question,
-                  onTap: () => ChatService.I.askFaq(faq),
+              Text(
+                'COMMON QUESTIONS — OR TYPE YOUR OWN',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.hint,
+                  letterSpacing: 0.8,
                 ),
-              _CategoryChip(label: 'All questions…', onTap: _openAllFaqs),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final faq in featuredFaqs.take(3))
+                    _CategoryChip(
+                      label: faq.question,
+                      onTap: () => ChatService.I.askFaq(faq),
+                    ),
+                  _CategoryChip(label: 'All questions…', onTap: _openAllFaqs),
+                ],
+              ),
             ],
           ),
-        ],
+        ),
       ),
     );
   }

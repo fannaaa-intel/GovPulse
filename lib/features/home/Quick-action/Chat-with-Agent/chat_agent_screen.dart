@@ -300,7 +300,15 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
           child: Column(
             children: [
               _buildHeader(width),
-              ChatAgentInfoBar(width: width),
+              // Dropped only on a handset held sideways WITH the keyboard up.
+              // There the body is ~190px tall and the rigid header, info bar
+              // and composer alone need more than that, so something has to
+              // go; the header directly above already says "Ask Kuya Gov", so
+              // this bar is the one piece whose message is still on screen
+              // without it. Upright, and on every tablet, it is untouched.
+              if (!(isCompactLandscape(context) &&
+                  MediaQuery.viewInsetsOf(context).bottom > 0))
+                ChatAgentInfoBar(width: width),
               Expanded(child: _buildMessageList(width)),
               if (_svc.showBackToMenu && _svc == ChatService.I)
                 _buildBackToMenu(width),
@@ -581,47 +589,65 @@ class _ChatAgentScreenState extends State<ChatAgentScreen>
   }
 
   // ── Common-question chips (ready-made answers, no AI call) ────────────────
+  //
+  //  ── Why this is Flexible and scrollable ─────────────────────────────────
+  //  At 430px wide this block is 471px tall: a label plus seven chips, each a
+  //  full Tagalog question on its own wrapped line. It is a sibling of the
+  //  Expanded message list in the screen's Column, so when the keyboard opens
+  //  and the body shrinks by ~340px, Expanded collapses to zero and this block
+  //  still demands its full height. The column then overflows, and the
+  //  overflow comes out of whatever sits last — the composer, which gets
+  //  painted under the keyboard with the user's own typing clipped.
+  //
+  //  Flexible lets it give up height under pressure; the scroll view means the
+  //  questions it cannot show are still reachable rather than cut off. With
+  //  room to spare it is unchanged, because Flexible only binds at the limit.
+  //  See chat_composer_keyboard_test.dart for the measured arithmetic.
   Widget _buildFaqChips(double width) {
-    return Container(
-      width: double.infinity,
-      color: Colors.white,
-      padding: EdgeInsets.fromLTRB(
-        width * 0.04,
-        width * 0.025,
-        width * 0.04,
-        width * 0.03,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'COMMON QUESTIONS — OR TYPE YOUR OWN',
-            style: TextStyle(
-              fontSize: width * 0.026,
-              fontWeight: FontWeight.w700,
-              color: AppColors.hint,
-              letterSpacing: 0.8,
-            ),
+    return Flexible(
+      child: SingleChildScrollView(
+        child: Container(
+          width: double.infinity,
+          color: Colors.white,
+          padding: EdgeInsets.fromLTRB(
+            width * 0.04,
+            width * 0.025,
+            width * 0.04,
+            width * 0.03,
           ),
-          SizedBox(height: width * 0.022),
-          Wrap(
-            spacing: width * 0.022,
-            runSpacing: width * 0.022,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              for (final faq in featuredFaqs)
-                _CategoryChip(
-                  label: faq.question,
-                  width: width,
-                  onTap: () => _svc.askFaq(faq),
+              Text(
+                'COMMON QUESTIONS — OR TYPE YOUR OWN',
+                style: TextStyle(
+                  fontSize: width * 0.026,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.hint,
+                  letterSpacing: 0.8,
                 ),
-              _CategoryChip(
-                label: 'All questions…',
-                width: width,
-                onTap: _openAllFaqs,
+              ),
+              SizedBox(height: width * 0.022),
+              Wrap(
+                spacing: width * 0.022,
+                runSpacing: width * 0.022,
+                children: [
+                  for (final faq in featuredFaqs)
+                    _CategoryChip(
+                      label: faq.question,
+                      width: width,
+                      onTap: () => _svc.askFaq(faq),
+                    ),
+                  _CategoryChip(
+                    label: 'All questions…',
+                    width: width,
+                    onTap: _openAllFaqs,
+                  ),
+                ],
               ),
             ],
           ),
-        ],
+        ),
       ),
     );
   }
