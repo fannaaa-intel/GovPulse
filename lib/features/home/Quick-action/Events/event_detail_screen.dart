@@ -5,10 +5,10 @@ import '../../../../core/widgets/responsive_page.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/event_status_pill.dart';
+import '../../../../core/widgets/events/event_poster.dart';
 import 'events_screen.dart';
 import '../../../../core/theme/citizen_ui.dart';
 import '../../../../core/theme/mobile_metrics.dart';
@@ -364,29 +364,41 @@ class _EventDetailScreenState extends State<EventDetailScreen>
                             ),
                             SizedBox(width: w * 0.04),
                             // RIGHT — image
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(w * 0.025),
-                              child: SizedBox(
-                                width: imageW,
-                                height: imageH,
-                                child: event.imageUrl != null
-                                    ? CachedNetworkImage(
-                                        imageUrl: event.imageUrl!,
-                                        fit: BoxFit.cover,
-                                        fadeInDuration: const Duration(
-                                          milliseconds: 300,
-                                        ),
-                                        fadeOutDuration: const Duration(
-                                          milliseconds: 100,
-                                        ),
-                                        placeholder: (context, url) =>
-                                            const _ShimmerBox(),
-                                        errorWidget: (context, url, error) =>
-                                            _imagePlaceholder(imageW),
-                                      )
-                                    : _imagePlaceholder(imageW),
-                              ),
-                            ),
+                            //
+                            // Drawn at 38% of the width so the title and
+                            // description keep the column, which means a
+                            // poster carrying its schedule as baked-in text is
+                            // unreadable here. EventPoster keeps this size and
+                            // makes it open full screen on tap; an event with
+                            // no artwork keeps the inert placeholder, because
+                            // there is nothing to enlarge.
+                            event.imageUrl != null
+                                ? EventPoster(
+                                    imageUrl: event.imageUrl!,
+                                    width: imageW,
+                                    height: imageH,
+                                    borderRadius: BorderRadius.circular(
+                                      w * 0.025,
+                                    ),
+                                    badgeSize: (imageW * 0.22).clamp(20.0, 30.0),
+                                    semanticLabel:
+                                        'Poster for ${event.title}. '
+                                        'Double tap to view full screen.',
+                                    placeholderBuilder: (_) =>
+                                        const _ShimmerBox(),
+                                    errorBuilder: (_) =>
+                                        _imagePlaceholder(imageW),
+                                  )
+                                : ClipRRect(
+                                    borderRadius: BorderRadius.circular(
+                                      w * 0.025,
+                                    ),
+                                    child: SizedBox(
+                                      width: imageW,
+                                      height: imageH,
+                                      child: _imagePlaceholder(imageW),
+                                    ),
+                                  ),
                           ],
                         ),
 

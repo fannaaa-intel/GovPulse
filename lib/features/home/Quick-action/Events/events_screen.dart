@@ -7,6 +7,7 @@ import '../../../../core/services/events_service.dart';
 import '../../../../core/widgets/event_status_pill.dart';
 import '../../../../core/widgets/loading/loading_overlay.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import '../../../../core/widgets/events/event_poster.dart';
 // ─── UI model (keeps all existing widgets working as-is) ─────────────────────
 
 import '../../shell/citizen_shell_dialogs.dart'
@@ -1073,26 +1074,21 @@ class _EventsScreenState extends State<EventsScreen>
         LayoutBuilder(
           builder: (context, c) {
             final narrow = c.maxWidth < 460;
+            // Tappable: at 200x132, cropped to cover, a poster with its
+            // schedule baked into the artwork is unreadable. The thumbnail
+            // keeps the size this layout needs and opens full screen on tap.
             final poster = event.imageUrl == null
                 ? null
-                : ClipRRect(
+                : EventPoster(
+                    imageUrl: event.imageUrl!,
+                    width: narrow ? double.infinity : 200,
+                    height: narrow ? 150 : 132,
                     borderRadius: BorderRadius.circular(CitizenUi.cardRadius),
-                    child: SizedBox(
-                      width: narrow ? double.infinity : 200,
-                      height: narrow ? 150 : 132,
-                      child: CachedNetworkImage(
-                        imageUrl: event.imageUrl!,
-                        fit: BoxFit.cover,
-                        placeholder: (_, _) => const _ShimmerBox(),
-                        errorWidget: (_, _, _) => Container(
-                          color: CitizenUi.subtle,
-                          child: const Icon(
-                            Icons.image_not_supported_rounded,
-                            color: CitizenUi.textFaint,
-                          ),
-                        ),
-                      ),
-                    ),
+                    semanticLabel:
+                        'Poster for ${event.title}. '
+                        'Double tap to view full screen.',
+                    placeholderBuilder: (_) => const _ShimmerBox(),
+                    errorBuilder: (_) => _posterErrorBox(),
                   );
 
             final headline = Column(
@@ -1234,6 +1230,18 @@ class _EventsScreenState extends State<EventsScreen>
       .map((l) => l.trim())
       .where((l) => l.isNotEmpty)
       .toList();
+
+  /// The failed-poster box, shared by the detail column and the rail so both
+  /// fail the same way. Was duplicated inline at each call site.
+  Widget _posterErrorBox() => Container(
+    color: CitizenUi.subtle,
+    child: const Center(
+      child: Icon(
+        Icons.image_not_supported_rounded,
+        color: CitizenUi.textFaint,
+      ),
+    ),
+  );
 
   Widget _splitBulletList(List<String> items) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1461,24 +1469,16 @@ class _EventsScreenState extends State<EventsScreen>
         // place here, but not at the cost of where and what the event is. 130
         // keeps it clearly a poster and buys both rows back.
         if (event.imageUrl != null)
-          ClipRRect(
+          EventPoster(
+            imageUrl: event.imageUrl!,
+            height: 130,
+            width: double.infinity,
             borderRadius: BorderRadius.circular(CitizenUi.controlRadius),
-            child: SizedBox(
-              height: 130,
-              width: double.infinity,
-              child: CachedNetworkImage(
-                imageUrl: event.imageUrl!,
-                fit: BoxFit.cover,
-                placeholder: (_, _) => const _ShimmerBox(),
-                errorWidget: (_, _, _) => Container(
-                  color: CitizenUi.subtle,
-                  child: const Icon(
-                    Icons.image_not_supported_rounded,
-                    color: CitizenUi.textFaint,
-                  ),
-                ),
-              ),
-            ),
+            badgeSize: 22,
+            semanticLabel:
+                'Poster for ${event.title}. Double tap to view full screen.',
+            placeholderBuilder: (_) => const _ShimmerBox(),
+            errorBuilder: (_) => _posterErrorBox(),
           ),
         if (event.imageUrl != null) const SizedBox(height: 14),
 

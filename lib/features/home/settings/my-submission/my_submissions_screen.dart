@@ -17,6 +17,7 @@ import '../../../../core/widgets/Home/Account/account_web_kit.dart';
 import '../../../../core/theme/mobile_metrics.dart';
 import '../../../../core/widgets/app_back_chevron.dart';
 import '../../../../core/services/feedback_photos.dart';
+import '../../../../core/widgets/media_viewer.dart';
 // ── Private config classes ────────────────────────────────────────────────────
 
 class _CatCfg {
@@ -4358,13 +4359,34 @@ class _MediaStrip extends StatelessWidget {
       children: [
         for (final m in media)
           GestureDetector(
-            onTap: () => showAppDialog(
-              context: context,
-              barrierColor: Colors.black87,
-              builder: (_) => m.isVideo
-                  ? _SheetVideoDialog(url: m.url)
-                  : _SheetImageDialog(url: m.url),
-            ),
+            onTap: () {
+              // Video keeps its own dialog — the shared viewer is a photo
+              // gallery with no player.
+              if (m.isVideo) {
+                showAppDialog(
+                  context: context,
+                  barrierColor: Colors.black87,
+                  builder: (_) => _SheetVideoDialog(url: m.url),
+                );
+                return;
+              }
+              // Videos are skipped rather than shown as a blank page, so the
+              // index is recomputed against the photos-only list. Opening the
+              // SHARED viewer (rather than this file's old one-photo dialog)
+              // is what gives these submissions swipe-between-photos, a
+              // loading indicator and pinch zoom, identical to the report
+              // detail's gallery.
+              final photos = [for (final x in media) if (!x.isVideo) x];
+              final start = photos.indexWhere((x) => x.url == m.url);
+              openMediaViewer(
+                context,
+                urls: [for (final x in photos) x.url],
+                cacheKeys: [
+                  for (final x in photos) FeedbackPhotos.pathOf(x.url),
+                ],
+                initialIndex: start < 0 ? 0 : start,
+              );
+            },
             child: ClipRRect(
               borderRadius: BorderRadius.circular(10),
               child: Container(
@@ -4385,10 +4407,34 @@ class _MediaStrip extends StatelessWidget {
                           ),
                         ],
                       )
-                    : Image.network(
-                        m.url,
+                    // ── Why CachedNetworkImage and an explicit cacheKey ─────
+                    // This was `Image.network`, which caches nothing: the
+                    // 88px thumbnail downloaded the photo, then the
+                    // full-screen preview downloaded the SAME photo again.
+                    //
+                    // feedback-assets is a PRIVATE bucket, so these urls are
+                    // signed and carry a token that changes on every signing —
+                    // the url is therefore useless as a cache key, which is
+                    // what `FeedbackPhotos.pathOf` is for. Keying both the
+                    // thumbnail and the viewer on the storage PATH means one
+                    // cached copy per photo, re-used when the preview opens
+                    // and still valid after a reload re-signs the url.
+                    : CachedNetworkImage(
+                        imageUrl: m.url,
+                        cacheKey: FeedbackPhotos.pathOf(m.url),
                         fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => const Icon(
+                        // Capped to the drawn size: these are full-resolution
+                        // uploads drawn into 88px.
+                        memCacheWidth:
+                            (88 *
+                                    (MediaQuery.maybeDevicePixelRatioOf(
+                                          context,
+                                        ) ??
+                                        1.0))
+                                .round(),
+                        placeholder: (_, _) =>
+                            const ColoredBox(color: Color(0xFFF3F4F6)),
+                        errorWidget: (_, _, _) => const Icon(
                           Icons.broken_image_rounded,
                           color: _kSheetHint,
                         ),
@@ -4397,44 +4443,6 @@ class _MediaStrip extends StatelessWidget {
             ),
           ),
       ],
-    );
-  }
-}
-
-class _SheetImageDialog extends StatelessWidget {
-  final String url;
-  const _SheetImageDialog({required this.url});
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      insetPadding: EdgeInsets.zero,
-      child: Stack(
-        children: [
-          Center(
-            child: InteractiveViewer(
-              child: Image.network(url, fit: BoxFit.contain),
-            ),
-          ),
-          Positioned(
-            top: 40,
-            right: 16,
-            child: GestureDetector(
-              onTap: () => Navigator.pop(context),
-              child: Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.5),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.close_rounded, color: Colors.white),
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
