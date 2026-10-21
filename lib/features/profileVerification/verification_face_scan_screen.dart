@@ -262,9 +262,7 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
       final faces = await _faceDetector.processImage(input);
       if (faces.isEmpty) return const [];
 
-      final decoded = await decodeImageFromList(
-        await File(path).readAsBytes(),
-      );
+      final decoded = await decodeImageFromList(await File(path).readAsBytes());
       final w = decoded.width.toDouble();
       final h = decoded.height.toDouble();
       if (w <= 0 || h <= 0) return const [];
@@ -314,7 +312,10 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
   /// NEVER throws and never blocks: a capture that could not be examined
   /// passes. Refusing a citizen because the app's own detector failed is the
   /// worse error.
-  Future<void> _gradeSelfie(Uint8List bytes, {required List<FaceBox> faces}) async {
+  Future<void> _gradeSelfie(
+    Uint8List bytes, {
+    required List<FaceBox> faces,
+  }) async {
     try {
       final m = SelfieQuality.measure(bytes);
 
@@ -324,9 +325,7 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
       // single synthetic well-framed box. Its geometry can never fail, leaving
       // brightness and sharpness as the only possible issues.
       final effectiveFaces = faces.isEmpty && kIsWeb
-          ? const [
-              FaceBox(left: 0.3, top: 0.24, width: 0.4, height: 0.5),
-            ]
+          ? const [FaceBox(left: 0.3, top: 0.24, width: 0.4, height: 0.5)]
           : faces;
 
       final result = SelfieQuality.check(
@@ -774,6 +773,11 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
             goClearingPageless(context, CitizenTab.home.path);
             return;
           }
+          // Mobile needs the same refresh for the same reason. It used to be
+          // on the web arm alone, so HomePage rebuilt from the profile cached
+          // before the submission - still `none` - and the card offered
+          // "Verify Now" to a citizen whose row already said `pending`.
+          ProviderScope.containerOf(context).invalidate(userProfileProvider);
           Navigator.of(context).pushAndRemoveUntil(
             PageRouteBuilder(
               transitionDuration: const Duration(milliseconds: 400),
@@ -1076,7 +1080,9 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
                       done
                           ? 'Selfie added'
                           : (_webUsesCamera
-                                ? (_isCapturing ? 'Taking photo...' : 'Take photo')
+                                ? (_isCapturing
+                                      ? 'Taking photo...'
+                                      : 'Take photo')
                                 : 'Choose a selfie'),
                       style: TextStyle(
                         fontSize: 14,
@@ -1168,9 +1174,7 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
     // Web reports the video track's own size, already in the orientation the
     // user is holding. Mobile hands back a landscape sensor buffer that
     // `CameraPreview` transposes for a portrait screen, so match that here.
-    final src = kIsWeb
-        ? preview
-        : Size(preview.height, preview.width);
+    final src = kIsWeb ? preview : Size(preview.height, preview.width);
 
     return SizedBox(
       width: w,
@@ -1321,14 +1325,24 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
     final double titleBottom = size.height * 0.12 + 34;
     final double footerTop =
         size.height - bottomInset - _estimatedFooterHeight();
-    // Clearance at each end, and the corner brackets bleed 16px past the oval
-    // on every side, so they need counting too.
-    final double band = (footerTop - titleBottom) - clearance - 32;
+    // Clearance at each end. The corner brackets bleed 16px past the oval on
+    // every side, so the OVAL gets 32px less than this - but the band itself
+    // is the whole gap, because that is what the oval-plus-brackets box has to
+    // sit inside.
+    //
+    // These were one number before, and the 32 was then spent twice: the band
+    // had it deducted, and the clamp below set ovalH = band, which handed that
+    // reserve back to the oval. The brackets ended up 32px outside the space
+    // reserved for them and the bottom pair crossed into the footer - visible
+    // on every short handset once the blur advisory appeared ("Hold the phone
+    // still"), which is exactly when the footer is tallest.
+    final double band = (footerTop - titleBottom) - clearance;
+    final double ovalLimit = band - 32;
 
     double ovalW = size.width * 0.62;
     double ovalH = ovalW * 1.36;
-    if (band > 0 && ovalH > band) {
-      ovalH = band;
+    if (ovalLimit > 0 && ovalH > ovalLimit) {
+      ovalH = ovalLimit;
       ovalW = ovalH / 1.36;
     }
     // A floor, so the oval never shrinks to something you cannot line a face
@@ -1345,7 +1359,9 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
     bool scrollFooter = false;
     if (ovalW < minOvalW) {
       final double floorH = minOvalW * 1.36;
-      if (band <= 0 || floorH <= band) {
+      // Measured against the oval's own allowance, not the whole band: the
+      // brackets still need their 16px once the floor applies.
+      if (ovalLimit <= 0 || floorH <= ovalLimit) {
         ovalW = minOvalW;
         ovalH = floorH;
       } else if (ovalW < hardMinOvalW) {
@@ -1365,12 +1381,23 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
     // Every oval layer - preview, cutout, border arc, brackets - is a Center,
     // so they are all shifted together by this one offset rather than each
     // being repositioned by hand.
+    // The clearance is symmetric, so trimming it from both ends leaves the
+    // midpoint where it already was - this stays the plain average.
     final double bandCentre = (titleBottom + footerTop) / 2;
-    // Alignment.y is -1 at the top edge and +1 at the bottom, so the band's
-    // centre expressed in that space is what every oval layer aligns to.
+    // Alignment.y is NOT a fraction of the screen: `Align` resolves it against
+    // the FREE space, so at y the child's centre lands at
+    //     ovalH / 2 + (y + 1) / 2 * (height - ovalH)
+    // Converting with (bandCentre / height) * 2 - 1 therefore did not put the
+    // oval at bandCentre at all - it landed (ovalH / 2) * y further down, up
+    // to ~15px low on a short handset, which is what kept the bottom brackets
+    // touching the footer after the bracket reserve was fixed. Inverting the
+    // real rule puts the centre exactly where the band wants it.
+    final double freeV = size.height - ovalH;
     final Alignment ovalAlign = Alignment(
       0,
-      ((bandCentre / size.height) * 2 - 1).clamp(-1.0, 1.0),
+      freeV <= 0
+          ? 0.0
+          : (((bandCentre - ovalH / 2) / freeV) * 2 - 1).clamp(-1.0, 1.0),
     );
 
     return Scaffold(
@@ -1411,11 +1438,7 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
             ),
 
           // ── White overlay outside oval ────────────────────────────────
-          _OvalCutoutOverlay(
-            ovalW: ovalW,
-            ovalH: ovalH,
-            alignY: ovalAlign.y,
-          ),
+          _OvalCutoutOverlay(ovalW: ovalW, ovalH: ovalH, alignY: ovalAlign.y),
 
           // ── Oval border + progress arc ────────────────────────────────
           Align(
@@ -1639,11 +1662,7 @@ class _VerificationFaceScanScreenState extends State<VerificationFaceScanScreen>
       const Text(
         "Your face has been scanned successfully.",
         textAlign: TextAlign.center,
-        style: TextStyle(
-          fontSize: 13,
-          color: AppColors.hint,
-          height: 1.5,
-        ),
+        style: TextStyle(fontSize: 13, color: AppColors.hint, height: 1.5),
       ),
 
       // ── Selfie quality advice ─────────────────────────────────────────
@@ -1871,10 +1890,18 @@ class _CutoutPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final full = Path()..addRect(Rect.fromLTWH(0, 0, size.width, size.height));
+    // [Alignment] positions a child in the FREE space, not on a plain
+    // top-to-bottom scale of the whole canvas: at alignY the child's top edge
+    // sits at (alignY + 1) / 2 * (height - ovalH), so its centre is that plus
+    // ovalH / 2. Reading alignY as a fraction of the full height instead put
+    // this hole (ovalH / 2) * alignY away from the oval every other layer
+    // draws - about 30px up the screen, which clipped the bottom of the
+    // preview and left a white crescent inside the top of the green outline.
+    final double centreY = ovalH / 2 + (alignY + 1) / 2 * (size.height - ovalH);
     final oval = Path()
       ..addOval(
         Rect.fromCenter(
-          center: Offset(size.width / 2, (alignY + 1) / 2 * size.height),
+          center: Offset(size.width / 2, centreY),
           width: ovalW,
           height: ovalH,
         ),

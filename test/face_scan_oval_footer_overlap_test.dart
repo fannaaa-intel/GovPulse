@@ -29,19 +29,25 @@ double bottomInsetFor(double screenH) =>
 }) {
   final titleBottom = screenH * 0.12 + 34;
   final footerTop = screenH - bottomInsetFor(screenH) - footerH;
-  final band = (footerTop - titleBottom) - (_short(screenH) ? 12 : 32) - 32;
+  // The band is the whole gap between title and footer less the clearance;
+  // the OVAL then gets 32px less than that, because its corner brackets bleed
+  // 16px above and below it. These used to be one number, so the 32 was
+  // deducted from the band AND handed straight back by `h = band` below - the
+  // brackets then sat 32px outside their own reserve and crossed the footer.
+  final band = (footerTop - titleBottom) - (_short(screenH) ? 12 : 32);
+  final ovalLimit = band - 32;
 
   var w = screenW * 0.62;
   var h = w * 1.36;
-  if (band > 0 && h > band) {
-    h = band;
+  if (ovalLimit > 0 && h > ovalLimit) {
+    h = ovalLimit;
     w = h / 1.36;
   }
   const minW = 180.0;
   const hardMinW = 150.0;
   if (w < minW) {
     final floorH = minW * 1.36;
-    if (band <= 0 || floorH <= band) {
+    if (ovalLimit <= 0 || floorH <= ovalLimit) {
       w = minW;
       h = floorH;
     } else if (w < hardMinW) {
@@ -63,12 +69,26 @@ double ovalCentreY({required double screenH, required double footerH}) {
 }
 
 /// Does the oval (plus its 16px bracket bleed) clear the footer?
+///
+/// The centre is derived the way the SCREEN derives it, not from the band
+/// midpoint directly: the screen turns that midpoint into an `Alignment.y`
+/// and hands it to `Align`, which positions the oval within the FREE space.
+/// Taking the midpoint as the centre instead quietly re-centres the oval for
+/// the test only - and because the oval shrinks in step with the band, the
+/// overflow then cancels out and the check passes against a layout that
+/// visibly overlaps. (That is exactly how the 32px bracket double-spend
+/// survived this file.)
 bool clears({
   required double screenH,
   required double footerH,
   required double ovalH,
 }) {
-  final centre = ovalCentreY(screenH: screenH, footerH: footerH);
+  final bandCentre = ovalCentreY(screenH: screenH, footerH: footerH);
+  final freeV = screenH - ovalH;
+  final alignY = freeV <= 0
+      ? 0.0
+      : (((bandCentre - ovalH / 2) / freeV) * 2 - 1).clamp(-1.0, 1.0);
+  final centre = ovalH / 2 + (alignY + 1) / 2 * (screenH - ovalH);
   final ovalBottom = centre + ovalH / 2 + 16; // brackets bleed 16px
   final footerTop = screenH - bottomInsetFor(screenH) - footerH;
   return ovalBottom <= footerTop;
@@ -129,6 +149,24 @@ void main() {
       ('iPhone 14 Pro Max', 430, 932),
       ('reported', reportedW, reportedH),
       ('short landscape-ish', 411, 660),
+      // Added with the bracket-reserve fix. Every one of these overlapped
+      // while the band and the oval shared one number, and the state that
+      // showed it is the one in the bug report: scan done, blur advisory up,
+      // which is the tallest the footer ever gets.
+      ('Galaxy S8', 360, 740),
+      ('Fold, outer screen', 280, 653),
+      ('iPhone SE 2nd gen', 375, 667),
+      // The citizen app is not phone-only; a tablet-width viewport reaches
+      // this screen too.
+      ('small tablet', 600, 960),
+      // These three are what the 32px bracket RESERVE guards. Without it the
+      // oval grows into the space its own corner brackets need and the bottom
+      // pair crosses the footer by ~10px here, while every other size in this
+      // list still clears - so drop them and the reserve can be removed with
+      // the suite still green.
+      ('iPhone SE 1st gen', 320, 568),
+      ('iPhone SE 2nd gen, tall footer', 375, 667),
+      ('short wide', 411, 660),
     ];
     const footerPlain = 20 + 24 + 50 + 12 + 50.0;
 
@@ -154,7 +192,7 @@ void main() {
         expect(
           o.w,
           greaterThanOrEqualTo(150),
-          reason: '\$name (\$label): oval shrank to \${o.w.toStringAsFixed(0)}px',
+          reason: '$name ($label): oval shrank to ${o.w.toStringAsFixed(0)}px',
         );
       }
     }
