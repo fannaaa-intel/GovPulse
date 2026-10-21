@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { authorizeCaller } from "../_shared/caller.ts";
 import { checkRateLimit, corsHeaders } from "../_shared/rate-limit.ts";
+import { readAllPages } from "../_shared/backup_paging.ts";
 import {
   AI_MARKER_COLUMNS,
   assertCoverage,
@@ -418,22 +419,20 @@ async function buildBackup(
 /**
  * Read a whole table, paging past PostgREST's 1,000-row ceiling.
  *
- * Ordered by primary key so the pages tile deterministically: without a stable
- * sort, two pages can both contain — or both miss — the same row, and the
- * backup is quietly incomplete. Keyset pagination would be better still at
- * scale; `range` is right for a dataset this size and far easier to verify.
+ * Ordered by PRIMARY KEY, which is not cosmetic: without a stable, unique sort
+ * Postgres may order rows differently per request, so a row can land in two
+ * pages or in none — and the backup is silently incomplete. The loop itself
+ * lives in _shared/backup_paging.ts so it can be tested without a table of
+ * >1,000 rows, which this project does not yet have.
  */
 async function readAll(svc: SupabaseClient, t: BackupTable): Promise<Json[]> {
-  const out: Json[] = [];
-  for (let from = 0; ; from += PAGE_SIZE) {
-    let q = svc.from(t.name).select("*").range(from, from + PAGE_SIZE - 1);
+  return await readAllPages<Json>(async (from, to) => {
+    let q = svc.from(t.name).select("*").range(from, to);
     for (const k of t.pk) q = q.order(k, { ascending: true });
     const { data, error } = await q;
     if (error) throw new Error(`reading ${t.name}: ${error.message}`);
-    const page = (data ?? []) as Json[];
-    out.push(...page);
-    if (page.length < PAGE_SIZE) return out;
-  }
+    return (data ?? []) as Json[];
+  }, PAGE_SIZE);
 }
 
 /** Note the Storage objects these rows point at, so a preview can check them. */
