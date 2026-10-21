@@ -257,21 +257,49 @@ fails only the plpgsql pass.
 
 ## 10. Deployment
 
-See the session hand-off for the exact commands. In order:
+### Done on 2026-10-22 (project `vxvflhjbafqwehuxnmeq`)
 
-1. Generate `BACKUP_ENCRYPTION_KEY` (32 random bytes, base64) and **keep a copy
-   offline**.
-2. `supabase db push` — creates the tables, the restore function and the
-   private `backups` bucket.
-3. `supabase functions deploy admin-backup`
-4. `supabase secrets set BACKUP_ENCRYPTION_KEY=…`
-5. Run `supabase/diagnostics/verify_20261022000000.sql` **one block at a time**
-   (the SQL editor returns only the last result set).
-6. Optionally run `supabase/diagnostics/test_20261022000000_restore.sql` — a
-   single `BEGIN … ROLLBACK` block of 18 behavioural checks. Run it as **one
-   block**; a split rollback lands on a different pooled connection and would
-   commit.
-7. Rebuild and redeploy the web app so the new section reaches the live site.
+| Step | Command | Result |
+|---|---|---|
+| 1. Encryption key | 32 random bytes, base64 | Generated; saved to `C:\Users\DELL\GOVPULSE_BACKUP_KEY.txt`, **outside the repo** |
+| 2. Migration | `supabase db push` | Applied `20261022000000_backup_and_recovery.sql` |
+| 3. Edge function | `supabase functions deploy admin-backup` | Deployed with all 6 modules |
+| 4. Secret | `supabase secrets set BACKUP_ENCRYPTION_KEY=…` | Registered (digest `ee92f1d4…`) |
+
+> ⚠ **Still to do by hand:** copy `GOVPULSE_BACKUP_KEY.txt` somewhere safe and
+> off this machine. If that file is lost, every backup becomes unreadable.
+
+### Post-deploy verification (all passed)
+
+| Check | Result |
+|---|---|
+| `backups`, `backup_restores`, `backup_jobs` created | yes, RLS on all 3 |
+| `admin_apply_restore`, `backup_job_claim`, `backup_job_release`, `admin_list_public_tables` | all 4 created |
+| `admin_apply_restore` is SECURITY DEFINER | yes |
+| `authenticated` may execute `admin_apply_restore` | **no — correctly denied** |
+| `service_role` may execute it | yes |
+| RLS policies present | `backups_admin_read`, `backup_restores_admin_read` |
+| User triggers left disabled | **0** |
+| Public table count | **52** = 49 existing + our 3, matching the 38-backed-up + 14-excluded allowlist |
+| Signed-out caller → `list` | **401 unauthorized** |
+| Signed-out caller → `restore_apply` with a valid-looking payload | **401 unauthorized** |
+
+Note: `supabase/diagnostics/verify_20261022000000.sql` reads `storage.buckets`,
+which the read-only audit role cannot access (`permission denied for schema
+storage`). The schema checks above were run instead; the bucket's privacy comes
+from the migration, which writes `public = false` and **forces it back to false
+on conflict**, so an existing public bucket of that name would be corrected.
+
+### Remaining
+
+5. Run `supabase/diagnostics/test_20261022000000_restore.sql` in the SQL editor
+   — a single `BEGIN … ROLLBACK` block of 18 behavioural checks. Run it as
+   **one block**; a split rollback lands on a different pooled connection and
+   would commit. It needs `auth.users` access, so it cannot run from the
+   read-only audit role.
+6. Merge to `main`. `vercel.json` builds from source on push
+   (`flutter build web --release`), so the new section reaches the live site
+   automatically — no separate front-end deploy step.
 
 ---
 
