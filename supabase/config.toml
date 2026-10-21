@@ -594,3 +594,19 @@ enabled = true
 # plus a per-user limit, because the public anon key satisfies verify_jwt.
 verify_jwt = true
 entrypoint = "./functions/verify-id/index.ts"
+
+[functions.admin-backup]
+enabled = true
+# MUST stay true. The function reads the caller's role claim via
+# authorizeCaller() WITHOUT verifying the signature, which is only safe because
+# the gateway rejects a bad signature first. Flipping this to false would let
+# anyone forge an `authenticated` claim and reach the restore path.
+#
+# The anon key satisfies verify_jwt on its own, so verify_jwt is NOT the gate
+# here: the real gates are in index.ts — user_roles.role_id = 1 from the
+# verified JWT, plus the admin's own password re-checked server-side before any
+# restore. Declared explicitly because an UNDECLARED function silently takes
+# the CLI default on its next deploy (the accident that flipped
+# check-email-exists).
+verify_jwt = true
+entrypoint = "./functions/admin-backup/index.ts"
