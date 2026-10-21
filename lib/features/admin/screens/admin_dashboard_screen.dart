@@ -32,6 +32,7 @@ import '../pages/admin_verification_page.dart';
 import '../pages/admin_events_page.dart';
 import '../pages/admin_feedback_page.dart';
 import '../pages/admin_suggestions_page.dart';
+import '../pages/admin_backup_page.dart';
 import '../pages/admin_settings_page.dart';
 import '../pages/admin_users_page.dart';
 import '../pages/admin_team_page.dart';
@@ -68,6 +69,9 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
     AdminNavItem(icon: Icons.manage_accounts_rounded, label: 'Citizens'), // 7
     AdminNavItem(icon: Icons.badge_rounded, label: 'Team'), // 8
     AdminNavItem(icon: Icons.settings_rounded, label: 'Settings'), // 9
+    // Last on purpose: a destructive tool belongs at the bottom of the rail,
+    // not beside the pages used every day. Also reachable from Settings.
+    AdminNavItem(icon: Icons.backup_rounded, label: 'Backup & Recovery'), // 10
   ];
 
   @override
@@ -299,7 +303,12 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
       case 8:
         return const AdminTeamPage();
       case 9:
-        return AdminSettingsPage(onLogout: _confirmLogout);
+        return AdminSettingsPage(
+          onLogout: _confirmLogout,
+          onOpenBackup: () => _selectTab(10),
+        );
+      case 10:
+        return const AdminBackupPage();
       default:
         return _ComingSoon(label: navItems[_selectedIndex].label);
     }
