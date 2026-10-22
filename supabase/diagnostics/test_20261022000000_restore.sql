@@ -243,11 +243,23 @@ begin
   select id into v_post from public.community_posts limit 1;
   if v_post is not null then
     update public.community_posts set comments_count = 999 where id = v_post;
-    v_res := public.admin_apply_restore(
-      jsonb_build_object('tables', jsonb_build_object(
-        'reports', jsonb_build_object('rows', jsonb_build_array(
-          (select to_jsonb(r) from public.reports r where r.id = v_rep))))),
-      'missing_only', false);
+
+    -- Build the payload into a variable FIRST, then call.
+    --
+    -- Inlining `(select to_jsonb(r) from public.reports r ...)` as an argument
+    -- keeps a portal open on `reports` for the duration of the call, so the
+    -- function's own `ALTER TABLE reports DISABLE TRIGGER USER` -- which needs
+    -- ACCESS EXCLUSIVE -- collides with this very session and raises
+    -- 55006 "cannot ALTER TABLE because it is being used by active queries in
+    -- this session". Assigning first closes the portal before the call starts.
+    -- Every other test here already does it this way; only T14 did not.
+    select jsonb_build_object('tables', jsonb_build_object(
+             'reports', jsonb_build_object('rows', jsonb_build_array(to_jsonb(r)))))
+      into v_payload
+      from public.reports r
+     where r.id = v_rep;
+
+    v_res := public.admin_apply_restore(v_payload, 'missing_only', false);
     insert into _t(name, passed, detail) values (
       'T14 stored counters were recomputed from the real rows',
       (select comments_count from public.community_posts where id = v_post)
@@ -300,10 +312,41 @@ begin
     'T18 a dropped column is ignored with a warning',
     v_res->>'warnings' like '%no longer exist%',
     'warnings=' || coalesce(v_res->>'warnings','?'));
+  -- ═══ REPORT ═══════════════════════════════════════════════════════════════
+  -- Printed from inside this block, via RAISE NOTICE, so the verdict does NOT
+  -- depend on a later statement being run. The Supabase editor executes only
+  -- the HIGHLIGHTED text when there is a selection, and a trailing
+  -- `select ... from _t` run on its own fails with 42P01: the temp table lives
+  -- in this transaction and never exists outside it. NOTICEs show up in the
+  -- editor's Messages/Logs pane no matter how the script was launched.
+  raise notice '';
+  raise notice '================ RESTORE TEST RESULTS ================';
+  for v_txt in
+    select case when passed then 'PASS  ' else 'FAIL  ' end || name ||
+           case when coalesce(detail,'') = '' then '' else '   [' || detail || ']' end
+      from _t order by n
+  loop
+    raise notice '%', v_txt;
+  end loop;
+
+  select count(*) filter (where passed), count(*) filter (where not passed)
+    into v_before, v_after
+    from _t;
+
+  raise notice '------------------------------------------------------';
+  if v_after = 0 then
+    raise notice 'ALL TESTS PASSED  (% passed, 0 failed)', v_before;
+  else
+    raise notice '*** % TEST(S) FAILED ***  (% passed)', v_after, v_before;
+  end if;
+  raise notice '======================================================';
 end;
 $tests$;
 
--- The editor shows only the last result set, so this is the report.
+-- A second copy of the report as a result GRID, for screenshots.
+-- The authoritative verdict is the RAISE NOTICE output above (Messages pane):
+-- these SELECTs only work when the whole script runs as one block, because
+-- `_t` is a temp table that lives and dies with this transaction.
 select
   case when passed then 'PASS' else '*** FAIL ***' end as result,
   name,
