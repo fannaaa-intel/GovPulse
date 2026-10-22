@@ -61,7 +61,17 @@ const List<_TopicGroup> _kTopicGroups = [
 class AdminSettingsPage extends ConsumerWidget {
   /// Mirrors the topbar logout flow — the dashboard shell passes its own.
   final VoidCallback onLogout;
-  const AdminSettingsPage({super.key, required this.onLogout});
+
+  /// Switches the shell to the Backup & Recovery section. Supplied by the
+  /// shell rather than navigated to directly, because the console is one route
+  /// with an index — see [AdminDashboardScreen].
+  final VoidCallback? onOpenBackup;
+
+  const AdminSettingsPage({
+    super.key,
+    required this.onLogout,
+    this.onOpenBackup,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -91,6 +101,9 @@ class AdminSettingsPage extends ConsumerWidget {
                       const SizedBox(height: 22),
                       const _SectionTitle('Activity log'),
                       const _ActivityCard(),
+                      const SizedBox(height: 22),
+                      const _SectionTitle('Backup & Recovery'),
+                      _BackupLinkCard(onOpen: onOpenBackup),
                       const SizedBox(height: 22),
                       const _SectionTitle('About'),
                       const _AboutCard(),
@@ -1150,4 +1163,34 @@ class _LogoutButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => LogoutTile(onLogout: onLogout);
+}
+
+// ── Backup & Recovery link ───────────────────────────────────────────────────
+
+/// Entry point into the Backup & Recovery section.
+///
+/// The section has its own rail item, but Settings is where an admin looks for
+/// anything system-level, so it is reachable from both. [onOpen] switches the
+/// shell's index; when it is absent (a standalone preview target, or a test
+/// that renders this page alone) the card simply is not interactive rather
+/// than throwing.
+class _BackupLinkCard extends StatelessWidget {
+  final VoidCallback? onOpen;
+  const _BackupLinkCard({this.onOpen});
+
+  @override
+  Widget build(BuildContext context) {
+    return _Card(
+      padding: EdgeInsets.zero,
+      child: _AboutRow(
+        icon: Icons.backup_rounded,
+        label: 'Save a copy of data, or bring records back',
+        onTap: onOpen,
+        trailing: const Icon(
+          Icons.chevron_right_rounded,
+          color: AdminUi.textMuted,
+        ),
+      ),
+    );
+  }
 }
