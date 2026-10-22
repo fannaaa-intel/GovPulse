@@ -1,30 +1,26 @@
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Behavioural tests for admin_apply_restore.
 --
--- RUN THIS AS ONE BLOCK. It is a single transaction that ends in ROLLBACK, so
--- nothing it does survives. Do NOT run it a statement at a time: a split
--- rollback lands on a different pooled connection and the writes would COMMIT.
+-- HOW TO RUN: paste the whole file into the Supabase SQL Editor and press Run.
+-- You do not need to select anything, and it does not matter if you do.
 --
--- It needs the migration applied first (the function must exist). It creates
--- its own throwaway rows, asserts against them, and rolls everything back.
+-- WHY IT IS SHAPED LIKE THIS. The editor splits a script on semicolons and
+-- runs each statement in its own implicit transaction, so a wrapping
+-- `begin; ... rollback;` does NOT hold: `begin` is just another statement, the
+-- temp table dies with the statement that made it, and a trailing
+-- `select ... from _t` fails with 42P01 relation "_t" does not exist. That
+-- happened three times before this was understood.
 --
--- Every check raises on failure, so a clean finish IS the pass. The final
--- SELECT prints the collected results because the SQL editor shows only the
--- last result set of a multi-block script.
+-- So the entire suite is ONE `do` block. A `do` block is a single statement,
+-- which makes it atomic on its own: every write inside it is rolled back when
+-- it ends, because it ends by raising. Nothing it does survives, with no
+-- reliance on editor behaviour at all.
+--
+-- The results print via RAISE NOTICE. Look at the "Messages" pane, not the
+-- "Results" grid -- the grid will be empty, and that is expected.
+--
+-- Safe to run repeatedly. It needs migration 20261022000000 applied.
 -- ─────────────────────────────────────────────────────────────────────────────
-
-begin;
-
--- Nothing in here should ever be visible to anyone else mid-flight, and a
--- failure must not leave half a fixture behind for the next attempt.
-set local statement_timeout = '120s';
-
-create temp table _t(
-  n      serial primary key,
-  name   text,
-  passed boolean,
-  detail text
-) on commit drop;
 
 do $tests$
 declare
@@ -46,6 +42,17 @@ declare
   v_status    text;
   v_ai        timestamptz;
 begin
+  -- The collector lives inside the block now. `on commit drop` is not enough
+  -- on its own here: this block always ends by raising, so the whole statement
+  -- is rolled back and the table goes with it either way.
+  create temp table if not exists _t(
+    n      serial primary key,
+    name   text,
+    passed boolean,
+    detail text
+  ) on commit drop;
+  delete from _t;
+
   -- ═══ fixture ═══════════════════════════════════════════════════════════════
   select id into v_user from auth.users order by created_at limit 1;
   if v_user is null then
@@ -340,28 +347,19 @@ begin
     raise notice '*** % TEST(S) FAILED ***  (% passed)', v_after, v_before;
   end if;
   raise notice '======================================================';
+  raise notice '';
+
+  -- ── Roll everything back ──────────────────────────────────────────────────
+  -- A `do` block is ONE statement, so raising here discards every write it
+  -- made: the test reports, the deleted-and-restored rows, the mutated audit
+  -- row, the 999 counter. This is the rollback, and it does not depend on the
+  -- editor honouring a wrapping transaction.
+  --
+  -- The editor will show this as an error. THAT IS THE SUCCESS PATH. Read the
+  -- verdict in the Messages pane above it.
+  raise exception USING
+    errcode = '22000',
+    message = 'TESTS FINISHED - everything above was rolled back (this error is expected and means the run completed)';
 end;
 $tests$;
 
--- A second copy of the report as a result GRID, for screenshots.
--- The authoritative verdict is the RAISE NOTICE output above (Messages pane):
--- these SELECTs only work when the whole script runs as one block, because
--- `_t` is a temp table that lives and dies with this transaction.
-select
-  case when passed then 'PASS' else '*** FAIL ***' end as result,
-  name,
-  detail
-from _t
-order by n;
-
--- Summary row, so a failure is impossible to scroll past.
-select
-  count(*) filter (where passed)       as passed,
-  count(*) filter (where not passed)   as failed,
-  case when count(*) filter (where not passed) = 0
-       then 'ALL TESTS PASSED'
-       else '*** ' || count(*) filter (where not passed)::text || ' TEST(S) FAILED ***'
-  end as verdict
-from _t;
-
-rollback;
