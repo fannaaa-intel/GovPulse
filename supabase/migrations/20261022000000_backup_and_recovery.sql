@@ -444,7 +444,11 @@ begin
     else
       -- ── Pass 1: insert, with any self-FK held back as NULL ──────────────
       v_sql := format(
-        'insert into public.%I (%s) select %s from _restore_stage
+        -- The alias `s` is REQUIRED: the column list below emits `s.<col>`,
+        -- so a bare `from _restore_stage` fails with 42P01 "missing
+        -- FROM-clause entry for table s" on every real restore. The dry run
+        -- never reaches here, which is why only a non-dry-run test catches it.
+        'insert into public.%I (%s) select %s from _restore_stage s
            on conflict (%s) do %s',
         v_tbl,
         (select string_agg(quote_ident(c), ', ') from unnest(v_use_cols) c),
