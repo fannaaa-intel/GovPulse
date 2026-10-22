@@ -357,9 +357,26 @@ begin
   --
   -- The editor will show this as an error. THAT IS THE SUCCESS PATH. Read the
   -- verdict in the Messages pane above it.
+  -- The verdict goes in the ERROR MESSAGE itself, because the Supabase editor
+  -- shows the error but has no Messages/NOTICE pane. Every per-test line is
+  -- folded into one string so a failure cannot be invisible.
+  select string_agg(
+           case when passed then 'PASS  ' else '>>>> FAIL  ' end || name ||
+           case when coalesce(detail,'') = '' then '' else '   [' || detail || ']' end,
+           chr(10) order by n)
+    into v_txt
+    from _t;
+
   raise exception USING
     errcode = '22000',
-    message = 'TESTS FINISHED - everything above was rolled back (this error is expected and means the run completed)';
+    message = case when v_after = 0
+                   then format('ALL %s TESTS PASSED', v_before)
+                   else format('*** %s TEST(S) FAILED (%s passed) ***', v_after, v_before)
+              end,
+    detail = v_txt,
+    hint = 'This error IS the expected ending: it rolls back every write the '
+           'tests made. The verdict is the message above; the per-test results '
+           'are in DETAIL.';
 end;
 $tests$;
 
