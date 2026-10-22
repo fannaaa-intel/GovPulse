@@ -297,7 +297,12 @@ begin
       'T16 an unknown restore mode is refused', true, 'raised: ' || sqlerrm);
   end;
 
-  -- ═══ T17 ── a table that no longer exists is warned about, not fatal ═══════
+  -- ═══ T17 ── a table the restore does not handle is warned about ═══════════
+  -- The first version of this expected "no longer exists", which is the wording
+  -- used when a table IS in the restore order but has been dropped from the
+  -- database. An unknown table takes a different path -- the restore loop walks
+  -- its own fixed order, so it never visits one -- and before the fix that case
+  -- produced NO warning at all. This test caught exactly that: `warnings=[]`.
   v_res := public.admin_apply_restore(
     jsonb_build_object('tables', jsonb_build_object(
       'zz_table_that_never_existed', jsonb_build_object('rows', jsonb_build_array(
@@ -306,7 +311,7 @@ begin
   insert into _t(name, passed, detail) values (
     'T17 a dropped table becomes a warning, not a failure',
     v_res->'warnings' is not null
-      and v_res->>'warnings' like '%no longer exists%',
+      and v_res->>'warnings' like '%not part of this restore%',
     'warnings=' || coalesce(v_res->>'warnings','?'));
 
   -- ═══ T18 ── a column that no longer exists is ignored with a warning ═══════

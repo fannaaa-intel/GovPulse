@@ -283,12 +283,26 @@ begin
   end if;
 
   -- ── Refuse a file carrying a forbidden table ─────────────────────────────
+  --
+  -- This loop walks the PAYLOAD's keys; the restore loop below walks c_order.
+  -- That asymmetry matters: a table present in the file but absent from
+  -- c_order is never visited by the restore loop at all, so without the second
+  -- check here it would be dropped in total silence -- no rows restored, no
+  -- warning, and a count that looks correct because the table simply is not in
+  -- it. That is how a backup taken before a table was removed from the
+  -- allowlist would quietly lose data on restore.
   for v_tbl in select jsonb_object_keys(p_payload->'tables') loop
     if v_tbl = any (c_forbidden) then
       raise exception
         'This backup contains %, which is never restored (it would re-send notifications or reset anti-spam counters).',
         v_tbl
         using errcode = '22023';
+    end if;
+
+    if not (v_tbl = any (c_order)) then
+      v_warnings := v_warnings || to_jsonb(format(
+        'Table "%s" is in the backup but is not part of this restore; its rows were skipped.',
+        v_tbl));
     end if;
   end loop;
 
