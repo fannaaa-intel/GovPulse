@@ -471,7 +471,12 @@ class AdminBackupNotifier extends AsyncNotifier<BackupState> {
 
   String _statusMessage(int? status) => switch (status) {
     401 || 403 => 'You do not have permission to do this.',
-    409 => 'Another backup or restore is running. Try again in a minute.',
+    // Deliberately vaguer than the server's own 409 text. Only the function
+    // knows WHICH conflict happened — another job holding the claim, or a
+    // restore already running from this backup — and it always sends a message
+    // saying so. This line is the fallback for a 409 whose body did not parse,
+    // so it must not assert a cause it cannot know.
+    409 => 'That conflicts with something else happening right now. Please try again in a minute.',
     429 => 'Too many attempts. Please wait a few minutes.',
     503 => 'The server is busy. Please try again in a moment.',
     504 => 'That took too long and was stopped. Nothing was changed.',

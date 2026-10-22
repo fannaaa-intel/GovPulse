@@ -224,8 +224,25 @@ async function withJobLock<T>(
   try {
     return await run();
   } finally {
-    const { error: relErr } = await svc.rpc("backup_job_release");
-    if (relErr) console.error("admin-backup: job release failed:", relErr.message);
+    // A failed release does NOT fail the job: the backup or restore already
+    // happened, and the claim expires on its own. But it must not pass
+    // unnoticed either — a release that failed every single time is what made
+    // every following job report "busy" for 15 minutes, and a bare
+    // console.error hid that for the life of the feature.
+    //
+    // So: retry once, then verify the claim is really gone. Anything still
+    // holding after that is logged as the operational fault it is.
+    let { error: relErr } = await svc.rpc("backup_job_release");
+    if (relErr) {
+      console.error("admin-backup: job release failed, retrying:", relErr.message);
+      ({ error: relErr } = await svc.rpc("backup_job_release"));
+    }
+    if (relErr) {
+      console.error(
+        `admin-backup: ALERT job release failed twice for kind=${kind}; the claim will` +
+          ` block the next job until it goes stale: ${relErr.message}`,
+      );
+    }
   }
 }
 
